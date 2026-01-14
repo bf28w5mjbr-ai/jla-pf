@@ -1,0 +1,70 @@
+name: "Performance Monitoring"
+
+on:
+  push:
+    branches: ["fix/login-localize-and-session-helper"]
+  pull_request:
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@latest --activate
+          pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm build
+      - name: Run Lighthouse
+        uses: treosh/lighthouse-ci-action@v10
+        with:
+          configPath: './lighthouserc.json'
+          uploadArtifacts: true
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const results = JSON.parse(fs.readFileSync('./lhr.json', 'utf8'));
+            const scores = results.categories;
+            const comment = `## Lighthouse Scores\n
+| Category | Score |\n| --- | --- |\n| Performance | ${(scores.performance.score * 100).toFixed(0)} |\n| Accessibility | ${(scores.accessibility.score * 100).toFixed(0)} |\n| Best Practices | ${(scores['best-practices'].score * 100).toFixed(0)} |\n| SEO | ${(scores.seo.score * 100).toFixed(0)} |\n| PWA | ${(scores.pwa?.score * 100 || 'N/A')} |`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+  
+  bundle-size:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@latest --activate
+          pnpm install --frozen-lockfile
+      - name: Build and analyze
+        run: |
+          pnpm build
+          echo "Build size analysis:"
+          du -sh .next/static
+      - name: Check bundle size threshold
+        run: |
+          SIZE=$(du -sk .next/static | cut -f1)
+          THRESHOLD=5000  # 5MB in KB
+          if [ $SIZE -gt $THRESHOLD ]; then
+            echo "Bundle size (${SIZE}KB) exceeds threshold (${THRESHOLD}KB)"
+            exit 1
+          fi
+          echo "Bundle size OK: ${SIZE}KB"
