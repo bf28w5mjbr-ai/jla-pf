@@ -1,0 +1,43 @@
+name: "Weekly Automation Report"
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Send report to Slack
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "channel": "#dev-alerts",
+              "text": "📊 Weekly Automation Report",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "📊 Weekly Automation Report"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Repository:* jla-pf\n*Week of:* $(date +%Y-%m-%d)"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "• <https://github.com/bf28w5mjbr-ai/jla-pf/actions|Actions>\n• <https://github.com/bf28w5mjbr-ai/jla-pf/pulls|Pull Requests>\n• <https://github.com/bf28w5mjbr-ai/jla-pf/issues|Issues>"
+                  }
+                }
+              ]
+            }

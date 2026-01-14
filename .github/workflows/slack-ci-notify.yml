@@ -1,0 +1,30 @@
+name: "Notify Slack on CI failures"
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    steps:
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "channel": "#dev-alerts",
+              "text": "❌ CI Failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*CI Build Failed*\n<${{ github.event.workflow_run.html_url }}|View Details>"
+                  }
+                }
+              ]
+            }
