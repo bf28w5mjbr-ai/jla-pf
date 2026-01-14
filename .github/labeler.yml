@@ -1,0 +1,8 @@
+# labeler mappings: path globs -> label
+frontend:
+  - "src/app/**"
+backend:
+  - "src/server/**"
+deps:
+  - "package.json"
+  - "**/package.json"
