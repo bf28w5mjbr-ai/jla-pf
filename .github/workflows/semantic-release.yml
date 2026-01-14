@@ -1,0 +1,26 @@
+name: "Semantic Release"
+
+on:
+  push:
+    branches: ["fix/login-localize-and-session-helper"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install semantic-release
+        run: npm install --save-dev semantic-release @semantic-release/changelog @semantic-release/git @semantic-release/github
+      - name: Run semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release

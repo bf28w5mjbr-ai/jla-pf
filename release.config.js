@@ -1,0 +1,14 @@
+module.exports = {
+  branches: ['fix/login-localize-and-session-helper'],
+  plugins: [
+    '@semantic-release/commit-analyzer',
+    '@semantic-release/release-notes-generator',
+    '@semantic-release/changelog',
+    ['@semantic-release/npm', { npmPublish: false }],
+    ['@semantic-release/git', {
+      assets: ['package.json', 'CHANGELOG.md'],
+      message: 'chore(release): v${nextRelease.version} [skip ci]'
+    }],
+    '@semantic-release/github'
+  ]
+};
