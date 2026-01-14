@@ -1,0 +1,47 @@
+name: "Deploy Canary"
+
+on:
+  push:
+    branches: ["fix/login-localize-and-session-helper"]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - canary
+          - production
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure deployment
+        id: deploy
+        run: |
+          ENV=${{ github.event.inputs.environment || 'staging' }}
+          echo "environment=${ENV}" >> $GITHUB_OUTPUT
+          echo "Preparing deployment to ${ENV}..."
+      - name: Deploy to ${{ steps.deploy.outputs.environment }}
+        env:
+          DEPLOYMENT_ENV: ${{ steps.deploy.outputs.environment }}
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+        run: |
+          echo "Deploying to ${DEPLOYMENT_ENV}"
+          # Add deployment commands here
+          # Example: kubectl apply -f deployment.yaml --namespace=${DEPLOYMENT_ENV}
+      - name: Verify deployment
+        run: |
+          echo "Verifying deployment..."
+          # Add health checks here
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Deployment failed. Rolling back..."
+          # Add rollback commands here
