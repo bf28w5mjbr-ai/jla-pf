@@ -1,0 +1,18 @@
+{
+  "ci": {
+    "collect": {
+      "startServerCommand": "pnpm start",
+      "url": ["http://localhost:3000"]
+    },
+    "upload": {
+      "target": "temporary-public-storage"
+    }
+  },
+  "thresholds": {
+    "performance": 75,
+    "accessibility": 90,
+    "best-practices": 85,
+    "seo": 85,
+    "pwa": 50
+  }
+}
