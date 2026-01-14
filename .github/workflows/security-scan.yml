@@ -1,0 +1,74 @@
+name: "Security Scanning"
+
+on:
+  push:
+    branches: ["fix/login-localize-and-session-helper"]
+  pull_request:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: TruffleHog Secret Scanning
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug --only-verified
+  
+  sast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: |
+          corepack enable
+          corepack prepare pnpm@latest --activate
+          pnpm install --frozen-lockfile
+      - name: ESLint Security Plugin
+        run: |
+          npm install --save-dev eslint-plugin-security
+          npm run lint -- --ext .ts,.tsx src/ || true
+  
+  dependency-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run npm audit
+        run: npm audit --audit-level=moderate || true
+      - name: Snyk Scan
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+        continue-on-error: true
+  
+  docker-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t jla-pf:latest .
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: jla-pf:latest
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      - name: Upload Trivy results to GitHub
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
