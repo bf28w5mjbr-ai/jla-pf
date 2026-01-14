@@ -3,25 +3,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner"; // ★ ここを変更：ui/use-toast ではなく sonner から
+import { toast } from "sonner";
 
 export default function LoginForm() {
   const router = useRouter();
 
-  // 入力値
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
-  // UI状態
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // アクセシビリティ用参照
   const emailInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
   const errorRef = useRef<HTMLParagraphElement>(null);
 
-  // エラー発生時はアラートにフォーカス（スクリーンリーダーに即通知）
   useEffect(() => {
     if (error) {
       errorRef.current?.focus();
@@ -33,9 +28,8 @@ export default function LoginForm() {
     setSubmitting(true);
     setError(null);
 
-    // 入力の軽い正規化
     const normalizedEmail = email.trim().toLowerCase();
-    const rawPassword = password; // パスワードはそのまま
+    const rawPassword = password;
 
     try {
       const res = await fetch("/api/auth/login", {
@@ -46,10 +40,9 @@ export default function LoginForm() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({} as any));
-        const msg = data?.error ?? "Login failed";
+        const msg = data?.error ?? "ログインに失敗しました";
         setError(msg);
-        toast.error("Login failed", { description: msg }); // ★ Sonner の toast
-        // 入力へフォーカス誘導（メールが空ならメール、そうでなければパス）
+        toast.error("ログイン失敗", { description: msg });
         if (!normalizedEmail) {
           emailInputRef.current?.focus();
         } else {
@@ -58,12 +51,12 @@ export default function LoginForm() {
         return;
       }
 
-      toast.success("Welcome back"); // ★ 成功トースト
+      toast.success("ログイン成功");
       router.replace("/dashboard");
     } catch (err: any) {
-      const msg = err?.message ?? "Network error";
+      const msg = "ネットワークエラーが発生しました";
       setError(msg);
-      toast.error("Network error", { description: msg });
+      toast.error("接続エラー", { description: msg });
       emailInputRef.current?.focus();
     } finally {
       setSubmitting(false);
@@ -72,9 +65,8 @@ export default function LoginForm() {
 
   return (
     <main className="mx-auto max-w-sm p-6">
-      <h1 className="text-2xl font-bold mb-6">Log in</h1>
+      <h1 className="text-2xl font-bold mb-6">ログイン</h1>
 
-      {/* アクセシビリティ通知（ライブリージョン） */}
       {error && (
         <p
           ref={errorRef}
@@ -89,7 +81,7 @@ export default function LoginForm() {
 
       <form onSubmit={onSubmit} className="space-y-4" aria-busy={submitting}>
         <label className="block">
-          <span className="text-sm">Email</span>
+          <span className="text-sm">メールアドレス</span>
           <input
             ref={emailInputRef}
             type="email"
@@ -104,7 +96,7 @@ export default function LoginForm() {
         </label>
 
         <label className="block">
-          <span className="text-sm">Password</span>
+          <span className="text-sm">パスワード</span>
           <input
             ref={passwordInputRef}
             type="password"
@@ -123,14 +115,9 @@ export default function LoginForm() {
           className="w-full rounded bg-black px-4 py-2 text-white disabled:opacity-60"
           aria-disabled={submitting}
         >
-          {submitting ? "Signing in..." : "Sign in"}
+          {submitting ? "ログイン中..." : "ログイン"}
         </button>
       </form>
-
-      <p className="mt-6 text-xs opacity-70">
-        * デモ用：ユーザーは Prisma Studio の <code>User</code> に作成し、
-        <code>hashedPassword</code> は <code>bcryptjs</code> で生成したものを保存してください。
-      </p>
     </main>
   );
 }

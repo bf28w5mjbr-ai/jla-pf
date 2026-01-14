@@ -1,9 +1,16 @@
 export const runtime = "nodejs";
 import { NextResponse } from "next/server";
-import { prisma } from "@/src/server/db";
+import { prisma } from "@/server/db";
 
 export async function GET() {
-  // 軽いクエリ（SELECT 1 相当）
-  await prisma.$queryRaw`SELECT 1`;
-  return NextResponse.json({ ok: true });
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return NextResponse.json({ ok: true }, { status: 200 });
+  } catch (error) {
+    console.error("Health check failed:", error);
+    return NextResponse.json(
+      { ok: false, error: "Database connection failed" },
+      { status: 503 }
+    );
+  }
 }
