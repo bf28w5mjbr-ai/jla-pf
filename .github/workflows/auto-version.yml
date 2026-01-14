@@ -1,0 +1,32 @@
+name: "Automatic Commit & Tag Release"
+
+on:
+  push:
+    branches: ["fix/login-localize-and-session-helper"]
+    paths:
+      - "src/**"
+      - "prisma/schema.prisma"
+      - "package.json"
+      - "tsconfig.json"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect version change
+        id: version
+        run: |
+          CURRENT=$(jq -r '.version' package.json)
+          echo "version=${CURRENT}" >> $GITHUB_OUTPUT
+      - name: Create tag if new version
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
+          git tag -a "v${VERSION}" -m "Release v${VERSION}" || echo "Tag already exists"
+          git push origin --tags || echo "No new tags to push"
