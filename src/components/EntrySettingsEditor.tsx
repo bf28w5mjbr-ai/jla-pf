@@ -58,11 +58,21 @@ type Event = {
   displayOrder: number;
 };
 
+type EntryFee = {
+  baseFee: number;
+  multiEventDiscount?: {
+    minEvents: number;
+    discountedFee: number;
+  }[];
+  teamOnlyFee?: number;
+};
+
 type EntrySettingsEditorProps = {
   competitionId: string;
   initialData: {
     entryStartDate: Date | null;
     entryEndDate: Date | null;
+    entryFee?: EntryFee;
   };
   initialEvents?: Event[];
   canEdit: boolean;
@@ -85,6 +95,17 @@ export default function EntrySettingsEditor({
       : ""
   );
   const [isUpdating, setIsUpdating] = useState(false);
+  
+  // エントリー費用設定
+  const [baseFee, setBaseFee] = useState(initialData.entryFee?.baseFee?.toString() || "");
+  const [teamOnlyFee, setTeamOnlyFee] = useState(initialData.entryFee?.teamOnlyFee?.toString() || "");
+  const [multiEventDiscounts, setMultiEventDiscounts] = useState<{minEvents: string; discountedFee: string}[]>(
+    initialData.entryFee?.multiEventDiscount?.map(d => ({
+      minEvents: d.minEvents.toString(),
+      discountedFee: d.discountedFee.toString()
+    })) || []
+  );
+  const [isUpdatingFee, setIsUpdatingFee] = useState(false);
   
   // 種目管理
   const [events, setEvents] = useState<Event[]>(initialEvents);
@@ -286,6 +307,68 @@ export default function EntrySettingsEditor({
       toast.error(error instanceof Error ? error.message : "エントリー設定の更新に失敗しました");
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  // エントリー費用更新
+  const handleUpdateEntryFee = async () => {
+    const baseFeeNum = parseFloat(baseFee);
+    if (isNaN(baseFeeNum) || baseFeeNum < 0) {
+      toast.error("基本料金を正しく入力してください");
+      return;
+    }
+
+    // 複数種目割引のバリデーション
+    const discounts = multiEventDiscounts
+      .filter(d => d.minEvents && d.discountedFee)
+      .map(d => ({
+        minEvents: parseInt(d.minEvents),
+        discountedFee: parseFloat(d.discountedFee)
+      }));
+
+    for (const discount of discounts) {
+      if (isNaN(discount.minEvents) || discount.minEvents < 2) {
+        toast.error("複数種目割引は2種目以上で設定してください");
+        return;
+      }
+      if (isNaN(discount.discountedFee) || discount.discountedFee < 0) {
+        toast.error("割引後料金を正しく入力してください");
+        return;
+      }
+    }
+
+    const teamOnlyFeeNum = teamOnlyFee ? parseFloat(teamOnlyFee) : undefined;
+    if (teamOnlyFee && (isNaN(teamOnlyFeeNum!) || teamOnlyFeeNum! < 0)) {
+      toast.error("チーム種目のみ料金を正しく入力してください");
+      return;
+    }
+
+    setIsUpdatingFee(true);
+
+    try {
+      const response = await fetch(`/api/competitions/${competitionId}/entry-fee`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          baseFee: baseFeeNum,
+          multiEventDiscount: discounts.length > 0 ? discounts : undefined,
+          teamOnlyFee: teamOnlyFeeNum,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "エントリー費用設定の更新に失敗しました");
+      }
+
+      toast.success("エントリー費用設定を更新しました");
+    } catch (error) {
+      console.error("エントリー費用設定の更新エラー:", error);
+      toast.error(error instanceof Error ? error.message : "エントリー費用設定の更新に失敗しました");
+    } finally {
+      setIsUpdatingFee(false);
     }
   };
 
@@ -988,6 +1071,129 @@ export default function EntrySettingsEditor({
               </div>
             </div>
           </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* エントリー費用設定 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>エントリー費用設定</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* 基本料金 */}
+          <div className="space-y-2">
+            <Label htmlFor="baseFee">基本料金（円）</Label>
+            <div className="flex gap-2">
+              <Input
+                id="baseFee"
+                type="number"
+                min="0"
+                step="100"
+                value={baseFee}
+                onChange={(e) => setBaseFee(e.target.value)}
+                placeholder="5000"
+                disabled={!canEdit}
+              />
+            </div>
+            <p className="text-sm text-gray-500">1種目あたりの基本料金を設定します</p>
+          </div>
+
+          {/* 複数種目割引 */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>複数種目割引</Label>
+              {canEdit && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setMultiEventDiscounts([...multiEventDiscounts, { minEvents: "", discountedFee: "" }])}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  割引を追加
+                </Button>
+              )}
+            </div>
+            {multiEventDiscounts.length === 0 ? (
+              <p className="text-sm text-gray-500">複数種目割引が設定されていません</p>
+            ) : (
+              <div className="space-y-2">
+                {multiEventDiscounts.map((discount, index) => (
+                  <div key={index} className="flex gap-2 items-center">
+                    <Input
+                      type="number"
+                      min="2"
+                      placeholder="種目数"
+                      value={discount.minEvents}
+                      onChange={(e) => {
+                        const newDiscounts = [...multiEventDiscounts];
+                        newDiscounts[index].minEvents = e.target.value;
+                        setMultiEventDiscounts(newDiscounts);
+                      }}
+                      disabled={!canEdit}
+                      className="w-24"
+                    />
+                    <span className="text-sm">種目以上</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="100"
+                      placeholder="料金"
+                      value={discount.discountedFee}
+                      onChange={(e) => {
+                        const newDiscounts = [...multiEventDiscounts];
+                        newDiscounts[index].discountedFee = e.target.value;
+                        setMultiEventDiscounts(newDiscounts);
+                      }}
+                      disabled={!canEdit}
+                      className="w-32"
+                    />
+                    <span className="text-sm">円</span>
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          const newDiscounts = multiEventDiscounts.filter((_, i) => i !== index);
+                          setMultiEventDiscounts(newDiscounts);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-sm text-gray-500">指定種目数以上エントリーする場合の料金を設定します</p>
+          </div>
+
+          {/* チーム種目のみ料金 */}
+          <div className="space-y-2">
+            <Label htmlFor="teamOnlyFee">チーム種目のみ料金（円）</Label>
+            <div className="flex gap-2">
+              <Input
+                id="teamOnlyFee"
+                type="number"
+                min="0"
+                step="100"
+                value={teamOnlyFee}
+                onChange={(e) => setTeamOnlyFee(e.target.value)}
+                placeholder="3000"
+                disabled={!canEdit}
+              />
+            </div>
+            <p className="text-sm text-gray-500">チーム種目のみにエントリーする場合の料金（任意）</p>
+          </div>
+
+          {canEdit && (
+            <Button
+              onClick={handleUpdateEntryFee}
+              disabled={isUpdatingFee}
+              className="w-full"
+            >
+              {isUpdatingFee ? "更新中..." : "エントリー費用設定を更新"}
+            </Button>
           )}
         </CardContent>
       </Card>

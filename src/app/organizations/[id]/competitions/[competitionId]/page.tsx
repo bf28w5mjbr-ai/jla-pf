@@ -326,14 +326,22 @@ export default async function CompetitionDetailPage({
           {/* お知らせゾーン */}
           <CompetitionAnnouncementsManager
             competitionId={competitionId}
-            initialAnnouncements={competition.announcements}
+            initialAnnouncements={competition.announcements.map(a => ({
+              ...a,
+              createdAt: a.createdAt.toISOString(),
+              updatedAt: a.updatedAt.toISOString(),
+              publishedAt: a.publishedAt?.toISOString() || null,
+            }))}
             canEdit={canEdit}
           />
 
           {/* 添付ファイルゾーン */}
           <CompetitionAttachmentsManager
             competitionId={competitionId}
-            initialAttachments={competition.attachments}
+            initialAttachments={competition.attachments.map(a => ({
+              ...a,
+              createdAt: a.createdAt.toISOString(),
+            }))}
             canEdit={canEdit}
           />
         </TabsContent>
@@ -345,8 +353,14 @@ export default async function CompetitionDetailPage({
             initialData={{
               entryStartDate: competition.entryStartDate,
               entryEndDate: competition.entryEndDate,
+              entryFee: competition.entryFee as any,
             }}
-            initialEvents={competition.events}
+            initialEvents={competition.events.map(e => ({
+              ...e,
+              sex: e.sex as "MALE" | "FEMALE",
+              createdAt: e.createdAt.toISOString(),
+              updatedAt: e.updatedAt.toISOString(),
+            })) as any}
             canEdit={canEdit}
           />
         </TabsContent>
