@@ -627,26 +627,36 @@ export default function EntrySettingsEditor({
                       ).values()
                     )
                       .sort((a, b) => a.displayOrder - b.displayOrder)
-                      .map((event) => (
-                        <div
-                          key={event.name}
-                          className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-700 rounded-lg"
-                        >
-                          <span className="text-sm font-semibold text-black dark:text-white">
-                            {event.name}(男女)
-                            <span className="ml-2 text-xs font-normal text-blue-600 dark:text-blue-400">(タイム入力必須)</span>
-                          </span>
-                          {canEdit && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDeleteEvent(event.id, event.name)}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
-                            </Button>
-                          )}
-                        </div>
-                      ))}
+                      .map((event) => {
+                        // オーシャンマン/オーシャンウーマン系の種目は性別表記を除外
+                        const hideGenderLabel = [
+                          'オーシャンマン',
+                          'オーシャンウーマン',
+                          'オーシャンマンリレー',
+                          'オーシャンウーマンリレー'
+                        ].includes(event.name);
+                        
+                        return (
+                          <div
+                            key={event.name}
+                            className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-700 rounded-lg"
+                          >
+                            <span className="text-sm font-semibold text-black dark:text-white">
+                              {event.name}{!hideGenderLabel && '(男女)'}
+                              <span className="ml-2 text-xs font-normal text-blue-600 dark:text-blue-400">(タイム入力必須)</span>
+                            </span>
+                            {canEdit && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDeleteEvent(event.id, event.name)}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })}
                   </div>
                 )}
               </div>
@@ -724,26 +734,36 @@ export default function EntrySettingsEditor({
                       ).values()
                     )
                       .sort((a, b) => a.displayOrder - b.displayOrder)
-                      .map((event) => (
-                        <div
-                          key={event.name}
-                          className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-700 rounded-lg"
-                        >
-                          <span className="text-sm font-semibold text-black dark:text-white">
-                            {event.name}（男女）
-                            <span className="ml-2 text-xs font-normal text-blue-600 dark:text-blue-400">(タイム入力必須)</span>
-                          </span>
-                          {canEdit && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDeleteEvent(event.id, event.name)}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
-                            </Button>
-                          )}
-                        </div>
-                      ))}
+                      .map((event) => {
+                        // オーシャンマン/オーシャンウーマン系の種目は性別表記を除外
+                        const hideGenderLabel = [
+                          'オーシャンマン',
+                          'オーシャンウーマン',
+                          'オーシャンマンリレー',
+                          'オーシャンウーマンリレー'
+                        ].includes(event.name);
+                        
+                        return (
+                          <div
+                            key={event.name}
+                            className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-700 rounded-lg"
+                          >
+                            <span className="text-sm font-semibold text-black dark:text-white">
+                              {event.name}{!hideGenderLabel && '（男女）'}
+                              <span className="ml-2 text-xs font-normal text-blue-600 dark:text-blue-400">(タイム入力必須)</span>
+                            </span>
+                            {canEdit && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDeleteEvent(event.id, event.name)}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })}
                   </div>
                 )}
               </div>
@@ -826,26 +846,36 @@ export default function EntrySettingsEditor({
                       ).values()
                     )
                       .sort((a, b) => a.displayOrder - b.displayOrder)
-                      .map((event) => (
-                        <div
-                          key={event.name}
-                          className="flex items-center justify-between p-3 bg-cyan-100 dark:bg-cyan-950 border border-cyan-300 dark:border-cyan-700 rounded-lg"
-                        >
-                          <span className="text-sm font-semibold text-black dark:text-white">
-                            {event.name}（男女）
-                            <span className="ml-2 text-xs font-normal text-cyan-700 dark:text-cyan-400">(選択のみ)</span>
-                          </span>
-                          {canEdit && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDeleteEvent(event.id, event.name)}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
-                            </Button>
-                          )}
-                        </div>
-                      ))}
+                      .map((event) => {
+                        // オーシャンマン/オーシャンウーマン系の種目は性別表記を除外
+                        const hideGenderLabel = [
+                          'オーシャンマン',
+                          'オーシャンウーマン',
+                          'オーシャンマンリレー',
+                          'オーシャンウーマンリレー'
+                        ].includes(event.name);
+                        
+                        return (
+                          <div
+                            key={event.name}
+                            className="flex items-center justify-between p-3 bg-cyan-100 dark:bg-cyan-950 border border-cyan-300 dark:border-cyan-700 rounded-lg"
+                          >
+                            <span className="text-sm font-semibold text-black dark:text-white">
+                              {event.name}{!hideGenderLabel && '（男女）'}
+                              <span className="ml-2 text-xs font-normal text-cyan-700 dark:text-cyan-400">(選択のみ)</span>
+                            </span>
+                            {canEdit && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDeleteEvent(event.id, event.name)}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })}
                   </div>
                 )}
               </div>
@@ -923,26 +953,36 @@ export default function EntrySettingsEditor({
                       ).values()
                     )
                       .sort((a, b) => a.displayOrder - b.displayOrder)
-                      .map((event) => (
-                        <div
-                          key={event.name}
-                          className="flex items-center justify-between p-3 bg-cyan-100 dark:bg-cyan-950 border border-cyan-300 dark:border-cyan-700 rounded-lg"
-                        >
-                          <span className="text-sm font-semibold text-black dark:text-white">
-                            {event.name}（男女）
-                            <span className="ml-2 text-xs font-normal text-cyan-700 dark:text-cyan-400">(選択のみ)</span>
-                          </span>
-                          {canEdit && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDeleteEvent(event.id, event.name)}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
-                            </Button>
-                          )}
-                        </div>
-                      ))}
+                      .map((event) => {
+                        // オーシャンマン/オーシャンウーマン系の種目は性別表記を除外
+                        const hideGenderLabel = [
+                          'オーシャンマン',
+                          'オーシャンウーマン',
+                          'オーシャンマンリレー',
+                          'オーシャンウーマンリレー'
+                        ].includes(event.name);
+                        
+                        return (
+                          <div
+                            key={event.name}
+                            className="flex items-center justify-between p-3 bg-cyan-100 dark:bg-cyan-950 border border-cyan-300 dark:border-cyan-700 rounded-lg"
+                          >
+                            <span className="text-sm font-semibold text-black dark:text-white">
+                              {event.name}{!hideGenderLabel && '（男女）'}
+                              <span className="ml-2 text-xs font-normal text-cyan-700 dark:text-cyan-400">(選択のみ)</span>
+                            </span>
+                            {canEdit && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDeleteEvent(event.id, event.name)}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })}
                   </div>
                 )}
               </div>
