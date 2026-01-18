@@ -62,15 +62,15 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    // PF_ADMIN 権限チェック
+    // JLA_ADMIN または PF_ADMIN 権限チェック
     const user = await prisma.user.findUnique({
       where: { id: sess.userId },
       select: { role: true },
     });
 
-    if (user?.role !== 'PF_ADMIN') {
+    if (user?.role !== 'PF_ADMIN' && user?.role !== 'JLA_ADMIN') {
       return NextResponse.json(
-        { error: 'プラットフォーム管理者権限が必要です' },
+        { error: 'JLA管理者権限が必要です' },
         { status: 403 }
       );
     }
@@ -184,13 +184,13 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
 
     // 自分の資格かチェック
     if (qualification.userId !== sess.userId) {
-      // PF_ADMIN ならOK
+      // JLA_ADMIN または PF_ADMIN ならOK
       const user = await prisma.user.findUnique({
         where: { id: sess.userId },
         select: { role: true },
       });
 
-      if (user?.role !== 'PF_ADMIN') {
+      if (user?.role !== 'PF_ADMIN' && user?.role !== 'JLA_ADMIN') {
         return NextResponse.json(
           { error: '権限がありません' },
           { status: 403 }
