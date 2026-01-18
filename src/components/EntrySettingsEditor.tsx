@@ -1107,7 +1107,7 @@ export default function EntrySettingsEditor({
                 disabled={!canEdit}
               />
             </div>
-            <p className="text-sm text-gray-500">1種目あたりの基本料金を設定します</p>
+            <p className="text-sm text-gray-500">エントリーの基本料金を設定します（種目数に関わらず固定）</p>
           </div>
 
           {/* 複数種目割増 */}
@@ -1144,7 +1144,7 @@ export default function EntrySettingsEditor({
                       disabled={!canEdit}
                       className="w-24"
                     />
-                    <span className="text-sm">種目以降は1種目あたり</span>
+                    <span className="text-sm">種目以上1種目につき</span>
                     <Input
                       type="number"
                       min="0"
@@ -1159,7 +1159,7 @@ export default function EntrySettingsEditor({
                       disabled={!canEdit}
                       className="w-32"
                     />
-                    <span className="text-sm">円</span>
+                    <span className="text-sm">円追加</span>
                     {canEdit && (
                       <Button
                         variant="ghost"
@@ -1176,7 +1176,7 @@ export default function EntrySettingsEditor({
                 ))}
               </div>
             )}
-            <p className="text-sm text-gray-500">指定種目数以降の1種目あたりの料金を設定します（例: 3種目以降は1種目3,000円）</p>
+            <p className="text-sm text-gray-500">指定種目数以上になると、1種目増えるごとに追加される料金を設定します（例: 3種目以上1,000円追加）</p>
           </div>
 
           {/* チーム種目のみ料金 */}
