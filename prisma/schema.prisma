@@ -349,7 +349,7 @@ model Competition {
   entryStartDate    DateTime?       // エントリー開始日時
   entryEndDate      DateTime?       // エントリー終了日時
   maxParticipants   Int?            // 最大参加者数
-  entryFee          Json?           // 参加費設定（JSON: {baseFee, multiEventSurcharge: [{minEvents, additionalFee}], teamOnlyFee}）
+  entryFee          Json?           // 参加費設定（JSON: {baseFee, multiEventSurcharge: [{minEvents, feePerEvent}], teamOnlyFee}）
   
   // 関係組織情報
   sponsors          String?         @db.Text // 後援（複数の場合は改行区切り）
