@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/server/db";
-import bcrypt from "bcryptjs";
+import bcrypt from "bcrypt";
 import { signSession } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
@@ -18,14 +18,14 @@ export async function POST(req: NextRequest) {
     }
 
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user || !user.hashedPassword) {
+    if (!user || !user.passwordHash) {
       return NextResponse.json(
         { error: "認証に失敗しました" },
         { status: 401 }
       );
     }
 
-    const ok = await bcrypt.compare(password, user.hashedPassword);
+    const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) {
       return NextResponse.json(
         { error: "認証に失敗しました" },
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
       path: "/",
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+      maxAge: 60 * 60 * 24 * 30, // 30日間（再ログインの手間を削減）
     });
 
     return NextResponse.json({ ok: true });

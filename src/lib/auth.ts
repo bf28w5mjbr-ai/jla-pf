@@ -3,9 +3,12 @@ import { SignJWT, jwtVerify } from "jose";
 const secret = new TextEncoder().encode(process.env.AUTH_SECRET);
 const ALG = "HS256";
 
+// セッション有効期限: 30日間（ユーザーに再ログインの手間をかけない）
+const DEFAULT_SESSION_DURATION = 60 * 60 * 24 * 30; // 30 days
+
 export type SessionPayload = { userId: string };
 
-export async function signSession(payload: SessionPayload, maxAgeSec = 60 * 60 * 24 * 7) {
+export async function signSession(payload: SessionPayload, maxAgeSec = DEFAULT_SESSION_DURATION) {
   return await new SignJWT(payload)
     .setProtectedHeader({ alg: ALG })
     .setIssuedAt()

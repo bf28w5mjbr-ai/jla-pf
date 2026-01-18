@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import Link from "next/link";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -117,6 +118,26 @@ export default function LoginForm() {
         >
           {submitting ? "ログイン中..." : "ログイン"}
         </button>
+
+        <div className="text-center space-y-2">
+          <Link 
+            href="/login/sms" 
+            className="block w-full rounded border border-gray-300 px-4 py-2 text-center hover:bg-gray-50"
+          >
+            📱 SMS認証でログイン
+          </Link>
+        </div>
+
+        <div className="text-center text-sm text-gray-600">
+          アカウントをお持ちでない方は{" "}
+          <Link href="/register/sms" className="text-blue-600 hover:underline">
+            SMS認証で新規登録
+          </Link>
+          {" "}または{" "}
+          <Link href="/register" className="text-blue-600 hover:underline">
+            メールで新規登録
+          </Link>
+        </div>
       </form>
     </main>
   );
