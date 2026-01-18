@@ -122,11 +122,16 @@ export default function EntrySettingsEditor({
   const [oceanIndividualError, setOceanIndividualError] = useState<string | null>(null);
   const [oceanTeamError, setOceanTeamError] = useState<string | null>(null);
 
+  // デフォルト種目追加のローディング状態
+  const [isAddingDefaultEvents, setIsAddingDefaultEvents] = useState<string | null>(null);
+
   // Category selection state
   const [selectedCategory, setSelectedCategory] = useState<"POOL" | "OCEAN">("POOL");
 
   // デフォルト種目を一括追加
   const handleAddDefaultEvents = async (category: "POOL" | "OCEAN", type: "INDIVIDUAL" | "TEAM") => {
+    const loadingKey = `${category}-${type}`;
+    setIsAddingDefaultEvents(loadingKey);
     const defaultEventNames = DEFAULT_EVENTS[category][type];
     const existingEventNames = new Set(
       events
@@ -196,6 +201,8 @@ export default function EntrySettingsEditor({
       console.error("デフォルト種目追加エラー:", error);
       toast.dismiss();
       toast.error("デフォルト種目の追加に失敗しました");
+    } finally {
+      setIsAddingDefaultEvents(null);
     }
   };
 
@@ -649,9 +656,10 @@ export default function EntrySettingsEditor({
                         variant="outline"
                         size="sm"
                         onClick={() => handleAddDefaultEvents("POOL", "INDIVIDUAL")}
+                        disabled={isAddingDefaultEvents === "POOL-INDIVIDUAL"}
                         className="text-xs"
                       >
-                        デフォルト種目を追加
+                        {isAddingDefaultEvents === "POOL-INDIVIDUAL" ? "追加中..." : "デフォルト種目を追加"}
                       </Button>
                       <Button
                         type="button"
@@ -756,9 +764,10 @@ export default function EntrySettingsEditor({
                       variant="outline"
                       size="sm"
                       onClick={() => handleAddDefaultEvents("POOL", "TEAM")}
+                      disabled={isAddingDefaultEvents === "POOL-TEAM"}
                       className="text-xs"
                     >
-                      デフォルト種目を追加
+                      {isAddingDefaultEvents === "POOL-TEAM" ? "追加中..." : "デフォルト種目を追加"}
                     </Button>
                     <Button
                       type="button"
@@ -868,9 +877,10 @@ export default function EntrySettingsEditor({
                         variant="outline"
                         size="sm"
                         onClick={() => handleAddDefaultEvents("OCEAN", "INDIVIDUAL")}
+                        disabled={isAddingDefaultEvents === "OCEAN-INDIVIDUAL"}
                         className="text-xs"
                       >
-                        デフォルト種目を追加
+                        {isAddingDefaultEvents === "OCEAN-INDIVIDUAL" ? "追加中..." : "デフォルト種目を追加"}
                       </Button>
                       <Button
                         type="button"
@@ -975,9 +985,10 @@ export default function EntrySettingsEditor({
                       variant="outline"
                       size="sm"
                       onClick={() => handleAddDefaultEvents("OCEAN", "TEAM")}
+                      disabled={isAddingDefaultEvents === "OCEAN-TEAM"}
                       className="text-xs"
                     >
-                      デフォルト種目を追加
+                      {isAddingDefaultEvents === "OCEAN-TEAM" ? "追加中..." : "デフォルト種目を追加"}
                     </Button>
                     <Button
                       type="button"
