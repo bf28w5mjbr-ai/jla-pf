@@ -19,8 +19,8 @@ type Qualification = {
   user: {
     id: string;
     email: string;
-    firstName: string | null;
-    lastName: string | null;
+    givenName: string | null;
+    familyName: string | null;
     phoneNumber: string | null;
   };
 };
@@ -132,7 +132,7 @@ export default function QualificationApprovalTable({ qualifications: initialQual
             {qualifications.map((qual) => (
               <TableRow key={qual.id}>
                 <TableCell>
-                  {qual.user.lastName} {qual.user.firstName}
+                  {qual.user.familyName} {qual.user.givenName}
                 </TableCell>
                 <TableCell>{qual.user.email}</TableCell>
                 <TableCell>

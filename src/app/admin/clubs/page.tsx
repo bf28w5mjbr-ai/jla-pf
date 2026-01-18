@@ -27,7 +27,7 @@ export default async function AdminClubsPage() {
     select: { role: true }
   });
 
-  if (!user || (user.role !== 'ORG_ADMIN' && user.role !== 'SUPER_ADMIN')) {
+  if (!user || (user.role !== 'ORG_ADMIN' && user.role !== 'PF_ADMIN')) {
     redirect("/dashboard");
   }
 

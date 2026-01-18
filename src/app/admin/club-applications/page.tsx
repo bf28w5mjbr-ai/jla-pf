@@ -43,10 +43,10 @@ export default async function AdminClubApplicationsPage() {
   // APPLYING 状態のクラブ申請を取得
   const pendingApplications = await prisma.club.findMany({
     where: {
-      registrationStatus: 'APPLYING',
+      status: 'APPLYING',
     },
     include: {
-      ownerUser: {
+      creator: {
         select: {
           id: true,
           email: true,

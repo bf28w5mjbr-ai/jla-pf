@@ -20,13 +20,13 @@ export default async function AdminQualificationsPage() {
     redirect('/login');
   }
 
-  // JLA_ADMIN または PF_ADMIN 権限チェック
+  // ORG_ADMIN または PF_ADMIN 権限チェック
   const user = await prisma.user.findUnique({
     where: { id: sess.userId },
-    select: { role: true },
+    select: { role: true }
   });
 
-  if (user?.role !== 'PF_ADMIN' && user?.role !== 'JLA_ADMIN') {
+  if (user?.role !== 'PF_ADMIN' && user?.role !== 'ORG_ADMIN') {
     return (
       <PageLayout title="資格承認" description="保留中の資格申請を承認または却下できます">
         <Card>
@@ -50,8 +50,8 @@ export default async function AdminQualificationsPage() {
         select: {
           id: true,
           email: true,
-          firstName: true,
-          lastName: true,
+          givenName: true,
+          familyName: true,
           phoneNumber: true,
         },
       },
@@ -65,7 +65,13 @@ export default async function AdminQualificationsPage() {
       description="保留中の資格申請を承認または却下できます"
     >
       <Card padding="none">
-        <QualificationApprovalTable qualifications={pendingQualifications} />
+        <QualificationApprovalTable qualifications={pendingQualifications.map(q => ({
+          ...q,
+          createdAt: q.createdAt.toISOString(),
+          updatedAt: q.updatedAt.toISOString(),
+          issueDate: q.issueDate?.toISOString() || null,
+          expiryDate: q.expiryDate?.toISOString() || null,
+        }))} />
       </Card>
     </PageLayout>
   );

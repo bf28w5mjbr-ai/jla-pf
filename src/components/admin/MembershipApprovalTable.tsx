@@ -16,8 +16,8 @@ type Membership = {
   user: {
     id: string;
     email: string;
-    firstName: string | null;
-    lastName: string | null;
+    givenName: string | null;
+    familyName: string | null;
     phoneNumber: string | null;
   };
   club: {
@@ -122,7 +122,7 @@ export default function MembershipApprovalTable({ memberships: initialMembership
             {memberships.map((membership) => (
               <TableRow key={membership.id}>
                 <TableCell>
-                  {membership.user.lastName} {membership.user.firstName}
+                  {membership.user.familyName} {membership.user.givenName}
                 </TableCell>
                 <TableCell>{membership.user.email}</TableCell>
                 <TableCell>{membership.user.phoneNumber || '-'}</TableCell>

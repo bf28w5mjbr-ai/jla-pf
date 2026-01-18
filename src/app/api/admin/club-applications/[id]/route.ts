@@ -38,7 +38,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     const application = await prisma.club.findUnique({
       where: { id },
       include: {
-        ownerUser: {
+        creator: {
           select: {
             id: true,
             email: true,
@@ -108,8 +108,8 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       select: {
         id: true,
         name: true,
-        ownerUserId: true,
-        registrationStatus: true,
+        creatorId: true,
+        status: true,
       },
     });
 
@@ -135,10 +135,10 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       const updatedClub = await tx.club.update({
         where: { id },
         data: {
-          registrationStatus: data.status,
+          status: data.status,
         },
         include: {
-          ownerUser: {
+          creator: {
             select: {
               id: true,
               email: true,
@@ -154,7 +154,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       if (data.status === 'JLA_APPROVED') {
         const existingMembership = await tx.membership.findFirst({
           where: {
-            userId: club.ownerUserId,
+            userId: club.creatorId,
             clubId: id,
           },
         });
@@ -162,7 +162,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
         if (!existingMembership) {
           await tx.membership.create({
             data: {
-              userId: club.ownerUserId,
+              userId: club.creatorId,
               clubId: id,
               role: 'OWNER',
               status: 'APPROVED',

@@ -29,8 +29,8 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
           select: {
             id: true,
             email: true,
-            firstName: true,
-            lastName: true,
+            givenName: true,
+            familyName: true,
             phoneNumber: true,
           },
         },
@@ -129,8 +129,8 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
           select: {
             id: true,
             email: true,
-            firstName: true,
-            lastName: true,
+            givenName: true,
+            familyName: true,
           },
         },
         club: {

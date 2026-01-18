@@ -59,8 +59,8 @@ export default async function AdminMembershipsPage() {
         select: {
           id: true,
           email: true,
-          firstName: true,
-          lastName: true,
+          givenName: true,
+          familyName: true,
           phoneNumber: true,
         },
       },
@@ -80,7 +80,10 @@ export default async function AdminMembershipsPage() {
       description="保留中のメンバーシップ申請を承認または却下できます"
     >
       <Card padding="none">
-        <MembershipApprovalTable memberships={pendingMemberships} />
+        <MembershipApprovalTable memberships={pendingMemberships.map(m => ({
+          ...m,
+          createdAt: m.createdAt.toISOString(),
+        }))} />
       </Card>
     </PageLayout>
   );

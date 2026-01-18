@@ -29,8 +29,8 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
           select: {
             id: true,
             email: true,
-            firstName: true,
-            lastName: true,
+            givenName: true,
+            familyName: true,
             phoneNumber: true,
           },
         },
@@ -62,13 +62,13 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    // JLA_ADMIN または PF_ADMIN 権限チェック
+    // ORG_ADMIN または PF_ADMIN 権限チェック
     const user = await prisma.user.findUnique({
       where: { id: sess.userId },
-      select: { role: true },
+      select: { role: true }
     });
 
-    if (user?.role !== 'PF_ADMIN' && user?.role !== 'JLA_ADMIN') {
+    if (user?.role !== 'PF_ADMIN' && user?.role !== 'ORG_ADMIN') {
       return NextResponse.json(
         { error: 'JLA管理者権限が必要です' },
         { status: 403 }
@@ -120,8 +120,8 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
           select: {
             id: true,
             email: true,
-            firstName: true,
-            lastName: true,
+            givenName: true,
+            familyName: true,
           },
         },
       },
@@ -184,13 +184,13 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
 
     // 自分の資格かチェック
     if (qualification.userId !== sess.userId) {
-      // JLA_ADMIN または PF_ADMIN ならOK
+      // ORG_ADMIN または PF_ADMIN ならOK
       const user = await prisma.user.findUnique({
         where: { id: sess.userId },
-        select: { role: true },
+        select: { role: true }
       });
 
-      if (user?.role !== 'PF_ADMIN' && user?.role !== 'JLA_ADMIN') {
+      if (user?.role !== 'PF_ADMIN' && user?.role !== 'ORG_ADMIN') {
         return NextResponse.json(
           { error: '権限がありません' },
           { status: 403 }

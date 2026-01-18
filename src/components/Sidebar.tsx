@@ -26,7 +26,7 @@ export default function Sidebar({ userRole, isClubOwner, organizations = [] }: S
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
 
-  const isOrgAdmin = userRole === 'ORG_ADMIN' || userRole === 'SUPER_ADMIN';
+  const isOrgAdmin = userRole === 'ORG_ADMIN' || userRole === 'PF_ADMIN';
 
   const menuItems: MenuItem[] = [
     {

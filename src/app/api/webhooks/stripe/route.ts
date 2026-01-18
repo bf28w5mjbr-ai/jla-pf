@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
-import { prisma } from "@/src/server/db"; // ← Prismaシングルトン（前メッセで案内済み）
+import { prisma } from "@/server/db";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2025-10-29.clover" });
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET!;

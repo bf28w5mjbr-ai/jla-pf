@@ -4,9 +4,11 @@ import { prisma } from "@/server/db";
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string; membershipId: string } }
+  { params }: { params: Promise<{ id: string; membershipId: string }> }
 ) {
   try {
+    const { id, membershipId } = await params;
+
     // セッション確認
     const token = req.cookies.get("session")?.value;
     const sess = token ? await verifySession(token) : null;
@@ -14,8 +16,7 @@ export async function DELETE(
       return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
     }
 
-    const clubId = params.id;
-    const membershipId = params.membershipId;
+    const clubId = id;
 
     // 現在のユーザーがオーナーまたは管理者かチェック
     const userMembership = await prisma.membership.findUnique({

@@ -4,9 +4,11 @@ import { prisma } from "@/server/db";
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { clubId: string } }
+  { params }: { params: Promise<{ clubId: string }> }
 ) {
   try {
+    const { clubId } = await params;
+    
     // セッション確認
     const token = req.cookies.get("session")?.value;
     const sess = token ? await verifySession(token) : null;
@@ -20,7 +22,7 @@ export async function PUT(
       select: { role: true }
     });
 
-    if (!user || (user.role !== 'ORG_ADMIN' && user.role !== 'SUPER_ADMIN')) {
+    if (!user || (user.role !== 'ORG_ADMIN' && user.role !== 'PF_ADMIN')) {
       return NextResponse.json(
         { error: "管理者権限が必要です" },
         { status: 403 }
@@ -38,7 +40,7 @@ export async function PUT(
 
     // クラブのステータスを更新
     const club = await prisma.club.update({
-      where: { id: params.clubId },
+      where: { id: clubId },
       data: { status },
     });
 

@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
       prisma.club.findMany({
         where,
         include: {
-          ownerUser: {
+          creator: {
             select: {
               id: true,
               email: true,

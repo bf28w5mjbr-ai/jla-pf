@@ -22,19 +22,22 @@ type ClubApplication = {
   id: string;
   name: string;
   establishedYear: number | null;
-  watchPlace: string | null;
-  officeAddress: string | null;
-  officeTel: string | null;
-  officeAttention: string | null;
-  registrationStatus: string;
+  patrolLocation: string | null;
+  officePostalCode: string | null;
+  officePrefecture: string | null;
+  officeCity: string | null;
+  officeAddressLine1: string | null;
+  officePhone: string | null;
+  mailingName: string | null;
+  status: string;
   createdAt: string;
-  ownerUser: {
+  creator: {
     id: string;
     email: string;
     familyName: string | null;
     givenName: string | null;
     phoneNumber: string | null;
-  };
+  } | null;
 };
 
 type Props = {
@@ -231,7 +234,7 @@ export default function ClubApplicationTable({ applications: initialApplications
             {selectedApplication && (
               <div className="text-sm text-muted-foreground">
                 <p><strong>クラブ名:</strong> {selectedApplication.name}</p>
-                <p><strong>申請者:</strong> {selectedApplication.ownerUser.familyName} {selectedApplication.ownerUser.givenName}</p>
+                <p><strong>申請者:</strong> {selectedApplication.creator?.familyName} {selectedApplication.creator?.givenName}</p>
               </div>
             )}
           </div>
