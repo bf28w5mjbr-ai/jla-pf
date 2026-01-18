@@ -58,7 +58,7 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { baseFee, multiEventDiscount, teamOnlyFee } = body;
+    const { baseFee, multiEventSurcharge, teamOnlyFee } = body;
 
     // バリデーション
     if (typeof baseFee !== "number" || baseFee < 0) {
@@ -68,23 +68,23 @@ export async function PUT(
       );
     }
 
-    if (multiEventDiscount) {
-      if (!Array.isArray(multiEventDiscount)) {
+    if (multiEventSurcharge) {
+      if (!Array.isArray(multiEventSurcharge)) {
         return NextResponse.json(
-          { message: "複数種目割引の形式が正しくありません" },
+          { message: "複数種目割増の形式が正しくありません" },
           { status: 400 }
         );
       }
 
-      for (const discount of multiEventDiscount) {
+      for (const surcharge of multiEventSurcharge) {
         if (
-          typeof discount.minEvents !== "number" ||
-          discount.minEvents < 2 ||
-          typeof discount.discountedFee !== "number" ||
-          discount.discountedFee < 0
+          typeof surcharge.minEvents !== "number" ||
+          surcharge.minEvents < 2 ||
+          typeof surcharge.totalFee !== "number" ||
+          surcharge.totalFee < 0
         ) {
           return NextResponse.json(
-            { message: "複数種目割引の設定が正しくありません" },
+            { message: "複数種目割増の設定が正しくありません" },
             { status: 400 }
           );
         }
@@ -101,7 +101,7 @@ export async function PUT(
     // エントリー費用設定を更新
     const entryFeeData = {
       baseFee,
-      multiEventDiscount: multiEventDiscount || [],
+      multiEventSurcharge: multiEventSurcharge || [],
       teamOnlyFee: teamOnlyFee || null,
     };
 
