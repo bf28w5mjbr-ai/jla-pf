@@ -80,8 +80,8 @@ export async function PUT(
         if (
           typeof surcharge.minEvents !== "number" ||
           surcharge.minEvents < 2 ||
-          typeof surcharge.totalFee !== "number" ||
-          surcharge.totalFee < 0
+          typeof surcharge.additionalFee !== "number" ||
+          surcharge.additionalFee < 0
         ) {
           return NextResponse.json(
             { message: "複数種目割増の設定が正しくありません" },

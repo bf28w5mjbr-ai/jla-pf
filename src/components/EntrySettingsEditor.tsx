@@ -62,7 +62,7 @@ type EntryFee = {
   baseFee: number;
   multiEventSurcharge?: {
     minEvents: number;
-    totalFee: number;
+    additionalFee: number;
   }[];
   teamOnlyFee?: number;
 };
@@ -99,10 +99,10 @@ export default function EntrySettingsEditor({
   // エントリー費用設定
   const [baseFee, setBaseFee] = useState(initialData.entryFee?.baseFee?.toString() || "");
   const [teamOnlyFee, setTeamOnlyFee] = useState(initialData.entryFee?.teamOnlyFee?.toString() || "");
-  const [multiEventSurcharges, setMultiEventSurcharges] = useState<{minEvents: string; totalFee: string}[]>(
+  const [multiEventSurcharges, setMultiEventSurcharges] = useState<{minEvents: string; additionalFee: string}[]>(
     initialData.entryFee?.multiEventSurcharge?.map(d => ({
       minEvents: d.minEvents.toString(),
-      totalFee: d.totalFee.toString()
+      additionalFee: d.additionalFee.toString()
     })) || []
   );
   const [isUpdatingFee, setIsUpdatingFee] = useState(false);
@@ -327,10 +327,10 @@ export default function EntrySettingsEditor({
 
     // 複数種目割増のバリデーション
     const surcharges = multiEventSurcharges
-      .filter(d => d.minEvents && d.totalFee)
+      .filter(d => d.minEvents && d.additionalFee)
       .map(d => ({
         minEvents: parseInt(d.minEvents),
-        totalFee: parseFloat(d.totalFee)
+        additionalFee: parseFloat(d.additionalFee)
       }));
 
     for (const surcharge of surcharges) {
@@ -338,8 +338,8 @@ export default function EntrySettingsEditor({
         toast.error("複数種目割増は2種目以上で設定してください");
         return;
       }
-      if (isNaN(surcharge.totalFee) || surcharge.totalFee < 0) {
-        toast.error("合計料金を正しく入力してください");
+      if (isNaN(surcharge.additionalFee) || surcharge.additionalFee < 0) {
+        toast.error("追加料金を正しく入力してください");
         return;
       }
     }
@@ -1118,7 +1118,7 @@ export default function EntrySettingsEditor({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setMultiEventSurcharges([...multiEventSurcharges, { minEvents: "", totalFee: "" }])}
+                  onClick={() => setMultiEventSurcharges([...multiEventSurcharges, { minEvents: "", additionalFee: "" }])}
                 >
                   <Plus className="h-4 w-4 mr-1" />
                   割増を追加
@@ -1144,22 +1144,22 @@ export default function EntrySettingsEditor({
                       disabled={!canEdit}
                       className="w-24"
                     />
-                    <span className="text-sm">種目以上</span>
+                    <span className="text-sm">種目以上から1種目につき</span>
                     <Input
                       type="number"
                       min="0"
                       step="100"
-                      placeholder="合計料金"
-                      value={surcharge.totalFee}
+                      placeholder="追加料金"
+                      value={surcharge.additionalFee}
                       onChange={(e) => {
                         const newSurcharges = [...multiEventSurcharges];
-                        newSurcharges[index].totalFee = e.target.value;
+                        newSurcharges[index].additionalFee = e.target.value;
                         setMultiEventSurcharges(newSurcharges);
                       }}
                       disabled={!canEdit}
                       className="w-32"
                     />
-                    <span className="text-sm">円</span>
+                    <span className="text-sm">円追加</span>
                     {canEdit && (
                       <Button
                         variant="ghost"
@@ -1176,7 +1176,7 @@ export default function EntrySettingsEditor({
                 ))}
               </div>
             )}
-            <p className="text-sm text-gray-500">指定種目数以上エントリーする場合の合計料金を設定します</p>
+            <p className="text-sm text-gray-500">指定種目数以上エントリーする場合、1種目ごとに追加される料金を設定します</p>
           </div>
 
           {/* チーム種目のみ料金 */}
