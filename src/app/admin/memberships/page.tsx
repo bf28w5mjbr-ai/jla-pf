@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { verifySession } from '@/lib/auth';
 import { prisma } from '@/server/db';
+import PageLayout from '@/components/ui/PageLayout';
+import { Card } from '@/components/ui/card';
 import MembershipApprovalTable from '@/components/admin/MembershipApprovalTable';
 
 export const metadata: Metadata = {
@@ -34,12 +36,15 @@ export default async function AdminMembershipsPage() {
 
   if (clubIds.length === 0) {
     return (
-      <div className="container mx-auto py-8 px-4">
-        <h1 className="text-3xl font-bold mb-8">メンバーシップ承認</h1>
-        <p className="text-muted-foreground">
-          クラブの管理者権限がありません。
-        </p>
-      </div>
+      <PageLayout title="メンバーシップ承認" description="保留中のメンバーシップ申請を承認または却下できます">
+        <Card>
+          <div className="p-6 text-center">
+            <p className="text-gray-600 dark:text-gray-400">
+              クラブの管理者権限がありません。
+            </p>
+          </div>
+        </Card>
+      </PageLayout>
     );
   }
 
@@ -70,9 +75,13 @@ export default async function AdminMembershipsPage() {
   });
 
   return (
-    <div className="container mx-auto py-8 px-4">
-      <h1 className="text-3xl font-bold mb-8">メンバーシップ承認</h1>
-      <MembershipApprovalTable memberships={pendingMemberships} />
-    </div>
+    <PageLayout 
+      title="メンバーシップ承認" 
+      description="保留中のメンバーシップ申請を承認または却下できます"
+    >
+      <Card padding="none">
+        <MembershipApprovalTable memberships={pendingMemberships} />
+      </Card>
+    </PageLayout>
   );
 }

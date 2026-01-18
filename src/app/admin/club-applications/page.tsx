@@ -5,13 +5,13 @@ import { verifySession } from '@/lib/auth';
 import { prisma } from '@/server/db';
 import PageLayout from '@/components/ui/PageLayout';
 import { Card } from '@/components/ui/card';
-import QualificationApprovalTable from '@/components/admin/QualificationApprovalTable';
+import ClubApplicationTable from '@/components/admin/ClubApplicationTable';
 
 export const metadata: Metadata = {
-  title: '資格承認 | JLA PF Admin',
+  title: 'クラブ承認 | JLA PF Admin',
 };
 
-export default async function AdminQualificationsPage() {
+export default async function AdminClubApplicationsPage() {
   const jar = await cookies();
   const token = jar.get('session')?.value ?? null;
   const sess = token ? await verifySession(token) : null;
@@ -20,19 +20,19 @@ export default async function AdminQualificationsPage() {
     redirect('/login');
   }
 
-  // JLA_ADMIN または PF_ADMIN 権限チェック
+  // PF_ADMIN権限チェック
   const user = await prisma.user.findUnique({
     where: { id: sess.userId },
     select: { role: true },
   });
 
-  if (user?.role !== 'PF_ADMIN' && user?.role !== 'JLA_ADMIN') {
+  if (user?.role !== 'PF_ADMIN') {
     return (
-      <PageLayout title="資格承認" description="保留中の資格申請を承認または却下できます">
+      <PageLayout title="クラブ承認" description="保留中のクラブ申請を承認または却下できます">
         <Card>
           <div className="p-6 text-center">
             <p className="text-gray-600 dark:text-gray-400">
-              JLA管理者権限が必要です。
+              プラットフォーム管理者権限が必要です。
             </p>
           </div>
         </Card>
@@ -40,18 +40,18 @@ export default async function AdminQualificationsPage() {
     );
   }
 
-  // PENDING 状態の資格を取得
-  const pendingQualifications = await prisma.qualification.findMany({
+  // APPLYING 状態のクラブ申請を取得
+  const pendingApplications = await prisma.club.findMany({
     where: {
-      status: 'PENDING',
+      registrationStatus: 'APPLYING',
     },
     include: {
-      user: {
+      ownerUser: {
         select: {
           id: true,
           email: true,
-          firstName: true,
-          lastName: true,
+          familyName: true,
+          givenName: true,
           phoneNumber: true,
         },
       },
@@ -61,11 +61,14 @@ export default async function AdminQualificationsPage() {
 
   return (
     <PageLayout 
-      title="資格承認" 
-      description="保留中の資格申請を承認または却下できます"
+      title="クラブ承認" 
+      description="保留中のクラブ申請を承認または却下できます"
     >
       <Card padding="none">
-        <QualificationApprovalTable qualifications={pendingQualifications} />
+        <ClubApplicationTable applications={pendingApplications.map(app => ({
+          ...app,
+          createdAt: app.createdAt.toISOString(),
+        }))} />
       </Card>
     </PageLayout>
   );
