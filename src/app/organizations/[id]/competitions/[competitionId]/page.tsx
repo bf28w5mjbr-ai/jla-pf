@@ -178,6 +178,7 @@ export default async function CompetitionDetailPage({
         <TabsList>
           <TabsTrigger value="page">ページ設定</TabsTrigger>
           <TabsTrigger value="entry">エントリー設定</TabsTrigger>
+          <TabsTrigger value="official">オフィシャル設定</TabsTrigger>
         </TabsList>
 
         {/* ページ設定タブ */}
@@ -363,6 +364,18 @@ export default async function CompetitionDetailPage({
             })) as any}
             canEdit={canEdit}
           />
+        </TabsContent>
+
+        {/* オフィシャル設定タブ */}
+        <TabsContent value="official" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>オフィシャル設定</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-gray-500">オフィシャル（審判・役員）の設定機能は準備中です。</p>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </PageLayout>
