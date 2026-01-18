@@ -401,12 +401,14 @@ export default function CompetitionRelationsEditor({
               </div>
             )}
 
-            {cooperators && (
+            {(cooperators || (cooperatorsLogos && cooperatorsLogos.length > 0)) && (
               <div>
                 <h3 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-2">協賛</h3>
-                <div className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap mb-3">
-                  {cooperators}
-                </div>
+                {cooperators && (
+                  <div className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap mb-3">
+                    {cooperators}
+                  </div>
+                )}
                 {cooperatorsLogos && cooperatorsLogos.length > 0 && (
                   <div className="flex flex-wrap gap-3 mt-2">
                     {cooperatorsLogos.map((logo, index) => (
@@ -436,12 +438,14 @@ export default function CompetitionRelationsEditor({
               </div>
             )}
 
-            {grants && (
+            {(grants || (grantsLogos && grantsLogos.length > 0)) && (
               <div>
                 <h3 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-2">助成</h3>
-                <div className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap mb-3">
-                  {grants}
-                </div>
+                {grants && (
+                  <div className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap mb-3">
+                    {grants}
+                  </div>
+                )}
                 {grantsLogos && grantsLogos.length > 0 && (
                   <div className="flex flex-wrap gap-3 mt-2">
                     {grantsLogos.map((logo, index) => (
