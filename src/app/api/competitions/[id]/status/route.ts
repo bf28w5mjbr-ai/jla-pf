@@ -62,9 +62,24 @@ export async function PUT(
     }
 
     // ステータスを更新
+    const updateData: any = { status };
+    
+    // PUBLISHEDに変更する場合、isPublishedとpublishedAtも設定
+    if (status === "PUBLISHED") {
+      updateData.isPublished = true;
+      if (!competition.publishedAt) {
+        updateData.publishedAt = new Date();
+      }
+    }
+    
+    // DRAFTに戻す場合、isPublishedをfalseに
+    if (status === "DRAFT") {
+      updateData.isPublished = false;
+    }
+
     const updatedCompetition = await prisma.competition.update({
       where: { id },
-      data: { status },
+      data: updateData,
     });
 
     return NextResponse.json(updatedCompetition);
