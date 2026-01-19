@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Check } from "lucide-react";
 
 type OfficialPosition = {
   positionName: string;
@@ -32,6 +32,7 @@ export function OfficialSettingsEditor({
       : []
   );
   const [isSaving, setIsSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
 
   const addPosition = () => {
     setPositions([...positions, { positionName: "", count: 1 }]);
@@ -83,6 +84,8 @@ export function OfficialSettingsEditor({
       }
 
       toast.success("オフィシャル設定を保存しました");
+      setJustSaved(true);
+      setTimeout(() => setJustSaved(false), 2000);
     } catch (error) {
       console.error("Failed to save official positions:", error);
       toast.error(
@@ -170,8 +173,21 @@ export function OfficialSettingsEditor({
           </div>
 
           <div className="flex justify-end pt-4 border-t">
-            <Button onClick={handleSave} disabled={isSaving}>
-              {isSaving ? "保存中..." : "保存"}
+            <Button 
+              onClick={handleSave} 
+              disabled={isSaving || justSaved}
+              className={justSaved ? "bg-green-600 hover:bg-green-700" : ""}
+            >
+              {isSaving ? (
+                "保存中..."
+              ) : justSaved ? (
+                <>
+                  <Check className="h-4 w-4 mr-2" />
+                  保存しました
+                </>
+              ) : (
+                "保存"
+              )}
             </Button>
           </div>
         </CardContent>
