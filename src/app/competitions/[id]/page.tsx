@@ -6,7 +6,8 @@ import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import PageLayout from "@/components/ui/PageLayout";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Calendar, MapPin, Users, Coins } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Calendar, MapPin, Users, Coins, Send } from "lucide-react";
 import Image from "next/image";
 import CompetitionRelationsEditor from "@/components/CompetitionRelationsEditor";
 
@@ -147,6 +148,14 @@ export default async function CompetitionDetailPage({
                   <p className="text-sm text-gray-500 dark:text-gray-400">{competition.nameKana}</p>
                 )}
               </div>
+              {competition.status === "PUBLISHED" && competition.entryStartDate && competition.entryEndDate && (
+                <Link href={`/competitions/${competition.id}/entry`}>
+                  <Button size="lg" className="gap-2">
+                    <Send className="h-5 w-5" />
+                    エントリー
+                  </Button>
+                </Link>
+              )}
             </div>
           </CardContent>
         </Card>
