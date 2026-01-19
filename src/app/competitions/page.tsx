@@ -58,6 +58,23 @@ export default async function CompetitionsPage({
     take: 50,
   });
 
+  // デバッグ: すべての大会のステータスを確認
+  const allCompetitions = await prisma.competition.findMany({
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      isPublished: true,
+      publishedAt: true,
+    },
+    take: 10,
+  });
+  console.log("=== すべての大会（最大10件） ===");
+  console.log(JSON.stringify(allCompetitions, null, 2));
+  console.log("=== 公開中の大会 ===");
+  console.log(`検索条件: ${JSON.stringify(whereCondition)}`);
+  console.log(`取得件数: ${competitions.length}件`);
+
   // 今後開催される大会と過去の大会に分ける
   const now = new Date();
   const upcomingCompetitions = competitions.filter(
