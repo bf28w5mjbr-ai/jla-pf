@@ -14,6 +14,7 @@ import CompetitionRelationsEditor from "@/components/CompetitionRelationsEditor"
 import CompetitionAnnouncementsManager from "@/components/CompetitionAnnouncementsManager";
 import CompetitionAttachmentsManager from "@/components/CompetitionAttachmentsManager";
 import EntrySettingsEditor from "@/components/EntrySettingsEditor";
+import { OfficialSettingsEditor } from "@/components/OfficialSettingsEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -368,14 +369,11 @@ export default async function CompetitionDetailPage({
 
         {/* オフィシャル設定タブ */}
         <TabsContent value="official" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>オフィシャル設定</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-500">オフィシャル（審判・役員）の設定機能は準備中です。</p>
-            </CardContent>
-          </Card>
+          <OfficialSettingsEditor
+            competitionId={competitionId}
+            organizationId={organizationId}
+            officialPositions={competition.officialPositions as any}
+          />
         </TabsContent>
       </Tabs>
     </PageLayout>

@@ -351,6 +351,9 @@ model Competition {
   maxParticipants   Int?            // 最大参加者数
   entryFee          Json?           // 参加費設定（JSON: {baseFee, multiEventSurcharge: [{minEvents, feePerEvent}], teamOnlyFee}）
   
+  // オフィシャル募集設定
+  officialPositions Json?           // オフィシャルポジション設定（JSON: [{positionName: string, count: number}]）
+  
   // 関係組織情報
   sponsors          String?         @db.Text // 後援（複数の場合は改行区切り）
   cooperators       String?         @db.Text // 協賛（複数の場合は改行区切り）
