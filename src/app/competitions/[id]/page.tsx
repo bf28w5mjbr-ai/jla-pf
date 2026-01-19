@@ -59,14 +59,14 @@ export default async function CompetitionDetailPage({
     notFound();
   }
 
-  // 公開されていない大会は表示しない
-  if (competition.status === "DRAFT") {
-    notFound();
-  }
-
   // 現在のユーザーが団体の管理者かどうか
   const userRole = competition.organization.admins[0]?.role;
   const canEdit = userRole === "OWNER" || userRole === "ADMIN";
+
+  // 公開されていない大会は、管理者以外は表示しない
+  if (competition.status === "DRAFT" && !canEdit) {
+    notFound();
+  }
 
   // ユーザーが所属する団体一覧を取得（サイドバー用）
   const userOrganizations = await prisma.organization.findMany({
