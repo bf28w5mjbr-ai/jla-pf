@@ -7,7 +7,6 @@ import { prisma } from "@/server/db";
 import PageLayout from "@/components/ui/PageLayout";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Calendar, MapPin, Building2, ChevronRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import Image from "next/image";
 
 export const dynamic = "force-dynamic";
@@ -31,25 +30,13 @@ export default async function CompetitionsPage({
   }
 
   const params = await searchParams;
-  const statusFilter = params.status;
   const categoryFilter = params.category;
 
-  // 大会一覧を取得（公開中のもの、または自分が管理する団体の大会）
-  const userOrgIds = await prisma.orgAdmin.findMany({
-    where: { userId: session.userId },
-    select: { organizationId: true },
-  });
-
+  // 大会一覧を取得（公開中のもののみ）
   const whereCondition: any = {
-    OR: [
-      { isPublished: true, status: "PUBLISHED" }, // 公開中の大会
-      { organizationId: { in: userOrgIds.map((o) => o.organizationId) } }, // 自分が管理する大会
-    ],
+    isPublished: true,
+    status: "PUBLISHED",
   };
-
-  if (statusFilter && statusFilter !== "ALL") {
-    whereCondition.status = statusFilter;
-  }
 
   if (categoryFilter && categoryFilter !== "ALL") {
     whereCondition.category = categoryFilter;
@@ -258,47 +245,9 @@ export default async function CompetitionsPage({
             <CardTitle>絞り込み</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-wrap gap-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-                  ステータス
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  <Link href="/competitions?status=ALL">
-                    <Button
-                      variant={!statusFilter || statusFilter === "ALL" ? "default" : "outline"}
-                      size="sm"
-                    >
-                      すべて
-                    </Button>
-                  </Link>
-                  <Link href="/competitions?status=PUBLISHED">
-                    <Button
-                      variant={statusFilter === "PUBLISHED" ? "default" : "outline"}
-                      size="sm"
-                    >
-                      公開中
-                    </Button>
-                  </Link>
-                  <Link href="/competitions?status=DRAFT">
-                    <Button
-                      variant={statusFilter === "DRAFT" ? "default" : "outline"}
-                      size="sm"
-                    >
-                      下書き
-                    </Button>
-                  </Link>
-                  <Link href="/competitions?status=COMPLETED">
-                    <Button
-                      variant={statusFilter === "COMPLETED" ? "default" : "outline"}
-                      size="sm"
-                    >
-                      終了
-                    </Button>
-                  </Link>
-                </div>
-              </div>
-            </div>
+            <p className="text-sm text-gray-500">
+              公開中の大会を表示しています
+            </p>
           </CardContent>
         </Card>
 
