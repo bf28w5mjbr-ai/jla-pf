@@ -77,18 +77,10 @@ export async function PUT(
       updateData.isPublished = false;
     }
 
-    console.log(`=== 大会ステータス更新 ===`);
-    console.log(`大会ID: ${id}`);
-    console.log(`大会名: ${competition.name}`);
-    console.log(`更新前 - status: ${competition.status}, isPublished: ${competition.isPublished}`);
-    console.log(`更新データ: ${JSON.stringify(updateData)}`);
-
     const updatedCompetition = await prisma.competition.update({
       where: { id },
       data: updateData,
     });
-
-    console.log(`更新後 - status: ${updatedCompetition.status}, isPublished: ${updatedCompetition.isPublished}, publishedAt: ${updatedCompetition.publishedAt}`);
 
     return NextResponse.json(updatedCompetition);
   } catch (error) {
