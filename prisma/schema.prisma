@@ -13,444 +13,951 @@ datasource db {
 // ========== CORE MODELS ==========
 
 model User {
-  id                String          @id @default(cuid())
-  email             String          @unique
-  emailVerified     Boolean         @default(false)
-  emailVerifyToken  String?
-  passwordHash      String?         // SMS登録時はnull許可
-  role              Role            @default(USER)
-  
+  id               String  @id @default(cuid())
+  email            String  @unique
+  emailVerified    Boolean @default(false)
+  emailVerifyToken String?
+  passwordHash     String? // SMS登録時はnull許可
+  role             Role    @default(USER)
+  primaryClubId    String?
+  preferredLanguage String?
+  mfaEnabled       Boolean @default(false)
+  mfaEnforced      Boolean @default(false)
+  nfcTagId         String?
+  deletedAt        DateTime?
+  deletionScheduledAt DateTime?
+
   // Profile fields
-  familyName        String
-  givenName         String
-  familyNameKana    String          // カタカナ（入力用）
-  givenNameKana     String          // カタカナ（入力用）
-  normalizedFamilyName String       // 正規化済み（検索用）
-  normalizedGivenName  String       // 正規化済み（検索用）
-  dateOfBirth       DateTime        // 生年月日
-  sex               Sex             // 性別（必須）
-  phoneNumber       String          @unique  // E.164形式 +81... 必須
-  phoneVerified     Boolean         @default(false)
-  phoneVerifiedAt   DateTime?
-  profilePhotoUrl   String?         // プロフィール写真URL
-  
+  familyName           String
+  givenName            String
+  familyNameKana       String // カタカナ（入力用）
+  givenNameKana        String // カタカナ（入力用）
+  normalizedFamilyName String // 正規化済み（検索用）
+  normalizedGivenName  String // 正規化済み（検索用）
+  dateOfBirth          DateTime // 生年月日
+  sex                  Sex // 性別（必須）
+  phoneNumber          String    @unique // E.164形式 +81... 必須
+  phoneVerified        Boolean   @default(false)
+  phoneVerifiedAt      DateTime?
+  profilePhotoUrl      String? // プロフィール写真URL
+
   // 住所情報
-  postalCode        String          // 郵便番号（ハイフンなし）
-  prefecture        String          // 都道府県
-  city              String          // 市区町村
-  addressLine1      String          // 町名・番地
-  addressLine2      String?         // 建物名・部屋番号（任意）
-  
+  postalCode   String // 郵便番号（ハイフンなし）
+  prefecture   String // 都道府県
+  city         String // 市区町村
+  addressLine1 String // 町名・番地
+  addressLine2 String? // 建物名・部屋番号（任意）
+
   // 緊急連絡先
-  emergencyContactFamilyName      String?    // 緊急連絡先姓
-  emergencyContactGivenName       String?    // 緊急連絡先名
-  emergencyContactFamilyNameKana  String?    // 緊急連絡先姓（カナ）
-  emergencyContactGivenNameKana   String?    // 緊急連絡先名（カナ）
-  emergencyContactPhone           String?    // 緊急連絡先電話番号
-  
+  emergencyContactFamilyName     String? // 緊急連絡先姓
+  emergencyContactGivenName      String? // 緊急連絡先名
+  emergencyContactFamilyNameKana String? // 緊急連絡先姓（カナ）
+  emergencyContactGivenNameKana  String? // 緊急連絡先名（カナ）
+  emergencyContactPhone          String? // 緊急連絡先電話番号
+
   // JLA関連
-  jlaMemberNumber       String?     @unique  // JLA会員番号
-  legacyJlaMemberNumber String?     @unique  // 旧JLA会員番号
-  
+  jlaMemberNumber       String? @unique // JLA会員番号
+  legacyJlaMemberNumber String? @unique // 旧JLA会員番号
+
   // Relations
-  memberships       Membership[]
-  qualifications    Qualification[]
-  clubsOwned        Club[]          @relation("ClubCreator")
-  auditLogs         AuditLog[]
-  clubAnnouncements ClubAnnouncement[]
+  memberships         Membership[]
+  qualifications      Qualification[]
+  clubsOwned          Club[]               @relation("ClubCreator")
+  representativeClubs Club[]               @relation("ClubRepresentative")
+  primaryClub         Club?                @relation("PrimaryClub", fields: [primaryClubId], references: [id])
+  auditLogs           AuditLog[]
+  clubAnnouncements   ClubAnnouncement[]
   clubActivityRecords ClubActivityRecord[]
-  organizationsOwned Organization[] @relation("OrgCreator")
-  orgAdminRoles     OrgAdmin[]
-  
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  
+  organizationsOwned  Organization[]       @relation("OrgCreator")
+  representativeOrganizations Organization[] @relation("OrganizationRepresentative")
+  orgAdminRoles       OrgAdmin[]
+  notifications       Notification[]       // P2: 通知受信
+  expensesCreated     Expense[]            @relation("ExpenseCreator")
+  expensesApproved    Expense[]            @relation("ExpenseApprover")
+  expensesRejected    Expense[]            @relation("ExpenseRejector")
+  expensesPaid        Expense[]            @relation("ExpensePayer")
+  expenseAttachments  ExpenseAttachment[]  @relation("ExpenseAttachmentUploader")
+  publicApiKeys       PublicApiKey[]
+  clubTypeApplicationsRequested ClubTypeApplication[] @relation("ClubTypeApplicationRequester")
+  clubTypeApplicationsApproved  ClubTypeApplication[] @relation("ClubTypeApplicationApprover")
+  bankAccount        BankAccount?
+  associationLicenses AssociationLicense[]
+  notificationJobs   NotificationJob[]
+  delegationsGiven   Delegation[] @relation("DelegationFrom")
+  delegationsReceived Delegation[] @relation("DelegationTo")
+  subscriptions      Subscription[]
+  entryCheckoutSessions EntryCheckoutSession[]
+  competitionEntries   CompetitionEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // 複合ユニーク制約: 同姓同名でも生年月日で区別
   @@unique([normalizedFamilyName, normalizedGivenName, dateOfBirth])
   @@index([dateOfBirth, normalizedFamilyName, normalizedGivenName])
 }
 
+model PublicApiKey {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  key       String   @unique
+  revokedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model BankAccount {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  bankName          String
+  branchName        String
+  accountType       String
+  accountNumber     String
+  accountHolderName String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AssociationLicense {
+  id            String   @id @default(cuid())
+  userId        String
+  status        AssociationLicenseStatus @default(PENDING)
+  licenseNumber String?
+  issuedAt      DateTime?
+  expiresAt     DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+}
+
+model QualificationCategory {
+  id          String   @id @default(cuid())
+  name        String
+  description String? @db.Text
+
+  templates QualificationTemplate[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model QualificationTemplate {
+  id            String   @id @default(cuid())
+  categoryId    String?
+  kind          String
+  name          String
+  description   String? @db.Text
+  requiresExpiry Boolean @default(true)
+  validityMonths Int?
+
+  category QualificationCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([kind])
+}
+
+model NotificationTemplate {
+  id            String                @id @default(cuid())
+  type          String
+  category      NotificationCategory  @default(GENERAL)
+  titleTemplate String
+  bodyTemplate  String @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type])
+}
+
+model NotificationJob {
+  id            String                 @id @default(cuid())
+  status        NotificationJobStatus  @default(PENDING)
+  createdById   String
+  payload       Json?
+  totalCount    Int?    @default(0)
+  successCount  Int?    @default(0)
+  failureCount  Int?    @default(0)
+
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Delegation {
+  id          String   @id @default(cuid())
+  fromUserId  String
+  toUserId    String
+  status      DelegationStatus @default(ACTIVE)
+  expiresAt   DateTime?
+
+  fromUser User @relation("DelegationFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User @relation("DelegationTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fromUserId, status])
+  @@index([toUserId, status])
+}
+
+model Subscription {
+  id        String   @id @default(cuid())
+  userId    String
+  plan      String
+  status    SubscriptionStatus @default(ACTIVE)
+  startedAt DateTime @default(now())
+  endsAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+}
+
 model Club {
-  id                String          @id @default(cuid())
-  name              String
-  nameKana          String?
-  websiteUrl        String?
-  status            ClubStatus      @default(APPLYING)
-  
+  id               String     @id @default(cuid())
+  name             String
+  nameKana         String?
+  websiteUrl       String?
+  status           ClubStatus @default(APPLYING)
+  suspendedReason  String? // SUSPENDED/INACTIVE理由: "ANNUAL_FEE_UNPAID" | "NO_ADMIN" | "JLA_FREEZE" | "REJECTED"
+  type             ClubType? // クラブ種別（JLAが付与、null=未確定）
+
   // 代表者情報
-  representativeFamilyName      String?
-  representativeGivenName       String?
-  representativeFamilyNameKana  String?
-  representativeGivenNameKana   String?
-  representativePostalCode      String?
-  representativePrefecture      String?
-  representativeCity            String?
-  representativeAddressLine1    String?
-  representativeAddressLine2    String?
-  representativePhone           String?
-  
+  representativeFamilyName     String?
+  representativeGivenName      String?
+  representativeFamilyNameKana String?
+  representativeGivenNameKana  String?
+  representativePostalCode     String?
+  representativePrefecture     String?
+  representativeCity           String?
+  representativeAddressLine1   String?
+  representativeAddressLine2   String?
+  representativePhone          String?
+  representativeUserId         String?
+
   // クラブ情報
-  patrolLocation    String?         // 監視場所
-  establishedYear   Int?            // クラブ設立年
-  
+  patrolLocation  String? // 監視場所
+  establishedYear Int? // クラブ設立年
+
   // 事務局情報
-  officePostalCode  String?
-  officePrefecture  String?
-  officeCity        String?
+  officePostalCode   String?
+  officePrefecture   String?
+  officeCity         String?
   officeAddressLine1 String?
   officeAddressLine2 String?
-  officePhone       String?
-  mailingName       String?         // 郵便物の宛名
-  
-  logoUrl           String?
-  
+  officePhone        String?
+  mailingName        String? // 郵便物の宛名
+
+  logoUrl String?
+
   // Relations
-  creatorId         String?
-  creator           User?           @relation("ClubCreator", fields: [creatorId], references: [id])
-  memberships       Membership[]
-  announcements     ClubAnnouncement[]
-  activityRecords   ClubActivityRecord[]
-  
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  creatorId           String?
+  creator             User?                    @relation("ClubCreator", fields: [creatorId], references: [id])
+  representativeUser  User?                    @relation("ClubRepresentative", fields: [representativeUserId], references: [id])
+  primaryUsers        User[]                   @relation("PrimaryClub")
+  memberships         Membership[]
+  announcements       ClubAnnouncement[]
+  activityRecords     ClubActivityRecord[]
+  annualRegistrations ClubAnnualRegistration[]
+  typeApplications    ClubTypeApplication[]
+  fiscalYears         ClubFiscalYear[]
+  dues                ClubDues[]
+  entryCheckoutSessions EntryCheckoutSession[]
+  competitionEntries   CompetitionEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Organization {
-  id                String          @id @default(cuid())
-  name              String          // 団体名
-  nameKana          String?         // 団体名カナ
-  abbreviation      String?         // 略称
-  websiteUrl        String?         // ウェブサイトURL
-  email             String?         // 代表メールアドレス
-  phoneNumber       String?         // 代表電話番号
-  
+  id           String  @id @default(cuid())
+  name         String // 団体名
+  nameKana     String? // 団体名カナ
+  abbreviation String? // 略称
+  websiteUrl   String? // ウェブサイトURL
+  email        String? // 代表メールアドレス
+  phoneNumber  String? // 代表電話番号
+
   // 代表者情報
-  representativeFamilyName      String?
-  representativeGivenName       String?
-  representativeFamilyNameKana  String?
-  representativeGivenNameKana   String?
-  
+  representativeFamilyName     String?
+  representativeGivenName      String?
+  representativeFamilyNameKana String?
+  representativeGivenNameKana  String?
+  representativeUserId         String?
+
   // 事務局住所
-  postalCode        String?
-  prefecture        String?
-  city              String?
-  addressLine1      String?
-  addressLine2      String?
-  
+  postalCode   String?
+  prefecture   String?
+  city         String?
+  addressLine1 String?
+  addressLine2 String?
+
   // 詳細情報
-  description       String?         @db.Text // 団体説明
-  establishedYear   Int?            // 設立年
-  logoUrl           String?         // ロゴURL
-  
+  description     String? @db.Text // 団体説明
+  establishedYear Int? // 設立年
+  logoUrl         String? // ロゴURL
+
   // 年会費設定
-  annualFee         Int?            // 年会費（円）
-  annualFeeDescription String?      @db.Text // 年会費の説明
-  
+  annualFee            Int? // 年会費（円）
+  annualFeeDescription String? @db.Text // 年会費の説明
+
+  // 登録料（オンボーディング）
+  onboardingFeeStatus  OnboardingFeeStatus @default(NOT_PAID)
+  onboardingFeePaidAt  DateTime?
+
   // ステータス
-  status            OrgStatus       @default(PENDING)
-  
+  status OrgStatus @default(PENDING)
+
   // Relations
-  createdById       String?
-  createdBy         User?           @relation("OrgCreator", fields: [createdById], references: [id])
-  admins            OrgAdmin[]
-  competitions      Competition[]   // 団体が主催する大会
-  
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  createdById  String?
+  createdBy    User?         @relation("OrgCreator", fields: [createdById], references: [id])
+  representativeUser User?   @relation("OrganizationRepresentative", fields: [representativeUserId], references: [id])
+  admins       OrgAdmin[]
+  competitions Competition[] // 団体が主催する大会
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model OrgAdmin {
-  id                String          @id @default(cuid())
-  userId            String
-  organizationId    String
-  role              OrgAdminRole    @default(ADMIN)
-  
+  id             String       @id @default(cuid())
+  userId         String
+  organizationId String
+  role           OrgAdminRole @default(ADMIN)
+
   // Relations
-  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@unique([userId, organizationId])
 }
 
 model Membership {
-  id                String          @id @default(cuid())
-  userId            String
-  clubId            String
-  role              MembershipRole  @default(MEMBER)
-  status            MembershipStatus @default(PENDING)
-  
+  id     String           @id @default(cuid())
+  userId String
+  clubId String
+  role   MembershipRole   @default(MEMBER)
+  status MembershipStatus @default(PENDING)
+
   // Relations
-  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  club              Club            @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  dues ClubDues[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@unique([userId, clubId])
 }
 
 model Qualification {
-  id                String          @id @default(cuid())
-  userId            String
-  kind              String          // e.g., "BLS", "ILS", etc.
-  certNumber        String?
-  issueDate         DateTime?
-  expiryDate        DateTime?
-  status            QualificationStatus @default(PENDING)
-  attachmentUrl     String?
-  
+  id            String              @id @default(cuid())
+  userId        String
+  kind          String // e.g., "BLS", "ILS", etc.
+  certNumber    String?
+  issueDate     DateTime?
+  expiryDate    DateTime?
+  status        QualificationStatus @default(PENDING)
+  attachmentUrl String?
+
   // Relations
-  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model RegistrationSession {
-  id                String          @id @default(cuid())
-  
+  id String @id @default(cuid())
+
   // 仮登録情報
-  phoneNumber       String          // E.164形式 +81...
-  familyName        String
-  givenName         String
-  familyNameKana    String
-  givenNameKana     String
-  dateOfBirth       DateTime
-  sex               Sex             // 性別
-  postalCode        String
-  prefecture        String
-  city              String
-  addressLine1      String
-  addressLine2      String?
-  emergencyContactFamilyName      String?
-  emergencyContactGivenName       String?
-  emergencyContactFamilyNameKana  String?
-  emergencyContactGivenNameKana   String?
-  emergencyContactPhone           String?
-  email             String?
-  password          String?         // パスワード（bcryptハッシュ化済み、任意）
-  
+  phoneNumber                    String // E.164形式 +81...
+  familyName                     String
+  givenName                      String
+  familyNameKana                 String
+  givenNameKana                  String
+  dateOfBirth                    DateTime
+  sex                            Sex // 性別
+  postalCode                     String
+  prefecture                     String
+  city                           String
+  addressLine1                   String
+  addressLine2                   String?
+  emergencyContactFamilyName     String?
+  emergencyContactGivenName      String?
+  emergencyContactFamilyNameKana String?
+  emergencyContactGivenNameKana  String?
+  emergencyContactPhone          String?
+  email                          String?
+  password                       String? // パスワード（bcryptハッシュ化済み、任意）
+
   // OTP情報
-  otpHash           String          // bcryptハッシュ
-  otpAttempts       Int             @default(0)  // 失敗回数
-  otpExpiresAt      DateTime        // OTP有効期限（5分）
-  
+  otpHash      String // bcryptハッシュ
+  otpAttempts  Int      @default(0) // 失敗回数
+  otpExpiresAt DateTime // OTP有効期限（5分）
+
   // 再送制限
-  lastSentAt        DateTime        @default(now())
-  sendCount         Int             @default(1)  // 送信回数
-  hourlyResetAt     DateTime        // 1時間制限のリセット時刻
-  
+  lastSentAt    DateTime @default(now())
+  sendCount     Int      @default(1) // 送信回数
+  hourlyResetAt DateTime // 1時間制限のリセット時刻
+
   // セッション有効期限
-  expiresAt         DateTime        // 30分後
-  
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  
+  expiresAt DateTime // 30分後
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([phoneNumber])
   @@index([expiresAt])
 }
 
 // SMS OTPログイン用の一時セッション
 model LoginSession {
-  id                String          @id @default(cuid())
-  
-  phoneNumber       String          @unique // E.164形式 +81...
-  
+  id String @id @default(cuid())
+
+  phoneNumber String @unique // E.164形式 +81...
+
   // OTP情報
-  otpHash           String          // bcryptハッシュ
-  otpAttempts       Int             @default(0)  // 失敗回数
-  otpExpiresAt      DateTime        // OTP有効期限（5分）
-  
+  otpHash      String // bcryptハッシュ
+  otpAttempts  Int      @default(0) // 失敗回数
+  otpExpiresAt DateTime // OTP有効期限（5分）
+
   // 再送制限
-  lastSentAt        DateTime        @default(now())
-  
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  
+  lastSentAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([phoneNumber])
   @@index([otpExpiresAt])
 }
 
 model AuditLog {
-  id                String          @id @default(cuid())
-  actorUserId       String
-  action            String
-  target            String?
-  meta              Json?
+  id          String  @id @default(cuid())
+  actorUserId String
+  action      String
+  target      String?
+  meta        Json?
+
+  // Relations
+  user User @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+// P2: アプリ内通知（即時・ユーザー制限不可）
+model Notification {
+  id       String             @id @default(cuid())
+  userId   String             // 受信者
+  category NotificationCategory @default(GENERAL)
+  type     String             // 通知種別（例: "CLUB_APPLICATION", "CLUB_APPROVED"）
+  title    String             // 通知タイトル
+  body     String             @db.Text // 通知本文
+  read     Boolean            @default(false) // 既読フラグ
+  relatedId String?           // 関連ID（clubId, membershipId等）
+  linkUrl  String?            // リンク先URL
   
   // Relations
-  user              User            @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  createdAt         DateTime        @default(now())
+  createdAt DateTime @default(now())
+  
+  @@index([userId, read])
+  @@index([userId, createdAt])
 }
 
 model ClubAnnouncement {
-  id                String          @id @default(cuid())
-  clubId            String
-  authorId          String
-  title             String
-  content           String          @db.Text
-  isPinned          Boolean         @default(false)
-  
+  id       String  @id @default(cuid())
+  clubId   String
+  authorId String
+  title    String
+  content  String  @db.Text
+  isPinned Boolean @default(false)
+
   // Relations
-  club              Club            @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  author            User            @relation(fields: [authorId], references: [id])
-  
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  
+  club   Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([clubId, createdAt])
   @@index([clubId, isPinned])
 }
 
 model ClubActivityRecord {
-  id                String          @id @default(cuid())
-  clubId            String
-  authorId          String
-  activityType      String          // 例: "大会", "練習", "監視活動", "イベント"
-  title             String
-  description       String?         @db.Text
-  activityDate      DateTime
-  location          String?
-  participants      Int?            // 参加人数
-  achievements      String?         @db.Text // 成績・実績
-  
+  id           String   @id @default(cuid())
+  clubId       String
+  authorId     String
+  activityType String // 例: "大会", "練習", "監視活動", "イベント"
+  title        String
+  description  String?  @db.Text
+  activityDate DateTime
+  location     String?
+  participants Int? // 参加人数
+  achievements String?  @db.Text // 成績・実績
+
   // Relations
-  club              Club            @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  author            User            @relation(fields: [authorId], references: [id])
-  
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  
+  club   Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([clubId, activityDate])
   @@index([clubId, activityType])
 }
 
-model Competition {
-  id                String          @id @default(cuid())
-  organizationId    String          // 主催団体ID
-  
-  // 基本情報
-  name              String          // 大会名
-  nameKana          String?         // 大会名カナ
-  description       String?         @db.Text // 大会説明
-  category          String?         // カテゴリ（例: "プール", "オープンウォーター", "ジュニア"）
-  
-  // 開催情報
-  startDate         DateTime        // 開催開始日時
-  endDate           DateTime        // 開催終了日時
-  venue             String          // 開催場所
-  venueAddress      String?         // 会場住所
-  
-  // 参加情報
-  entryStartDate    DateTime?       // エントリー開始日時
-  entryEndDate      DateTime?       // エントリー終了日時
-  maxParticipants   Int?            // 最大参加者数
-  entryFee          Json?           // 参加費設定（JSON: {baseFee, multiEventSurcharge: [{minEvents, feePerEvent}], teamOnlyFee}）
-  
-  // オフィシャル募集設定
-  officialPositions Json?           // オフィシャルポジション設定（JSON: [{positionName: string, count: number}]）
-  
-  // 関係組織情報
-  sponsors          String?         @db.Text // 後援（複数の場合は改行区切り）
-  cooperators       String?         @db.Text // 協賛（複数の場合は改行区切り）
-  cooperatorsLogos  Json?           // 協賛ロゴ [{name: string, logoUrl: string}]
-  supporters        String?         @db.Text // 協力（複数の場合は改行区切り）
-  grants            String?         @db.Text // 助成（複数の場合は改行区切り）
-  grantsLogos       Json?           // 助成ロゴ [{name: string, logoUrl: string}]
-  
-  // 公開設定
-  status            CompetitionStatus @default(DRAFT)
-  isPublished       Boolean         @default(false)
-  publishedAt       DateTime?
-  
+model ClubAnnualRegistration {
+  id                    String                       @id @default(cuid())
+  clubId                String
+  fiscalYear            Int // 年度（例: 2026）
+  clubType              ClubType? // 登録時のクラブ種別スナップショット
+  registrationFee       Int // 登録料（円）
+  memberCount           Int // 登録時の会員数
+  status                ClubAnnualRegistrationStatus @default(PENDING)
+  stripePaymentIntentId String? // Stripe PaymentIntent ID
+  paidAt                DateTime? // 支払い完了日時
+  expiresAt             DateTime? // 有効期限
+
   // Relations
-  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  announcements     CompetitionAnnouncement[]
-  attachments       CompetitionAttachment[]
-  events            Event[]         // 大会種目
-  
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clubId, fiscalYear])
+  @@index([clubId, fiscalYear])
+  @@index([status])
+}
+
+model ClubTypeApplication {
+  id              String                    @id @default(cuid())
+  clubId          String
+  requestedType   ClubType
+  status          ClubTypeApplicationStatus @default(PENDING)
+  kind            ClubTypeApplicationKind   @default(INITIAL)
+  targetFiscalYear Int?
+  requestedById   String
+  approvedById    String?
+  rejectionReason String?
+  approvedAt      DateTime?
+
+  club        Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  requestedBy User @relation("ClubTypeApplicationRequester", fields: [requestedById], references: [id])
+  approvedBy  User? @relation("ClubTypeApplicationApprover", fields: [approvedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clubId, status])
+  @@index([requestedById])
+}
+
+model ClubFiscalYear {
+  id                     String             @id @default(cuid())
+  clubId                 String
+  fiscalYear             Int
+  startDate              DateTime
+  endDate                DateTime
+  membershipFee          Int                @default(0)
+  membershipFeeAppliesTo ClubDuesAppliesTo  @default(ALL_MEMBERS)
+  description            String?            @db.Text
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  dues ClubDues[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clubId, fiscalYear])
+  @@index([clubId, startDate, endDate])
+}
+
+model ClubDues {
+  id           String          @id @default(cuid())
+  clubId       String
+  fiscalYearId String
+  memberId     String
+  amount       Int
+  status       ClubDuesStatus  @default(UNPAID)
+  dueDate      DateTime?
+  paidDate     DateTime?
+  invoiceNumber String?
+  invoiceIssuedAt DateTime?
+  invoiceUrl   String?
+  receiptNumber String?
+  receiptUrl   String?
+  notes        String?         @db.Text
+
+  club       Club           @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  fiscalYear ClubFiscalYear @relation(fields: [fiscalYearId], references: [id], onDelete: Cascade)
+  member     Membership     @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clubId, fiscalYearId, memberId])
+  @@index([clubId, status])
+  @@index([clubId, fiscalYearId, status])
+  @@index([memberId])
+}
+
+model Expense {
+  id             String          @id @default(cuid())
+  ownerType      ExpenseOwnerType
+  ownerId        String
+
+  amount       Int
+  taxRate      Int?
+  taxAmount    Int?
+  totalAmount  Int
+
+  category     ExpenseCategory
+  description  String?
+  status       ExpenseStatus     @default(DRAFT)
+
+  submittedAt    DateTime?
+  approvedAt     DateTime?
+  approvedById   String?
+  rejectedAt     DateTime?
+  rejectedById   String?
+  rejectedReason String?
+  paidAt         DateTime?
+  paidById       String?
+
+  createdById  String
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  attachments  ExpenseAttachment[]
+
+  createdBy    User              @relation("ExpenseCreator", fields: [createdById], references: [id])
+  approvedBy   User?             @relation("ExpenseApprover", fields: [approvedById], references: [id])
+  rejectedBy   User?             @relation("ExpenseRejector", fields: [rejectedById], references: [id])
+  paidBy       User?             @relation("ExpensePayer", fields: [paidById], references: [id])
+
+  @@index([ownerType, ownerId])
+  @@index([status])
+  @@index([createdById])
+}
+
+model ExpenseAttachment {
+  id            String   @id @default(cuid())
+  expenseId     String
+  url           String
+  filename      String?
+  mimeType      String?
+  size          Int?
+  uploadedById  String
+  createdAt     DateTime @default(now())
+
+  expense     Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  uploadedBy  User    @relation("ExpenseAttachmentUploader", fields: [uploadedById], references: [id])
+
+  @@index([expenseId])
+}
+
+model Budget {
+  id         String          @id @default(cuid())
+  ownerType  ExpenseOwnerType
+  ownerId    String
+  fiscalYear Int
+  limit      Int
+  used       Int             @default(0)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@unique([ownerType, ownerId, fiscalYear])
+}
+
+model Payment {
+  id                      String        @id @default(cuid())
+  type                    PaymentType
+  ownerType               PaymentOwnerType
+  ownerId                 String
+  userId                  String
+  status                  PaymentStatus @default(PENDING)
+  amount                  Int
+  currency                String        @default("jpy")
+  stripeCheckoutSessionId String?       @unique
+  stripePaymentIntentId   String?
+  metadata                Json?
+  paidAt                  DateTime?
+  expiresAt               DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([ownerType, ownerId, type])
+  @@index([status])
+  @@index([userId])
+}
+
+model EntryCheckoutSession {
+  id                      String                     @id @default(cuid())
+  competitionId           String
+  clubId                  String
+  userId                  String
+  status                  EntryCheckoutSessionStatus @default(PENDING)
+  amount                  Int
+  currency                String                     @default("jpy")
+  stripeCheckoutSessionId String?                    @unique
+  payload                 Json?
+  completedAt             DateTime?
+  expiredAt               DateTime?
+  entryId                 String?
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  club        Club        @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entry       CompetitionEntry? @relation(fields: [entryId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([competitionId, userId])
+}
+
+model CompetitionEntry {
+  id            String                 @id @default(cuid())
+  competitionId String
+  clubId        String?
+  userId        String
+  status        CompetitionEntryStatus @default(SUBMITTED)
+  totalFee      Int
+  paymentId     String?
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  club        Club?       @relation(fields: [clubId], references: [id], onDelete: SetNull)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  snapshot    EntrySnapshot?
+  items       EntryItem[]
+  checkoutSessions EntryCheckoutSession[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([competitionId, userId])
+}
+
+model EntrySnapshot {
+  id      String @id @default(cuid())
+  entryId String @unique
+  data    Json
+
+  entry CompetitionEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+model EntryItem {
+  id        String @id @default(cuid())
+  entryId   String
+  eventId   String
+  entryTime String?
+
+  entry CompetitionEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+model Competition {
+  id             String @id @default(cuid())
+  organizationId String // 主催団体ID
+
+  // 基本情報
+  name        String // 大会名
+  nameKana    String? // 大会名カナ
+  description String? @db.Text // 大会説明
+  category    String? // カテゴリ（例: "プール", "オープンウォーター", "ジュニア"）
+
+  // 開催情報
+  startDate    DateTime // 開催開始日時
+  endDate      DateTime // 開催終了日時
+  venue        String // 開催場所
+  venueAddress String? // 会場住所
+
+  // 参加情報
+  entryStartDate  DateTime? // エントリー開始日時
+  entryEndDate    DateTime? // エントリー終了日時
+  maxParticipants Int? // 最大参加者数
+  entryFee        Json? // 参加費設定（JSON: {baseFee, multiEventSurcharge: [{minEvents, feePerEvent}], teamOnlyFee}）
+
+  // クラブ種別制限
+  allowedClubTypes ClubType[] // エントリー可能なクラブ種別（空配列 = 全種別可）
+
+  // オフィシャル募集設定
+  officialPositions Json? // オフィシャルポジション設定（JSON: [{positionName: string, count: number}]）
+
+  // 関係組織情報
+  sponsors         String? @db.Text // 後援（複数の場合は改行区切り）
+  cooperators      String? @db.Text // 協賛（複数の場合は改行区切り）
+  cooperatorsLogos Json? // 協賛ロゴ [{name: string, logoUrl: string}]
+  supporters       String? @db.Text // 協力（複数の場合は改行区切り）
+  grants           String? @db.Text // 助成（複数の場合は改行区切り）
+  grantsLogos      Json? // 助成ロゴ [{name: string, logoUrl: string}]
+
+  // 公開設定
+  status      CompetitionStatus @default(DRAFT)
+  isPublished Boolean           @default(false)
+  publishedAt DateTime?
+
+  // Relations
+  organization  Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  announcements CompetitionAnnouncement[]
+  attachments   CompetitionAttachment[]
+  events        Event[] // 大会種目
+  entries       CompetitionEntry[]
+  entryCheckoutSessions EntryCheckoutSession[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([organizationId, startDate])
   @@index([status, isPublished])
 }
 
 model CompetitionAnnouncement {
-  id              String       @id @default(cuid())
-  competitionId   String
-  title           String       // お知らせタイトル
-  content         String       @db.Text // お知らせ内容
-  publishedAt     DateTime?    // 公開日時（nullの場合は下書き）
-  
-  competition     Competition  @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  
+  id            String    @id @default(cuid())
+  competitionId String
+  title         String // お知らせタイトル
+  content       String    @db.Text // お知らせ内容
+  publishedAt   DateTime? // 公開日時（nullの場合は下書き）
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([competitionId, createdAt])
 }
 
 model CompetitionAttachment {
-  id              String       @id @default(cuid())
-  competitionId   String
-  fileName        String       // ファイル名
-  fileUrl         String       // ファイルURL
-  fileSize        Int          // ファイルサイズ（バイト）
-  mimeType        String       // MIMEタイプ
-  
-  competition     Competition  @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  
-  createdAt       DateTime     @default(now())
-  
+  id            String @id @default(cuid())
+  competitionId String
+  fileName      String // ファイル名
+  fileUrl       String // ファイルURL
+  fileSize      Int // ファイルサイズ（バイト）
+  mimeType      String // MIMEタイプ
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
   @@index([competitionId, createdAt])
 }
 
 model Event {
-  id              String       @id @default(cuid())
-  competitionId   String
-  name            String       // 種目名（例: "100m障害物"）
-  sex             Sex          // 性別（MALE: 男子, FEMALE: 女子）
-  type            EventType    @default(INDIVIDUAL) // 種目タイプ（個人/チーム）
-  category        EventCategory @default(POOL) // 競技カテゴリ（プール/オーシャン）
-  requiresEntryTime Boolean    @default(true) // エントリータイム入力必須
-  displayOrder    Int          @default(0) // 表示順序
-  
-  competition     Competition  @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  
+  id                String        @id @default(cuid())
+  competitionId     String
+  name              String // 種目名（例: "100m障害物"）
+  sex               Sex // 性別（MALE: 男子, FEMALE: 女子）
+  type              EventType     @default(INDIVIDUAL) // 種目タイプ（個人/チーム）
+  category          EventCategory @default(POOL) // 競技カテゴリ（プール/オーシャン）
+  requiresEntryTime Boolean       @default(true) // エントリータイム入力必須
+  displayOrder      Int           @default(0) // 表示順序
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  entryItems  EntryItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([competitionId, displayOrder])
 }
 
 enum EventType {
-  INDIVIDUAL    // 個人種目
-  TEAM          // チーム種目
+  INDIVIDUAL // 個人種目
+  TEAM // チーム種目
 }
 
 enum EventCategory {
-  POOL          // プール競技
-  OCEAN         // オーシャン競技
+  POOL // プール競技
+  OCEAN // オーシャン競技
 }
 
 // ========== ENUMS ==========
 
+enum ExpenseOwnerType {
+  COMPETITION
+  ORGANIZATION
+  CLUB
+}
+
+enum ExpenseStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  PAID
+}
+
+enum ExpenseCategory {
+  TRAVEL
+  LODGING
+  VENUE
+  EQUIPMENT
+  PAYROLL
+  OTHER
+}
+
+enum ClubDuesStatus {
+  UNPAID
+  PARTIAL
+  PAID
+  EXEMPT
+  OVERDUE
+}
+
+enum ClubDuesAppliesTo {
+  ALL_MEMBERS
+  SELECTED
+}
+
 enum Role {
   USER
   ORG_ADMIN
+  JLA_ADMIN
   PF_ADMIN
 }
 
 enum ClubStatus {
-  APPLYING
-  JLA_APPROVED
-  ACTIVE
-  SUSPENDED
+  APPLYING      // 申請中
+  JLA_APPROVED  // JLA承認済（支払い前）
+  APPROVED      // 支払い完了＝正式クラブ
+  SUSPENDED     // 復旧前提の停止
+  INACTIVE      // 却下/終了/凍結
+}
+
+enum ClubType {
+  FIRST  // 第１種
+  SECOND // 第２種
+  THIRD  // 第３種
+  FOURTH // 第４種
 }
 
 enum MembershipRole {
@@ -473,29 +980,113 @@ enum QualificationStatus {
 }
 
 enum Sex {
-  MALE    // 男性
-  FEMALE  // 女性
-  OTHER   // その他
+  MALE // 男性
+  FEMALE // 女性
+  OTHER // その他
 }
 
 enum OrgStatus {
-  PENDING       // 申請中
-  APPROVED      // 承認済み
-  ACTIVE        // 活動中
-  SUSPENDED     // 一時停止
-  INACTIVE      // 非活動
+  PENDING       // 登録中（登録料未払い）
+  APPROVED      // 登録料支払い完了＝正式
+  SUSPENDED     // 復旧前提の停止
+  INACTIVE      // 終了/拒否/凍結
+}
+
+enum OnboardingFeeStatus {
+  NOT_PAID
+  PAID
 }
 
 enum OrgAdminRole {
-  OWNER         // オーナー（最高権限）
-  ADMIN         // 管理者
-  MEMBER        // メンバー
+  OWNER // オーナー（最高権限）
+  ADMIN // 管理者
+  MEMBER // メンバー
 }
 
 enum CompetitionStatus {
-  DRAFT         // 下書き
-  PUBLISHED     // 公開済み
-  ONGOING       // 開催中
-  COMPLETED     // 終了
-  CANCELLED     // 中止
+  DRAFT // 下書き
+  PUBLISHED // 公開済み
+  ONGOING // 開催中
+  COMPLETED // 終了
+  CANCELLED // 中止
+}
+
+enum ClubAnnualRegistrationStatus {
+  PENDING // 未払い
+  PAID // 支払済
+  EXPIRED // 期限切れ
+}
+
+enum ClubTypeApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ClubTypeApplicationKind {
+  INITIAL
+  CHANGE
+}
+
+enum PaymentType {
+  ORG_ONBOARDING_FEE
+  CLUB_ANNUAL_FEE
+  COMPETITION_ENTRY_FEE
+}
+
+enum PaymentOwnerType {
+  ORGANIZATION
+  CLUB
+  COMPETITION
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  EXPIRED
+}
+
+enum EntryCheckoutSessionStatus {
+  PENDING
+  COMPLETED
+  EXPIRED
+}
+
+enum CompetitionEntryStatus {
+  SUBMITTED
+  CANCELLED
+}
+
+// P2: 通知カテゴリ
+enum NotificationCategory {
+  GENERAL // 一般
+  CLUB // クラブ関連
+  COMPETITION // 大会関連
+  PAYMENT // 支払い関連
+  SYSTEM // システム通知
+}
+
+enum AssociationLicenseStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+enum NotificationJobStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum DelegationStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
 }
