@@ -10,27 +10,22 @@ This repository uses GitHub Environments for deployment control:
 
 ## Deployment Flow
 
-1. **Staging** - Automatically deployed on every commit to main branch
-2. **Canary** - Manual approval required, 10% traffic routing
-3. **Production** - Manual approval required, full deployment
+1. **Staging** - default branch への push で実行
+2. **Canary** - 手動承認
+3. **Production** - 手動承認
 
 ## Environment Variables
 
 Set these in GitHub repository settings under Environments:
 
 ### Staging
-- `DEPLOYMENT_URL` - Staging API endpoint
-- `DEPLOYMENT_TOKEN` - Authentication token
+- `DEPLOY_TOKEN` - Authentication token
 
 ### Canary
-- `DEPLOYMENT_URL` - Canary API endpoint
-- `DEPLOYMENT_TOKEN` - Authentication token
-- `CANARY_TRAFFIC_PERCENT` - 10 (for 10% traffic)
+- `DEPLOY_TOKEN` - Authentication token
 
 ### Production
-- `DEPLOYMENT_URL` - Production API endpoint
-- `DEPLOYMENT_TOKEN` - Authentication token
-- `HEALTH_CHECK_URL` - Health check endpoint
+- `DEPLOY_TOKEN` - Authentication token
 
 ## Manual Deployment
 
@@ -41,6 +36,5 @@ gh workflow run deploy-canary.yml -f environment=production
 ## Rollback
 
 If deployment fails:
-1. Previous version is automatically restored
-2. Slack notification sent
-3. Issue created for investigation
+1. Rollback処理はワークフロー内のプレースホルダー
+2. 通知/Issue作成は未設定

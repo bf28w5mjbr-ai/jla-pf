@@ -114,46 +114,44 @@ export async function GET(
 
     const format = new URL(req.url).searchParams.get("format");
     if (format === "pdf") {
-      const pdfComponent = (
-        <ReceiptPDF
-          receiptNumber={receiptNumber}
-          issuedDate={dues.paidDate}
-          issuer={{
-            name: issuerName,
-            email: "",
-            address: formatAddress({
-              postalCode: dues.club.officePostalCode,
-              prefecture: dues.club.officePrefecture,
-              city: dues.club.officeCity,
-              addressLine1: dues.club.officeAddressLine1,
-              addressLine2: dues.club.officeAddressLine2,
-            }),
-          }}
-          recipient={{
-            name: recipientName || "会員",
-            email: dues.member.user?.email ?? "",
-            address: formatAddress({
-              postalCode: dues.member.user?.postalCode,
-              prefecture: dues.member.user?.prefecture,
-              city: dues.member.user?.city,
-              addressLine1: dues.member.user?.addressLine1,
-              addressLine2: dues.member.user?.addressLine2,
-            }),
-          }}
-          items={[
-            {
-              description: `クラブ会費（${dues.fiscalYear.fiscalYear}年度）`,
-              quantity: 1,
-              unitPrice: dues.amount,
-              amount: dues.amount,
-            },
-          ]}
-          subtotal={dues.amount}
-          taxAmount={0}
-          totalAmount={dues.amount}
-          invoiceNumber={undefined}
-        />
-      );
+      const pdfComponent = React.createElement(ReceiptPDF, {
+        receiptNumber,
+        issuedDate: dues.paidDate,
+        issuer: {
+          name: issuerName,
+          email: "",
+          address: formatAddress({
+            postalCode: dues.club.officePostalCode,
+            prefecture: dues.club.officePrefecture,
+            city: dues.club.officeCity,
+            addressLine1: dues.club.officeAddressLine1,
+            addressLine2: dues.club.officeAddressLine2,
+          }),
+        },
+        recipient: {
+          name: recipientName || "会員",
+          email: dues.member.user?.email ?? "",
+          address: formatAddress({
+            postalCode: dues.member.user?.postalCode,
+            prefecture: dues.member.user?.prefecture,
+            city: dues.member.user?.city,
+            addressLine1: dues.member.user?.addressLine1,
+            addressLine2: dues.member.user?.addressLine2,
+          }),
+        },
+        items: [
+          {
+            description: `クラブ会費（${dues.fiscalYear.fiscalYear}年度）`,
+            quantity: 1,
+            unitPrice: dues.amount,
+            amount: dues.amount,
+          },
+        ],
+        subtotal: dues.amount,
+        taxAmount: 0,
+        totalAmount: dues.amount,
+        invoiceNumber: undefined,
+      });
 
       if (new URL(req.url).searchParams.get("upload") === "true") {
         const { url } = await generateAndUploadPdf({
@@ -185,7 +183,7 @@ export async function GET(
 
       const pdfBuffer = await generatePdfBuffer(pdfComponent);
 
-      return new NextResponse(pdfBuffer, {
+      return new NextResponse(pdfBuffer as any, {
         headers: {
           "Content-Type": "application/pdf",
           "Content-Disposition": `inline; filename=\"${receiptNumber}.pdf\"`,

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, ListChecks } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 type Competition = {
@@ -88,6 +88,14 @@ export default function CompetitionListItem({ competition, organizationId, canEd
         </Link>
         
         <div className="flex items-center gap-2">
+          {canEdit && (
+            <Link href={`/organizations/${organizationId}/competitions/${competition.id}/entries`}>
+              <Button variant="outline" size="sm" className="gap-1">
+                <ListChecks className="h-3 w-3" />
+                状況
+              </Button>
+            </Link>
+          )}
           <span
             className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium whitespace-nowrap ${
               competition.status === "PUBLISHED"

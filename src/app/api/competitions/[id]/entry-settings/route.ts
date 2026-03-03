@@ -18,7 +18,14 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { entryStartDate, entryEndDate } = body;
+    const {
+      entryStartDate,
+      entryEndDate,
+      allowMultipleEventEntries,
+      requireClubMembership,
+      minAge,
+      maxAge,
+    } = body;
 
     // 大会の存在確認と権限チェック
     const competition = await prisma.competition.findUnique({
@@ -55,6 +62,16 @@ export async function PUT(
       data: {
         entryStartDate: entryStartDate ? new Date(entryStartDate) : null,
         entryEndDate: entryEndDate ? new Date(entryEndDate) : null,
+        allowMultipleEventEntries:
+          typeof allowMultipleEventEntries === "boolean"
+            ? allowMultipleEventEntries
+            : undefined,
+        requireClubMembership:
+          typeof requireClubMembership === "boolean"
+            ? requireClubMembership
+            : undefined,
+        minAge: typeof minAge === "number" ? minAge : minAge === null ? null : undefined,
+        maxAge: typeof maxAge === "number" ? maxAge : maxAge === null ? null : undefined,
       },
     });
 

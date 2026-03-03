@@ -33,8 +33,17 @@ jobs:
             const fs = require('fs');
             const results = JSON.parse(fs.readFileSync('./lhr.json', 'utf8'));
             const scores = results.categories;
-            const comment = `## Lighthouse Scores\n
-| Category | Score |\n| --- | --- |\n| Performance | ${(scores.performance.score * 100).toFixed(0)} |\n| Accessibility | ${(scores.accessibility.score * 100).toFixed(0)} |\n| Best Practices | ${(scores['best-practices'].score * 100).toFixed(0)} |\n| SEO | ${(scores.seo.score * 100).toFixed(0)} |\n| PWA | ${(scores.pwa?.score * 100 || 'N/A')} |`;
+            const comment = [
+              '## Lighthouse Scores',
+              '',
+              '| Category | Score |',
+              '| --- | --- |',
+              `| Performance | ${(scores.performance.score * 100).toFixed(0)} |`,
+              `| Accessibility | ${(scores.accessibility.score * 100).toFixed(0)} |`,
+              `| Best Practices | ${(scores['best-practices'].score * 100).toFixed(0)} |`,
+              `| SEO | ${(scores.seo.score * 100).toFixed(0)} |`,
+              `| PWA | ${(scores.pwa?.score * 100 || 'N/A')} |`,
+            ].join('\n');
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,

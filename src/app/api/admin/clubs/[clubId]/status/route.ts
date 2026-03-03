@@ -31,7 +31,7 @@ export async function PUT(
 
     const { status } = await req.json();
 
-    if (!status || !['APPLYING', 'JLA_APPROVED', 'ACTIVE', 'SUSPENDED'].includes(status)) {
+    if (!status || !['APPLYING', 'JLA_APPROVED', 'APPROVED', 'SUSPENDED'].includes(status)) {
       return NextResponse.json(
         { error: "無効なステータスです" },
         { status: 400 }

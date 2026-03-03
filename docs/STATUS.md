@@ -15,19 +15,12 @@
 - セキュリティ強化（汎用エラーメッセージ）
 
 #### 3. 決済システム
-- Stripe Connect 統合
-- Webhook実装（4パターン）
-  - ENTRY（大会エントリー）
-  - ORG_ANNUAL（年会費）
-  - COMPETITION_HOST（主催料）
-  - CART（カート一括決済）
-- application_fee 10% 固定
-- Refund対応
+- Stripe Checkout セッション作成（Payment/EntryCheckoutSession）
+- Webhook は stub（/api/webhooks/stripe は 501）
+- Connect / 収益分配 / 返金は未実装
 
 #### 4. 財務管理
-- CompetitionWalletLedger実装
-- 収益計算（applyRevenueDelta）
-- 冪等性保証（ensureNotProcessed）
+- 未実装（Ledger/収益計算は未導入）
 
 #### 5. 監査
 - AuditLog実装
@@ -35,30 +28,20 @@
 
 ## 次のマイルストーン
 
-### Phase 2: API & UI 実装
+### Phase 2: 決済・UI拡充
 
 優先度順：
 
-1. **大会管理API**
-   - POST /api/competitions（作成）
-   - GET /api/competitions（一覧）
-   - GET /api/competitions/[id]（詳細）
+1. **決済Webhook本実装**
+   - checkout.session.completed / expired
+   - 返金/失敗時の同期
 
-2. **エントリーAPI**
-   - POST /api/entries（エントリー作成）
-   - POST /api/checkout/entry（決済開始）
-   - GET /api/entries（自分のエントリー一覧）
+2. **エントリーUI**
+   - 大会一覧/詳細
+   - エントリーフォーム
 
-3. **所属・資格API**
-   - POST /api/memberships/apply（申請）
-   - POST /api/memberships/approve（承認）
-   - POST /api/qualifications/request（資格申請）
-   - POST /api/qualifications/approve（承認）
-
-4. **UI実装**
-   - 大会一覧ページ
-   - 大会詳細・エントリーフォーム
-   - 管理画面（承認キュー）
+3. **テスト拡充**
+   - ユニット/E2E
 
 ## アーキテクチャ決定記録（ADR）
 
@@ -79,17 +62,15 @@
 
 ## 技術的負債
 
-### 現時点での負債なし
-- セキュリティ改善完了
-- 型安全性向上完了
-- 依存関係更新完了
+### 現時点の課題
+- Stripe Webhook が stub のため決済確定が未連動
+- エントリーUIが不足
 
 ## パフォーマンス指標
 
-- ビルド時間: ~30秒
-- TypeScript コンパイル: エラーなし
-- Lighthouse スコア: 未測定（UI実装後）
-- バンドルサイズ: 5MB以下（閾値設定済み）
+- TypeScript: `pnpm tsc --noEmit` ✅（2026-02-05）
+- Build: `pnpm build` ✅（2026-02-05）
+- Lighthouse: 未測定
 
 ## セキュリティ態勢
 
@@ -121,8 +102,9 @@
    - E2Eテスト: 未実装 → 主要フロー実装
 
 2. **ドキュメント整備**
-   - API仕様書（OpenAPI）
-   - 運用マニュアル
+   - ✅ `docs/API_SPEC.md`
+   - ✅ `docs/OPERATIONS_MANUAL.md`
+   - ✅ `docs/TROUBLESHOOTING.md`
 
 3. **パフォーマンス最適化**
    - DB インデックス最適化
@@ -133,5 +115,5 @@
 
 ---
 
-**レポート日**: 2026年1月15日  
-**ステータス**: Sprint 1 完了、Sprint 2 準備中
+**レポート日**: 2026年2月5日  
+**ステータス**: コア実装完了、決済/エントリーUI拡充中

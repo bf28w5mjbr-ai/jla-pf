@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -24,8 +25,10 @@ interface ClubSearchListProps {
 }
 
 export default function ClubSearchList({ userId, excludeClubIds }: ClubSearchListProps) {
+  const router = useRouter();
   const [clubs, setClubs] = useState<Club[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [applyingClubId, setApplyingClubId] = useState<string | null>(null);
 
@@ -71,6 +74,9 @@ export default function ClubSearchList({ userId, excludeClubIds }: ClubSearchLis
       
       // リストから削除（申請済みなので表示しない）
       setClubs(clubs.filter(c => c.id !== clubId));
+      setSelectedClubId(null);
+      setSearchQuery("");
+      router.refresh();
     } catch (error: any) {
       console.error("Apply error:", error);
       toast.error(error.message || "申請に失敗しました");
@@ -83,8 +89,8 @@ export default function ClubSearchList({ userId, excludeClubIds }: ClubSearchLis
     // 既に申請中または所属しているクラブを除外
     if (excludeClubIds.includes(club.id)) return false;
     
-    // ACTIVE または JLA_APPROVED のクラブのみ表示
-    if (club.status !== 'ACTIVE' && club.status !== 'JLA_APPROVED') return false;
+    // APPROVED または JLA_APPROVED のクラブのみ表示
+    if (club.status !== 'APPROVED' && club.status !== 'JLA_APPROVED') return false;
 
     // 検索クエリでフィルタ
     if (!searchQuery) return true;
@@ -97,6 +103,18 @@ export default function ClubSearchList({ userId, excludeClubIds }: ClubSearchLis
     );
   });
 
+  const selectedClub = selectedClubId
+    ? clubs.find((club) => club.id === selectedClubId) ?? null
+    : null;
+
+  const suggestions = searchQuery
+    ? filteredClubs.filter((club) =>
+        club.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        club.nameKana?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        club.patrolLocation?.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : [];
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -106,77 +124,63 @@ export default function ClubSearchList({ userId, excludeClubIds }: ClubSearchLis
   }
 
   return (
-    <div className="space-y-6">
-      {/* 検索バー */}
+    <div className="space-y-4">
       <Card>
         <CardContent className="pt-6">
-          <Input
-            type="text"
-            placeholder="クラブ名、監視場所で検索..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="max-w-md"
-          />
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[220px]">
+              <Input
+                type="text"
+                placeholder="クラブ名を入力して検索..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setSelectedClubId(null);
+                }}
+              />
+              {suggestions.length > 0 && (
+                <div className="absolute z-10 mt-2 w-full rounded-xl border border-gray-200 bg-white shadow-lg">
+                  <ul className="max-h-64 overflow-y-auto py-2">
+                    {suggestions.slice(0, 8).map((club) => (
+                      <li key={club.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedClubId(club.id);
+                            setSearchQuery(club.name);
+                          }}
+                          className="flex w-full flex-col gap-1 px-4 py-2 text-left transition hover:bg-gray-50"
+                        >
+                          <span className="text-sm font-semibold text-gray-900">{club.name}</span>
+                          <span className="text-xs text-gray-500">
+                            {club.patrolLocation ?? "監視場所未登録"}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+            <Button
+              onClick={() =>
+                selectedClub && handleApply(selectedClub.id, selectedClub.name)
+              }
+              disabled={!selectedClub || applyingClubId === selectedClub.id}
+              className="shrink-0"
+            >
+              {selectedClub && applyingClubId === selectedClub.id ? "申請中..." : "申請"}
+            </Button>
+          </div>
+          <p className="mt-3 text-xs text-gray-500">
+            候補から選択すると正式名で固定され、申請ボタンが有効になります。
+          </p>
         </CardContent>
       </Card>
 
-      {/* クラブリスト */}
-      {filteredClubs.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <p className="text-gray-500 dark:text-gray-400">
-              {searchQuery ? "該当するクラブが見つかりませんでした" : "参加可能なクラブがありません"}
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredClubs.map((club) => (
-            <Card key={club.id} className="flex flex-col">
-              <CardHeader>
-                <div className="flex items-start gap-4">
-                  {club.logoUrl ? (
-                    <div className="w-16 h-16 rounded-lg border-2 border-gray-300 dark:border-gray-600 overflow-hidden flex-shrink-0">
-                      <img src={club.logoUrl} alt={`${club.name}のロゴ`} className="w-full h-full object-cover" />
-                    </div>
-                  ) : (
-                    <div className="w-16 h-16 rounded-lg border-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
-                      <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                      </svg>
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <CardTitle className="text-lg leading-tight mb-1">{club.name}</CardTitle>
-                    {club.nameKana && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{club.nameKana}</p>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="flex-1 space-y-3">
-                {club.patrolLocation && (
-                  <div className="text-sm">
-                    <span className="text-gray-500 dark:text-gray-400">監視場所:</span>{" "}
-                    <span className="text-gray-900 dark:text-gray-100">{club.patrolLocation}</span>
-                  </div>
-                )}
-                <div className="text-sm">
-                  <span className="text-gray-500 dark:text-gray-400">メンバー数:</span>{" "}
-                  <span className="text-gray-900 dark:text-gray-100">{club._count.memberships}名</span>
-                </div>
-                <div className="pt-2">
-                  <Button
-                    onClick={() => handleApply(club.id, club.name)}
-                    disabled={applyingClubId === club.id}
-                    className="w-full"
-                  >
-                    {applyingClubId === club.id ? "申請中..." : "参加申請"}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+      {searchQuery && suggestions.length === 0 && (
+        <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+          該当するクラブが見つかりませんでした。
         </div>
       )}
     </div>

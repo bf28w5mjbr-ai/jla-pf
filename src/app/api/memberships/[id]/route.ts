@@ -39,8 +39,8 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
             id: true,
             name: true,
             logoUrl: true,
-            prefectureCode: true,
-            city: true,
+            officePrefecture: true,
+            officeCity: true,
           },
         },
       },
@@ -145,13 +145,12 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     // AuditLog 記録
     await prisma.auditLog.create({
       data: {
-        userId: sess.userId,
+        actorUserId: sess.userId,
         action: data.status === 'APPROVED' ? 'MEMBERSHIP_APPROVE' : 
                 data.status === 'REJECTED' ? 'MEMBERSHIP_REJECT' : 
                 'MEMBERSHIP_UPDATE',
-        entityType: 'MEMBERSHIP',
-        entityId: id,
-        changes: JSON.stringify(data),
+        target: `membership:${id}`,
+        meta: data,
       },
     });
 
@@ -244,11 +243,10 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
     // AuditLog 記録
     await prisma.auditLog.create({
       data: {
-        userId: sess.userId,
+        actorUserId: sess.userId,
         action: 'MEMBERSHIP_DELETE',
-        entityType: 'MEMBERSHIP',
-        entityId: id,
-        changes: JSON.stringify({ deleted: true }),
+        target: `membership:${id}`,
+        meta: { deleted: true },
       },
     });
 

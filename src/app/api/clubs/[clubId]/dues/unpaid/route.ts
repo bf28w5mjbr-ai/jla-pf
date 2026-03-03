@@ -34,7 +34,8 @@ export async function GET(
       fiscalYearFilter = { fiscalYear };
     }
 
-    const targetStatuses = includeOverdueOnly === "true" ? ["OVERDUE"] : ["UNPAID", "PARTIAL", "OVERDUE"];
+    const targetStatuses: Array<"UNPAID" | "PARTIAL" | "OVERDUE"> =
+      includeOverdueOnly === "true" ? ["OVERDUE"] : ["UNPAID", "PARTIAL", "OVERDUE"];
 
     const dues = await prisma.clubDues.findMany({
       where: {

@@ -87,6 +87,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (!user.phoneVerified) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          phoneVerified: true,
+          phoneVerifiedAt: new Date(),
+        },
+      });
+    }
+
     // 6. ログインセッション削除
     await prisma.loginSession.delete({ where: { id: loginSession.id } });
 

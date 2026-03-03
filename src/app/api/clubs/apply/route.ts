@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     }
 
     // クラブが参加可能な状態か確認
-    if (club.status !== 'ACTIVE' && club.status !== 'JLA_APPROVED') {
+    if (club.status !== 'APPROVED' && club.status !== 'JLA_APPROVED') {
       return NextResponse.json({ error: "このクラブは現在参加申請を受け付けていません" }, { status: 400 });
     }
 

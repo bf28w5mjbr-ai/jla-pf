@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
+import { prisma } from "@/server/db";
 
 const secret = new TextEncoder().encode(process.env.AUTH_SECRET);
 const ALG = "HS256";
@@ -23,4 +24,23 @@ export async function verifySession(token: string): Promise<SessionPayload | nul
   } catch {
     return null;
   }
+}
+
+export async function isPfOrJlaAdmin(userId: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  });
+  return user?.role === "PF_ADMIN" || String(user?.role) === "JLA_ADMIN";
+}
+
+export async function requireAuth(token: string | undefined): Promise<SessionPayload> {
+  if (!token) {
+    throw new Error("Unauthorized");
+  }
+  const session = await verifySession(token);
+  if (!session) {
+    throw new Error("Unauthorized");
+  }
+  return session;
 }

@@ -62,13 +62,13 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    // ORG_ADMIN または PF_ADMIN 権限チェック
+    // JLA_ADMIN / ORG_ADMIN / PF_ADMIN 権限チェック
     const user = await prisma.user.findUnique({
       where: { id: sess.userId },
       select: { role: true }
     });
 
-    if (user?.role !== 'PF_ADMIN' && user?.role !== 'ORG_ADMIN') {
+    if (user?.role !== 'PF_ADMIN' && user?.role !== 'ORG_ADMIN' && user?.role !== 'JLA_ADMIN') {
       return NextResponse.json(
         { error: 'JLA管理者権限が必要です' },
         { status: 403 }
@@ -130,13 +130,12 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     // AuditLog 記録
     await prisma.auditLog.create({
       data: {
-        userId: sess.userId,
+        actorUserId: sess.userId,
         action: data.status === 'APPROVED' ? 'QUALIFICATION_APPROVE' : 
                 data.status === 'REJECTED' ? 'QUALIFICATION_REJECT' : 
                 'QUALIFICATION_UPDATE',
-        entityType: 'QUALIFICATION',
-        entityId: id,
-        changes: JSON.stringify(data),
+        target: `qualification:${id}`,
+        meta: data,
       },
     });
 
@@ -184,13 +183,13 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
 
     // 自分の資格かチェック
     if (qualification.userId !== sess.userId) {
-      // ORG_ADMIN または PF_ADMIN ならOK
+      // JLA_ADMIN / ORG_ADMIN / PF_ADMIN ならOK
       const user = await prisma.user.findUnique({
         where: { id: sess.userId },
         select: { role: true }
       });
 
-      if (user?.role !== 'PF_ADMIN' && user?.role !== 'ORG_ADMIN') {
+      if (user?.role !== 'PF_ADMIN' && user?.role !== 'ORG_ADMIN' && user?.role !== 'JLA_ADMIN') {
         return NextResponse.json(
           { error: '権限がありません' },
           { status: 403 }
@@ -205,11 +204,10 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
     // AuditLog 記録
     await prisma.auditLog.create({
       data: {
-        userId: sess.userId,
+        actorUserId: sess.userId,
         action: 'QUALIFICATION_DELETE',
-        entityType: 'QUALIFICATION',
-        entityId: id,
-        changes: JSON.stringify({ deleted: true }),
+        target: `qualification:${id}`,
+        meta: { deleted: true },
       },
     });
 

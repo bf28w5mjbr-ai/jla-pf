@@ -128,6 +128,8 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     });
 
     const data = UpdateClubApplicationSchema.parse(body);
+    const nextStatus = data.status === "JLA_APPROVED" ? "JLA_APPROVED" : "INACTIVE";
+    const nextSuspendedReason = data.status === "REJECTED" ? "REJECTED" : null;
 
     // トランザクションで実行
     const result = await prisma.$transaction(async (tx) => {
@@ -135,7 +137,8 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       const updatedClub = await tx.club.update({
         where: { id },
         data: {
-          status: data.status,
+          status: nextStatus,
+          suspendedReason: nextSuspendedReason,
         },
         include: {
           creator: {
@@ -152,6 +155,9 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
       // 承認の場合、申請者をクラブのOWNERとしてメンバーシップ作成
       if (data.status === 'JLA_APPROVED') {
+        if (!club.creatorId) {
+          throw new Error('club_creator_missing');
+        }
         const existingMembership = await tx.membership.findFirst({
           where: {
             userId: club.creatorId,
@@ -232,7 +238,8 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
       select: {
         id: true,
         name: true,
-        registrationStatus: true,
+        status: true,
+        suspendedReason: true,
       },
     });
 
@@ -244,7 +251,8 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
     }
 
     // APPLYING または REJECTED のみ削除可能
-    if (club.registrationStatus !== 'APPLYING' && club.registrationStatus !== 'REJECTED') {
+    const isRejected = club.status === 'INACTIVE' && club.suspendedReason === 'REJECTED';
+    if (club.status !== 'APPLYING' && !isRejected) {
       return NextResponse.json(
         { error: '承認済みまたは運用中のクラブは削除できません' },
         { status: 400 }

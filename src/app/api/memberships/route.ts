@@ -62,8 +62,8 @@ export async function GET(req: NextRequest) {
               id: true,
               name: true,
               logoUrl: true,
-              prefectureCode: true,
-              city: true,
+              officePrefecture: true,
+              officeCity: true,
             },
           },
         },
@@ -157,8 +157,8 @@ export async function POST(req: NextRequest) {
           select: {
             id: true,
             email: true,
-            firstName: true,
-            lastName: true,
+            givenName: true,
+            familyName: true,
           },
         },
         club: {
@@ -173,11 +173,10 @@ export async function POST(req: NextRequest) {
     // AuditLog 記録
     await prisma.auditLog.create({
       data: {
-        userId: sess.userId,
+        actorUserId: sess.userId,
         action: 'MEMBERSHIP_APPLY',
-        entityType: 'MEMBERSHIP',
-        entityId: membership.id,
-        changes: JSON.stringify({ clubId: data.clubId }),
+        target: `membership:${membership.id}`,
+        meta: { clubId: data.clubId },
       },
     });
 

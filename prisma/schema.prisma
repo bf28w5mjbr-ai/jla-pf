@@ -88,6 +88,9 @@ model User {
   subscriptions      Subscription[]
   entryCheckoutSessions EntryCheckoutSession[]
   competitionEntries   CompetitionEntry[]
+  teamEntryMembers     TeamEntryMember[]
+  passkeyCredentials   PasskeyCredential[]
+  passkeyChallenges    PasskeyChallenge[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -283,6 +286,7 @@ model Club {
   dues                ClubDues[]
   entryCheckoutSessions EntryCheckoutSession[]
   competitionEntries   CompetitionEntry[]
+  teamEntries          TeamEntry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -431,6 +435,37 @@ model RegistrationSession {
 
   @@index([phoneNumber])
   @@index([expiresAt])
+}
+
+model PasskeyCredential {
+  id           String   @id @default(cuid())
+  userId       String
+  credentialId Bytes    @unique
+  publicKey    Bytes
+  counter      Int      @default(0)
+  transports   Json?
+  label        String   @default("パスキー")
+  lastUsedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model PasskeyChallenge {
+  id        String   @id @default(cuid())
+  userId    String
+  challenge String
+  expiresAt DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, expiresAt])
 }
 
 // SMS OTPログイン用の一時セッション
@@ -716,6 +751,23 @@ model Payment {
   @@index([userId])
 }
 
+model StripeEvent {
+  id        String            @id @default(cuid())
+  eventId   String            @unique
+  type      String
+  accountId String?
+  livemode  Boolean
+  data      Json
+  status    StripeEventStatus @default(RECEIVED)
+  errorMessage String?
+
+  receivedAt  DateTime @default(now())
+  processedAt DateTime?
+
+  @@index([type])
+  @@index([status])
+}
+
 model EntryCheckoutSession {
   id                      String                     @id @default(cuid())
   competitionId           String
@@ -756,6 +808,7 @@ model CompetitionEntry {
   snapshot    EntrySnapshot?
   items       EntryItem[]
   checkoutSessions EntryCheckoutSession[]
+  officialResultRows OfficialResultRow[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -785,6 +838,97 @@ model EntryItem {
   createdAt DateTime @default(now())
 }
 
+model TeamEntry {
+  id            String   @id @default(cuid())
+  competitionId String
+  eventId       String
+  clubId        String
+  teamName      String
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  event       Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  club        Club        @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  members     TeamEntryMember[]
+  officialResultRows OfficialResultRow[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([competitionId, eventId])
+  @@index([clubId])
+}
+
+model TeamEntryMember {
+  id        String @id @default(cuid())
+  teamEntryId String
+  userId    String
+  role      String?
+  order     Int?
+
+  teamEntry TeamEntry @relation(fields: [teamEntryId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([teamEntryId])
+  @@index([userId])
+}
+
+model OfficialResult {
+  id            String      @id @default(cuid())
+  competitionId String
+  eventId       String
+  round         ResultRound @default(FINAL)
+
+  publishedAt   DateTime?
+  lockedAt      DateTime?
+  note          String?     @db.Text
+
+  competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  event         Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  rows          OfficialResultRow[]
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([competitionId, eventId, round])
+  @@index([competitionId, publishedAt])
+}
+
+model OfficialResultRow {
+  id                String          @id @default(cuid())
+  officialResultId  String
+
+  entryType         ResultEntryType
+  competitionEntryId String?
+  teamEntryId       String?
+
+  rank              Int?
+  status            ResultStatus    @default(OK)
+
+  resultValue       Int?
+  unit              ResultUnit      @default(TIME_MS)
+  resultText        String?
+
+  penaltyValue      Int?
+  remarks           String?         @db.Text
+
+  lane              Int?
+  heat              Int?
+
+  officialResult    OfficialResult  @relation(fields: [officialResultId], references: [id], onDelete: Cascade)
+  competitionEntry CompetitionEntry? @relation(fields: [competitionEntryId], references: [id], onDelete: SetNull)
+  teamEntry         TeamEntry?       @relation(fields: [teamEntryId], references: [id], onDelete: SetNull)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([officialResultId, rank])
+  @@index([competitionEntryId])
+  @@index([teamEntryId])
+}
+
 model Competition {
   id             String @id @default(cuid())
   organizationId String // 主催団体ID
@@ -806,6 +950,13 @@ model Competition {
   entryEndDate    DateTime? // エントリー終了日時
   maxParticipants Int? // 最大参加者数
   entryFee        Json? // 参加費設定（JSON: {baseFee, multiEventSurcharge: [{minEvents, feePerEvent}], teamOnlyFee}）
+  requiredQualifications Json? // 出場に必要な資格（文字列配列）
+  participantEligibilityText String? @db.Text // 参加対象者（自由記述）
+  allowMultipleEventEntries Boolean @default(true) // 種目の複数選択を許可
+  requireClubMembership Boolean @default(false) // 所属クラブ必須
+  startListSettings Json? // スタートリスト設定（JSON: {heatCount: number, heatSize: number, updatedAt?: string}）
+  minAge          Int? // 参加可能な最小年齢
+  maxAge          Int? // 参加可能な最大年齢
 
   // クラブ種別制限
   allowedClubTypes ClubType[] // エントリー可能なクラブ種別（空配列 = 全種別可）
@@ -833,6 +984,8 @@ model Competition {
   events        Event[] // 大会種目
   entries       CompetitionEntry[]
   entryCheckoutSessions EntryCheckoutSession[]
+  teamEntries   TeamEntry[]
+  officialResults OfficialResult[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -880,9 +1033,13 @@ model Event {
   category          EventCategory @default(POOL) // 競技カテゴリ（プール/オーシャン）
   requiresEntryTime Boolean       @default(true) // エントリータイム入力必須
   displayOrder      Int           @default(0) // 表示順序
+  minAge            Int? // 種目の最小年齢
+  maxAge            Int? // 種目の最大年齢
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
   entryItems  EntryItem[]
+  teamEntries TeamEntry[]
+  officialResults OfficialResult[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1044,6 +1201,15 @@ enum PaymentStatus {
   PENDING
   SUCCEEDED
   EXPIRED
+  FAILED
+  REFUNDED
+  DISPUTED
+}
+
+enum StripeEventStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
 }
 
 enum EntryCheckoutSessionStatus {
@@ -1055,6 +1221,31 @@ enum EntryCheckoutSessionStatus {
 enum CompetitionEntryStatus {
   SUBMITTED
   CANCELLED
+}
+
+enum ResultRound {
+  FINAL
+  HEAT
+  SEMI
+}
+
+enum ResultEntryType {
+  INDIVIDUAL
+  TEAM
+}
+
+enum ResultStatus {
+  OK
+  DNS
+  DNF
+  DSQ
+}
+
+enum ResultUnit {
+  TIME_MS
+  DISTANCE_CM
+  POINTS
+  OTHER
 }
 
 // P2: 通知カテゴリ

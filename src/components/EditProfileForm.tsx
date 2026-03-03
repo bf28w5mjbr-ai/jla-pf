@@ -23,7 +23,8 @@ interface EditProfileFormProps {
     city: string;
     addressLine1: string;
     addressLine2: string | null;
-    emergencyContactName: string | null;
+    emergencyContactFamilyName: string | null;
+    emergencyContactGivenName: string | null;
     emergencyContactPhone: string | null;
   };
 }
@@ -43,7 +44,8 @@ export default function EditProfileForm({ user }: EditProfileFormProps) {
     city: user.city,
     addressLine1: user.addressLine1,
     addressLine2: user.addressLine2 || "",
-    emergencyContactName: user.emergencyContactName || "",
+    emergencyContactFamilyName: user.emergencyContactFamilyName || "",
+    emergencyContactGivenName: user.emergencyContactGivenName || "",
     emergencyContactPhone: user.emergencyContactPhone || "",
   });
 
@@ -254,15 +256,27 @@ export default function EditProfileForm({ user }: EditProfileFormProps) {
           <div className="border-t pt-6">
             <h3 className="text-sm font-semibold mb-4">緊急連絡先（任意）</h3>
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="emergencyContactName">緊急連絡先氏名</Label>
-                <Input
-                  id="emergencyContactName"
-                  type="text"
-                  placeholder="山田花子"
-                  value={formData.emergencyContactName}
-                  onChange={(e) => setFormData({ ...formData, emergencyContactName: e.target.value })}
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="emergencyContactFamilyName">緊急連絡先 姓</Label>
+                  <Input
+                    id="emergencyContactFamilyName"
+                    type="text"
+                    placeholder="山田"
+                    value={formData.emergencyContactFamilyName}
+                    onChange={(e) => setFormData({ ...formData, emergencyContactFamilyName: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="emergencyContactGivenName">緊急連絡先 名</Label>
+                  <Input
+                    id="emergencyContactGivenName"
+                    type="text"
+                    placeholder="花子"
+                    value={formData.emergencyContactGivenName}
+                    onChange={(e) => setFormData({ ...formData, emergencyContactGivenName: e.target.value })}
+                  />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="emergencyContactPhone">緊急連絡先電話番号</Label>

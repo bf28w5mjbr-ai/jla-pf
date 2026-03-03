@@ -167,12 +167,18 @@ export default function ClubApplicationTable({ applications: initialApplications
               {applications.map((application) => (
                 <TableRow key={application.id}>
                   <TableCell className="font-medium">{application.name}</TableCell>
-                  <TableCell>{application.officeAddress || '-'}</TableCell>
                   <TableCell>
-                    {application.ownerUser.familyName} {application.ownerUser.givenName}
+                    {[
+                      application.officePrefecture,
+                      application.officeCity,
+                      application.officeAddressLine1,
+                    ].filter(Boolean).join(' ') || '-'}
                   </TableCell>
-                  <TableCell className="text-sm">{application.ownerUser.email}</TableCell>
-                  <TableCell>{application.ownerUser.phoneNumber || '-'}</TableCell>
+                  <TableCell>
+                    {application.creator?.familyName ?? ''} {application.creator?.givenName ?? ''}
+                  </TableCell>
+                  <TableCell className="text-sm">{application.creator?.email ?? '-'}</TableCell>
+                  <TableCell>{application.creator?.phoneNumber || '-'}</TableCell>
                   <TableCell>
                     {new Date(application.createdAt).toLocaleDateString('ja-JP')}
                   </TableCell>

@@ -27,8 +27,14 @@ export default function Sidebar({ userRole, isClubOwner, organizations = [] }: S
   const [isOpen, setIsOpen] = useState(false);
 
   const isOrgAdmin = userRole === 'ORG_ADMIN' || userRole === 'PF_ADMIN';
+  const isJlaAdmin = userRole === 'JLA_ADMIN' || userRole === 'PF_ADMIN';
 
   const menuItems: MenuItem[] = [
+    {
+      label: "JLA管理",
+      href: "/admin/jla",
+      condition: isJlaAdmin,
+    },
     {
       label: "個人",
       href: "/dashboard",
@@ -55,7 +61,7 @@ export default function Sidebar({ userRole, isClubOwner, organizations = [] }: S
       href: "/admin",
       condition: isOrgAdmin,
     },
-  ].filter(item => item.condition === undefined || item.condition);
+  ];
 
   const bottomMenuItems: MenuItem[] = [
     {
@@ -71,7 +77,7 @@ export default function Sidebar({ userRole, isClubOwner, organizations = [] }: S
       label: "団体を作成",
       href: "/organizations/create",
     },
-  ].filter(item => item.condition === undefined || item.condition);
+  ];
 
   return (
     <>
@@ -144,6 +150,11 @@ export default function Sidebar({ userRole, isClubOwner, organizations = [] }: S
           
           <nav className="space-y-1">
             {menuItems.map((item) => {
+              // 条件に合わない場合は表示しない
+              if (item.condition !== undefined && !item.condition) {
+                return null;
+              }
+
               const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
               
               return (
@@ -198,27 +209,23 @@ export default function Sidebar({ userRole, isClubOwner, organizations = [] }: S
 
         <div className="p-6 pt-0 border-t border-gray-200 dark:border-gray-700">
           <nav className="space-y-1">
-            {bottomMenuItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setIsOpen(false)}
-                className="flex items-center px-3 py-2 rounded-md text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#2a2a2a] hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
-              >
-                <span>{item.label}</span>
-              </Link>
-            ))}
-            <Link
-              href="/settings"
-              onClick={() => setIsOpen(false)}
-              className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                pathname === '/settings'
-                  ? 'bg-gray-100 dark:bg-[#2a2a2a] text-gray-900 dark:text-gray-100'
-                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#2a2a2a] hover:text-gray-900 dark:hover:text-gray-100'
-              }`}
-            >
-              <span>設定</span>
-            </Link>
+            {bottomMenuItems.map((item) => {
+              // 条件に合わない場合は表示しない
+              if (item.condition !== undefined && !item.condition) {
+                return null;
+              }
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setIsOpen(false)}
+                  className="flex items-center px-3 py-2 rounded-md text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#2a2a2a] hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+                >
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
           </nav>
         </div>
       </aside>

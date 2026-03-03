@@ -21,9 +21,8 @@ Add `SNYK_TOKEN` secret in GitHub repository settings:
 
 ### Severity Thresholds
 
-- **Critical/High** - Blocks merge
-- **Medium** - Warning only
-- **Low** - Info only
+- **Snyk**: `--severity-threshold=high`（CIでは continue-on-error）
+- **npm audit**: `--audit-level=moderate`（CIでは continue-on-error）
 
 ## Running Locally
 
@@ -33,10 +32,10 @@ npm install -g trufflesecurity
 trufflehog filesystem .
 
 # Dependency audit
-npm audit
+npm audit --audit-level=moderate
 
 # ESLint security
-npm run lint -- --plugin security
+npm run lint -- --ext .ts,.tsx src/ || true
 
 # Docker scan (requires Trivy)
 trivy image jla-pf:latest

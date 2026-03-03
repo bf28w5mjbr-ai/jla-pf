@@ -15,7 +15,7 @@ export default function ClubApprovalActions({ clubId, currentStatus }: ClubAppro
   const handleUpdateStatus = async (newStatus: string) => {
     const confirmMessages: Record<string, string> = {
       'JLA_APPROVED': 'このクラブを承認しますか？',
-      'ACTIVE': 'このクラブをアクティブにしますか？',
+      'APPROVED': 'このクラブを正式クラブにしますか？',
       'SUSPENDED': 'このクラブを停止しますか？',
       'APPLYING': 'このクラブを申請中に戻しますか？',
     };
@@ -69,11 +69,11 @@ export default function ClubApprovalActions({ clubId, currentStatus }: ClubAppro
       {currentStatus === 'JLA_APPROVED' && (
         <>
           <button
-            onClick={() => handleUpdateStatus('ACTIVE')}
+            onClick={() => handleUpdateStatus('APPROVED')}
             disabled={loading}
             className="text-xs px-2 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            アクティブ化
+            正式化
           </button>
           <button
             onClick={() => handleUpdateStatus('SUSPENDED')}
@@ -84,7 +84,7 @@ export default function ClubApprovalActions({ clubId, currentStatus }: ClubAppro
           </button>
         </>
       )}
-      {currentStatus === 'ACTIVE' && (
+      {currentStatus === 'APPROVED' && (
         <button
           onClick={() => handleUpdateStatus('SUSPENDED')}
           disabled={loading}

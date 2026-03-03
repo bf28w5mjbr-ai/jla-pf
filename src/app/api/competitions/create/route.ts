@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
         entryStartDate: entryStartDate ? new Date(entryStartDate) : null,
         entryEndDate: entryEndDate ? new Date(entryEndDate) : null,
         maxParticipants: maxParticipants ? parseInt(maxParticipants) : null,
-        entryFee: entryFee ? parseInt(entryFee) : null,
+        entryFee: entryFee ? parseInt(entryFee) : undefined,
         status: "DRAFT",
         isPublished: false,
       },

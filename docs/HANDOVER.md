@@ -30,9 +30,9 @@
 - Prisma
 
 ### 認証
-- 自前実装
-- メール検証リンク（OTPではなく token）
-- Cookieベースセッション or JWT（どちらでも可）
+- 自前実装（Cookie内JWT）
+- 電話番号ベースの登録フロー（/api/registration/*）
+- メール/パスワード登録（/api/auth/register）
 
 ### 決済
 - Stripe
@@ -78,12 +78,14 @@ User
 
 ## 5. ロールと権限（RBAC）
 
-### ロール一覧
-- `USER`：一般選手
-- `CLUB_ADMIN`：クラブ管理者
-- `ORG_ADMIN`：県協会 / JLA管理者
-- `JLA_ADMIN`：JLA本部
-- `PLATFORM`：PF運営
+### ロール一覧（Role enum）
+- `USER`：一般ユーザー
+- `ORG_ADMIN`：大会主催団体の管理者
+- `JLA_ADMIN`：JLA管理者
+- `PF_ADMIN`：プラットフォーム管理者
+
+### クラブ内権限（MembershipRole）
+- `OWNER` / `ADMIN` / `MEMBER`
 
 ### 原則
 - 作成者責任 + 上位承認
@@ -113,22 +115,17 @@ User
 ## 7. 決済仕様（最重要）
 
 ### Stripe方式
-- `destination charge`
-- `application_fee_amount = amount * 0.10`
-- `transfer_group = competitionId`
+- 標準の Stripe Checkout（Connect は現状未使用）
+- 決済状態は `Payment` / `EntryCheckoutSession` で管理
+- Webhook は現ビルドでは stub（/api/webhooks/stripe は 501 を返却）
 
 ### 決済パターン
+- 現状は Checkout セッションの作成と DB 保存まで実装
+- 収益分配/返金/Connect 決済は未実装
 
-#### 大会 / 講習
-- `destination = 主催団体（Org）`
-
-#### クラブ登録
-- `destination = JLA`
-- JLA → 県へ Transfer（比率は将来設定）
-
-### Webhookで必ず同期すること
+### Webhookで必ず同期すること（将来）
 - `checkout.session.completed`
-- `charge.refunded`
+- `checkout.session.expired`
 
 ## 8. API設計方針
 
@@ -140,21 +137,27 @@ User
 ### 主要API（抜粋）
 ```typescript
 POST /api/auth/register
-GET  /api/auth/verify
 POST /api/auth/login
+POST /api/registration/start
+POST /api/registration/verify
 
+GET  /api/clubs
 POST /api/clubs
-POST /api/memberships/apply
-POST /api/memberships/approve
+GET  /api/clubs/search
+POST /api/clubs/apply
 
-POST /api/qualifications/request
-POST /api/qualifications/approve
+GET  /api/memberships
+PATCH /api/memberships/[id]
 
-POST /api/competitions
-POST /api/entries
-POST /api/checkout/entry
+GET  /api/qualifications
+PATCH /api/qualifications/[id]
 
-POST /api/stripe/webhook
+POST /api/competitions/create
+GET  /api/competitions/[id]
+PATCH /api/competitions/[id]/update
+GET  /api/competitions/[id]/events
+PUT  /api/competitions/[id]/events/[eventId]/official-result
+GET  /api/competitions/[id]/results
 ```
 
 ## 9. UIの優先順位（最低限）
@@ -187,10 +190,9 @@ POST /api/stripe/webhook
 - ✅ AuditLog
 
 ### Sprint 2（将来）
-- チーム
-- ヒート
-- リザルト
-- CSV連携
+- 決済Webhookの本実装
+- 収益分配/返金
+- CSV/外部連携
 
 ## 11. 判断に迷ったら
 
@@ -209,7 +211,7 @@ POST /api/stripe/webhook
 
 ---
 
-## 現在の実装状況（2026年1月15日時点）
+## 現在の実装状況（2026年2月5日時点）
 
 ### ✅ 完了項目（Sprint 1）
 
@@ -223,12 +225,11 @@ POST /api/stripe/webhook
 - セキュリティスキャン（TruffleHog, Trivy, Snyk）
 
 #### コアドメイン実装
-- ✅ Prisma Schema（User, Org, Club, Membership, Qualification, Competition, Entry, Payment, AuditLog）
-- ✅ 認証（自前実装、Cookie セッション）
-- ✅ Stripe Webhook（ENTRY, ORG_ANNUAL, COMPETITION_HOST, CART）
-- ✅ 決済フロー（destination charge + 10% application fee）
-- ✅ Wallet Ledger（財務管理）
-- ✅ AuditLog（監査ログ）
+- ✅ Prisma Schema（User/Organization/Club/Membership/Qualification/Competition/Event/Entry/Payment/OfficialResult ほか）
+- ✅ 認証（Cookie + JWT）
+- ✅ 監査ログ（AuditLog）
+- ✅ 公式結果 API/閲覧 UI（大会/イベント単位）
+- ⚠️ Stripe Webhookは stub（/api/webhooks/stripe）
 
 #### セキュリティ改善
 - ✅ 汎用エラーメッセージ（ユーザー列挙攻撃対策）
@@ -237,29 +238,17 @@ POST /api/stripe/webhook
 - ✅ 脆弱性修正（js-yaml, qs）
 
 ### 🔨 次のステップ（優先順）
-
-1. **API実装**
-   - [ ] `/api/competitions` - 大会作成・一覧・詳細
-   - [ ] `/api/entries` - エントリー作成・一覧
-   - [ ] `/api/checkout/entry` - エントリー決済開始
-   - [ ] `/api/memberships` - 所属申請・承認
-   - [ ] `/api/qualifications` - 資格申請・承認
-
-2. **UI実装**
-   - [ ] 大会一覧・詳細ページ
-   - [ ] エントリーフォーム
-   - [ ] ダッシュボード拡充（所属・資格状況表示）
-   - [ ] 管理画面（承認キュー）
-
+1. **決済**
+   - [ ] Webhook本実装（session.completed/expired）
+   - [ ] 返金・失敗時ハンドリング
+2. **UI**
+   - [ ] 大会一覧/詳細/エントリーUI（現状はAPI中心）
 3. **テスト**
-   - [ ] ユニットテスト（Jest/Vitest）
-   - [ ] E2Eテスト（Playwright）
-   - [ ] 決済フローの統合テスト
-
+   - [ ] ユニット/E2E
 4. **ドキュメント**
-   - [ ] API仕様書（OpenAPI/Swagger）
-   - [ ] 運用マニュアル
-   - [ ] トラブルシューティングガイド
+   - [x] API仕様書（`docs/API_SPEC.md`）
+   - [x] 運用マニュアル（`docs/OPERATIONS_MANUAL.md`）
+   - [x] トラブルシューティング（`docs/TROUBLESHOOTING.md`）
 
 ### 📁 プロジェクト構造
 
@@ -286,7 +275,10 @@ jla-pf/
 │       └── finance.ts       # ✅ 収益計算
 └── docs/
     ├── AUTOMATION.md        # ✅ 自動化ガイド
-    ├── DEPLOYMENT.md        # デプロイ手順
+   ├── DEPLOYMENT.md        # デプロイ手順
+   ├── API_SPEC.md          # ✅ API仕様（実装一覧）
+   ├── OPERATIONS_MANUAL.md # ✅ 運用マニュアル
+   ├── TROUBLESHOOTING.md   # ✅ トラブルシューティング
     └── HANDOVER.md          # 本ドキュメント
 ```
 
@@ -361,5 +353,5 @@ pnpm audit
 
 ---
 
-**最終更新**: 2026年1月15日  
+**最終更新**: 2026年2月5日  
 **メンテナンス**: GitHub Copilot + 開発チーム

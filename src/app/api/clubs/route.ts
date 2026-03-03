@@ -19,21 +19,21 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const status = searchParams.get('status'); // 'APPLYING' | 'JLA_APPROVED' | 'ACTIVE' | 'REJECTED'
+    const status = searchParams.get('status'); // 'APPLYING' | 'JLA_APPROVED' | 'APPROVED' | 'INACTIVE' | 'SUSPENDED'
     const limit = parseInt(searchParams.get('limit') || '20');
     const offset = parseInt(searchParams.get('offset') || '0');
 
     const where: any = {};
 
     if (status) {
-      where.registrationStatus = status;
+      where.status = status;
     }
 
     const [clubs, total] = await Promise.all([
       prisma.club.findMany({
         where,
         include: {
-          ownerUser: {
+          creator: {
             select: {
               id: true,
               email: true,
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
       officeAddress: z.string().optional(),
       officeTel: z.string().optional(),
       officeAttention: z.string().optional(),
-      kind: z.string().optional(),
+      kind: z.enum(['FIRST', 'SECOND', 'THIRD', 'FOURTH']).optional(),
     });
 
     const data = CreateClubSchema.parse(body);
@@ -94,12 +94,12 @@ export async function POST(req: NextRequest) {
     const existing = await prisma.club.findFirst({
       where: {
         name: data.name,
-        registrationStatus: { in: ['APPLYING', 'JLA_APPROVED', 'ACTIVE'] },
+        status: { in: ['APPLYING', 'JLA_APPROVED', 'APPROVED'] },
       },
     });
 
     if (existing) {
-      if (existing.registrationStatus === 'APPLYING') {
+      if (existing.status === 'APPLYING') {
         return NextResponse.json(
           { error: '既に同じ名前のクラブが申請中です' },
           { status: 400 }
@@ -115,18 +115,18 @@ export async function POST(req: NextRequest) {
     // クラブ作成（APPLYING状態）
     const club = await prisma.club.create({
       data: {
-        ownerUserId: sess.userId,
+        creatorId: sess.userId,
         name: data.name,
         establishedYear: data.establishedYear,
-        watchPlace: data.watchPlace,
-        officeAddress: data.officeAddress,
-        officeTel: data.officeTel,
-        officeAttention: data.officeAttention,
-        kind: data.kind,
-        registrationStatus: 'APPLYING',
+        patrolLocation: data.watchPlace,
+        officeAddressLine1: data.officeAddress,
+        officePhone: data.officeTel,
+        mailingName: data.officeAttention,
+        type: data.kind,
+        status: 'APPLYING',
       },
       include: {
-        ownerUser: {
+        creator: {
           select: {
             id: true,
             email: true,

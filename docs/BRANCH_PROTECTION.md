@@ -5,7 +5,9 @@ This repository has branch protection rules enforced on the main development bra
 
 ## Rules
 - **Require 1 review** before merging
-- **Require passing status checks** (CI, CodeQL) before merging
+- **Require passing status checks**:
+	- `CI / build (pull_request)`
+	- `codeql`
 - **Dismiss stale reviews** when new commits are pushed
 - **Allow auto-merge** (squash merge)
 - **Disallow force pushes** and deletions

@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/server/db";
 import { isValidJapaneseMobile, toE164 } from "@/lib/phone";
+import { normalizePhone } from "@/lib/normalize-kana";
 import { 
   generateOTP, 
   hashOTP, 
@@ -36,10 +37,16 @@ export async function POST(req: NextRequest) {
     }
 
     const phoneE164 = toE164(data.phoneNumber);
+    const localPhone = normalizePhone(data.phoneNumber);
 
     // 2. ユーザーの存在確認
-    const user = await prisma.user.findUnique({
-      where: { phoneNumber: phoneE164 },
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { phoneNumber: phoneE164 },
+          { phoneNumber: localPhone },
+        ],
+      },
     });
 
     if (!user) {
@@ -47,6 +54,13 @@ export async function POST(req: NextRequest) {
         { error: "この電話番号は登録されていません。新規登録してください。" },
         { status: 404 }
       );
+    }
+
+    if (user.phoneNumber !== phoneE164) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { phoneNumber: phoneE164 },
+      });
     }
 
     // 3. 既存のログインセッションチェック

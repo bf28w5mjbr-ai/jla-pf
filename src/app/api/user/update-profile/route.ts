@@ -27,7 +27,8 @@ export async function PUT(request: NextRequest) {
       city,
       addressLine1,
       addressLine2,
-      emergencyContactName,
+      emergencyContactFamilyName,
+      emergencyContactGivenName,
       emergencyContactPhone,
     } = body;
 
@@ -56,7 +57,8 @@ export async function PUT(request: NextRequest) {
         city,
         addressLine1,
         addressLine2: addressLine2 || null,
-        emergencyContactName: emergencyContactName || null,
+        emergencyContactFamilyName: emergencyContactFamilyName || null,
+        emergencyContactGivenName: emergencyContactGivenName || null,
         emergencyContactPhone: emergencyContactPhone || null,
       },
       select: {

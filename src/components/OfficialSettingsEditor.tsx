@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Plus, Trash2, Check } from "lucide-react";
 
 type OfficialPosition = {
   positionName: string;
-  count: number;
+  count: string;
 };
 
 type OfficialPositionsData = OfficialPosition[];
@@ -28,14 +28,31 @@ export function OfficialSettingsEditor({
 }: OfficialSettingsEditorProps) {
   const [positions, setPositions] = useState<OfficialPosition[]>(
     initialOfficialPositions && Array.isArray(initialOfficialPositions)
-      ? initialOfficialPositions
+      ? initialOfficialPositions.map((position: any) => ({
+          positionName: position.positionName ?? "",
+          count:
+            typeof position.count === "number"
+              ? position.count.toString()
+              : "",
+        }))
       : []
   );
+  const [savedPositions, setSavedPositions] = useState<
+    { positionName: string; count: number }[]
+  >(
+    initialOfficialPositions && Array.isArray(initialOfficialPositions)
+      ? initialOfficialPositions.map((position: any) => ({
+          positionName: position.positionName ?? "",
+          count: typeof position.count === "number" ? position.count : 0,
+        }))
+      : []
+  );
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
 
   const addPosition = () => {
-    setPositions([...positions, { positionName: "", count: 1 }]);
+    setPositions([...positions, { positionName: "", count: "1" }]);
   };
 
   const removePosition = (index: number) => {
@@ -45,14 +62,10 @@ export function OfficialSettingsEditor({
   const updatePosition = (
     index: number,
     field: keyof OfficialPosition,
-    value: string | number
+    value: string
   ) => {
     const newPositions = [...positions];
-    if (field === "count") {
-      newPositions[index][field] = typeof value === "string" ? parseInt(value) || 1 : value;
-    } else {
-      newPositions[index][field] = value as string;
-    }
+    newPositions[index][field] = value;
     setPositions(newPositions);
   };
 
@@ -61,8 +74,16 @@ export function OfficialSettingsEditor({
       setIsSaving(true);
 
       // バリデーション
-      const invalidPositions = positions.filter(
-        (p) => !p.positionName.trim() || p.count < 1
+      const normalizedPositions = positions.map((position) => ({
+        positionName: position.positionName.trim(),
+        count: Number(position.count),
+      }));
+
+      const invalidPositions = normalizedPositions.filter(
+        (position) =>
+          !position.positionName ||
+          !Number.isFinite(position.count) ||
+          position.count < 1
       );
       if (invalidPositions.length > 0) {
         toast.error("ポジション名を入力し、募集人数は1人以上にしてください");
@@ -74,7 +95,7 @@ export function OfficialSettingsEditor({
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ positions }),
+          body: JSON.stringify({ positions: normalizedPositions }),
         }
       );
 
@@ -83,6 +104,8 @@ export function OfficialSettingsEditor({
         throw new Error(error.error || "保存に失敗しました");
       }
 
+      setSavedPositions(normalizedPositions);
+      setLastSavedAt(new Date());
       toast.success("オフィシャル設定を保存しました");
       setJustSaved(true);
       setTimeout(() => setJustSaved(false), 2000);
@@ -101,26 +124,27 @@ export function OfficialSettingsEditor({
       <Card>
         <CardHeader>
           <CardTitle>オフィシャル募集設定</CardTitle>
+          <CardDescription>
+            募集するポジションと人数を設定します。
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6">
           <div className="space-y-4">
             {positions.length === 0 ? (
-              <div className="text-sm text-muted-foreground text-center py-8">
+              <div className="rounded-md border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-muted-foreground dark:border-gray-700 dark:bg-gray-900">
                 オフィシャルポジションが登録されていません。
                 <br />
-                「ポジションを追加」ボタンで追加してください。
+                「ポジションを追加」から登録できます。
               </div>
             ) : (
               positions.map((position, index) => (
                 <div
                   key={index}
-                  className="flex gap-4 items-start p-4 border rounded-lg"
+                  className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-950 md:flex-row md:items-end"
                 >
-                  <div className="flex-1 space-y-4">
+                  <div className="flex-1 space-y-3">
                     <div>
-                      <Label htmlFor={`position-name-${index}`}>
-                        ポジション名
-                      </Label>
+                      <Label htmlFor={`position-name-${index}`}>ポジション名</Label>
                       <Input
                         id={`position-name-${index}`}
                         value={position.positionName}
@@ -131,10 +155,10 @@ export function OfficialSettingsEditor({
                         className="mt-1"
                       />
                     </div>
-                    <div>
-                      <Label htmlFor={`position-count-${index}`}>
-                        募集人数
-                      </Label>
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <div className="w-32">
+                      <Label htmlFor={`position-count-${index}`}>募集人数</Label>
                       <Input
                         id={`position-count-${index}`}
                         type="number"
@@ -146,21 +170,22 @@ export function OfficialSettingsEditor({
                         className="mt-1"
                       />
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removePosition(index)}
+                      aria-label="ポジションを削除"
+                      className="h-10 w-10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removePosition(index)}
-                    className="mt-6"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
                 </div>
               ))
             )}
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               type="button"
               variant="outline"
@@ -189,6 +214,38 @@ export function OfficialSettingsEditor({
                 "保存"
               )}
             </Button>
+          </div>
+
+          <div className="border-t pt-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                保存済みの内容
+              </p>
+              {lastSavedAt && (
+                <p className="text-xs text-gray-500">
+                  {lastSavedAt.toLocaleString("ja-JP")}
+                </p>
+              )}
+            </div>
+            {savedPositions.length === 0 ? (
+              <p className="text-sm text-gray-500">保存済みの募集設定はありません。</p>
+            ) : (
+              <ul className="space-y-2">
+                {savedPositions.map((position, index) => (
+                  <li
+                    key={`${position.positionName}-${position.count}-${index}`}
+                    className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2 text-sm"
+                  >
+                    <span className="font-medium text-gray-900 dark:text-gray-100">
+                      {position.positionName || "（名称未設定）"}
+                    </span>
+                    <span className="text-gray-600 dark:text-gray-400">
+                      {position.count}人
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </CardContent>
       </Card>

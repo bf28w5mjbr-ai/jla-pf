@@ -86,6 +86,15 @@ CREATE TABLE "QualificationTemplate" (
     CONSTRAINT "QualificationTemplate_pkey" PRIMARY KEY ("id")
 );
 
+-- Ensure NotificationCategory enum exists
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'NotificationCategory') THEN
+        CREATE TYPE "NotificationCategory" AS ENUM ('GENERAL', 'CLUB', 'COMPETITION', 'PAYMENT', 'SYSTEM');
+    END IF;
+END
+$$;
+
 -- CreateTable
 CREATE TABLE "NotificationTemplate" (
     "id" TEXT NOT NULL,

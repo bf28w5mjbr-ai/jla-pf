@@ -24,12 +24,13 @@ JLA PF（日本ライフセービング協会プラットフォーム）にお�
 
 ---
 
-### 2. CLUB_OWNER / CLUB_ADMIN
+### 2. クラブ内権限（MembershipRole: OWNER / ADMIN）
 
 #### 作成フロー
 1. USERがクラブ作成申請を提出
-2. **PF_ADMINが承認**
-3. 承認後、申請者が自動的にCLUB_OWNERに昇格
+2. **PF_ADMINが審査（承認/却下）**
+3. JLA承認が必要な場合は JLA_ADMIN が `APPLYING → JLA_APPROVED` を実行
+4. 承認後、申請者が自動的に `OWNER` に昇格
 
 #### できること
 - **メンバー管理**
@@ -44,8 +45,7 @@ JLA PF（日本ライフセービング協会プラットフォーム）にお�
 #### できないこと
 - 資格承認
 - 大会作成
-- 他のクラブへの干渉
-- クラブの重要情報変更（PF承認が必要）
+- 他クラブへの干渉
 
 #### 制約事項
 - **OWNER退会時：** 他にOWNERが存在する場合のみ退会可能
@@ -106,18 +106,16 @@ DELETE /api/memberships/[id]             // メンバー削除
 #### API エンドポイント
 ```typescript
 // 大会管理
-POST   /api/competitions                     // 大会作成
-GET    /api/competitions?orgId={id}          // 自組織の大会一覧
-PATCH  /api/competitions/[id]                // 大会更新
-DELETE /api/competitions/[id]                // 大会削除
+POST   /api/competitions/create
+GET    /api/competitions/[id]
+PATCH  /api/competitions/[id]/update
 
 // エントリー管理
-GET    /api/competitions/[id]/entries        // エントリー一覧
-PATCH  /api/entries/[id]                     // ステータス変更
+GET    /api/competitions/[id]/results        // 公式結果
+PUT    /api/competitions/[id]/events/[eventId]/official-result
 
 // 収益管理
-GET    /api/orgs/[id]/wallet                 // Wallet残高
-GET    /api/orgs/[id]/transactions           // トランザクション履歴
+（未実装）
 ```
 
 #### 実装ファイル
@@ -175,6 +173,9 @@ GET    /api/qualifications                   // 資格一覧
 GET    /api/qualifications/[id]              // 資格詳細
 PATCH  /api/qualifications/[id]              // 承認・却下
 DELETE /api/qualifications/[id]              // 資格削除
+
+// クラブJLA承認
+POST   /api/admin/jla/clubs/[id]/approve
 
 // USER情報（予定）
 GET    /api/admin/users                      // 全USER一覧
@@ -275,11 +276,10 @@ GET    /api/admin/clubs/[id]                 // CLUB詳細
 ```typescript
 await prisma.auditLog.create({
   data: {
-    userId: sess.userId,
+    actorUserId: sess.userId,
     action: 'QUALIFICATION_APPROVE',
-    entityType: 'QUALIFICATION',
-    entityId: id,
-    changes: JSON.stringify(data),
+    target: `qualification:${id}`,
+    meta: data,
   },
 });
 ```
@@ -352,4 +352,4 @@ if (!orgAdmin) {
 
 ---
 
-**最終更新：** 2026年1月15日
+**最終更新：** 2026年2月5日

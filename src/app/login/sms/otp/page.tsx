@@ -18,6 +18,7 @@ function OTPLoginContent() {
   const [otp, setOtp] = useState("");
   const [countdown, setCountdown] = useState(0);
   const [resending, setResending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!sessionId) {
@@ -35,6 +36,7 @@ function OTPLoginContent() {
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setLoading(true);
 
     try {
@@ -47,7 +49,9 @@ function OTPLoginContent() {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || "認証に失敗しました");
+        const message = data.error || "認証に失敗しました";
+        setError(message);
+        toast.error(message);
         return;
       }
 
@@ -55,7 +59,9 @@ function OTPLoginContent() {
       router.push("/dashboard");
     } catch (err) {
       console.error("OTP verify error:", err);
-      toast.error("認証に失敗しました");
+      const message = "認証に失敗しました";
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -117,13 +123,21 @@ function OTPLoginContent() {
                 placeholder="123456"
                 maxLength={6}
                 value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/[^\d]/g, ''))}
+                onChange={(e) => {
+                  setOtp(e.target.value.replace(/[^\d]/g, ''));
+                  if (error) setError(null);
+                }}
                 required
                 className="text-center text-2xl tracking-widest"
               />
               <p className="text-xs text-muted-foreground">
                 認証コードの有効期限は5分です
               </p>
+              {error && (
+                <p className="text-xs text-red-600" role="alert">
+                  {error}
+                </p>
+              )}
             </div>
 
             <Button type="submit" className="w-full" disabled={loading || otp.length !== 6}>

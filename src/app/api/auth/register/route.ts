@@ -6,6 +6,7 @@ import { prisma } from "@/server/db";
 import bcrypt from "bcrypt";
 import { z } from "zod";
 import { normalizeKana, normalizePhone } from "@/lib/normalize-kana";
+import { isValidJapaneseMobile, toE164 } from "@/lib/phone";
 
 const RegisterSchema = z.object({
   email: z.string().email("有効なメールアドレスを入力してください"),
@@ -15,13 +16,19 @@ const RegisterSchema = z.object({
   familyNameKana: z.string().min(1, "姓（カナ）を入力してください"),
   givenNameKana: z.string().min(1, "名（カナ）を入力してください"),
   dateOfBirth: z.string().min(1, "生年月日を入力してください"),
-  phoneNumber: z.string().optional(),
-  jlaMemberNumber: z.string().optional(),
-  emergencyContactFamilyName: z.string().optional(),
-  emergencyContactGivenName: z.string().optional(),
-  emergencyContactFamilyNameKana: z.string().optional(),
-  emergencyContactGivenNameKana: z.string().optional(),
-  emergencyContactPhone: z.string().optional(),
+  sex: z.enum(["MALE", "FEMALE", "OTHER"]),
+  postalCode: z.string().min(1, "郵便番号を入力してください"),
+  prefecture: z.string().min(1, "都道府県を入力してください"),
+  city: z.string().min(1, "市区町村を入力してください"),
+  addressLine1: z.string().min(1, "住所を入力してください"),
+  addressLine2: z.string().optional(),
+  phoneNumber: z.string().min(10, "電話番号を入力してください"),
+  jlaMemberNumber: z.string().regex(/^5000\d{5}$/, "JLA会員番号は5000から始まる9桁で入力してください").optional(),
+  emergencyContactFamilyName: z.string().min(1, "緊急連絡先の姓を入力してください"),
+  emergencyContactGivenName: z.string().min(1, "緊急連絡先の名を入力してください"),
+  emergencyContactFamilyNameKana: z.string().min(1, "緊急連絡先の姓（カナ）を入力してください"),
+  emergencyContactGivenNameKana: z.string().min(1, "緊急連絡先の名（カナ）を入力してください"),
+  emergencyContactPhone: z.string().min(10, "緊急連絡先の電話番号を入力してください"),
 });
 
 export async function POST(req: NextRequest) {
@@ -32,7 +39,21 @@ export async function POST(req: NextRequest) {
     // 正規化処理
     const normalizedFamilyName = normalizeKana(data.familyNameKana);
     const normalizedGivenName = normalizeKana(data.givenNameKana);
-    const normalizedPhone = data.phoneNumber ? normalizePhone(data.phoneNumber) : null;
+    if (!isValidJapaneseMobile(data.phoneNumber)) {
+      return NextResponse.json(
+        { error: "有効な日本国内の携帯電話番号を入力してください" },
+        { status: 400 }
+      );
+    }
+
+    const normalizedPhone = toE164(data.phoneNumber);
+    if (!normalizedPhone) {
+      return NextResponse.json(
+        { error: "電話番号が不正です" },
+        { status: 400 }
+      );
+    }
+    const normalizedLocalPhone = normalizePhone(data.phoneNumber);
     const dateOfBirth = new Date(data.dateOfBirth);
 
     // 1. メールアドレスの重複チェック
@@ -47,16 +68,19 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. 電話番号の重複チェック
-    if (normalizedPhone) {
-      const existingPhone = await prisma.user.findFirst({
-        where: { phoneNumber: normalizedPhone },
-      });
-      if (existingPhone) {
-        return NextResponse.json(
-          { error: "この電話番号は既に登録されています" },
-          { status: 400 }
-        );
-      }
+    const existingPhone = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { phoneNumber: normalizedPhone },
+          { phoneNumber: normalizedLocalPhone },
+        ],
+      },
+    });
+    if (existingPhone) {
+      return NextResponse.json(
+        { error: "この電話番号は既に登録されています" },
+        { status: 400 }
+      );
     }
 
     // 3. 氏名+生年月日の重複チェック
@@ -105,14 +129,20 @@ export async function POST(req: NextRequest) {
         normalizedFamilyName,
         normalizedGivenName,
         dateOfBirth,
+        sex: data.sex,
+        postalCode: data.postalCode,
+        prefecture: data.prefecture,
+        city: data.city,
+        addressLine1: data.addressLine1,
+        addressLine2: data.addressLine2 || null,
         phoneNumber: normalizedPhone,
         jlaMemberNumber: data.jlaMemberNumber || null,
-        emergencyContactFamilyName: data.emergencyContactFamilyName || null,
-        emergencyContactGivenName: data.emergencyContactGivenName || null,
-        emergencyContactFamilyNameKana: data.emergencyContactFamilyNameKana || null,
-        emergencyContactGivenNameKana: data.emergencyContactGivenNameKana || null,
-        emergencyContactPhone: data.emergencyContactPhone || null,
-        emailVerified: true, // 簡易実装のため即座に検証済みとする
+        emergencyContactFamilyName: data.emergencyContactFamilyName,
+        emergencyContactGivenName: data.emergencyContactGivenName,
+        emergencyContactFamilyNameKana: data.emergencyContactFamilyNameKana,
+        emergencyContactGivenNameKana: data.emergencyContactGivenNameKana,
+        emergencyContactPhone: data.emergencyContactPhone,
+        emailVerified: false,
       },
       select: {
         id: true,
@@ -124,8 +154,8 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({
-      message: "登録が完了しました。ログインしてください。",
-      user,
+      message: "パスキー登録へ進んでください。",
+      userId: user.id,
     }, { status: 201 });
 
   } catch (err) {

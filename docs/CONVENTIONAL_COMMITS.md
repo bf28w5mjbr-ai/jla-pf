@@ -2,6 +2,8 @@
 
 This repository uses [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
 
+PR では `commitlint` ワークフローが実行されます。
+
 ## Format
 ```
 <type>[optional scope]: <description>

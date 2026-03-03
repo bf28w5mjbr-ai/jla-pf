@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useRouter } from "next/navigation";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
@@ -56,6 +58,8 @@ type Event = {
   category: "POOL" | "OCEAN";
   requiresEntryTime: boolean;
   displayOrder: number;
+  minAge?: number | null;
+  maxAge?: number | null;
 };
 
 type EntryFee = {
@@ -73,6 +77,12 @@ type EntrySettingsEditorProps = {
     entryStartDate: Date | null;
     entryEndDate: Date | null;
     entryFee?: EntryFee;
+    requiredQualifications?: string[] | null;
+    participantEligibilityText?: string | null;
+    allowMultipleEventEntries?: boolean | null;
+    requireClubMembership?: boolean | null;
+    minAge?: number | null;
+    maxAge?: number | null;
   };
   initialEvents?: Event[];
   canEdit: boolean;
@@ -84,6 +94,7 @@ export default function EntrySettingsEditor({
   initialEvents = [],
   canEdit,
 }: EntrySettingsEditorProps) {
+  const router = useRouter();
   const [entryStartDate, setEntryStartDate] = useState(
     initialData.entryStartDate
       ? new Date(initialData.entryStartDate).toISOString().slice(0, 16)
@@ -94,7 +105,38 @@ export default function EntrySettingsEditor({
       ? new Date(initialData.entryEndDate).toISOString().slice(0, 16)
       : ""
   );
+  const [allowMultipleEventEntries, setAllowMultipleEventEntries] = useState(
+    initialData.allowMultipleEventEntries ?? true
+  );
+  const [requireClubMembership, setRequireClubMembership] = useState(
+    initialData.requireClubMembership ?? false
+  );
+  const [competitionMinAge, setCompetitionMinAge] = useState(
+    typeof initialData.minAge === "number" ? initialData.minAge.toString() : ""
+  );
+  const [competitionMaxAge, setCompetitionMaxAge] = useState(
+    typeof initialData.maxAge === "number" ? initialData.maxAge.toString() : ""
+  );
   const [isUpdating, setIsUpdating] = useState(false);
+
+  // 参加対象者
+  const [participantEligibilityText, setParticipantEligibilityText] = useState(
+    initialData.participantEligibilityText ?? ""
+  );
+  const [isUpdatingEligibility, setIsUpdatingEligibility] = useState(false);
+
+  // 出場に必要な資格（3種のみ）
+  const allowedQualificationOptions = [
+    "選手登録",
+    "BLS・WS",
+    "認定ライフセーバー",
+  ] as const;
+  const [requiredQualifications, setRequiredQualifications] = useState<string[]>(
+    Array.isArray(initialData.requiredQualifications)
+      ? initialData.requiredQualifications
+      : []
+  );
+  const [isUpdatingQualifications, setIsUpdatingQualifications] = useState(false);
   
   // エントリー費用設定
   const [baseFee, setBaseFee] = useState(initialData.entryFee?.baseFee?.toString() || "");
@@ -109,6 +151,59 @@ export default function EntrySettingsEditor({
   
   // 種目管理
   const [events, setEvents] = useState<Event[]>(initialEvents);
+  const [eventAgeRanges, setEventAgeRanges] = useState<Record<string, { minAge: string; maxAge: string }>>(
+    () => {
+      const map: Record<string, { minAge: string; maxAge: string }> = {};
+      initialEvents.forEach((event) => {
+        if (!map[event.name]) {
+          map[event.name] = {
+            minAge: typeof event.minAge === "number" ? event.minAge.toString() : "",
+            maxAge: typeof event.maxAge === "number" ? event.maxAge.toString() : "",
+          };
+        }
+      });
+      return map;
+    }
+  );
+  const [eventAgeSaveStatus, setEventAgeSaveStatus] = useState<Record<string, Date>>({});
+  const syncEvents = (updatedEvents: Event[]) => {
+    setEvents(updatedEvents);
+    const updatedMap: Record<string, { minAge: string; maxAge: string }> = {};
+    updatedEvents.forEach((event) => {
+      if (!updatedMap[event.name]) {
+        updatedMap[event.name] = {
+          minAge: typeof event.minAge === "number" ? event.minAge.toString() : "",
+          maxAge: typeof event.maxAge === "number" ? event.maxAge.toString() : "",
+        };
+      }
+    });
+    setEventAgeRanges(updatedMap);
+  };
+
+  const clearEventAgeSaveStatus = (key: string) => {
+    setEventAgeSaveStatus((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const getAgePreview = (eventName: string) => {
+    const range = eventAgeRanges[eventName] || { minAge: "", maxAge: "" };
+    const minValue = range.minAge.trim();
+    const maxValue = range.maxAge.trim();
+    if (!minValue && !maxValue) {
+      return { label: "未設定", isUnset: true };
+    }
+    if (minValue && maxValue) {
+      return { label: `${minValue}〜${maxValue}歳`, isUnset: false };
+    }
+    if (minValue) {
+      return { label: `${minValue}歳以上`, isUnset: false };
+    }
+    return { label: `${maxValue}歳以下`, isUnset: false };
+  };
   const [poolIndividualName, setPoolIndividualName] = useState("");
   const [poolTeamName, setPoolTeamName] = useState("");
   const [oceanIndividualName, setOceanIndividualName] = useState("");
@@ -185,7 +280,7 @@ export default function EntrySettingsEditor({
       const response = await fetch(`/api/competitions/${competitionId}/events`);
       if (response.ok) {
         const { events: updatedEvents } = await response.json();
-        setEvents(updatedEvents);
+        syncEvents(updatedEvents);
         
         toast.dismiss();
         if (errorCount === 0) {
@@ -257,7 +352,7 @@ export default function EntrySettingsEditor({
       const response = await fetch(`/api/competitions/${competitionId}/events`);
       if (response.ok) {
         const { events: updatedEvents } = await response.json();
-        setEvents(updatedEvents);
+        syncEvents(updatedEvents);
         
         toast.dismiss();
         if (errorCount === 0) {
@@ -276,8 +371,8 @@ export default function EntrySettingsEditor({
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.SyntheticEvent) => {
+    e?.preventDefault?.();
 
     if (!entryStartDate || !entryEndDate) {
       toast.error("エントリー期間を入力してください");
@@ -286,6 +381,24 @@ export default function EntrySettingsEditor({
 
     if (new Date(entryStartDate) > new Date(entryEndDate)) {
       toast.error("エントリー終了日時はエントリー開始日時より後にしてください");
+      return;
+    }
+
+    const minAgeValue = competitionMinAge.trim() === "" ? null : Number(competitionMinAge);
+    const maxAgeValue = competitionMaxAge.trim() === "" ? null : Number(competitionMaxAge);
+
+    if (minAgeValue !== null && (Number.isNaN(minAgeValue) || minAgeValue < 0)) {
+      toast.error("最小年齢は0以上の数値で入力してください");
+      return;
+    }
+
+    if (maxAgeValue !== null && (Number.isNaN(maxAgeValue) || maxAgeValue < 0)) {
+      toast.error("最大年齢は0以上の数値で入力してください");
+      return;
+    }
+
+    if (minAgeValue !== null && maxAgeValue !== null && minAgeValue > maxAgeValue) {
+      toast.error("最小年齢は最大年齢以下にしてください");
       return;
     }
 
@@ -300,6 +413,10 @@ export default function EntrySettingsEditor({
         body: JSON.stringify({
           entryStartDate,
           entryEndDate,
+          allowMultipleEventEntries,
+          requireClubMembership,
+          minAge: minAgeValue,
+          maxAge: maxAgeValue,
         }),
       });
 
@@ -309,6 +426,7 @@ export default function EntrySettingsEditor({
       }
 
       toast.success("エントリー設定を更新しました");
+      router.refresh();
     } catch (error) {
       console.error("エントリー設定の更新エラー:", error);
       toast.error(error instanceof Error ? error.message : "エントリー設定の更新に失敗しました");
@@ -379,6 +497,92 @@ export default function EntrySettingsEditor({
     }
   };
 
+  const handleUpdateEligibility = async () => {
+    setIsUpdatingEligibility(true);
+
+    try {
+      const response = await fetch(
+        `/api/competitions/${competitionId}/participant-eligibility`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            participantEligibilityText,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "参加対象者の更新に失敗しました");
+      }
+
+      const data = await response.json();
+      if (typeof data.participantEligibilityText === "string") {
+        setParticipantEligibilityText(data.participantEligibilityText);
+      } else if (data.participantEligibilityText === null) {
+        setParticipantEligibilityText("");
+      }
+
+      toast.success("参加対象者を更新しました");
+      router.refresh();
+    } catch (error) {
+      console.error("参加対象者の更新エラー:", error);
+      toast.error(
+        error instanceof Error ? error.message : "参加対象者の更新に失敗しました"
+      );
+    } finally {
+      setIsUpdatingEligibility(false);
+    }
+  };
+
+  const toggleQualification = (value: string) => {
+    if (requiredQualifications.includes(value)) {
+      setRequiredQualifications(requiredQualifications.filter((q) => q !== value));
+    } else {
+      setRequiredQualifications([...requiredQualifications, value]);
+    }
+  };
+
+  const handleUpdateQualifications = async () => {
+    setIsUpdatingQualifications(true);
+
+    try {
+      const response = await fetch(
+        `/api/competitions/${competitionId}/entry-qualifications`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ requiredQualifications }),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "必要資格の更新に失敗しました");
+      }
+
+      const data = await response.json();
+      if (Array.isArray(data.requiredQualifications)) {
+        setRequiredQualifications(data.requiredQualifications);
+      }
+
+      toast.success("出場に必要な資格を更新しました");
+      router.refresh();
+    } catch (error) {
+      console.error("必要資格の更新エラー:", error);
+      toast.error(
+        error instanceof Error ? error.message : "必要資格の更新に失敗しました"
+      );
+    } finally {
+      setIsUpdatingQualifications(false);
+    }
+  };
+
   const handleAddPoolIndividual = async () => {
     if (!poolIndividualName.trim()) {
       setPoolIndividualError("種目名を入力してください");
@@ -408,7 +612,7 @@ export default function EntrySettingsEditor({
       }
 
       const { events: newEvents } = await response.json();
-      setEvents(newEvents);
+      syncEvents(newEvents);
       setPoolIndividualName("");
       toast.success(`プール個人種目「${poolIndividualName}」を追加しました（男子・女子）`);
     } catch (error) {
@@ -448,7 +652,7 @@ export default function EntrySettingsEditor({
       }
 
       const { events: newEvents } = await response.json();
-      setEvents(newEvents);
+      syncEvents(newEvents);
       setPoolTeamName("");
       toast.success(`プールチーム種目「${poolTeamName}」を追加しました（男子・女子）`);
     } catch (error) {
@@ -488,7 +692,7 @@ export default function EntrySettingsEditor({
       }
 
       const { events: newEvents } = await response.json();
-      setEvents(newEvents);
+      syncEvents(newEvents);
       setOceanIndividualName("");
       toast.success(`オーシャン個人種目「${oceanIndividualName}」を追加しました（男子・女子）`);
     } catch (error) {
@@ -528,7 +732,7 @@ export default function EntrySettingsEditor({
       }
 
       const { events: newEvents } = await response.json();
-      setEvents(newEvents);
+      syncEvents(newEvents);
       setOceanTeamName("");
       toast.success(`オーシャンチーム種目「${oceanTeamName}」を追加しました（男子・女子）`);
     } catch (error) {
@@ -536,6 +740,96 @@ export default function EntrySettingsEditor({
       setOceanTeamError(error instanceof Error ? error.message : "種目の追加に失敗しました");
     } finally {
       setIsAddingOceanTeam(false);
+    }
+  };
+
+  const handleBulkUpdateEventAgeRanges = async (
+    category: "POOL" | "OCEAN",
+    type: "INDIVIDUAL" | "TEAM"
+  ) => {
+    const targetEvents = Array.from(
+      new Map(
+        events
+          .filter((event) => event.category === category && event.type === type)
+          .map((event) => [event.name, event])
+      ).values()
+    );
+
+    if (targetEvents.length === 0) {
+      toast.info("対象の種目がありません");
+      return;
+    }
+
+    for (const event of targetEvents) {
+      const range = eventAgeRanges[event.name] || { minAge: "", maxAge: "" };
+      const minAgeValue = range.minAge.trim() === "" ? null : Number(range.minAge);
+      const maxAgeValue = range.maxAge.trim() === "" ? null : Number(range.maxAge);
+
+      if (minAgeValue !== null && (Number.isNaN(minAgeValue) || minAgeValue < 0)) {
+        toast.error("種目の最小年齢は0以上の数値で入力してください");
+        return;
+      }
+
+      if (maxAgeValue !== null && (Number.isNaN(maxAgeValue) || maxAgeValue < 0)) {
+        toast.error("種目の最大年齢は0以上の数値で入力してください");
+        return;
+      }
+
+      if (minAgeValue !== null && maxAgeValue !== null && minAgeValue > maxAgeValue) {
+        toast.error("種目の最小年齢は最大年齢以下にしてください");
+        return;
+      }
+    }
+
+    const categoryLabel = category === "POOL" ? "プール" : "オーシャン";
+    const typeLabel = type === "INDIVIDUAL" ? "個人" : "チーム";
+    toast.loading(`${categoryLabel}${typeLabel}の年齢条件を保存中...`);
+
+    try {
+      let errorCount = 0;
+
+      for (const event of targetEvents) {
+        const range = eventAgeRanges[event.name] || { minAge: "", maxAge: "" };
+        const minAgeValue = range.minAge.trim() === "" ? null : Number(range.minAge);
+        const maxAgeValue = range.maxAge.trim() === "" ? null : Number(range.maxAge);
+
+        const response = await fetch(
+          `/api/competitions/${competitionId}/events/${event.id}`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ minAge: minAgeValue, maxAge: maxAgeValue }),
+          }
+        );
+
+        if (!response.ok) {
+          errorCount += 1;
+        }
+      }
+
+      const response = await fetch(`/api/competitions/${competitionId}/events`);
+      if (response.ok) {
+        const { events: updatedEvents } = await response.json();
+        syncEvents(updatedEvents);
+      }
+
+      toast.dismiss();
+      if (errorCount === 0) {
+        toast.success(`${categoryLabel}${typeLabel}の年齢条件を保存しました`);
+        setEventAgeSaveStatus((prev) => ({
+          ...prev,
+          [`${category}-${type}`]: new Date(),
+        }));
+      } else {
+        toast.warning("一部の種目で保存に失敗しました");
+      }
+      router.refresh();
+    } catch (error) {
+      console.error("種目年齢条件一括更新エラー:", error);
+      toast.dismiss();
+      toast.error("種目の年齢条件の更新に失敗しました");
     }
   };
 
@@ -555,7 +849,7 @@ export default function EntrySettingsEditor({
       }
 
       const { events: updatedEvents } = await response.json();
-      setEvents(updatedEvents);
+      syncEvents(updatedEvents);
       toast.success(`「${eventName}」を削除しました`);
     } catch (error) {
       console.error("種目削除エラー:", error);
@@ -568,6 +862,7 @@ export default function EntrySettingsEditor({
       <Card>
         <CardHeader>
           <CardTitle>エントリー期間</CardTitle>
+          <CardDescription>受付期間を設定します。</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -598,9 +893,11 @@ export default function EntrySettingsEditor({
             </div>
 
             {canEdit && (
-              <Button type="submit" disabled={isUpdating}>
-                {isUpdating ? "更新中..." : "エントリー期間を更新"}
-              </Button>
+              <div className="flex justify-end">
+                <Button type="submit" disabled={isUpdating} className="w-full md:w-auto">
+                  {isUpdating ? "更新中..." : "エントリー期間を更新"}
+                </Button>
+              </div>
             )}
           </form>
         </CardContent>
@@ -608,14 +905,218 @@ export default function EntrySettingsEditor({
 
       <Card>
         <CardHeader>
+          <CardTitle>エントリー条件</CardTitle>
+          <CardDescription>年齢条件と複数種目の可否を設定します。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+            <p className="font-medium text-gray-800 dark:text-gray-200">現在の条件</p>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs">
+              <span className="rounded-full border border-gray-200 bg-white px-3 py-1 dark:border-gray-700 dark:bg-gray-950">
+                {allowMultipleEventEntries ? "複数種目OK" : "1種目のみ"}
+              </span>
+              <span className="rounded-full border border-gray-200 bg-white px-3 py-1 dark:border-gray-700 dark:bg-gray-950">
+                {requireClubMembership ? "所属クラブ必須" : "所属クラブ任意"}
+              </span>
+              <span className="rounded-full border border-gray-200 bg-white px-3 py-1 dark:border-gray-700 dark:bg-gray-950">
+                年齢: {competitionMinAge || "下限なし"}〜{competitionMaxAge || "上限なし"}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="competitionMinAge">最小年齢（任意）</Label>
+              <Input
+                id="competitionMinAge"
+                type="number"
+                min="0"
+                value={competitionMinAge}
+                onChange={(e) => setCompetitionMinAge(e.target.value)}
+                placeholder="例: 18"
+                disabled={!canEdit}
+              />
+              <p className="text-xs text-gray-500 mt-1">空欄の場合は下限なし</p>
+            </div>
+            <div>
+              <Label htmlFor="competitionMaxAge">最大年齢（任意）</Label>
+              <Input
+                id="competitionMaxAge"
+                type="number"
+                min="0"
+                value={competitionMaxAge}
+                onChange={(e) => setCompetitionMaxAge(e.target.value)}
+                placeholder="例: 35"
+                disabled={!canEdit}
+              />
+              <p className="text-xs text-gray-500 mt-1">空欄の場合は上限なし</p>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+            <label className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4"
+                checked={allowMultipleEventEntries}
+                onChange={(e) => setAllowMultipleEventEntries(e.target.checked)}
+                disabled={!canEdit}
+              />
+              <span>
+                1人あたり複数種目のエントリーを許可する
+                <span className="block text-xs text-gray-500">
+                  オフの場合は1種目のみ選択可能になります。
+                </span>
+              </span>
+            </label>
+          </div>
+
+          <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                所属クラブ
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 transition hover:border-gray-300 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200">
+                  <input
+                    type="radio"
+                    name="requireClubMembership"
+                    checked={requireClubMembership}
+                    onChange={() => setRequireClubMembership(true)}
+                    disabled={!canEdit}
+                  />
+                  <span>所属クラブ必須</span>
+                </label>
+                <label className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 transition hover:border-gray-300 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200">
+                  <input
+                    type="radio"
+                    name="requireClubMembership"
+                    checked={!requireClubMembership}
+                    onChange={() => setRequireClubMembership(false)}
+                    disabled={!canEdit}
+                  />
+                  <span>所属クラブ不要</span>
+                </label>
+              </div>
+              <p className="text-xs text-gray-500">
+                「所属クラブ必須」を選ぶと、所属クラブのないユーザーはエントリーできません。
+              </p>
+            </div>
+          </div>
+
+          {canEdit && (
+            <div className="flex justify-end">
+              <Button type="button" onClick={handleSubmit} disabled={isUpdating} className="w-full md:w-auto">
+                {isUpdating ? "更新中..." : "エントリー条件を更新"}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>出場に必要な資格</CardTitle>
+          <CardDescription>出場資格の条件を設定します。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-3">
+            <p className="text-sm text-gray-500">
+              出場に必須とする資格を選択してください（複数可）。
+              未選択の場合は「資格不要」として扱われます。
+            </p>
+            {requiredQualifications.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {requiredQualifications.map((item) => (
+                  <span
+                    key={item}
+                    className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="grid gap-2 sm:grid-cols-2">
+              {allowedQualificationOptions.map((option) => (
+                <label
+                  key={option}
+                  className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 transition hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                >
+                  <input
+                    type="checkbox"
+                    checked={requiredQualifications.includes(option)}
+                    onChange={() => toggleQualification(option)}
+                    disabled={!canEdit}
+                  />
+                  <span>{option}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {canEdit && (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                onClick={handleUpdateQualifications}
+                disabled={isUpdatingQualifications}
+                className="w-full md:w-auto"
+              >
+                {isUpdatingQualifications ? "更新中..." : "必要資格を更新"}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>参加対象者</CardTitle>
+          <CardDescription>参加対象者の条件を記載します。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="participantEligibility">参加対象者（自由記述）</Label>
+            <Textarea
+              id="participantEligibility"
+              value={participantEligibilityText}
+              onChange={(e) => setParticipantEligibilityText(e.target.value)}
+              placeholder="例: ○○クラブ所属者のみ、18歳以上の男女、JLA会員限定 など"
+              rows={4}
+              disabled={!canEdit}
+            />
+            <p className="text-sm text-gray-500">
+              参加対象者の条件を自由に記載できます（未入力の場合は制限なし）
+            </p>
+            <p className="text-xs text-gray-500">{participantEligibilityText.length} 文字</p>
+          </div>
+
+          {canEdit && (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                onClick={handleUpdateEligibility}
+                disabled={isUpdatingEligibility}
+                className="w-full md:w-auto"
+              >
+                {isUpdatingEligibility ? "更新中..." : "参加対象者を更新"}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>種目設定</CardTitle>
-          <p className="text-sm text-gray-500 mt-1">
+          <CardDescription>
             プール競技はエントリータイム入力必須、オーシャン競技は種目選択のみ
-          </p>
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Category Selection Tabs */}
-          <div className="border-b border-gray-200">
+          <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900">
             <div className="flex space-x-4">
               <button
                 type="button"
@@ -651,6 +1152,20 @@ export default function EntrySettingsEditor({
                   <h4 className="text-sm font-semibold text-blue-700">個人種目 (タイム入力必須)</h4>
                   {canEdit && (
                     <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleBulkUpdateEventAgeRanges("POOL", "INDIVIDUAL")}
+                        className="text-xs"
+                      >
+                        年齢条件を保存
+                      </Button>
+                      {eventAgeSaveStatus["POOL-INDIVIDUAL"] && (
+                        <span className="self-center text-[11px] text-gray-500">
+                          保存済み {eventAgeSaveStatus["POOL-INDIVIDUAL"].toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      )}
                       <Button
                         type="button"
                         variant="outline"
@@ -732,10 +1247,68 @@ export default function EntrySettingsEditor({
                             key={event.name}
                             className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-700 rounded-lg"
                           >
-                            <span className="text-sm font-semibold text-black dark:text-white">
-                              {event.name}{!hideGenderLabel && '(男女)'}
-                              <span className="ml-2 text-xs font-normal text-blue-600 dark:text-blue-400">(タイム入力必須)</span>
-                            </span>
+                            <div className="space-y-2">
+                                <span className="text-sm font-semibold text-black dark:text-white">
+                                  {event.name}{!hideGenderLabel && '(男女)'}
+                                  <span className="ml-2 text-xs font-normal text-blue-600 dark:text-blue-400">(タイム入力必須)</span>
+                                  {(() => {
+                                    const preview = getAgePreview(event.name);
+                                    return (
+                                      <span
+                                        className={
+                                          preview.isUnset
+                                            ? "ml-2 rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] font-normal text-gray-500"
+                                            : "ml-2 text-[11px] font-normal text-gray-500"
+                                        }
+                                      >
+                                        年齢: {preview.label}
+                                      </span>
+                                    );
+                                  })()}
+                                </span>
+                              <details className="text-xs text-gray-600">
+                                <summary className="cursor-pointer font-medium">年齢条件を設定</summary>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    placeholder="—"
+                                    value={eventAgeRanges[event.name]?.minAge ?? ""}
+                                    onChange={(e) => {
+                                      clearEventAgeSaveStatus("POOL-INDIVIDUAL");
+                                      setEventAgeRanges((prev) => ({
+                                        ...prev,
+                                        [event.name]: {
+                                          minAge: e.target.value,
+                                          maxAge: prev[event.name]?.maxAge ?? "",
+                                        },
+                                      }));
+                                    }}
+                                    disabled={!canEdit}
+                                    className="h-8 w-16 text-xs"
+                                  />
+                                  <span>〜</span>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    placeholder="—"
+                                    value={eventAgeRanges[event.name]?.maxAge ?? ""}
+                                    onChange={(e) => {
+                                      clearEventAgeSaveStatus("POOL-INDIVIDUAL");
+                                      setEventAgeRanges((prev) => ({
+                                        ...prev,
+                                        [event.name]: {
+                                          minAge: prev[event.name]?.minAge ?? "",
+                                          maxAge: e.target.value,
+                                        },
+                                      }));
+                                    }}
+                                    disabled={!canEdit}
+                                    className="h-8 w-16 text-xs"
+                                  />
+                                </div>
+                              </details>
+                            </div>
                             {canEdit && (
                               <Button
                                 variant="ghost"
@@ -759,6 +1332,20 @@ export default function EntrySettingsEditor({
                 <h4 className="text-sm font-semibold text-blue-700">チーム種目 (タイム入力必須)</h4>
                 {canEdit && (
                   <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleBulkUpdateEventAgeRanges("POOL", "TEAM")}
+                      className="text-xs"
+                    >
+                      年齢条件を保存
+                    </Button>
+                    {eventAgeSaveStatus["POOL-TEAM"] && (
+                      <span className="self-center text-[11px] text-gray-500">
+                        保存済み {eventAgeSaveStatus["POOL-TEAM"].toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    )}
                     <Button
                       type="button"
                       variant="outline"
@@ -840,10 +1427,68 @@ export default function EntrySettingsEditor({
                             key={event.name}
                             className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-700 rounded-lg"
                           >
-                            <span className="text-sm font-semibold text-black dark:text-white">
-                              {event.name}{!hideGenderLabel && '（男女）'}
-                              <span className="ml-2 text-xs font-normal text-blue-600 dark:text-blue-400">(タイム入力必須)</span>
-                            </span>
+                            <div className="space-y-2">
+                                <span className="text-sm font-semibold text-black dark:text-white">
+                                  {event.name}{!hideGenderLabel && '（男女）'}
+                                  <span className="ml-2 text-xs font-normal text-blue-600 dark:text-blue-400">(タイム入力必須)</span>
+                                  {(() => {
+                                    const preview = getAgePreview(event.name);
+                                    return (
+                                      <span
+                                        className={
+                                          preview.isUnset
+                                            ? "ml-2 rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] font-normal text-gray-500"
+                                            : "ml-2 text-[11px] font-normal text-gray-500"
+                                        }
+                                      >
+                                        年齢: {preview.label}
+                                      </span>
+                                    );
+                                  })()}
+                                </span>
+                              <details className="text-xs text-gray-600">
+                                <summary className="cursor-pointer font-medium">年齢条件を設定</summary>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    placeholder="—"
+                                    value={eventAgeRanges[event.name]?.minAge ?? ""}
+                                    onChange={(e) => {
+                                      clearEventAgeSaveStatus("POOL-TEAM");
+                                      setEventAgeRanges((prev) => ({
+                                        ...prev,
+                                        [event.name]: {
+                                          minAge: e.target.value,
+                                          maxAge: prev[event.name]?.maxAge ?? "",
+                                        },
+                                      }));
+                                    }}
+                                    disabled={!canEdit}
+                                    className="h-8 w-16 text-xs"
+                                  />
+                                  <span>〜</span>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    placeholder="—"
+                                    value={eventAgeRanges[event.name]?.maxAge ?? ""}
+                                    onChange={(e) => {
+                                      clearEventAgeSaveStatus("POOL-TEAM");
+                                      setEventAgeRanges((prev) => ({
+                                        ...prev,
+                                        [event.name]: {
+                                          minAge: prev[event.name]?.minAge ?? "",
+                                          maxAge: e.target.value,
+                                        },
+                                      }));
+                                    }}
+                                    disabled={!canEdit}
+                                    className="h-8 w-16 text-xs"
+                                  />
+                                </div>
+                              </details>
+                            </div>
                             {canEdit && (
                               <Button
                                 variant="ghost"
@@ -872,6 +1517,20 @@ export default function EntrySettingsEditor({
                   <h4 className="text-sm font-semibold text-cyan-700">個人種目 (選択のみ)</h4>
                   {canEdit && (
                     <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleBulkUpdateEventAgeRanges("OCEAN", "INDIVIDUAL")}
+                        className="text-xs"
+                      >
+                        年齢条件を保存
+                      </Button>
+                      {eventAgeSaveStatus["OCEAN-INDIVIDUAL"] && (
+                        <span className="self-center text-[11px] text-gray-500">
+                          保存済み {eventAgeSaveStatus["OCEAN-INDIVIDUAL"].toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      )}
                       <Button
                         type="button"
                         variant="outline"
@@ -953,10 +1612,68 @@ export default function EntrySettingsEditor({
                             key={event.name}
                             className="flex items-center justify-between p-3 bg-cyan-100 dark:bg-cyan-950 border border-cyan-300 dark:border-cyan-700 rounded-lg"
                           >
-                            <span className="text-sm font-semibold text-black dark:text-white">
-                              {event.name}{!hideGenderLabel && '（男女）'}
-                              <span className="ml-2 text-xs font-normal text-cyan-700 dark:text-cyan-400">(選択のみ)</span>
-                            </span>
+                            <div className="space-y-2">
+                                <span className="text-sm font-semibold text-black dark:text-white">
+                                  {event.name}{!hideGenderLabel && '（男女）'}
+                                  <span className="ml-2 text-xs font-normal text-cyan-700 dark:text-cyan-400">(選択のみ)</span>
+                                  {(() => {
+                                    const preview = getAgePreview(event.name);
+                                    return (
+                                      <span
+                                        className={
+                                          preview.isUnset
+                                            ? "ml-2 rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] font-normal text-gray-500"
+                                            : "ml-2 text-[11px] font-normal text-gray-500"
+                                        }
+                                      >
+                                        年齢: {preview.label}
+                                      </span>
+                                    );
+                                  })()}
+                                </span>
+                              <details className="text-xs text-gray-600">
+                                <summary className="cursor-pointer font-medium">年齢条件を設定</summary>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    placeholder="—"
+                                    value={eventAgeRanges[event.name]?.minAge ?? ""}
+                                    onChange={(e) => {
+                                      clearEventAgeSaveStatus("OCEAN-INDIVIDUAL");
+                                      setEventAgeRanges((prev) => ({
+                                        ...prev,
+                                        [event.name]: {
+                                          minAge: e.target.value,
+                                          maxAge: prev[event.name]?.maxAge ?? "",
+                                        },
+                                      }));
+                                    }}
+                                    disabled={!canEdit}
+                                    className="h-8 w-16 text-xs"
+                                  />
+                                  <span>〜</span>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    placeholder="—"
+                                    value={eventAgeRanges[event.name]?.maxAge ?? ""}
+                                    onChange={(e) => {
+                                      clearEventAgeSaveStatus("OCEAN-INDIVIDUAL");
+                                      setEventAgeRanges((prev) => ({
+                                        ...prev,
+                                        [event.name]: {
+                                          minAge: prev[event.name]?.minAge ?? "",
+                                          maxAge: e.target.value,
+                                        },
+                                      }));
+                                    }}
+                                    disabled={!canEdit}
+                                    className="h-8 w-16 text-xs"
+                                  />
+                                </div>
+                              </details>
+                            </div>
                             {canEdit && (
                               <Button
                                 variant="ghost"
@@ -980,6 +1697,20 @@ export default function EntrySettingsEditor({
                 <h4 className="text-sm font-semibold text-cyan-700">チーム種目 (選択のみ)</h4>
                 {canEdit && (
                   <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleBulkUpdateEventAgeRanges("OCEAN", "TEAM")}
+                      className="text-xs"
+                    >
+                      年齢条件を保存
+                    </Button>
+                    {eventAgeSaveStatus["OCEAN-TEAM"] && (
+                      <span className="self-center text-[11px] text-gray-500">
+                        保存済み {eventAgeSaveStatus["OCEAN-TEAM"].toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    )}
                     <Button
                       type="button"
                       variant="outline"
@@ -1061,10 +1792,68 @@ export default function EntrySettingsEditor({
                             key={event.name}
                             className="flex items-center justify-between p-3 bg-cyan-100 dark:bg-cyan-950 border border-cyan-300 dark:border-cyan-700 rounded-lg"
                           >
-                            <span className="text-sm font-semibold text-black dark:text-white">
-                              {event.name}{!hideGenderLabel && '（男女）'}
-                              <span className="ml-2 text-xs font-normal text-cyan-700 dark:text-cyan-400">(選択のみ)</span>
-                            </span>
+                            <div className="space-y-2">
+                                <span className="text-sm font-semibold text-black dark:text-white">
+                                  {event.name}{!hideGenderLabel && '（男女）'}
+                                  <span className="ml-2 text-xs font-normal text-cyan-700 dark:text-cyan-400">(選択のみ)</span>
+                                  {(() => {
+                                    const preview = getAgePreview(event.name);
+                                    return (
+                                      <span
+                                        className={
+                                          preview.isUnset
+                                            ? "ml-2 rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] font-normal text-gray-500"
+                                            : "ml-2 text-[11px] font-normal text-gray-500"
+                                        }
+                                      >
+                                        年齢: {preview.label}
+                                      </span>
+                                    );
+                                  })()}
+                                </span>
+                              <details className="text-xs text-gray-600">
+                                <summary className="cursor-pointer font-medium">年齢条件を設定</summary>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    placeholder="—"
+                                    value={eventAgeRanges[event.name]?.minAge ?? ""}
+                                    onChange={(e) => {
+                                      clearEventAgeSaveStatus("OCEAN-TEAM");
+                                      setEventAgeRanges((prev) => ({
+                                        ...prev,
+                                        [event.name]: {
+                                          minAge: e.target.value,
+                                          maxAge: prev[event.name]?.maxAge ?? "",
+                                        },
+                                      }));
+                                    }}
+                                    disabled={!canEdit}
+                                    className="h-8 w-16 text-xs"
+                                  />
+                                  <span>〜</span>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    placeholder="—"
+                                    value={eventAgeRanges[event.name]?.maxAge ?? ""}
+                                    onChange={(e) => {
+                                      clearEventAgeSaveStatus("OCEAN-TEAM");
+                                      setEventAgeRanges((prev) => ({
+                                        ...prev,
+                                        [event.name]: {
+                                          minAge: prev[event.name]?.minAge ?? "",
+                                          maxAge: e.target.value,
+                                        },
+                                      }));
+                                    }}
+                                    disabled={!canEdit}
+                                    className="h-8 w-16 text-xs"
+                                  />
+                                </div>
+                              </details>
+                            </div>
                             {canEdit && (
                               <Button
                                 variant="ghost"
@@ -1090,6 +1879,7 @@ export default function EntrySettingsEditor({
       <Card>
         <CardHeader>
           <CardTitle>エントリー費用設定</CardTitle>
+          <CardDescription>料金体系を設定します。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* 基本料金 */}
@@ -1198,13 +1988,15 @@ export default function EntrySettingsEditor({
           </div>
 
           {canEdit && (
-            <Button
-              onClick={handleUpdateEntryFee}
-              disabled={isUpdatingFee}
-              className="w-full"
-            >
-              {isUpdatingFee ? "更新中..." : "エントリー費用設定を更新"}
-            </Button>
+            <div className="flex justify-end">
+              <Button
+                onClick={handleUpdateEntryFee}
+                disabled={isUpdatingFee}
+                className="w-full md:w-auto"
+              >
+                {isUpdatingFee ? "更新中..." : "エントリー費用設定を更新"}
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>

@@ -3,7 +3,7 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { uploadPdfToS3 } from '@/lib/s3'
 
 export async function generatePdfBuffer(component: ReactElement): Promise<Buffer> {
-  return renderToBuffer(component)
+  return renderToBuffer(component as any)
 }
 
 export async function generateAndUploadPdf(params: {

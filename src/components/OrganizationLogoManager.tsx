@@ -89,14 +89,9 @@ export default function OrganizationLogoManager({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         disabled={uploading || !canEdit}
-        style={{
-          backgroundImage: preview ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)' : undefined,
-          backgroundSize: preview ? '20px 20px' : undefined,
-          backgroundPosition: preview ? '0 0, 0 10px, 10px -10px, -10px 0px' : undefined,
-        }}
-        className={`w-32 h-32 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 text-3xl font-medium border-2 border-gray-300 dark:border-gray-600 overflow-hidden transition-opacity relative ${
+        className={`w-32 h-32 rounded-lg flex items-center justify-center text-gray-600 dark:text-gray-300 text-3xl font-medium border-2 border-gray-300 dark:border-gray-600 overflow-hidden transition-opacity relative ${
           canEdit ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'
-        }`}
+        } ${preview ? 'bg-white dark:bg-gray-900' : 'bg-gray-100 dark:bg-gray-800'}`}
       >
         {preview ? (
           <img 

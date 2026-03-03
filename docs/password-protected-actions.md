@@ -57,14 +57,14 @@ function MyComponent() {
 ## 実装例
 
 ### 1. アカウント削除
-`/profile` ページに実装済み
+`/settings` ページに実装済み（`AccountDangerZone`）
 
 - セキュリティ設定完了済みユーザーのみ表示
 - 確認ダイアログ → パスワード認証 → 削除実行
 - コンポーネント: `AccountDangerZone`
 
 ### 2. 決済確認
-高額決済（10,000円以上）の場合にパスワード認証を要求
+高額決済向け `PaymentConfirmation` コンポーネントを用意（呼び出し側で利用）
 
 ```tsx
 import PaymentConfirmation from "@/components/PaymentConfirmation";

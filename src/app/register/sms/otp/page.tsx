@@ -18,6 +18,7 @@ function OTPVerifyContent() {
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!sessionId) {
@@ -35,6 +36,7 @@ function OTPVerifyContent() {
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setLoading(true);
 
     try {
@@ -47,7 +49,9 @@ function OTPVerifyContent() {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || "認証に失敗しました");
+        const message = data.error || "認証に失敗しました";
+        setError(message);
+        toast.error(message);
         
         if (data.maxAttemptsReached) {
           setTimeout(() => router.push("/register/sms"), 2000);
@@ -59,7 +63,9 @@ function OTPVerifyContent() {
       router.push("/dashboard");
     } catch (err) {
       console.error("OTP verification error:", err);
-      toast.error("認証に失敗しました");
+      const message = "認証に失敗しました";
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -125,11 +131,19 @@ function OTPVerifyContent() {
                 maxLength={6}
                 placeholder="123456"
                 value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/[^\d]/g, ''))}
+                onChange={(e) => {
+                  setOtp(e.target.value.replace(/[^\d]/g, ''));
+                  if (error) setError(null);
+                }}
                 required
                 className="text-center text-2xl tracking-widest"
               />
               <p className="text-xs text-muted-foreground">有効期限: 5分</p>
+              {error && (
+                <p className="text-xs text-red-600" role="alert">
+                  {error}
+                </p>
+              )}
             </div>
 
             <Button type="submit" className="w-full" disabled={loading || otp.length !== 6}>
