@@ -1,0 +1,157 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  hashedPassword String?
+  name           String?
+  role           Role      @default(USER)
+  emailVerified  Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  memberships    Membership[]
+  qualifications Qualification[]
+  entries        Entry[]
+  payments       Payment[]
+}
+
+model Org {
+  id                String   @id @default(cuid())
+  name              String
+  stripeAccountId   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  competitions      Competition[]
+  qualifications    Qualification[]
+}
+
+model Club {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships Membership[]
+}
+
+model Membership {
+  id        String           @id @default(cuid())
+  status    MembershipStatus @default(PENDING)
+  userId    String
+  clubId    String
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+  club Club @relation(fields: [clubId], references: [id])
+}
+
+model Qualification {
+  id        String              @id @default(cuid())
+  status    QualificationStatus @default(PENDING)
+  type      String
+  userId    String
+  orgId     String
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+  org  Org  @relation(fields: [orgId], references: [id])
+}
+
+model Competition {
+  id        String   @id @default(cuid())
+  title     String
+  orgId     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org      Org       @relation(fields: [orgId], references: [id])
+  entries  Entry[]
+  payments Payment[]
+}
+
+model Entry {
+  id            String      @id @default(cuid())
+  status        EntryStatus @default(PENDING)
+  amountJPY     Int
+  userId        String
+  competitionId String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id])
+  competition Competition @relation(fields: [competitionId], references: [id])
+  payments    Payment[]
+}
+
+model Payment {
+  id                     String        @id @default(cuid())
+  status                 PaymentStatus @default(PENDING)
+  amount                 Int
+  applicationFeeAmount   Int           @default(0)
+  stripePaymentIntentId  String?       @unique
+  stripeChargeId         String?
+  transferGroup          String?
+  userId                 String
+  competitionId          String
+  entryId                String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id])
+  competition Competition  @relation(fields: [competitionId], references: [id])
+  entry       Entry?       @relation(fields: [entryId], references: [id])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  target    String?
+  meta      Json?
+  createdAt DateTime @default(now())
+}
+
+enum Role {
+  USER
+  CLUB_ADMIN
+  ORG_ADMIN
+  JLA_ADMIN
+  PLATFORM
+}
+
+enum MembershipStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum QualificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum EntryStatus {
+  PENDING
+  PAID
+  REFUNDED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  REFUNDED
+  FAILED
+}

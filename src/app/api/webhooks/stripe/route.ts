@@ -4,9 +4,9 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
-import { prisma } from "@/src/server/db"; // ← Prismaシングルトン（前メッセで案内済み）
+import { prisma } from "@/server/db";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2025-10-29.clover" });
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2025-02-24.acacia" });
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET!;
 
 export async function POST(req: NextRequest) {
@@ -37,10 +37,12 @@ export async function POST(req: NextRequest) {
             : session.payment_intent?.id;
 
         const pi = paymentIntentId
-          ? await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ["charges"] })
+          ? await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge"] })
           : null;
 
-        const charge = pi?.charges?.data?.[0];
+        const charge = pi?.latest_charge && typeof pi.latest_charge !== "string"
+          ? pi.latest_charge
+          : null;
         const amount = (pi?.amount ?? session.amount_total ?? 0) | 0;
         const appFee = (pi?.application_fee_amount ?? 0) | 0;
         const transferGroup = pi?.transfer_group ?? competitionId ?? undefined;
