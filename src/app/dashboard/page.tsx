@@ -21,7 +21,7 @@ async function fetchOverview(): Promise<{ entries: Entry[]; payments: Payment[] 
 }
 
 export default async function DashboardPage() {
-  const token = cookies().get("session")?.value;
+  const token = (await cookies()).get("session")?.value;
   const sess = token ? await verifySession(token) : null;
   if (!sess?.userId) redirect("/login");
 
