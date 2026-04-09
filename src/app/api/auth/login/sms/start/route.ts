@@ -15,6 +15,16 @@ import {
   getResendCooldown
 } from "@/lib/otp";
 import { sendOTPviaSMS } from "@/lib/sns";
+import { ensureSupabasePhoneUser, sendSmsOtpViaSupabase } from "@/lib/supabase/otp";
+import { getTrustedClientIp, isLoginIpBlocklisted } from "@/lib/clientIp";
+import {
+  tryConsumeRateSlot,
+  throttleKeySmsStartIp,
+  SMS_LOGIN_START_IP_MAX,
+  SMS_LOGIN_START_IP_WINDOW_MS,
+} from "@/lib/loginThrottle";
+import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 
 const StartLoginSchema = z.object({
   phoneNumber: z.string().min(10),
@@ -22,11 +32,20 @@ const StartLoginSchema = z.object({
 });
 
 const RESEND_COOLDOWN = 60; // 60秒
+const USE_SUPABASE_SMS_OTP = process.env.USE_SUPABASE_SMS_OTP === "true";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const data = StartLoginSchema.parse(body);
+
+    const ip = getTrustedClientIp(req);
+    if (isLoginIpBlocklisted(ip)) {
+      return NextResponse.json(
+        { error: "現在このネットワークからはログインできません" },
+        { status: 403 }
+      );
+    }
 
     // 1. 電話番号バリデーション
     if (!isValidJapaneseMobile(data.phoneNumber)) {
@@ -56,6 +75,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const skipIpSlot = ip === "127.0.0.1" || ip === "::1";
+    if (!skipIpSlot) {
+      const slot = await tryConsumeRateSlot(
+        throttleKeySmsStartIp(ip),
+        SMS_LOGIN_START_IP_MAX,
+        SMS_LOGIN_START_IP_WINDOW_MS
+      );
+      if (!slot.allowed) {
+        return NextResponse.json(
+          {
+            error:
+              "短時間に SMS 送信が繰り返されました。しばらく時間をおいてから再度お試しください。",
+          },
+          {
+            status: 429,
+            headers: { "Retry-After": String(slot.retryAfterSec) },
+          }
+        );
+      }
+    }
+
     if (user.phoneNumber !== phoneE164) {
       await prisma.user.update({
         where: { id: user.id },
@@ -82,7 +122,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 5. OTP生成
+    // 5. OTP生成（現行の失敗回数管理との互換のため hash は維持）
     const otp = generateOTP();
     const otpHash = await hashOTP(otp);
 
@@ -111,8 +151,13 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 7. SMS送信
-    await sendOTPviaSMS(phoneE164, otp);
+    // 7. SMS送信（フラグON時はSupabase OTPへ切替）
+    if (USE_SUPABASE_SMS_OTP) {
+      await ensureSupabasePhoneUser(phoneE164);
+      await sendSmsOtpViaSupabase(phoneE164);
+    } else {
+      await sendOTPviaSMS(phoneE164, otp);
+    }
 
     return NextResponse.json({
       sessionId: loginSession.id,
@@ -120,17 +165,34 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error) {
-    if (error instanceof z.ZodError) {
+    if (
+      error instanceof Error &&
+      error.message.includes("Alphanumeric Sender ID cannot be used as the 'From' number on trial accounts")
+    ) {
       return NextResponse.json(
-        { error: "入力内容に誤りがあります", details: error.errors },
+        {
+          error:
+            "Twilio trialアカウントでは英数字Sender IDを使用できません。Twilioの電話番号をFromに設定するか、trial解除後に再試行してください。",
+        },
+        { status: 503 }
+      );
+    }
+    if (error instanceof Error && error.message.includes("Invalid 'To' Phone Number")) {
+      return NextResponse.json(
+        { error: "SMS送信先の電話番号が無効です。E.164形式で有効な実在番号をご確認ください。" },
         { status: 400 }
       );
     }
+    if (error instanceof Error && error.message.toLowerCase().includes("unsupported phone provider")) {
+      return NextResponse.json(
+        { error: "SupabaseのSMSプロバイダ設定が未完了です。管理者にお問い合わせください。" },
+        { status: 503 }
+      );
+    }
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(zodErrorJsonBody(error), { status: 400 });
+    }
 
-    console.error("Login start error:", error);
-    return NextResponse.json(
-      { error: "ログイン処理に失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("POST api/auth/login/sms/start/route.ts", error);
   }
 }

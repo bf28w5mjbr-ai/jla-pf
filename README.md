@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# JLA PF
 
-## Getting Started
+JLA PF（Japan Lifesaving Association Platform）は、会員・所属・資格・大会エントリー・決済を一気通貫で扱う Next.js アプリケーションです。
 
-First, run the development server:
+## 技術スタック
+
+- Next.js 16 (App Router)
+- TypeScript
+- Prisma + PostgreSQL
+- Stripe
+- Vitest
+- Capacitor（iOS / Android）
+
+## セットアップ
+
+1. 依存関係をインストール
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. 環境変数を作成
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+cp .env.example .env.local
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+3. Prisma クライアント生成とマイグレーション適用
 
-## Learn More
+```bash
+pnpm prisma generate
+pnpm prisma migrate dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+4. 開発サーバー起動
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+pnpm dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 開発時の注意
 
-## Deploy on Vercel
+- `pnpm dev` で `.next/dev/lock` エラーが出る場合、別の Next.js プロセスが起動中です。既存プロセスを停止してから再実行してください。
+- Stripe Webhook は `POST /api/webhooks/stripe` で受信・処理します。ローカル確認時は `stripe listen --forward-to localhost:3000/api/webhooks/stripe` を使います。
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 主要スクリプト
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `pnpm dev`: 開発サーバー起動
+- `pnpm build`: 本番ビルド
+- `pnpm lint`: ESLint
+- `pnpm test`: Vitest（ユニットテスト）
+- `pnpm test:e2e`: E2Eスモークテスト（`E2E_BASE_URL` 必須）
+
+## ドキュメント
+
+- `docs/API_SPEC.md`: APIエンドポイント一覧
+- `docs/PERMISSIONS_CURRENT.md`: 権限仕様の一次情報
+- `docs/OPERATIONS_MANUAL.md`: 運用手順
+- `docs/TROUBLESHOOTING.md`: 障害対応
+- `docs/MOBILE_DEVICE_TEST_CHECKLIST.md`: モバイル実機検証
+
+## ライセンス
+
+社内/関係者向けプロジェクトとして運用しています。

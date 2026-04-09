@@ -1,3 +1,4 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
@@ -5,6 +6,12 @@ import { prisma } from "@/server/db";
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
+import {
+  canUseSupabaseStorage,
+  deletePublicAssetByUrl,
+  uploadPublicAsset,
+} from "@/lib/supabase/storage";
+import { validateRasterImageBuffer } from "@/lib/uploadValidation";
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,14 +35,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "File too large" }, { status: 400 });
     }
 
-    // 画像形式チェック
-    if (!file.type.startsWith("image/")) {
-      return NextResponse.json({ error: "Invalid file type" }, { status: 400 });
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const validated = await validateRasterImageBuffer(buffer);
+    if (!validated.ok) {
+      return NextResponse.json({ error: validated.message }, { status: 400 });
     }
 
-    // ファイル名を生成（ユーザーID + タイムスタンプ + 拡張子）
-    const ext = file.name.split(".").pop();
-    const filename = `${sess.userId}-${Date.now()}.${ext}`;
+    const filename = `${sess.userId}-${Date.now()}.${validated.value.ext}`;
     
     // 保存先ディレクトリ
     const uploadDir = join(process.cwd(), "public", "uploads", "profiles");
@@ -45,14 +51,19 @@ export async function POST(request: NextRequest) {
       await mkdir(uploadDir, { recursive: true });
     }
 
-    // ファイルを保存
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
     const filepath = join(uploadDir, filename);
-    await writeFile(filepath, buffer);
+    let photoUrl = `/uploads/profiles/${filename}`;
+    if (canUseSupabaseStorage()) {
+      photoUrl = await uploadPublicAsset({
+        objectKey: `profiles/${filename}`,
+        body: buffer,
+        contentType: validated.value.mime,
+      });
+    } else {
+      await writeFile(filepath, buffer);
+    }
 
     // データベースを更新
-    const photoUrl = `/uploads/profiles/${filename}`;
     await prisma.user.update({
       where: { id: sess.userId },
       data: { profilePhotoUrl: photoUrl },
@@ -60,12 +71,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ url: photoUrl });
   } catch (error) {
-    console.error("Upload error:", error);
-    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+    return jsonInternalError500("POST api/upload/profile-photo/route.ts", error);
   }
 }
 
-export async function DELETE(request: NextRequest) {
+export async function DELETE() {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get("session")?.value;
@@ -73,6 +83,14 @@ export async function DELETE(request: NextRequest) {
     
     if (!sess?.userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const current = await prisma.user.findUnique({
+      where: { id: sess.userId },
+      select: { profilePhotoUrl: true },
+    });
+    if (current?.profilePhotoUrl?.startsWith("http")) {
+      await deletePublicAssetByUrl(current.profilePhotoUrl);
     }
 
     // データベースを更新（URLをnullに設定）
@@ -83,7 +101,6 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Delete error:", error);
-    return NextResponse.json({ error: "Delete failed" }, { status: 500 });
+    return jsonInternalError500("DELETE api/upload/profile-photo/route.ts", error);
   }
 }

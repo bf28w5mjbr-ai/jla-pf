@@ -1,6 +1,8 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
+import { hasOrgAdminAccess } from "@/lib/roleScopes";
 
 export async function PUT(
   request: NextRequest,
@@ -33,9 +35,8 @@ export async function PUT(
       return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });
     }
 
-    // 権限確認（OWNER または ADMIN）
-    const userRole = competition.organization.admins[0]?.role;
-    if (userRole !== "OWNER" && userRole !== "ADMIN") {
+    // 権限確認（管理者のみ）
+    if (!hasOrgAdminAccess(competition.organization.admins)) {
       return NextResponse.json(
         { error: "編集権限がありません" },
         { status: 403 }
@@ -61,10 +62,6 @@ export async function PUT(
       competition: updatedCompetition,
     });
   } catch (error) {
-    console.error("Update relations error:", error);
-    return NextResponse.json(
-      { error: "更新に失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("PUT api/competitions/[id]/relations/route.ts", error);
   }
 }

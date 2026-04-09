@@ -1,9 +1,16 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
+import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import { canUseSupabaseStorage, uploadPublicAsset } from "@/lib/supabase/storage";
+import {
+  sanitizeUploadBasename,
+  validateCompetitionAttachmentBuffer,
+} from "@/lib/uploadValidation";
 
 export async function POST(
   request: NextRequest,
@@ -40,8 +47,7 @@ export async function POST(
       );
     }
 
-    const userRole = competition.organization.admins[0]?.role;
-    if (userRole !== "OWNER" && userRole !== "ADMIN") {
+    if (!hasOrgAdminAccess(competition.organization.admins)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -61,21 +67,29 @@ export async function POST(
       );
     }
 
-    // ファイルを保存
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const validated = await validateCompetitionAttachmentBuffer(buffer);
+    if (!validated.ok) {
+      return NextResponse.json({ error: validated.message }, { status: 400 });
+    }
 
     const uploadDir = path.join(process.cwd(), "public", "uploads", "competitions");
     await mkdir(uploadDir, { recursive: true });
 
     const timestamp = Date.now();
-    const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-    const fileName = `${id}-${timestamp}-${sanitizedFileName}`;
+    const base = sanitizeUploadBasename(file.name);
+    const fileName = `${id}-${timestamp}-${base}.${validated.value.ext}`;
     const filePath = path.join(uploadDir, fileName);
-
-    await writeFile(filePath, buffer);
-
-    const fileUrl = `/uploads/competitions/${fileName}`;
+    let fileUrl = `/uploads/competitions/${fileName}`;
+    if (canUseSupabaseStorage()) {
+      fileUrl = await uploadPublicAsset({
+        objectKey: `competitions/${fileName}`,
+        body: buffer,
+        contentType: validated.value.mime,
+      });
+    } else {
+      await writeFile(filePath, buffer);
+    }
 
     // データベースに保存
     const attachment = await prisma.competitionAttachment.create({
@@ -84,16 +98,12 @@ export async function POST(
         fileName: file.name,
         fileUrl,
         fileSize: file.size,
-        mimeType: file.type || "application/octet-stream",
+        mimeType: validated.value.mime,
       },
     });
 
     return NextResponse.json(attachment);
   } catch (error) {
-    console.error("Error uploading file:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return jsonInternalError500("POST api/competitions/[id]/attachments/route.ts", error);
   }
 }

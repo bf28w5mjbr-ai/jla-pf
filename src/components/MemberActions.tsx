@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { isClubAdminRole } from '@/lib/roleScopes';
 
 interface MemberActionsProps {
   membershipId: string;
@@ -30,8 +31,8 @@ export default function MemberActions({
     return <span className="text-xs text-gray-400">-</span>;
   }
 
-  // オーナーのみが役割を変更できる
-  const isOwner = currentUserRole === 'OWNER';
+  // 管理者のみが役割を変更できる
+  const isAdmin = isClubAdminRole(currentUserRole);
 
   const handleApprove = async () => {
     if (!confirm('このメンバーを承認しますか？')) return;
@@ -172,18 +173,18 @@ export default function MemberActions({
           </button>
         </>
       )}
-      {status === 'APPROVED' && role !== 'OWNER' && (
+      {status === 'APPROVED' && (
         <>
-          {isOwner && role === 'MEMBER' && (
+          {isAdmin && role === 'MEMBER' && (
             <button
               onClick={handlePromoteToAdmin}
               disabled={loading}
-              className="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="text-xs px-2 py-1 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               管理者に昇格
             </button>
           )}
-          {isOwner && role === 'ADMIN' && (
+          {isAdmin && role === 'ADMIN' && (
             <button
               onClick={handleDemoteToMember}
               disabled={loading}

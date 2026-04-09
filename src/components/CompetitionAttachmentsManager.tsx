@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Upload, Trash2, FileText } from "lucide-react";
 
 type Attachment = {
@@ -54,10 +54,30 @@ export default function CompetitionAttachmentsManager({
         body: formData,
       });
 
-      if (!response.ok) throw new Error("Failed to upload file");
+      const parsed: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const msg =
+          parsed &&
+          typeof parsed === "object" &&
+          "error" in parsed &&
+          typeof (parsed as { error: unknown }).error === "string"
+            ? (parsed as { error: string }).error
+            : "ファイルのアップロードに失敗しました";
+        alert(msg);
+        return;
+      }
 
-      const newAttachment = await response.json();
-      setAttachments([newAttachment, ...attachments]);
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        !("id" in parsed) ||
+        typeof (parsed as { id: unknown }).id !== "string"
+      ) {
+        alert("サーバーの応答が不正です");
+        return;
+      }
+
+      setAttachments([parsed as Attachment, ...attachments]);
     } catch (error) {
       console.error("Error uploading file:", error);
       alert("ファイルのアップロードに失敗しました");
@@ -85,68 +105,73 @@ export default function CompetitionAttachmentsManager({
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle>添付ファイル</CardTitle>
+    <Card className="overflow-hidden">
+      <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <CardTitle className="text-base font-semibold">添付ファイル</CardTitle>
+            <CardDescription className="text-xs">
+              PDF・画像（JPEG/PNG/GIF/WebP/AVIF）・Office（.docx/.xlsx/.pptx）のみ、10MB以下（大会ページからダウンロード可）
+            </CardDescription>
+          </div>
           {canEdit && (
             <label>
-              <Button size="sm" disabled={isUploading} asChild>
+              <Button size="sm" className="h-8 text-xs" disabled={isUploading} asChild>
                 <span className="cursor-pointer">
-                  <Upload className="h-4 w-4 mr-1" />
-                  {isUploading ? "アップロード中..." : "アップロード"}
+                  <Upload className="mr-1 h-3.5 w-3.5" />
+                  {isUploading ? "送信中…" : "アップロード"}
                 </span>
               </Button>
               <input
                 type="file"
                 onChange={handleFileUpload}
                 className="hidden"
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip"
+                accept=".pdf,.docx,.xlsx,.pptx,.jpg,.jpeg,.png,.gif,.webp,.avif,application/pdf,image/*"
               />
             </label>
           )}
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-4 py-3">
         {attachments.length > 0 ? (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {attachments.map((attachment) => (
-              <div 
-                key={attachment.id} 
-                className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+              <div
+                key={attachment.id}
+                className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/15 px-2.5 py-2"
               >
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <FileText className="h-5 w-5 text-gray-500 flex-shrink-0" />
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <div className="min-w-0 flex-1">
                     <a
                       href={attachment.fileUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-sm font-medium hover:underline truncate block"
+                      className="inline-flex max-w-full truncate rounded border border-border bg-background px-2 py-0.5 text-xs font-medium text-foreground transition hover:bg-muted/50"
                     >
                       {attachment.fileName}
                     </a>
-                    <p className="text-xs text-gray-500">
-                      {formatFileSize(attachment.fileSize)} • {new Date(attachment.createdAt).toLocaleDateString("ja-JP")}
+                    <p className="text-[11px] text-muted-foreground">
+                      {formatFileSize(attachment.fileSize)} ·{" "}
+                      {new Date(attachment.createdAt).toLocaleDateString("ja-JP")}
                     </p>
                   </div>
                 </div>
                 {canEdit && (
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="icon"
+                    className="h-8 w-8 shrink-0"
                     onClick={() => handleDelete(attachment.id)}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 )}
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-gray-500 text-sm text-center py-4">
-            添付ファイルはまだありません
-          </p>
+          <p className="py-3 text-center text-xs text-muted-foreground">添付はまだありません</p>
         )}
       </CardContent>
     </Card>

@@ -1,3 +1,4 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
@@ -5,6 +6,7 @@ import { verifySession } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { logAuditAction, getRequestContext } from '@/lib/auditLog';
 import { requireClubAdmin } from '@/lib/accessControl';
+import { zodErrorJsonBody } from '@/lib/zodApiResponse';
 
 const createSchema = z.object({
   fiscalYear: z.coerce.number().int().min(2000).max(3000),
@@ -66,8 +68,7 @@ export async function GET(
 
     return NextResponse.json(setting);
   } catch (error) {
-    console.error('GET /api/clubs/[clubId]/dues-settings error:', error);
-    return NextResponse.json({ error: '会費設定の取得に失敗しました' }, { status: 500 });
+    return jsonInternalError500("GET api/clubs/[clubId]/dues-settings/route.ts", error);
   }
 }
 
@@ -125,13 +126,12 @@ export async function POST(
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: 'validation_error', details: error.errors }, { status: 400 });
+      return NextResponse.json(zodErrorJsonBody(error, 'validation_error'), { status: 400 });
     }
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       return NextResponse.json({ error: 'この年度の設定は既に存在します' }, { status: 409 });
     }
-    console.error('POST /api/clubs/[clubId]/dues-settings error:', error);
-    return NextResponse.json({ error: '会費設定の作成に失敗しました' }, { status: 500 });
+    return jsonInternalError500("POST api/clubs/[clubId]/dues-settings/route.ts", error);
   }
 }
 
@@ -202,9 +202,8 @@ export async function PUT(
     return NextResponse.json(updated);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: 'validation_error', details: error.errors }, { status: 400 });
+      return NextResponse.json(zodErrorJsonBody(error, 'validation_error'), { status: 400 });
     }
-    console.error('PUT /api/clubs/[clubId]/dues-settings error:', error);
-    return NextResponse.json({ error: '会費設定の更新に失敗しました' }, { status: 500 });
+    return jsonInternalError500("PUT api/clubs/[clubId]/dues-settings/route.ts", error);
   }
 }

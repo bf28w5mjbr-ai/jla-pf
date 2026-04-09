@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
+import { appRoutes } from "@/lib/appRoutes";
 
 interface JoinClubFormProps {
   club: {
@@ -37,7 +38,7 @@ export default function JoinClubForm({ club }: JoinClubFormProps) {
       }
 
       toast.success("参加申請を送信しました。クラブ管理者の承認をお待ちください。");
-      router.push("/clubs");
+      router.push(appRoutes.clubs.list());
       router.refresh();
     } catch (err) {
       console.error("Join club error:", err);
@@ -64,11 +65,11 @@ export default function JoinClubForm({ club }: JoinClubFormProps) {
               )}
             </div>
 
-            <div className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 p-4">
-              <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-2">
+            <div className="rounded-lg border border-orange-200 bg-orange-50 dark:bg-orange-900/20 dark:border-orange-800 p-4">
+              <h3 className="text-sm font-semibold text-orange-900 dark:text-orange-100 mb-2">
                 📋 参加申請について
               </h3>
-              <ul className="text-xs text-blue-800 dark:text-blue-200 space-y-1 list-disc list-inside">
+              <ul className="text-xs text-orange-800 dark:text-orange-200 space-y-1 list-disc list-inside">
                 <li>クラブ管理者の承認が必要です</li>
                 <li>承認されるまで「申請中」状態となります</li>
                 <li>承認後、クラブの活動に参加できるようになります</li>

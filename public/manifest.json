@@ -1,0 +1,19 @@
+{
+  "name": "Bluvium",
+  "short_name": "Bluvium",
+  "description": "Bluviumアプリケーション",
+  "lang": "ja",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fffbf7",
+  "theme_color": "#ea580c",
+  "icons": [
+    {
+      "src": "/next.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

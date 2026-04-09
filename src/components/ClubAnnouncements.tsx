@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Pin, Trash2 } from "lucide-react";
+import { Pin, Trash2, Plus, X, Send } from "lucide-react";
+import { isClubAdminRole } from "@/lib/roleScopes";
 
 type AnnouncementAuthor = {
   id: string;
@@ -29,7 +30,7 @@ type Announcement = {
 type ClubAnnouncementsProps = {
   clubId: string;
   currentUserId: string;
-  currentUserRole: "OWNER" | "ADMIN" | "MEMBER";
+  currentUserRole: "ADMIN" | "MEMBER" | string;
 };
 
 export default function ClubAnnouncements({
@@ -45,13 +46,9 @@ export default function ClubAnnouncements({
   const [content, setContent] = useState("");
   const [isPinned, setIsPinned] = useState(false);
 
-  const canCreateAnnouncement = currentUserRole === "OWNER" || currentUserRole === "ADMIN";
+  const canCreateAnnouncement = isClubAdminRole(currentUserRole);
 
-  useEffect(() => {
-    loadAnnouncements();
-  }, [clubId]);
-
-  const loadAnnouncements = async () => {
+  const loadAnnouncements = useCallback(async () => {
     try {
       setLoading(true);
       const res = await fetch(`/api/clubs/${clubId}/announcements`);
@@ -64,7 +61,11 @@ export default function ClubAnnouncements({
     } finally {
       setLoading(false);
     }
-  };
+  }, [clubId]);
+
+  useEffect(() => {
+    void loadAnnouncements();
+  }, [loadAnnouncements]);
 
   const handleCreate = async () => {
     if (!title.trim() || !content.trim()) {
@@ -139,8 +140,23 @@ export default function ClubAnnouncements({
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">クラブのお知らせ</h2>
         {canCreateAnnouncement && (
-          <Button onClick={() => setShowCreateForm(!showCreateForm)}>
-            {showCreateForm ? "キャンセル" : "お知らせを作成"}
+          <Button
+            onClick={() => setShowCreateForm(!showCreateForm)}
+            variant={showCreateForm ? "outline" : "default"}
+            size="sm"
+            className="h-9 px-4 shadow-sm"
+          >
+            {showCreateForm ? (
+              <>
+                <X className="h-4 w-4" />
+                入力を閉じる
+              </>
+            ) : (
+              <>
+                <Plus className="h-4 w-4" />
+                お知らせを作成
+              </>
+            )}
           </Button>
         )}
       </div>
@@ -176,8 +192,9 @@ export default function ClubAnnouncements({
               />
               <Label htmlFor="isPinned">ピン留めする</Label>
             </div>
-            <Button onClick={handleCreate} disabled={creating}>
-              {creating ? "投稿中..." : "投稿"}
+            <Button onClick={handleCreate} disabled={creating} className="h-9 px-4 shadow-sm">
+              <Send className="h-4 w-4" />
+              {creating ? "投稿中..." : "投稿する"}
             </Button>
           </div>
         </Card>
@@ -191,20 +208,20 @@ export default function ClubAnnouncements({
         <div className="space-y-3">
           {announcements.map((announcement) => {
             const isAuthor = announcement.authorId === currentUserId;
-            const canDelete = isAuthor || currentUserRole === "OWNER" || currentUserRole === "ADMIN";
-            const canPin = currentUserRole === "OWNER" || currentUserRole === "ADMIN";
+            const canDelete = isAuthor || isClubAdminRole(currentUserRole);
+            const canPin = isClubAdminRole(currentUserRole);
 
             return (
               <Card
                 key={announcement.id}
-                className={announcement.isPinned ? "border-blue-500 border-2" : ""}
+                className={announcement.isPinned ? "border-orange-500 border-2" : ""}
               >
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <h3 className="text-lg font-semibold">{announcement.title}</h3>
                       {announcement.isPinned && (
-                        <span className="bg-blue-500 text-white text-xs px-2 py-1 rounded">
+                        <span className="bg-orange-500 text-white text-xs px-2 py-1 rounded">
                           ピン留め
                         </span>
                       )}

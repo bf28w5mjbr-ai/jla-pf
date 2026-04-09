@@ -1,3 +1,4 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
@@ -29,8 +30,6 @@ export async function POST() {
       return NextResponse.json({ error: "ユーザーが見つかりません" }, { status: 404 });
     }
 
-    console.log(`🗑️  アカウント削除開始: User ID ${userId}, Email: ${user.email}`);
-
     // トランザクションで関連データを削除
     await prisma.$transaction(async (tx) => {
       // 1. ログインセッションを削除
@@ -53,17 +52,11 @@ export async function POST() {
       });
     });
 
-    console.log(`✅ アカウント削除完了: User ID ${userId}`);
-
     // セッションクッキーを削除
     jar.delete("session");
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("❌ アカウント削除エラー:", error);
-    return NextResponse.json(
-      { error: "アカウント削除中にエラーが発生しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("POST api/user/delete-account/route.ts", error);
   }
 }

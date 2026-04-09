@@ -1,11 +1,14 @@
 // src/app/api/memberships/[id]/route.ts
 export const runtime = "nodejs";
 
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { z } from "zod";
+import { isClubAdminRole, normalizeClubRoleForWrite } from "@/lib/roleScopes";
+import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -55,8 +58,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json(membership);
   } catch (err) {
-    console.error('Error in GET /api/memberships/[id]', err);
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+    return jsonInternalError500("GET api/memberships/[id]/route.ts", err);
   }
 }
 
@@ -91,17 +93,16 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       );
     }
 
-    // 権限チェック（クラブのOWNERまたはADMIN）
+    // 権限チェック（クラブ管理者）
     const adminMembership = await prisma.membership.findFirst({
       where: {
         userId: sess.userId,
         clubId: membership.clubId,
-        role: { in: ['OWNER', 'ADMIN'] },
         status: 'APPROVED',
       },
     });
 
-    if (!adminMembership) {
+    if (!adminMembership || !isClubAdminRole(adminMembership.role)) {
       return NextResponse.json(
         { error: 'クラブの管理者権限がありません' },
         { status: 403 }
@@ -112,7 +113,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     const UpdateMembershipSchema = z.object({
       status: z.enum(['APPROVED', 'REJECTED']).optional(),
-      role: z.enum(['OWNER', 'ADMIN', 'MEMBER']).optional(),
+      role: z.enum(['ADMIN', 'MEMBER']).optional(),
     });
 
     const data = UpdateMembershipSchema.parse(body);
@@ -122,7 +123,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       where: { id },
       data: {
         status: data.status,
-        role: data.role,
+        role: data.role ? normalizeClubRoleForWrite(data.role) : undefined,
       },
       include: {
         user: {
@@ -157,14 +158,10 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     return NextResponse.json(updated);
   } catch (err) {
     if (err instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'バリデーションエラー', details: err.errors },
-        { status: 400 }
-      );
+      return NextResponse.json(zodErrorJsonBody(err, "validation_message_ja"), { status: 400 });
     }
 
-    console.error('Error in PATCH /api/memberships/[id]', err);
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+    return jsonInternalError500("PATCH api/memberships/[id]/route.ts", err);
   }
 }
 
@@ -205,35 +202,15 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
       where: {
         userId: sess.userId,
         clubId: membership.clubId,
-        role: { in: ['OWNER', 'ADMIN'] },
         status: 'APPROVED',
       },
     }) : null;
 
-    if (!isOwnMembership && !adminMembership) {
+    if (!isOwnMembership && (!adminMembership || !isClubAdminRole(adminMembership.role))) {
       return NextResponse.json(
         { error: '権限がありません' },
         { status: 403 }
       );
-    }
-
-    // OWNER の場合、他に OWNER がいるか確認
-    if (membership.role === 'OWNER') {
-      const otherOwners = await prisma.membership.count({
-        where: {
-          clubId: membership.clubId,
-          role: 'OWNER',
-          status: 'APPROVED',
-          id: { not: id },
-        },
-      });
-
-      if (otherOwners === 0) {
-        return NextResponse.json(
-          { error: '唯一のオーナーは退会できません。別のオーナーを指定してください' },
-          { status: 400 }
-        );
-      }
     }
 
     await prisma.membership.delete({
@@ -252,7 +229,6 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error('Error in DELETE /api/memberships/[id]', err);
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+    return jsonInternalError500("DELETE api/memberships/[id]/route.ts", err);
   }
 }

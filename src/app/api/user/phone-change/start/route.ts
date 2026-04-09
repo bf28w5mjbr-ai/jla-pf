@@ -9,6 +9,10 @@ import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { hashOTP } from "@/lib/otp";
 import { sendOTPviaSMS } from "@/lib/sns";
+import { normalizePhone } from "@/lib/normalize-kana";
+import { toE164 } from "@/lib/phone";
+import { findUserByPhoneCandidates } from "@/lib/user-uniqueness";
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 
 const PhoneChangeStartSchema = z.object({
   phone: z.string().regex(/^0\d{9,10}$/),
@@ -31,9 +35,11 @@ export async function POST(req: NextRequest) {
     const data = PhoneChangeStartSchema.parse(body);
 
     // 電話番号の重複チェック
-    const existingUser = await prisma.user.findUnique({
-      where: { phoneNumber: data.phone },
-    });
+    const existingUser = await findUserByPhoneCandidates([
+      data.phone,
+      normalizePhone(data.phone),
+      toE164(data.phone) ?? "",
+    ]);
 
     if (existingUser && existingUser.id !== sess.userId) {
       return NextResponse.json(
@@ -110,10 +116,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.error("Phone change start error:", error);
-    return NextResponse.json(
-      { error: "OTP送信に失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("POST api/user/phone-change/start/route.ts", error);
   }
 }

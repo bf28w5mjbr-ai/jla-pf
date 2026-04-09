@@ -1,14 +1,16 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
+import { hasOrgAdminAccess } from "@/lib/roleScopes";
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; announcementId: string }> }
 ) {
   try {
-    const { id, announcementId } = await params;
+    const { announcementId } = await params;
     const cookieStore = await cookies();
     const token = cookieStore.get("session")?.value;
     const session = token ? await verifySession(token) : null;
@@ -43,8 +45,7 @@ export async function DELETE(
     }
 
     // 権限チェック
-    const userRole = announcement.competition.organization.admins[0]?.role;
-    if (userRole !== "OWNER" && userRole !== "ADMIN") {
+    if (!hasOrgAdminAccess(announcement.competition.organization.admins)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -55,10 +56,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Error deleting announcement:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return jsonInternalError500("DELETE api/competitions/[id]/announcements/[announcementId]/route.ts", error);
   }
 }

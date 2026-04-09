@@ -1,6 +1,8 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
+import { hasOrgAdminAccess } from "@/lib/roleScopes";
 
 export async function PUT(
   request: NextRequest,
@@ -38,9 +40,8 @@ export async function PUT(
       );
     }
 
-    // 権限確認（OWNER または ADMIN）
-    const userRole = competition.organization.admins[0]?.role;
-    if (userRole !== "OWNER" && userRole !== "ADMIN") {
+    // 権限確認（管理者のみ）
+    if (!hasOrgAdminAccess(competition.organization.admins)) {
       return NextResponse.json(
         { error: "大会を編集する権限がありません" },
         { status: 403 }
@@ -51,6 +52,7 @@ export async function PUT(
     const {
       name,
       nameKana,
+      category,
       startDate,
       endDate,
       venue,
@@ -58,9 +60,43 @@ export async function PUT(
     } = body;
 
     // 必須フィールドのバリデーション
-    if (!name || !startDate || !endDate || !venue) {
+    if (
+      typeof name !== "string" ||
+      typeof startDate !== "string" ||
+      typeof endDate !== "string" ||
+      typeof venue !== "string" ||
+      !name.trim() ||
+      !startDate.trim() ||
+      !endDate.trim() ||
+      !venue.trim()
+    ) {
       return NextResponse.json(
         { error: "必須項目が入力されていません" },
+        { status: 400 }
+      );
+    }
+
+    if (typeof category !== "string" || (category.trim() !== "プール" && category.trim() !== "オーシャン")) {
+      return NextResponse.json(
+        { error: "大会カテゴリはプールまたはオーシャンを指定してください" },
+        { status: 400 }
+      );
+    }
+
+    const parsedStartDate = new Date(startDate);
+    const parsedEndDate = new Date(endDate);
+    if (
+      Number.isNaN(parsedStartDate.getTime()) ||
+      Number.isNaN(parsedEndDate.getTime())
+    ) {
+      return NextResponse.json(
+        { error: "日付の形式が不正です" },
+        { status: 400 }
+      );
+    }
+    if (parsedStartDate > parsedEndDate) {
+      return NextResponse.json(
+        { error: "終了日は開始日以降を指定してください" },
         { status: 400 }
       );
     }
@@ -69,12 +105,14 @@ export async function PUT(
     const updatedCompetition = await prisma.competition.update({
       where: { id: competitionId },
       data: {
-        name,
-        nameKana: nameKana || null,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-        venue,
-        venueAddress: venueAddress || null,
+        name: name.trim(),
+        nameKana: typeof nameKana === "string" ? nameKana.trim() || null : null,
+        category: category.trim(),
+        startDate: parsedStartDate,
+        endDate: parsedEndDate,
+        venue: venue.trim(),
+        venueAddress:
+          typeof venueAddress === "string" ? venueAddress.trim() || null : null,
       },
     });
 
@@ -83,10 +121,6 @@ export async function PUT(
       competition: updatedCompetition,
     });
   } catch (error) {
-    console.error("Update competition error:", error);
-    return NextResponse.json(
-      { error: "大会の更新に失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("PUT api/competitions/[id]/update/route.ts", error);
   }
 }

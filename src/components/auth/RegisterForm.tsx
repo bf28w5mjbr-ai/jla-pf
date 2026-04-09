@@ -1,41 +1,96 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
 import Link from "next/link";
+import { Eye, EyeOff } from "lucide-react";
+import { REGISTRATION_FORM_DRAFT_KEY } from "@/lib/registrationFormDraft";
+import { AuthPanel } from "@/components/auth/AuthShell";
+import { FormSection } from "@/components/auth/FormSection";
+import { fieldHintClass, pageLeadClass } from "@/lib/explanation";
+import { appendRedirectQuery, safePostLoginPath } from "@/lib/postLoginRedirect";
 
-export default function RegisterForm() {
+const INITIAL_FORM = {
+  email: "",
+  password: "",
+  confirmPassword: "",
+  familyName: "",
+  givenName: "",
+  familyNameKana: "",
+  givenNameKana: "",
+  dateOfBirth: "",
+  sex: "MALE" as "MALE" | "FEMALE" | "OTHER",
+  phoneNumber: "",
+  postalCode: "",
+  prefecture: "",
+  city: "",
+  addressLine1: "",
+  addressLine2: "",
+  emergencyContactFamilyName: "",
+  emergencyContactGivenName: "",
+  emergencyContactFamilyNameKana: "",
+  emergencyContactGivenNameKana: "",
+  emergencyContactPhone: "",
+};
+
+type FormState = typeof INITIAL_FORM;
+
+function parseDraft(raw: string): Partial<FormState> {
+  try {
+    const v = JSON.parse(raw) as Partial<FormState>;
+    if (!v || typeof v !== "object") return {};
+    const sex =
+      v.sex === "MALE" || v.sex === "FEMALE" || v.sex === "OTHER"
+        ? v.sex
+        : INITIAL_FORM.sex;
+    return { ...v, sex };
+  } catch {
+    return {};
+  }
+}
+
+function firstZodIssueMessage(details: unknown): string | null {
+  if (!Array.isArray(details) || details.length === 0) return null;
+  const first = details[0] as { message?: string };
+  return typeof first?.message === "string" ? first.message : null;
+}
+
+function RegisterFormInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectAfterRegister = safePostLoginPath(searchParams.get("redirect"));
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-    confirmPassword: "",
-    familyName: "",
-    givenName: "",
-    familyNameKana: "",
-    givenNameKana: "",
-    dateOfBirth: "",
-    sex: "MALE" as "MALE" | "FEMALE" | "OTHER",
-    phoneNumber: "",
-    postalCode: "",
-    prefecture: "",
-    city: "",
-    addressLine1: "",
-    addressLine2: "",
-    jlaMemberNumber: "",
-    emergencyContactFamilyName: "",
-    emergencyContactGivenName: "",
-    emergencyContactFamilyNameKana: "",
-    emergencyContactGivenNameKana: "",
-    emergencyContactPhone: "",
-  });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [draftHydrated, setDraftHydrated] = useState(false);
+  const [formData, setFormData] = useState<FormState>(INITIAL_FORM);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(REGISTRATION_FORM_DRAFT_KEY);
+      if (raw) {
+        const partial = parseDraft(raw);
+        setFormData((prev) => ({ ...prev, ...partial }));
+      }
+    } catch {
+      // ignore
+    }
+    setDraftHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!draftHydrated) return;
+    try {
+      sessionStorage.setItem(REGISTRATION_FORM_DRAFT_KEY, JSON.stringify(formData));
+    } catch {
+      // ignore
+    }
+  }, [formData, draftHydrated]);
 
   const handlePostalCodeChange = async (postalCode: string) => {
     setFormData({ ...formData, postalCode });
@@ -54,9 +109,14 @@ export default function RegisterForm() {
             addressLine1: result.address3,
           }));
           toast.success("住所を自動入力しました");
+        } else {
+          toast.message("該当する住所が見つかりませんでした", {
+            description: "都道府県・市区町村・町名を手入力してください。",
+          });
         }
       } catch (error) {
         console.error("Failed to fetch address:", error);
+        toast.error("住所の自動入力に失敗しました。手入力してください。");
       }
     }
   };
@@ -72,7 +132,7 @@ export default function RegisterForm() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/register", {
+      const res = await fetch("/api/registration/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -90,7 +150,6 @@ export default function RegisterForm() {
           city: formData.city,
           addressLine1: formData.addressLine1,
           addressLine2: formData.addressLine2,
-          jlaMemberNumber: formData.jlaMemberNumber,
           emergencyContactFamilyName: formData.emergencyContactFamilyName,
           emergencyContactGivenName: formData.emergencyContactGivenName,
           emergencyContactFamilyNameKana: formData.emergencyContactFamilyNameKana,
@@ -102,17 +161,35 @@ export default function RegisterForm() {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || "登録に失敗しました");
+        const baseMsg = data.error || "登録に失敗しました";
+        const detailMsg = firstZodIssueMessage(data.details);
+        const message = detailMsg || baseMsg;
+        const suggestLogin =
+          data.existingUser === true ||
+          (typeof baseMsg === "string" && baseMsg.includes("既に登録"));
+
+        if (suggestLogin) {
+          toast.error(message, {
+            action: {
+              label: "ログインへ",
+              onClick: () => router.push(appendRedirectQuery("/login", redirectAfterRegister)),
+            },
+            duration: 12_000,
+          });
+        } else {
+          toast.error(message);
+        }
         return;
       }
 
-      if (!data?.userId) {
+      if (!data?.sessionId) {
         toast.error("登録後の処理に失敗しました");
         return;
       }
 
-      toast.success("登録が完了しました。パスキー登録へ進みます。");
-      router.push(`/register/passkey?userId=${data.userId}&phone=${encodeURIComponent(formData.phoneNumber)}`);
+      toast.success("認証コードを送信しました。SMSを確認してください。");
+      const otpBase = `/register/sms/otp?sessionId=${data.sessionId}&phone=${encodeURIComponent(formData.phoneNumber)}`;
+      router.push(appendRedirectQuery(otpBase, redirectAfterRegister));
     } catch (err) {
       console.error("Register error:", err);
       toast.error("登録に失敗しました");
@@ -122,20 +199,21 @@ export default function RegisterForm() {
   };
 
   return (
-    <Card className="w-full max-w-2xl">
-      <CardHeader>
-        <CardTitle>新規登録（必須情報の入力）</CardTitle>
-        <CardDescription>
-          全項目必須です。登録後にパスキー登録へ進みます。
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <AuthPanel>
+      <div className="mb-6 border-b border-border pb-6">
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">必須情報の入力</h2>
+        <p className={pageLeadClass("balanced")}>
+          SMSで電話番号を確認したうえでアカウントを作成します。パスキーは任意です。JLA番号は選手登録の申請時に入力します。
+        </p>
+      </div>
+      <form onSubmit={handleSubmit} className="space-y-8">
+        <FormSection title="基本情報" description="ログインと本人確認に使います。" descriptionDensity="balanced">
           <div className="space-y-2">
             <Label htmlFor="email">メールアドレス *</Label>
             <Input
               id="email"
               type="email"
+              autoComplete="email"
               placeholder="your@email.com"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -143,7 +221,7 @@ export default function RegisterForm() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="familyName">姓 *</Label>
               <Input
@@ -168,7 +246,7 @@ export default function RegisterForm() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="familyNameKana">姓（カナ） *</Label>
               <Input
@@ -209,7 +287,7 @@ export default function RegisterForm() {
             <RadioGroup
               value={formData.sex}
               onValueChange={(value) => setFormData({ ...formData, sex: value as "MALE" | "FEMALE" | "OTHER" })}
-              className="flex gap-4"
+              className="flex flex-wrap gap-x-5 gap-y-3"
             >
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="MALE" id="male" />
@@ -231,30 +309,38 @@ export default function RegisterForm() {
             <Input
               id="phoneNumber"
               type="tel"
+              numericInput="integer"
               placeholder="09012345678"
               maxLength={11}
               value={formData.phoneNumber}
-              onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value.replace(/[^\d]/g, '') })}
+              onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
               required
             />
-            <p className="text-xs text-muted-foreground">携帯電話番号（ハイフンなし11桁）</p>
+            <p className={fieldHintClass("compact")}>携帯電話番号（ハイフンなし11桁）</p>
           </div>
+        </FormSection>
 
+        <FormSection
+          title="住所"
+          description="郵便番号を入力すると、市区町村まで自動入力されることがあります。"
+          descriptionDensity="guided"
+        >
           <div className="space-y-2">
             <Label htmlFor="postalCode">郵便番号 *</Label>
             <Input
               id="postalCode"
               type="text"
+              numericInput="integer"
               placeholder="1234567"
               maxLength={7}
               value={formData.postalCode}
-              onChange={(e) => handlePostalCodeChange(e.target.value.replace(/[^\d]/g, ''))}
+              onChange={(e) => handlePostalCodeChange(e.target.value)}
               required
             />
-            <p className="text-xs text-muted-foreground">ハイフンなし7桁</p>
+            <p className={fieldHintClass("compact")}>ハイフンなし7桁</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="prefecture">都道府県 *</Label>
               <Input
@@ -289,7 +375,7 @@ export default function RegisterForm() {
               onChange={(e) => setFormData({ ...formData, addressLine1: e.target.value })}
               required
             />
-            <p className="text-xs text-muted-foreground">番地まで入力してください（例: 神南1-2-3）</p>
+            <p className={fieldHintClass("balanced")}>番地まで入力してください（例: 神南1-2-3）</p>
           </div>
 
           <div className="space-y-2">
@@ -302,27 +388,10 @@ export default function RegisterForm() {
               onChange={(e) => setFormData({ ...formData, addressLine2: e.target.value })}
             />
           </div>
+        </FormSection>
 
-          <div className="space-y-2">
-            <Label htmlFor="jlaMemberNumber">JLA会員番号（任意）</Label>
-            <Input
-              id="jlaMemberNumber"
-              type="text"
-              placeholder="5000から始まる9桁（例: 500012345）"
-              value={formData.jlaMemberNumber}
-              onChange={(e) => setFormData({ ...formData, jlaMemberNumber: e.target.value })}
-              inputMode="numeric"
-              maxLength={9}
-            />
-            <p className="text-xs text-muted-foreground">
-              5000から始まる9桁番号を入力してください
-            </p>
-          </div>
-
-          <div className="border-t pt-4 mt-6">
-            <h3 className="text-sm font-semibold mb-3">緊急連絡先 *</h3>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+        <FormSection title="緊急連絡先" descriptionDensity="compact">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="emergencyContactFamilyName">姓 *</Label>
                   <Input
@@ -347,7 +416,7 @@ export default function RegisterForm() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="emergencyContactFamilyNameKana">セイ *</Label>
                   <Input
@@ -377,55 +446,97 @@ export default function RegisterForm() {
                 <Input
                   id="emergencyContactPhone"
                   type="tel"
+                  numericInput="integer"
                   placeholder="09012345678"
                   maxLength={11}
                   value={formData.emergencyContactPhone}
-                  onChange={(e) => setFormData({ ...formData, emergencyContactPhone: e.target.value.replace(/[^\d]/g, '') })}
+                  onChange={(e) => setFormData({ ...formData, emergencyContactPhone: e.target.value })}
                   required
                 />
-                <p className="text-xs text-muted-foreground">ハイフンなし11桁</p>
+                <p className={fieldHintClass("compact")}>ハイフンなし11桁</p>
               </div>
-            </div>
-          </div>
+        </FormSection>
 
+        <FormSection title="パスワード" descriptionDensity="compact">
           <div className="space-y-2">
             <Label htmlFor="password">パスワード *</Label>
-            <Input
-              id="password"
-              type="password"
-              placeholder="8文字以上"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              required
-              minLength={8}
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="new-password"
+                placeholder="8文字以上"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                required
+                minLength={8}
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+                aria-label={showPassword ? "パスワードを隠す" : "パスワードを表示"}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <p className={fieldHintClass("balanced")}>英数字を組み合わせた8文字以上を推奨します。</p>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="confirmPassword">パスワード（確認） *</Label>
-            <Input
-              id="confirmPassword"
-              type="password"
-              placeholder="パスワードを再入力"
-              value={formData.confirmPassword}
-              onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-              required
-              minLength={8}
-            />
+            <div className="relative">
+              <Input
+                id="confirmPassword"
+                type={showConfirmPassword ? "text" : "password"}
+                autoComplete="new-password"
+                placeholder="パスワードを再入力"
+                value={formData.confirmPassword}
+                onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                required
+                minLength={8}
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+                aria-label={showConfirmPassword ? "パスワードを隠す" : "パスワードを表示"}
+              >
+                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
+        </FormSection>
 
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "登録中..." : "次へ（パスキー登録）"}
+        <div className="space-y-4 border-t border-border pt-6">
+          <Button type="submit" className="h-11 w-full rounded-lg text-base font-semibold" disabled={loading}>
+            {loading ? "送信中..." : "認証コードを送信（SMS）"}
           </Button>
 
-          <div className="text-center text-sm text-muted-foreground">
+          <p className="text-center text-sm text-muted-foreground">
             既にアカウントをお持ちですか？{" "}
-            <Link href="/login" className="text-primary hover:underline">
-              ログイン
-            </Link>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+            <Button asChild variant="outline" size="sm" className="ml-1 h-9">
+              <Link href={appendRedirectQuery("/login", redirectAfterRegister)}>ログイン</Link>
+            </Button>
+          </p>
+        </div>
+      </form>
+    </AuthPanel>
+  );
+}
+
+export default function RegisterForm() {
+  return (
+    <Suspense
+      fallback={
+        <AuthPanel>
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        </AuthPanel>
+      }
+    >
+      <RegisterFormInner />
+    </Suspense>
   );
 }

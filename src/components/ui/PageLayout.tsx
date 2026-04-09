@@ -1,6 +1,8 @@
 "use client";
 
 import { ReactNode } from "react";
+import type { ExplanationDensity } from "@/lib/explanation";
+import { pageIntroTextClass } from "@/lib/explanation";
 import Sidebar from "@/components/Sidebar";
 
 interface Organization {
@@ -13,9 +15,11 @@ interface PageLayoutProps {
   children: ReactNode;
   title?: string;
   description?: string;
+  /** 説明文の段階（一覧・設定などは compact、初回のみ詳しい画面は guided） */
+  descriptionDensity?: ExplanationDensity;
   showSidebar?: boolean;
   userRole?: string;
-  isClubOwner?: boolean;
+  isClubAdmin?: boolean;
   organizations?: Organization[];
   headerContent?: ReactNode;
   action?: ReactNode;
@@ -25,16 +29,17 @@ export default function PageLayout({
   children,
   title,
   description,
+  descriptionDensity = "balanced",
   showSidebar = true,
   userRole,
-  isClubOwner,
+  isClubAdmin,
   organizations,
   headerContent,
   action,
 }: PageLayoutProps) {
   return (
-    <div className="flex min-h-screen bg-white dark:bg-[#1a1a1a]">
-      {showSidebar && <Sidebar userRole={userRole} isClubOwner={isClubOwner} organizations={organizations} />}
+    <div className="flex min-h-screen bg-background">
+      {showSidebar && <Sidebar userRole={userRole} isClubAdmin={isClubAdmin} organizations={organizations} />}
       
       <main className="flex-1 p-8 lg:p-12">
         <div className="max-w-7xl mx-auto">
@@ -51,9 +56,7 @@ export default function PageLayout({
                   </h1>
                 )}
                 {description && (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {description}
-                  </p>
+                  <p className={pageIntroTextClass(descriptionDensity)}>{description}</p>
                 )}
               </div>
               {action && <div>{action}</div>}

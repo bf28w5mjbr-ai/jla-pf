@@ -1,5 +1,96 @@
 # JLA PF 権限体系ドキュメント
 
+最終更新: 2026-03-24
+
+このドキュメントは、運用向けの権限説明です。  
+実装との厳密な一致が必要な場合は、`docs/PERMISSIONS_CURRENT.md` を正としてください。
+
+## 1. 権限モデル（現行）
+
+### グローバルロール（`User.role`）
+
+- `USER`
+- `ORG_ADMIN`
+- `PF_ADMIN`
+
+### スコープロール
+
+- クラブ: `Membership.role`（`ADMIN` / `MEMBER`）
+- 主催団体: `OrgAdmin.role`（`ADMIN` / `MEMBER`）
+- 協会: `AssociationAdmin.role`（`ADMIN` / `MEMBER`）
+
+## 2. 基本方針
+
+- すべての管理操作は「ロール判定 + 対象リソースのスコープ検証」を必須にする
+- `PF_ADMIN` は多くの管理操作を横断実行できる
+- 協会管理者はクラブ/主催団体運営を直接代行しない（`requireClubAdmin` / `requireOrgAdmin` で制限）
+- `requireOrgAdmin` は `OrgAdmin.role=ADMIN` のみ許可（`MEMBER` は管理APIを実行不可）
+- 重要操作は `AuditLog` 記録を前提とする
+
+## 3. 代表的な操作権限
+
+- `USER`
+  - 自分のプロフィール管理
+  - クラブ加入申請
+  - 大会エントリー
+- `CLUB_ADMIN`（クラブスコープ）
+  - クラブメンバー承認/却下
+  - クラブ内ロール管理
+- `ORG_ADMIN`（主催団体スコープ）
+  - 大会作成/更新
+  - 大会運営機能の利用
+- `ASSOCIATION_ADMIN`（協会スコープ）
+  - 協会管理画面の操作
+- `PF_ADMIN`
+  - 全体管理設定
+  - 横断的な管理操作
+
+## 4. 実装上の一次情報
+
+- ガード関数: `src/lib/accessControl.ts`
+  - `requirePfAdmin()`
+  - `requireAssociationAdmin()`
+  - `requireClubAdmin()`
+  - `requireOrgAdmin()`
+- 補助ロジック:
+  - `src/lib/platformTaxonomy.ts`
+  - `src/lib/governancePolicy.ts`
+
+## 5. 代表 API
+
+- クラブ
+  - `GET /api/memberships`
+  - `PATCH /api/memberships/[id]`
+  - `POST /api/clubs/[clubId]/members/[membershipId]/approve`
+  - `POST /api/clubs/[clubId]/members/[membershipId]/reject`
+- 主催団体
+  - `POST /api/competitions/create`
+  - `PATCH /api/competitions/[id]/update`
+  - `GET /api/organizations/[orgId]/members`
+  - `PATCH /api/organizations/[orgId]/members/[memberId]`
+- 協会/PF
+  - `POST /api/admin/association/clubs/[id]/approve`
+  - `POST /api/admin/jla/clubs/[id]/approve`
+  - `GET /api/qualifications`
+  - `PATCH /api/qualifications/[id]`
+
+## 6. 更新ルール
+
+- 権限仕様を変更した場合は、次を同時更新する
+  - `docs/PERMISSIONS_CURRENT.md`
+  - 本書（`docs/PERMISSIONS.md`）
+  - 必要に応じて `docs/API_SPEC.md`
+
+## 7. 補足
+
+旧資料で使われていた `JLA_ADMIN` や `OWNER` を前提にした説明は、現行実装では採用していません。  
+過去の仕様背景が必要な場合は Git 履歴を参照してください。
+# JLA PF 権限体系ドキュメント
+
+> [!WARNING]
+> このドキュメントには旧ロール（`JLA_ADMIN` / `OWNER`）など、現行実装と一致しない記述が含まれます。  
+> 現在の運用基準は `docs/PERMISSIONS_CURRENT.md` を参照してください。
+
 ## 概要
 
 JLA PF（日本ライフセービング協会プラットフォーム）における権限体系の詳細説明。

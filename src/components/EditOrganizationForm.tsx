@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
+import { toHalfWidthDigits } from "@/lib/numericInput";
 
 type Organization = {
   id: string;
@@ -28,8 +29,6 @@ type Organization = {
   addressLine2: string | null;
   description: string | null;
   establishedYear: number | null;
-  annualFee: number | null;
-  annualFeeDescription: string | null;
 };
 
 type EditOrganizationFormProps = {
@@ -75,12 +74,6 @@ export default function EditOrganizationForm({
   const [description, setDescription] = useState(organization.description || "");
   const [establishedYear, setEstablishedYear] = useState(
     organization.establishedYear?.toString() || ""
-  );
-  const [annualFee, setAnnualFee] = useState(
-    organization.annualFee?.toString() || ""
-  );
-  const [annualFeeDescription, setAnnualFeeDescription] = useState(
-    organization.annualFeeDescription || ""
   );
 
   // 郵便番号から住所を自動入力
@@ -139,8 +132,6 @@ export default function EditOrganizationForm({
           addressLine2,
           description,
           establishedYear,
-          annualFee,
-          annualFeeDescription,
         }),
       });
 
@@ -206,7 +197,7 @@ export default function EditOrganizationForm({
               <Label htmlFor="establishedYear">設立年</Label>
               <Input
                 id="establishedYear"
-                type="number"
+                numericInput="integer"
                 min="1900"
                 max={new Date().getFullYear()}
                 value={establishedYear}
@@ -245,7 +236,7 @@ export default function EditOrganizationForm({
                 id="phoneNumber"
                 type="tel"
                 value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
+                onChange={(e) => setPhoneNumber(toHalfWidthDigits(e.target.value))}
                 placeholder="03-1234-5678"
               />
             </div>
@@ -322,10 +313,11 @@ export default function EditOrganizationForm({
             <Label htmlFor="postalCode">郵便番号</Label>
             <Input
               id="postalCode"
+              numericInput="integer"
               value={postalCode}
               onChange={(e) => handlePostalCodeChange(e.target.value)}
               placeholder="1234567（ハイフンなし）"
-              maxLength={8}
+              maxLength={7}
             />
           </div>
 
@@ -368,35 +360,6 @@ export default function EditOrganizationForm({
               value={addressLine2}
               onChange={(e) => setAddressLine2(e.target.value)}
               placeholder="〇〇ビル 4階"
-            />
-          </div>
-        </div>
-      </Card>
-
-      {/* 会費設定 */}
-      <Card className="p-6">
-        <h2 className="text-xl font-bold mb-4">年会費設定</h2>
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="annualFee">年会費（円）</Label>
-            <Input
-              id="annualFee"
-              type="number"
-              min="0"
-              value={annualFee}
-              onChange={(e) => setAnnualFee(e.target.value)}
-              placeholder="10000"
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="annualFeeDescription">年会費の説明</Label>
-            <Textarea
-              id="annualFeeDescription"
-              value={annualFeeDescription}
-              onChange={(e) => setAnnualFeeDescription(e.target.value)}
-              placeholder="会費の使途や支払い方法などを説明してください"
-              rows={3}
             />
           </div>
         </div>

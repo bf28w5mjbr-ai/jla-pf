@@ -20,25 +20,25 @@ export function DataTable<T>({
   emptyMessage = "データがありません",
 }: DataTableProps<T>) {
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-xl border border-border/75 bg-card">
       <table className="min-w-full">
-        <thead className="bg-gray-50 dark:bg-[#1f1f1f]">
+        <thead className="bg-muted/25">
           <tr>
             {columns.map((col, idx) => (
               <th
                 key={idx}
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:px-5"
               >
                 {col.header}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="bg-white dark:bg-[#2a2a2a] divide-y divide-gray-200 dark:divide-gray-700">
+        <tbody className="divide-y divide-border bg-card">
           {data.length === 0 ? (
             <tr>
               <td
-                className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400"
+                className="px-4 py-10 text-center text-sm text-muted-foreground sm:px-5"
                 colSpan={columns.length}
               >
                 {emptyMessage}
@@ -48,10 +48,10 @@ export function DataTable<T>({
             data.map((row) => (
               <tr
                 key={keyExtractor(row)}
-                className="hover:bg-gray-50 dark:hover:bg-[#2f2f2f] transition-colors"
+                className="transition-colors hover:bg-muted/35"
               >
                 {columns.map((col, idx) => (
-                  <td key={idx} className={`px-6 py-4 text-sm ${col.className || ""}`}>
+                  <td key={idx} className={`px-4 py-3 text-sm sm:px-5 ${col.className || ""}`}>
                     {typeof col.accessor === "function"
                       ? col.accessor(row)
                       : String(row[col.accessor])}

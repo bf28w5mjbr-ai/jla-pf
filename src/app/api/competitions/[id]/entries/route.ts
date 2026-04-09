@@ -1,0 +1,736 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { NextRequest, NextResponse } from "next/server";
+import type Stripe from "stripe";
+import { verifySession } from "@/lib/auth";
+import { prisma } from "@/server/db";
+import { stripe } from "@/lib/stripe";
+import {
+  assertEntryStripeCheckoutRateLimit,
+  getClientIpFromRequest,
+  isStripeCheckoutClientIpBlocked,
+  STRIPE_CHECKOUT_CLIENT_FAILURE_MESSAGE,
+  stripeCheckoutCardPaymentMethodOptions,
+} from "@/lib/stripeCheckoutGuards";
+import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
+import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
+import { refreshStartListSnapshotAfterEligibleEntryChange } from "@/lib/startListSnapshot";
+import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import { calculateCompetitionEntryFee, type CompetitionEntryFeeConfig } from "@/lib/entryFee";
+
+type RouteContext = {
+  params: Promise<{ id: string }>;
+};
+
+/** 未決済ロック時にスナップショット一致判定するための正規化 */
+function serializeEntrySnapshotPayload(data: unknown): string {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return JSON.stringify({
+      items: [] as { eventId: string; entryTime: string | null }[],
+      teamEntries: [] as { eventId: string; teamName: string }[],
+      notes: null as string | null,
+      clubId: null as string | null,
+    });
+  }
+  const o = data as Record<string, unknown>;
+  const itemsRaw = Array.isArray(o.items) ? o.items : [];
+  const teamRaw = Array.isArray(o.teamEntries) ? o.teamEntries : [];
+  const items = itemsRaw
+    .map((row) => {
+      if (!row || typeof row !== "object") return null;
+      const r = row as Record<string, unknown>;
+      const eventId = typeof r.eventId === "string" ? r.eventId : "";
+      const entryTime = r.entryTime == null ? null : String(r.entryTime).trim() || null;
+      return { eventId, entryTime };
+    })
+    .filter((x): x is { eventId: string; entryTime: string | null } => Boolean(x?.eventId))
+    .sort((a, b) => a.eventId.localeCompare(b.eventId));
+  const teamEntries = teamRaw
+    .map((row) => {
+      if (!row || typeof row !== "object") return null;
+      const r = row as Record<string, unknown>;
+      const eventId = typeof r.eventId === "string" ? r.eventId : "";
+      const teamName = typeof r.teamName === "string" ? r.teamName.trim() : "";
+      return { eventId, teamName };
+    })
+    .filter((x): x is { eventId: string; teamName: string } => Boolean(x?.eventId))
+    .sort((a, b) => a.eventId.localeCompare(b.eventId));
+  const notes = o.notes == null ? null : String(o.notes).trim() || null;
+  const clubId = o.clubId == null || o.clubId === "" ? null : String(o.clubId);
+  return JSON.stringify({ items, teamEntries, notes, clubId });
+}
+
+export async function POST(request: NextRequest, context: RouteContext) {
+  const { id: competitionId } = await context.params;
+
+  try {
+    const token = request.cookies.get("session")?.value;
+    const session = token ? await verifySession(token) : null;
+
+    if (!session?.userId) {
+      return NextResponse.json({ message: "認証が必要です" }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { clubId, notes, items, teamEntries, confirmed, pledgeAccepted } = body ?? {};
+
+    if (!confirmed) {
+      return NextResponse.json(
+        { message: "参加者確認に同意してください" },
+        { status: 400 }
+      );
+    }
+
+    const itemsArray = Array.isArray(items) ? items : [];
+    const hasTeamEntriesField = "teamEntries" in (body ?? {});
+    const teamEntriesArray = Array.isArray(teamEntries) ? teamEntries : [];
+    const selectedCount = itemsArray.length + teamEntriesArray.length;
+
+    if (selectedCount === 0) {
+      return NextResponse.json(
+        { message: "種目を1つ以上選択してください" },
+        { status: 400 }
+      );
+    }
+
+    if (teamEntriesArray.length > 0 && (!clubId || typeof clubId !== "string")) {
+      return NextResponse.json(
+        { message: "チーム種目を選択する場合は所属クラブが必要です" },
+        { status: 400 }
+      );
+    }
+
+    const competition = await prisma.competition.findUnique({
+      where: { id: competitionId },
+      include: {
+        events: true,
+        organization: {
+          include: {
+            admins: {
+              where: { userId: session.userId },
+            },
+          },
+        },
+      },
+    });
+
+    if (!competition) {
+      return NextResponse.json({ message: "大会が見つかりません" }, { status: 404 });
+    }
+
+    const entryPledgeEnabled = competition.entryPledgeEnabled ?? false;
+    const pledgeTextLive = (competition.entryPledgeText ?? "").trim();
+    if (entryPledgeEnabled) {
+      if (!pledgeTextLive) {
+        return NextResponse.json(
+          { message: "この大会の誓約設定が不正です。主催者へお問い合わせください" },
+          { status: 400 }
+        );
+      }
+      if (pledgeAccepted !== true) {
+        return NextResponse.json(
+          { message: "誓約に同意してください" },
+          { status: 400 }
+        );
+      }
+    }
+
+    const allowMultipleEventEntries = competition.allowMultipleEventEntries ?? true;
+    const maxEventEntriesPerPerson =
+      typeof competition.maxEventEntriesPerPerson === "number" &&
+      competition.maxEventEntriesPerPerson > 0
+        ? competition.maxEventEntriesPerPerson
+        : null;
+    const requireClubMembership = competition.requireClubMembership ?? false;
+
+    if (requireClubMembership && (!clubId || typeof clubId !== "string")) {
+      return NextResponse.json(
+        { message: "所属クラブを選択してください" },
+        { status: 400 }
+      );
+    }
+
+    if (!requireClubMembership && teamEntriesArray.length > 0) {
+      return NextResponse.json(
+        { message: "チーム種目は所属クラブ必須のため選択できません" },
+        { status: 400 }
+      );
+    }
+
+    if (!allowMultipleEventEntries && selectedCount > 1) {
+      return NextResponse.json(
+        { message: "この大会は1種目のみ選択可能です" },
+        { status: 400 }
+      );
+    }
+
+    if (allowMultipleEventEntries && maxEventEntriesPerPerson !== null && selectedCount > maxEventEntriesPerPerson) {
+      return NextResponse.json(
+        { message: `この大会は${maxEventEntriesPerPerson}種目まで選択可能です` },
+        { status: 400 }
+      );
+    }
+
+    const isAdmin = hasOrgAdminAccess(competition.organization.admins);
+
+    const now = new Date();
+    const pledgeAcceptedAt = entryPledgeEnabled ? now : null;
+    const pledgeTextSnapshot = entryPledgeEnabled ? pledgeTextLive : null;
+    const entryStart = competition.entryStartDate ? new Date(competition.entryStartDate) : null;
+    const entryEnd = competition.entryEndDate ? new Date(competition.entryEndDate) : null;
+    const entryWindowOpen = entryStart && entryEnd ? now >= entryStart && now <= entryEnd : false;
+
+    if (!entryWindowOpen && !isAdmin) {
+      return NextResponse.json(
+        { message: "エントリー受付期間外のため送信できません" },
+        { status: 403 }
+      );
+    }
+
+    const eventMap = new Map(competition.events.map((event) => [event.id, event]));
+
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: {
+        sex: true,
+        dateOfBirth: true,
+        qualifications: {
+          where: { status: "APPROVED" },
+          select: { kind: true },
+        },
+      },
+    });
+
+    const normalize = (value: string | null | undefined) =>
+      (value ?? "")
+        .normalize("NFKC")
+        .toLowerCase()
+        .replace(/[\s_\-./()（）・]+/g, "");
+
+    const matchesQualification = (value: string, required: string) => {
+      const normalizedValue = normalize(value);
+      const normalizedRequired = normalize(required);
+      if (!normalizedValue || !normalizedRequired) return false;
+      return (
+        normalizedValue === normalizedRequired ||
+        normalizedValue.includes(normalizedRequired) ||
+        normalizedRequired.includes(normalizedValue)
+      );
+    };
+
+    const calculateAge = (dateOfBirth: Date) => {
+      const today = new Date();
+      let age = today.getFullYear() - dateOfBirth.getFullYear();
+      const monthDiff = today.getMonth() - dateOfBirth.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dateOfBirth.getDate())) {
+        age--;
+      }
+      return age;
+    };
+
+    const userAge = user?.dateOfBirth ? calculateAge(new Date(user.dateOfBirth)) : null;
+    const userSex = user?.sex ?? "OTHER";
+    const userQualifications = user?.qualifications.map((q) => q.kind) ?? [];
+
+    const requiredQualifications = Array.isArray(competition.requiredQualifications)
+      ? (competition.requiredQualifications as string[])
+      : [];
+
+    const meetsQualification = requiredQualifications.length === 0
+      ? true
+      : requiredQualifications.every((req) =>
+          userQualifications.some((q) => matchesQualification(q, req))
+        );
+
+    if (!meetsQualification) {
+      return NextResponse.json(
+        { message: "参加資格を満たしていません" },
+        { status: 400 }
+      );
+    }
+
+    if (userAge !== null) {
+      if (typeof competition.minAge === "number" && userAge < competition.minAge) {
+        return NextResponse.json(
+          { message: "年齢条件を満たしていません" },
+          { status: 400 }
+        );
+      }
+      if (typeof competition.maxAge === "number" && userAge > competition.maxAge) {
+        return NextResponse.json(
+          { message: "年齢条件を満たしていません" },
+          { status: 400 }
+        );
+      }
+    }
+
+    const invalidEvent = itemsArray.find((item: { eventId?: string }) => {
+      const id = item.eventId;
+      if (typeof id !== "string") return true;
+      return !eventMap.has(id);
+    });
+    if (invalidEvent) {
+      return NextResponse.json({ message: "種目が不正です" }, { status: 400 });
+    }
+
+    const invalidTeamEvent = teamEntriesArray.find((item: { eventId?: string }) => {
+      const id = item.eventId;
+      if (typeof id !== "string") return true;
+      return !eventMap.has(id);
+    });
+    if (invalidTeamEvent) {
+      return NextResponse.json({ message: "種目が不正です" }, { status: 400 });
+    }
+
+    const approvedMembership = clubId
+      ? await prisma.membership.findFirst({
+          where: {
+            userId: session.userId,
+            clubId,
+            status: "APPROVED",
+          },
+        })
+      : null;
+
+    if (clubId && !approvedMembership) {
+      return NextResponse.json(
+        { message: "所属クラブが確認できません" },
+        { status: 400 }
+      );
+    }
+
+    if (requireClubMembership && !approvedMembership) {
+      return NextResponse.json(
+        { message: "所属クラブが必要です" },
+        { status: 400 }
+      );
+    }
+
+    const entryItemsData = itemsArray.map((item: { eventId: string; entryTime?: string | null }) => {
+      const event = eventMap.get(item.eventId);
+      if (!event) {
+        throw new Error("種目が不正です");
+      }
+      if (event.type !== "INDIVIDUAL") {
+        throw new Error("個人種目のみ選択できます");
+      }
+      const isMixedEvent = event.sex === "OTHER";
+      if (!isMixedEvent && userSex !== "OTHER" && event.sex !== userSex) {
+        throw new Error("性別条件を満たしていません");
+      }
+      if (userAge !== null) {
+        if (typeof event.minAge === "number" && userAge < event.minAge) {
+          throw new Error("年齢条件を満たしていません");
+        }
+        if (typeof event.maxAge === "number" && userAge > event.maxAge) {
+          throw new Error("年齢条件を満たしていません");
+        }
+      }
+      if (event.requiresEntryTime && (!item.entryTime || !item.entryTime.trim())) {
+        throw new Error("エントリータイムが必要です");
+      }
+
+      return {
+        eventId: event.id,
+        entryTime: item.entryTime?.trim() || null,
+      };
+    });
+
+    const teamEntriesData = teamEntriesArray.map(
+      (item: { eventId: string; teamName?: string }) => {
+      const event = eventMap.get(item.eventId);
+      if (!event) {
+        throw new Error("種目が不正です");
+      }
+      if (event.type !== "TEAM") {
+        throw new Error("チーム種目のみ選択できます");
+      }
+      const isMixedEvent = event.sex === "OTHER";
+      if (!isMixedEvent && userSex !== "OTHER" && event.sex !== userSex) {
+        throw new Error("性別条件を満たしていません");
+      }
+      if (userAge !== null) {
+        if (typeof event.minAge === "number" && userAge < event.minAge) {
+          throw new Error("年齢条件を満たしていません");
+        }
+        if (typeof event.maxAge === "number" && userAge > event.maxAge) {
+          throw new Error("年齢条件を満たしていません");
+        }
+      }
+      if (!item.teamName || typeof item.teamName !== "string" || !item.teamName.trim()) {
+        throw new Error("チーム名を入力してください");
+      }
+
+      return {
+        eventId: event.id,
+        teamName: item.teamName.trim(),
+      };
+    });
+
+    const totalFee = calculateCompetitionEntryFee(
+      competition.entryFee as CompetitionEntryFeeConfig | number | null,
+      {
+        individualCount: entryItemsData.length,
+        teamCount: teamEntriesData.length,
+      }
+    );
+
+    if (totalFee > 0 && (!clubId || typeof clubId !== "string")) {
+      return NextResponse.json(
+        { message: "決済を行う場合は所属クラブが必要です" },
+        { status: 400 }
+      );
+    }
+
+    const entrySnapshot = {
+      notes: typeof notes === "string" ? notes.trim() : null,
+      items: entryItemsData,
+      teamEntries: teamEntriesData,
+      clubId: clubId ?? null,
+    };
+
+    const result = await prisma.$transaction(async (tx) => {
+      const lockKey = `competition-entry:${competitionId}:${session.userId}`;
+      // 同一大会・同一ユーザーの同時POSTで重複エントリーが作られるのを防ぐ。
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+
+      const existingEntry = await tx.competitionEntry.findFirst({
+        where: {
+          competitionId,
+          userId: session.userId,
+          status: "SUBMITTED",
+        },
+        select: { id: true, totalFee: true },
+      });
+
+      if (existingEntry && !isAdmin && existingEntry.totalFee > 0) {
+        const hasCompletedCheckout = await tx.entryCheckoutSession.findFirst({
+          where: { entryId: existingEntry.id, status: "COMPLETED" },
+          select: { id: true },
+        });
+        if (!hasCompletedCheckout) {
+          const prevSnapRow = await tx.entrySnapshot.findUnique({
+            where: { entryId: existingEntry.id },
+            select: { data: true },
+          });
+          if (prevSnapRow?.data != null) {
+            const prevSerialized = serializeEntrySnapshotPayload(prevSnapRow.data);
+            const nextSerialized = serializeEntrySnapshotPayload(entrySnapshot);
+            if (prevSerialized !== nextSerialized) {
+              throw new Error(
+                "未決済のためエントリー内容は変更できません。先に決済を完了してください。"
+              );
+            }
+          }
+        }
+      }
+
+      const entry = existingEntry
+        ? await tx.competitionEntry.update({
+            where: { id: existingEntry.id },
+            data: {
+              clubId: clubId ?? null,
+              totalFee,
+              status: "SUBMITTED",
+              pledgeAcceptedAt,
+              pledgeTextSnapshot,
+              items: {
+                deleteMany: {},
+                create: entryItemsData,
+              },
+            },
+          })
+        : await tx.competitionEntry.create({
+            data: {
+              competitionId,
+              userId: session.userId,
+              clubId: clubId ?? null,
+              totalFee,
+              pledgeAcceptedAt,
+              pledgeTextSnapshot,
+              items: {
+                create: entryItemsData,
+              },
+            },
+          });
+
+      await tx.entrySnapshot.upsert({
+        where: { entryId: entry.id },
+        update: { data: entrySnapshot },
+        create: {
+          entryId: entry.id,
+          data: entrySnapshot,
+        },
+      });
+
+      if (hasTeamEntriesField) {
+        const existingTeamEntries = await tx.teamEntry.findMany({
+          where: {
+            competitionId,
+            members: {
+              some: {
+                userId: session.userId,
+                role: "申請者",
+              },
+            },
+          },
+          select: { id: true },
+        });
+
+        if (existingTeamEntries.length > 0) {
+          await tx.teamEntry.deleteMany({
+            where: {
+              id: {
+                in: existingTeamEntries.map((item) => item.id),
+              },
+            },
+          });
+        }
+
+        if (teamEntriesData.length > 0) {
+          for (const teamEntry of teamEntriesData) {
+            const created = await tx.teamEntry.create({
+              data: {
+                competitionId,
+                eventId: teamEntry.eventId,
+                clubId: clubId as string,
+                teamName: teamEntry.teamName,
+              },
+            });
+
+            await tx.teamEntryMember.create({
+              data: {
+                teamEntryId: created.id,
+                userId: session.userId,
+                role: "申請者",
+                order: 1,
+              },
+            });
+          }
+        }
+      }
+
+      return {
+        entry,
+        wasUpdate: Boolean(existingEntry),
+      };
+    });
+
+    const latestCompletedCheckout = await prisma.entryCheckoutSession.findFirst({
+      where: {
+        entryId: result.entry.id,
+        status: "COMPLETED",
+      },
+      orderBy: { createdAt: "desc" },
+      select: { status: true },
+    });
+
+    if (totalFee > 0 && !latestCompletedCheckout) {
+      const latestStripeSession = await prisma.entryCheckoutSession.findFirst({
+        where: {
+          entryId: result.entry.id,
+          stripeCheckoutSessionId: { not: null },
+          status: { not: "COMPLETED" },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { stripeCheckoutSessionId: true },
+      });
+
+      if (latestStripeSession?.stripeCheckoutSessionId) {
+        try {
+          const existingStripe = await stripe.checkout.sessions.retrieve(
+            latestStripeSession.stripeCheckoutSessionId
+          );
+          if (
+            existingStripe.payment_status === "paid" ||
+            existingStripe.payment_status === "no_payment_required"
+          ) {
+            await finalizeEntryCheckoutSessionsFromStripeSession(existingStripe);
+            const afterSync = await prisma.entryCheckoutSession.findFirst({
+              where: {
+                entryId: result.entry.id,
+                status: "COMPLETED",
+              },
+              orderBy: { createdAt: "desc" },
+              select: { status: true },
+            });
+            if (afterSync) {
+              const userStatus = getEntryUserFacingStatus({
+                status: result.entry.status,
+                totalFee: result.entry.totalFee,
+                checkoutSessions: [{ status: afterSync.status }],
+              });
+              const completeUrl = `${new URL(request.url).origin}/competitions/${competitionId}/entry?completed=1&entryId=${result.entry.id}`;
+              return NextResponse.json({
+                message: userStatus.businessEstablished
+                  ? "決済が確認できました。エントリーが成立しました。"
+                  : "エントリー手続きを受け付けました",
+                entryId: result.entry.id,
+                totalFee: result.entry.totalFee,
+                entryEstablished: userStatus.businessEstablished,
+                entryStatusLabel: userStatus.userLabel,
+                completeUrl,
+              });
+            }
+            return NextResponse.json({
+              message:
+                "決済は完了しています。システムへの反映まで少しお待ちください。ページを更新してください。",
+              entryId: result.entry.id,
+              totalFee: result.entry.totalFee,
+              entryEstablished: false,
+              entryStatusLabel: "手続き完了（入金確認中）",
+              pendingWebhookSync: true,
+            });
+          }
+        } catch {
+          // 新規 Checkout 作成へ進む
+        }
+      }
+
+      const clientIp = getClientIpFromRequest(request);
+      if (isStripeCheckoutClientIpBlocked(clientIp)) {
+        return NextResponse.json(
+          { message: STRIPE_CHECKOUT_CLIENT_FAILURE_MESSAGE },
+          { status: 403 }
+        );
+      }
+      try {
+        await assertEntryStripeCheckoutRateLimit(session.userId);
+      } catch {
+        return NextResponse.json(
+          { message: STRIPE_CHECKOUT_CLIENT_FAILURE_MESSAGE },
+          { status: 429 }
+        );
+      }
+
+      const entryUser = await prisma.user.findUnique({
+        where: { id: session.userId },
+        select: { email: true },
+      });
+
+      const entryCheckoutSession = await prisma.entryCheckoutSession.create({
+        data: {
+          competitionId,
+          clubId: clubId as string,
+          userId: session.userId,
+          amount: totalFee,
+          entryId: result.entry.id,
+          payload: {
+            entryId: result.entry.id,
+            competitionId,
+          },
+        },
+      });
+
+      const origin = new URL(request.url).origin;
+      let checkoutSession: Stripe.Checkout.Session;
+      try {
+        checkoutSession = await stripe.checkout.sessions.create({
+          mode: "payment",
+          payment_method_types: ["card"],
+          payment_method_options: stripeCheckoutCardPaymentMethodOptions,
+          ...(entryUser?.email ? { customer_email: entryUser.email } : {}),
+          line_items: [
+            {
+              price_data: {
+                currency: "jpy",
+                product_data: {
+                  name: `${competition.name} エントリー費`,
+                },
+                unit_amount: totalFee,
+              },
+              quantity: 1,
+            },
+          ],
+          metadata: {
+            entryCheckoutSessionId: entryCheckoutSession.id,
+            entryId: result.entry.id,
+            competitionId,
+            userId: session.userId,
+          },
+          success_url: `${origin}/competitions/${competitionId}/entry?completed=1&entryId=${result.entry.id}&session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${origin}/competitions/${competitionId}/entry?payment=cancel&entryId=${result.entry.id}`,
+        });
+      } catch (stripeErr) {
+        console.error("Stripe checkout.sessions.create (entry) failed", stripeErr);
+        await prisma.entryCheckoutSession
+          .delete({ where: { id: entryCheckoutSession.id } })
+          .catch(() => {});
+        return NextResponse.json(
+          { message: STRIPE_CHECKOUT_CLIENT_FAILURE_MESSAGE },
+          { status: 502 }
+        );
+      }
+
+      await prisma.entryCheckoutSession.update({
+        where: { id: entryCheckoutSession.id },
+        data: {
+          stripeCheckoutSessionId: checkoutSession.id,
+          payload: {
+            entryId: result.entry.id,
+            competitionId,
+            stripeCheckoutSessionId: checkoutSession.id,
+          },
+        },
+      });
+
+      return NextResponse.json({
+        message: result.wasUpdate
+          ? "エントリー内容を更新しました。決済完了後にエントリー成立となります。"
+          : "決済完了後にエントリー成立となります。決済に進んでください。",
+        entryId: result.entry.id,
+        totalFee: result.entry.totalFee,
+        entryEstablished: false,
+        entryStatusLabel: "手続き完了（入金確認中）",
+        checkoutUrl: checkoutSession.url,
+      });
+    }
+
+    const completeUrl = `${new URL(request.url).origin}/competitions/${competitionId}/entry?completed=1&entryId=${result.entry.id}`;
+    const userStatus = getEntryUserFacingStatus({
+      status: result.entry.status,
+      totalFee: result.entry.totalFee,
+      checkoutSessions: latestCompletedCheckout
+        ? [{ status: latestCompletedCheckout.status }]
+        : [],
+    });
+
+    if (userStatus.businessEstablished) {
+      void refreshStartListSnapshotAfterEligibleEntryChange(competitionId).catch((e) =>
+        console.error("refreshStartListSnapshotAfterEligibleEntryChange", competitionId, e)
+      );
+    }
+
+    return NextResponse.json({
+      message: result.wasUpdate
+        ? "エントリー内容を更新しました"
+        : userStatus.businessEstablished
+          ? "エントリーが成立しました"
+          : "エントリー手続きを受け付けました",
+      entryId: result.entry.id,
+      totalFee: result.entry.totalFee,
+      entryEstablished: userStatus.businessEstablished,
+      entryStatusLabel: userStatus.userLabel,
+      completeUrl,
+    });
+  } catch (error) {
+    if (error instanceof Error) {
+      const safeMessages = new Set([
+        "種目が不正です",
+        "個人種目のみ選択できます",
+        "チーム種目のみ選択できます",
+        "性別条件を満たしていません",
+        "年齢条件を満たしていません",
+        "エントリータイムが必要です",
+        "チーム名を入力してください",
+        "未決済のためエントリー内容は変更できません。先に決済を完了してください。",
+      ]);
+      if (safeMessages.has(error.message)) {
+        return NextResponse.json({ message: error.message }, { status: 400 });
+      }
+    }
+    return jsonInternalError500(
+      "POST api/competitions/[id]/entries/route.ts",
+      error
+    );
+  }
+}

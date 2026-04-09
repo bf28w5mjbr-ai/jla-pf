@@ -7,6 +7,8 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { appRoutes } from "@/lib/appRoutes";
+import { AlertTriangle, Trash2 } from "lucide-react";
 
 type DeleteClubButtonProps = {
   clubId: string;
@@ -42,7 +44,7 @@ export default function DeleteClubButton({
       }
 
       toast.success("クラブを削除しました");
-      router.push("/clubs");
+      router.push(appRoutes.clubs.list());
     } catch (error) {
       console.error("Delete club error:", error);
       toast.error(
@@ -55,18 +57,27 @@ export default function DeleteClubButton({
 
   if (!showConfirm) {
     return (
-      <Button
-        variant="destructive"
-        onClick={() => setShowConfirm(true)}
-      >
-        クラブを削除
-      </Button>
+      <div className="space-y-2">
+        <Button
+          variant="destructive"
+          size="lg"
+          onClick={() => setShowConfirm(true)}
+          className="w-full sm:w-auto min-w-[220px]"
+        >
+          <Trash2 className="h-4 w-4" />
+          クラブを完全に削除
+        </Button>
+        <p className="text-xs text-red-700 dark:text-red-400">
+          実行すると復元できません。
+        </p>
+      </div>
     );
   }
 
   return (
     <Card className="p-6 border-red-300 bg-red-50 dark:bg-red-950/20">
-      <h3 className="text-lg font-semibold text-red-800 dark:text-red-300 mb-4">
+      <h3 className="text-lg font-semibold text-red-800 dark:text-red-300 mb-4 flex items-center gap-2">
+        <AlertTriangle className="h-5 w-5" />
         クラブを削除しますか？
       </h3>
       <div className="space-y-4">
@@ -91,12 +102,14 @@ export default function DeleteClubButton({
             className="mt-2"
           />
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
           <Button
             variant="destructive"
             onClick={handleDelete}
             disabled={loading || confirmName !== clubName}
+            className="w-full sm:w-auto min-w-[160px]"
           >
+            <Trash2 className="h-4 w-4" />
             {loading ? "削除中..." : "削除を確定"}
           </Button>
           <Button
@@ -106,6 +119,7 @@ export default function DeleteClubButton({
               setConfirmName("");
             }}
             disabled={loading}
+            className="w-full sm:w-auto min-w-[120px]"
           >
             キャンセル
           </Button>

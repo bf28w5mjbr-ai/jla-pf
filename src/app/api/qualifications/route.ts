@@ -1,11 +1,25 @@
 // src/app/api/qualifications/route.ts
 export const runtime = "nodejs";
 
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { z } from "zod";
+import { Prisma, QualificationStatus } from "@prisma/client";
+import {
+  isPlayerRegistrationKind,
+  JLA_MEMBER_NUMBER_REGEX,
+  normalizeJlaMemberNumber,
+} from "@/lib/jlaMemberNumber";
+import { zodErrorJsonBody } from "@/lib/zodApiResponse";
+import {
+  evaluatePrerequisiteExpression,
+  isQualificationExpired,
+  normalizeQualificationKind,
+  parseQualificationTemplateMeta,
+} from "@/lib/qualificationTemplateRules";
 
 // GET /api/qualifications - 資格一覧取得
 export async function GET(req: NextRequest) {
@@ -25,7 +39,7 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    const where: any = {};
+    const where: Prisma.QualificationWhereInput = {};
 
     if (userId) {
       where.userId = userId;
@@ -35,8 +49,11 @@ export async function GET(req: NextRequest) {
       where.kind = kind;
     }
 
-    if (status) {
-      where.status = status;
+    if (
+      status &&
+      ["PENDING", "APPROVED", "REJECTED", "EXPIRED"].includes(status)
+    ) {
+      where.status = status as QualificationStatus;
     }
 
     const [qualifications, total] = await Promise.all([
@@ -69,8 +86,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err) {
-    console.error('Error in GET /api/qualifications', err);
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+    return jsonInternalError500("GET api/qualifications/route.ts", err);
   }
 }
 
@@ -89,25 +105,28 @@ export async function POST(req: NextRequest) {
 
     const CreateQualificationSchema = z.object({
       kind: z.string().min(1),
-      certNumber: z.string().optional(),
+      provisionalLink: z.boolean().optional().default(false),
+      certNumber: z
+        .string()
+        .optional()
+        .transform((value) => {
+          if (typeof value !== "string") return undefined;
+          const normalized = normalizeJlaMemberNumber(value);
+          return normalized === "" ? undefined : normalized;
+        }),
       issueDate: z.string().datetime().optional(),
       expiryDate: z.string().datetime().optional(),
       attachmentUrl: z.string().url().optional(),
     });
 
     const data = CreateQualificationSchema.parse(body);
-
-    const normalize = (value: string | null | undefined) =>
-      (value ?? "")
-        .normalize("NFKC")
-        .toLowerCase()
-        .replace(/[\s_\-./()（）・]+/g, "");
+    const isProvisionalLink = data.provisionalLink === true;
 
     const matchesKeywords = (value: string | null | undefined, keywords: string[]) => {
-      const normalizedValue = normalize(value);
+      const normalizedValue = normalizeQualificationKind(value);
       if (!normalizedValue) return false;
       return keywords.some((keyword) => {
-        const normalizedKeyword = normalize(keyword);
+        const normalizedKeyword = normalizeQualificationKind(keyword);
         return (
           normalizedValue === normalizedKeyword ||
           normalizedValue.includes(normalizedKeyword) ||
@@ -116,30 +135,61 @@ export async function POST(req: NextRequest) {
       });
     };
 
-    const qualificationKinds = [
-      {
-        canonical: "選手登録",
-        keywords: ["選手登録", "player registration", "player_registration"],
+    const templates = await prisma.qualificationTemplate.findMany({
+      select: {
+        kind: true,
+        name: true,
+        description: true,
       },
-      {
-        canonical: "BLS・WS",
-        keywords: ["BLS・WS", "BLS/WS", "BLS WS", "blsws", "bls ws", "ベーシックライフセーバー", "basic lifesaver", "bls"],
-      },
-      {
-        canonical: "認定ライフセーバー",
-        keywords: ["認定ライフセーバー", "certified lifesaver", "cls"],
-      },
-    ];
+    });
+    const requestedTemplate =
+      templates.find(
+        (template) =>
+          matchesKeywords(data.kind, [template.kind]) ||
+          matchesKeywords(data.kind, [template.name])
+      ) ?? null;
 
-    const requestedKind = qualificationKinds.find((item) =>
-      matchesKeywords(data.kind, item.keywords)
-    );
-
-    if (!requestedKind) {
+    if (!requestedTemplate) {
       return NextResponse.json(
-        { error: "登録できる資格は選手登録・BLS・WS・認定ライフセーバーのみです" },
+        { error: "指定された資格は登録できません。資格一覧から選択してください。" },
         { status: 400 }
       );
+    }
+    const requestedKind = requestedTemplate.kind;
+    const templateMeta = parseQualificationTemplateMeta(requestedTemplate.description);
+
+    const userForValidation = await prisma.user.findUnique({
+      where: { id: sess.userId },
+      select: {
+        dateOfBirth: true,
+        qualifications: {
+          where: { status: "APPROVED" },
+          select: {
+            kind: true,
+            status: true,
+            issueDate: true,
+            expiryDate: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+    if (!userForValidation) {
+      return NextResponse.json({ error: "ユーザーが見つかりません" }, { status: 404 });
+    }
+
+    if (!isProvisionalLink && typeof templateMeta.minAge === "number") {
+      const today = new Date();
+      const dob = new Date(userForValidation.dateOfBirth);
+      let age = today.getFullYear() - dob.getFullYear();
+      const monthDiff = today.getMonth() - dob.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) age -= 1;
+      if (age < templateMeta.minAge) {
+        return NextResponse.json(
+          { error: `${requestedKind} は ${templateMeta.minAge}歳以上が必要です` },
+          { status: 400 }
+        );
+      }
     }
 
     const existingQualifications = await prisma.qualification.findMany({
@@ -155,7 +205,7 @@ export async function POST(req: NextRequest) {
     });
 
     const existingMatch = existingQualifications.find((qualification) =>
-      matchesKeywords(qualification.kind, requestedKind.keywords)
+      matchesKeywords(qualification.kind, [requestedTemplate.kind, requestedTemplate.name])
     );
 
     if (existingMatch) {
@@ -171,7 +221,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (requestedKind.canonical === "BLS・WS") {
+    if (!isProvisionalLink && requestedKind === "BLS・WS") {
       const lifesaverQualification = existingQualifications.find((qualification) =>
         matchesKeywords(qualification.kind, ["認定ライフセーバー", "certified lifesaver", "cls"])
       );
@@ -191,12 +241,142 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const certNumber = data.certNumber;
+
+    if (
+      !isProvisionalLink &&
+      (isPlayerRegistrationKind(requestedTemplate.kind) || isPlayerRegistrationKind(requestedTemplate.name))
+    ) {
+      if (!certNumber) {
+        return NextResponse.json(
+          { error: "選手登録の申請にはJLA番号の入力が必要です" },
+          { status: 400 }
+        );
+      }
+
+      if (!JLA_MEMBER_NUMBER_REGEX.test(certNumber)) {
+        return NextResponse.json(
+          { error: "JLA番号は5000から始まる9桁で入力してください" },
+          { status: 400 }
+        );
+      }
+
+      const existingUser = await prisma.user.findFirst({
+        where: {
+          jlaMemberNumber: certNumber,
+          NOT: { id: sess.userId },
+        },
+        select: { id: true },
+      });
+
+      if (existingUser) {
+        return NextResponse.json(
+          { error: "このJLA番号は既に別の会員に紐づいています" },
+          { status: 400 }
+        );
+      }
+
+      const existingQualificationWithNumber = await prisma.qualification.findFirst({
+        where: {
+          certNumber,
+          status: { in: ["PENDING", "APPROVED"] },
+          NOT: { userId: sess.userId },
+        },
+        select: {
+          id: true,
+          kind: true,
+        },
+      });
+
+      if (
+        existingQualificationWithNumber &&
+        isPlayerRegistrationKind(existingQualificationWithNumber.kind)
+      ) {
+        return NextResponse.json(
+          { error: "このJLA番号は既に申請または登録済みです" },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (!isProvisionalLink && templateMeta.prerequisiteExpression) {
+      const approvedValidKinds = new Set(
+        userForValidation.qualifications
+          .filter((q) => !isQualificationExpired(q.expiryDate))
+          .map((q) => normalizeQualificationKind(q.kind))
+      );
+      const ok = evaluatePrerequisiteExpression(
+        templateMeta.prerequisiteExpression,
+        (kind) => approvedValidKinds.has(normalizeQualificationKind(kind))
+      );
+      if (!ok) {
+        return NextResponse.json(
+          { error: `前提資格を満たしていません（必要: ${templateMeta.prerequisiteExpression}）` },
+          { status: 400 }
+        );
+      }
+    }
+
+    const levelNormalized = (templateMeta.level ?? "").toLowerCase();
+    const isInstructorTrack = levelNormalized.includes("assistantinstructor") || levelNormalized === "instructor";
+    if (!isProvisionalLink && isInstructorTrack) {
+      const approvedValid = userForValidation.qualifications.filter(
+        (q) => !isQualificationExpired(q.expiryDate)
+      );
+      const approvedValidKinds = new Set(
+        approvedValid.map((q) => normalizeQualificationKind(q.kind))
+      );
+      if (approvedValidKinds.size === 0) {
+        return NextResponse.json(
+          { error: "指導者資格の申請には有効な資格保有が必要です" },
+          { status: 400 }
+        );
+      }
+
+      if (requestedKind === "BLSAssistantInstructor") {
+        const nonBls = [...approvedValidKinds].filter((k) => k !== normalizeQualificationKind("BLS"));
+        if (nonBls.length === 0) {
+          const blsHistoryCount = await prisma.qualification.count({
+            where: {
+              userId: sess.userId,
+              kind: "BLS",
+              status: { in: ["APPROVED", "EXPIRED"] },
+            },
+          });
+          if (blsHistoryCount < 2) {
+            return NextResponse.json(
+              { error: "BLSのみ保有の場合、更新履歴が1回以上必要です" },
+              { status: 400 }
+            );
+          }
+        }
+      }
+
+      if (approvedValidKinds.size >= 2) {
+        const latest = approvedValid.reduce<Date | null>((acc, q) => {
+          const base = q.issueDate ?? q.createdAt;
+          if (!acc || base.getTime() > acc.getTime()) return base;
+          return acc;
+        }, null);
+        if (latest) {
+          const oneYearAgo = new Date();
+          oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+          if (latest.getTime() > oneYearAgo.getTime()) {
+            return NextResponse.json(
+              { error: "複数資格保有時は、直近資格取得から1年以上経過している必要があります" },
+              { status: 400 }
+            );
+          }
+        }
+      }
+    }
+
     // 資格申請作成
     const qualification = await prisma.qualification.create({
       data: {
         userId: sess.userId,
-        kind: requestedKind.canonical,
-        certNumber: data.certNumber,
+        kind: requestedKind,
+        certNumber: certNumber,
         issueDate: data.issueDate ? new Date(data.issueDate) : null,
         expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
         status: 'PENDING',
@@ -219,20 +399,16 @@ export async function POST(req: NextRequest) {
         actorUserId: sess.userId,
         action: 'QUALIFICATION_APPLY',
         target: `qualification:${qualification.id}`,
-        meta: { kind: requestedKind.canonical },
+        meta: { kind: requestedKind, certNumber, provisionalLink: isProvisionalLink },
       },
     });
 
     return NextResponse.json(qualification, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'バリデーションエラー', details: err.errors },
-        { status: 400 }
-      );
+      return NextResponse.json(zodErrorJsonBody(err, "validation_message_ja"), { status: 400 });
     }
 
-    console.error('Error in POST /api/qualifications', err);
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+    return jsonInternalError500("POST api/qualifications/route.ts", err);
   }
 }

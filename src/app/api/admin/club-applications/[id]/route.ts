@@ -1,11 +1,14 @@
 // src/app/api/admin/club-applications/[id]/route.ts
 export const runtime = "nodejs";
 
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { z } from "zod";
+import { normalizeClubRoleForWrite } from "@/lib/roleScopes";
+import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -72,8 +75,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json(application);
   } catch (err) {
-    console.error('Error in GET /api/admin/club-applications/[id]', err);
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+    return jsonInternalError500("GET api/admin/club-applications/[id]/route.ts", err);
   }
 }
 
@@ -153,7 +155,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
         },
       });
 
-      // 承認の場合、申請者をクラブのOWNERとしてメンバーシップ作成
+      // 承認の場合、申請者をクラブ管理者としてメンバーシップ作成
       if (data.status === 'JLA_APPROVED') {
         if (!club.creatorId) {
           throw new Error('club_creator_missing');
@@ -170,7 +172,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
             data: {
               userId: club.creatorId,
               clubId: id,
-              role: 'OWNER',
+              role: normalizeClubRoleForWrite('ADMIN'),
               status: 'APPROVED',
             },
           });
@@ -196,14 +198,10 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     return NextResponse.json(result);
   } catch (err) {
     if (err instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'バリデーションエラー', details: err.issues },
-        { status: 400 }
-      );
+      return NextResponse.json(zodErrorJsonBody(err, "validation_message_ja"), { status: 400 });
     }
 
-    console.error('Error in PATCH /api/admin/club-applications/[id]', err);
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+    return jsonInternalError500("PATCH api/admin/club-applications/[id]/route.ts", err);
   }
 }
 
@@ -275,7 +273,6 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ message: '削除しました' });
   } catch (err) {
-    console.error('Error in DELETE /api/admin/club-applications/[id]', err);
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+    return jsonInternalError500("DELETE api/admin/club-applications/[id]/route.ts", err);
   }
 }

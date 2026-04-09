@@ -1,0 +1,11 @@
+-- RenameIndex
+ALTER INDEX "CompetitionHeatResultCaptureEvent_competitionId_eventId_round_h" RENAME TO "CompetitionHeatResultCaptureEvent_competitionId_eventId_rou_idx";
+
+-- RenameIndex
+ALTER INDEX "CompetitionParticipantStatus_competitionId_eventId_participantT" RENAME TO "CompetitionParticipantStatus_competitionId_eventId_particip_key";
+
+-- RenameIndex
+ALTER INDEX "CompetitionTechnicalOfficialAssignment_competitionId_clubId_use" RENAME TO "CompetitionTechnicalOfficialAssignment_competitionId_clubId_key";
+
+-- RenameIndex
+ALTER INDEX "CompetitionTechnicalOfficialInvitation_competitionId_clubId_sta" RENAME TO "CompetitionTechnicalOfficialInvitation_competitionId_clubId_idx";

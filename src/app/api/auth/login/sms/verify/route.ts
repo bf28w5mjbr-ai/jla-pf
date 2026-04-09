@@ -8,6 +8,10 @@ import { prisma } from "@/server/db";
 import { verifyOTP, isOTPValid } from "@/lib/otp";
 import { signSession } from "@/lib/auth";
 import { cookies } from "next/headers";
+import { verifySmsOtpViaSupabase } from "@/lib/supabase/otp";
+import { onAuthLoginSuccess } from "@/lib/authLoginSuccess";
+import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 
 const VerifyLoginSchema = z.object({
   sessionId: z.string().cuid(),
@@ -15,6 +19,7 @@ const VerifyLoginSchema = z.object({
 });
 
 const MAX_OTP_ATTEMPTS = 5;
+const USE_SUPABASE_SMS_OTP = process.env.USE_SUPABASE_SMS_OTP === "true";
 
 export async function POST(req: NextRequest) {
   try {
@@ -54,7 +59,9 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. OTP検証
-    const isValid = await verifyOTP(data.otp, loginSession.otpHash);
+    const isValid = USE_SUPABASE_SMS_OTP
+      ? await verifySmsOtpViaSupabase(loginSession.phoneNumber, data.otp)
+      : await verifyOTP(data.otp, loginSession.otpHash);
 
     if (!isValid) {
       // 失敗回数を増やす
@@ -112,6 +119,8 @@ export async function POST(req: NextRequest) {
       maxAge: 60 * 60 * 24 * 30, // 30日間
     });
 
+    await onAuthLoginSuccess(user.id, req, { channel: "SMS_OTP" });
+
     return NextResponse.json({ 
       ok: true,
       message: "ログインしました"
@@ -120,15 +129,11 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: "入力内容に誤りがあります", details: error.errors },
+        zodErrorJsonBody(error),
         { status: 400 }
       );
     }
 
-    console.error("Login verify error:", error);
-    return NextResponse.json(
-      { error: "ログイン処理に失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("POST api/auth/login/sms/verify/route.ts", error);
   }
 }

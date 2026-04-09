@@ -7,22 +7,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
+import { Save, X } from "lucide-react";
+import { fieldHintClass, pageIntroTextClass } from "@/lib/explanation";
+import { appRoutes } from "@/lib/appRoutes";
+import { cn } from "@/lib/utils";
 
 interface Club {
   id: string;
   name: string;
   nameKana: string | null;
+  abbreviation: string | null;
   websiteUrl: string | null;
-  representativeFamilyName: string | null;
-  representativeGivenName: string | null;
-  representativeFamilyNameKana: string | null;
-  representativeGivenNameKana: string | null;
-  representativePostalCode: string | null;
-  representativePrefecture: string | null;
-  representativeCity: string | null;
-  representativeAddressLine1: string | null;
-  representativeAddressLine2: string | null;
-  representativePhone: string | null;
+  isLifesavingClub: boolean;
   patrolLocation: string | null;
   establishedYear: number | null;
   officePostalCode: string | null;
@@ -44,17 +40,10 @@ export default function EditClubForm({ club }: EditClubFormProps) {
   const [formData, setFormData] = useState({
     name: club.name || "",
     nameKana: club.nameKana || "",
+    abbreviation: club.abbreviation || "",
     websiteUrl: club.websiteUrl || "",
-    representativeFamilyName: club.representativeFamilyName || "",
-    representativeGivenName: club.representativeGivenName || "",
-    representativeFamilyNameKana: club.representativeFamilyNameKana || "",
-    representativeGivenNameKana: club.representativeGivenNameKana || "",
-    representativePostalCode: club.representativePostalCode || "",
-    representativePrefecture: club.representativePrefecture || "",
-    representativeCity: club.representativeCity || "",
-    representativeAddressLine1: club.representativeAddressLine1 || "",
-    representativeAddressLine2: club.representativeAddressLine2 || "",
-    representativePhone: club.representativePhone || "",
+    isLifesavingClub:
+      club.isLifesavingClub ?? Boolean(club.patrolLocation?.trim()),
     patrolLocation: club.patrolLocation || "",
     establishedYear: club.establishedYear?.toString() || "",
     officePostalCode: club.officePostalCode || "",
@@ -65,28 +54,6 @@ export default function EditClubForm({ club }: EditClubFormProps) {
     officePhone: club.officePhone || "",
     mailingName: club.mailingName || "",
   });
-
-  const handleRepresentativePostalCodeChange = async (postalCode: string) => {
-    setFormData({ ...formData, representativePostalCode: postalCode });
-    
-    if (postalCode.length === 7) {
-      try {
-        const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${postalCode}`);
-        const data = await res.json();
-        
-        if (data.results) {
-          const address = data.results[0];
-          setFormData(prev => ({
-            ...prev,
-            representativePrefecture: address.address1,
-            representativeCity: address.address2 + address.address3,
-          }));
-        }
-      } catch (error) {
-        console.error("Postal code lookup error:", error);
-      }
-    }
-  };
 
   const handleOfficePostalCodeChange = async (postalCode: string) => {
     setFormData({ ...formData, officePostalCode: postalCode });
@@ -129,7 +96,7 @@ export default function EditClubForm({ club }: EditClubFormProps) {
       }
 
       toast.success("クラブ情報を更新しました");
-      router.push(`/clubs/${club.id}`);
+      router.push(appRoutes.clubs.root(club.id));
       router.refresh();
     } catch (err) {
       console.error("Update club error:", err);
@@ -140,12 +107,18 @@ export default function EditClubForm({ club }: EditClubFormProps) {
   };
 
   return (
-    <Card className="max-w-2xl">
+    <Card className="max-w-3xl">
       <CardContent className="pt-6">
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-8">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">クラブ編集</p>
+            <p className={cn(pageIntroTextClass("compact"), "mt-1")}>
+              基本情報と事務局情報を更新できます。保存後はクラブ詳細ページに戻ります。
+            </p>
+          </div>
           {/* 基本情報セクション */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 border-b pb-2">
+          <section className="space-y-4 rounded-xl border border-border bg-card p-5">
+            <h3 className="border-b pb-2 text-base font-semibold text-gray-900 dark:text-gray-100">
               基本情報
             </h3>
             
@@ -162,16 +135,30 @@ export default function EditClubForm({ club }: EditClubFormProps) {
               />
             </div>
 
-            {/* クラブ名カナ */}
-            <div className="space-y-2">
-              <Label htmlFor="nameKana">クラブ名カナ</Label>
-              <Input
-                id="nameKana"
-                type="text"
-                placeholder="例: トウキョウライフセービングクラブ"
-                value={formData.nameKana}
-                onChange={(e) => setFormData({ ...formData, nameKana: e.target.value })}
-              />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {/* クラブ名カナ */}
+              <div className="space-y-2">
+                <Label htmlFor="nameKana">クラブ名カナ</Label>
+                <Input
+                  id="nameKana"
+                  type="text"
+                  placeholder="例: トウキョウライフセービングクラブ"
+                  value={formData.nameKana}
+                  onChange={(e) => setFormData({ ...formData, nameKana: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="abbreviation">略称</Label>
+                <Input
+                  id="abbreviation"
+                  type="text"
+                  placeholder="例: TLSC"
+                  maxLength={20}
+                  value={formData.abbreviation}
+                  onChange={(e) => setFormData({ ...formData, abbreviation: e.target.value })}
+                />
+              </div>
             </div>
 
             {/* クラブURL */}
@@ -186,24 +173,11 @@ export default function EditClubForm({ club }: EditClubFormProps) {
               />
             </div>
 
-            {/* 監視場所 */}
-            <div className="space-y-2">
-              <Label htmlFor="patrolLocation">監視場所</Label>
-              <Input
-                id="patrolLocation"
-                type="text"
-                placeholder="例: 湘南海岸"
-                value={formData.patrolLocation}
-                onChange={(e) => setFormData({ ...formData, patrolLocation: e.target.value })}
-              />
-            </div>
-
-            {/* クラブ設立年 */}
-            <div className="space-y-2">
+            <div className="space-y-2 md:max-w-xs">
               <Label htmlFor="establishedYear">クラブ設立年</Label>
               <Input
                 id="establishedYear"
-                type="number"
+                numericInput="integer"
                 placeholder="例: 2000"
                 min="1900"
                 max={new Date().getFullYear()}
@@ -211,179 +185,92 @@ export default function EditClubForm({ club }: EditClubFormProps) {
                 onChange={(e) => setFormData({ ...formData, establishedYear: e.target.value })}
               />
             </div>
-          </div>
 
-          {/* 代表者情報セクション */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 border-b pb-2">
-              代表者情報
-            </h3>
-
-            {/* 代表者氏名 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="representativeFamilyName">代表者姓</Label>
-                <Input
-                  id="representativeFamilyName"
-                  type="text"
-                  placeholder="例: 山田"
-                  value={formData.representativeFamilyName}
-                  onChange={(e) => setFormData({ ...formData, representativeFamilyName: e.target.value })}
+            <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 shrink-0 rounded border-input"
+                  checked={formData.isLifesavingClub}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setFormData((prev) => ({
+                      ...prev,
+                      isLifesavingClub: checked,
+                      patrolLocation: checked ? prev.patrolLocation : "",
+                    }));
+                  }}
                 />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="representativeGivenName">代表者名</Label>
-                <Input
-                  id="representativeGivenName"
-                  type="text"
-                  placeholder="例: 太郎"
-                  value={formData.representativeGivenName}
-                  onChange={(e) => setFormData({ ...formData, representativeGivenName: e.target.value })}
-                />
-              </div>
+                <span className="text-sm leading-relaxed">
+                  <span className="font-medium text-foreground">ライフセービングクラブである</span>
+                  <span className={cn(fieldHintClass("guided"), "mt-1 block")}>
+                    チェックすると監視場所を登録できます。他種目のクラブの場合はオフにしてください。
+                  </span>
+                </span>
+              </label>
+              {formData.isLifesavingClub && (
+                <div className="space-y-2 pt-1">
+                  <Label htmlFor="patrolLocation">監視場所</Label>
+                  <Input
+                    id="patrolLocation"
+                    type="text"
+                    placeholder="例: 湘南海岸〇〇海水浴場"
+                    value={formData.patrolLocation}
+                    onChange={(e) => setFormData({ ...formData, patrolLocation: e.target.value })}
+                  />
+                </div>
+              )}
             </div>
+          </section>
 
-            {/* 代表者氏名カナ */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="representativeFamilyNameKana">代表者姓（カナ）</Label>
-                <Input
-                  id="representativeFamilyNameKana"
-                  type="text"
-                  placeholder="例: ヤマダ"
-                  value={formData.representativeFamilyNameKana}
-                  onChange={(e) => setFormData({ ...formData, representativeFamilyNameKana: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="representativeGivenNameKana">代表者名（カナ）</Label>
-                <Input
-                  id="representativeGivenNameKana"
-                  type="text"
-                  placeholder="例: タロウ"
-                  value={formData.representativeGivenNameKana}
-                  onChange={(e) => setFormData({ ...formData, representativeGivenNameKana: e.target.value })}
-                />
-              </div>
-            </div>
-
-            {/* 代表者郵便番号 */}
-            <div className="space-y-2">
-              <Label htmlFor="representativePostalCode">代表者郵便番号</Label>
-              <Input
-                id="representativePostalCode"
-                type="text"
-                placeholder="例: 1500001"
-                maxLength={7}
-                value={formData.representativePostalCode}
-                onChange={(e) => handleRepresentativePostalCodeChange(e.target.value.replace(/[^0-9]/g, ''))}
-              />
-            </div>
-
-            {/* 代表者都道府県 */}
-            <div className="space-y-2">
-              <Label htmlFor="representativePrefecture">都道府県</Label>
-              <Input
-                id="representativePrefecture"
-                type="text"
-                placeholder="例: 東京都"
-                value={formData.representativePrefecture}
-                onChange={(e) => setFormData({ ...formData, representativePrefecture: e.target.value })}
-              />
-            </div>
-
-            {/* 代表者市区町村 */}
-            <div className="space-y-2">
-              <Label htmlFor="representativeCity">市区町村</Label>
-              <Input
-                id="representativeCity"
-                type="text"
-                placeholder="例: 渋谷区"
-                value={formData.representativeCity}
-                onChange={(e) => setFormData({ ...formData, representativeCity: e.target.value })}
-              />
-            </div>
-
-            {/* 代表者番地 */}
-            <div className="space-y-2">
-              <Label htmlFor="representativeAddressLine1">番地</Label>
-              <Input
-                id="representativeAddressLine1"
-                type="text"
-                placeholder="例: 神南1-2-3"
-                value={formData.representativeAddressLine1}
-                onChange={(e) => setFormData({ ...formData, representativeAddressLine1: e.target.value })}
-              />
-            </div>
-
-            {/* 代表者建物名・部屋番号 */}
-            <div className="space-y-2">
-              <Label htmlFor="representativeAddressLine2">建物名・部屋番号</Label>
-              <Input
-                id="representativeAddressLine2"
-                type="text"
-                placeholder="例: ○○マンション101号室"
-                value={formData.representativeAddressLine2}
-                onChange={(e) => setFormData({ ...formData, representativeAddressLine2: e.target.value })}
-              />
-            </div>
-
-            {/* 代表者電話番号 */}
-            <div className="space-y-2">
-              <Label htmlFor="representativePhone">代表者電話番号</Label>
-              <Input
-                id="representativePhone"
-                type="tel"
-                placeholder="例: 09012345678"
-                maxLength={11}
-                value={formData.representativePhone}
-                onChange={(e) => setFormData({ ...formData, representativePhone: e.target.value.replace(/[^0-9]/g, '') })}
-              />
-              <p className="text-xs text-muted-foreground">ハイフンなし11桁で入力してください</p>
-            </div>
+          <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-100">
+            代表者情報はクラブ編集フォームでは変更できません。変更が必要な場合は運営側の所定手続きで対応してください。
           </div>
 
           {/* 事務局情報セクション */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 border-b pb-2">
+          <section className="space-y-4 rounded-xl border border-border bg-card p-5">
+            <h3 className="border-b pb-2 text-base font-semibold text-gray-900 dark:text-gray-100">
               事務局情報
             </h3>
 
-            {/* 事務局郵便番号 */}
-            <div className="space-y-2">
-              <Label htmlFor="officePostalCode">事務局郵便番号</Label>
-              <Input
-                id="officePostalCode"
-                type="text"
-                placeholder="例: 1500001"
-                maxLength={7}
-                value={formData.officePostalCode}
-                onChange={(e) => handleOfficePostalCodeChange(e.target.value.replace(/[^0-9]/g, ''))}
-              />
-            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {/* 事務局郵便番号 */}
+              <div className="space-y-2">
+                <Label htmlFor="officePostalCode">事務局郵便番号</Label>
+                <Input
+                  id="officePostalCode"
+                  type="text"
+                  numericInput="integer"
+                  placeholder="例: 1500001"
+                  maxLength={7}
+                  value={formData.officePostalCode}
+                  onChange={(e) => handleOfficePostalCodeChange(e.target.value)}
+                />
+              </div>
 
-            {/* 事務局都道府県 */}
-            <div className="space-y-2">
-              <Label htmlFor="officePrefecture">都道府県</Label>
-              <Input
-                id="officePrefecture"
-                type="text"
-                placeholder="例: 東京都"
-                value={formData.officePrefecture}
-                onChange={(e) => setFormData({ ...formData, officePrefecture: e.target.value })}
-              />
-            </div>
+              {/* 事務局都道府県 */}
+              <div className="space-y-2">
+                <Label htmlFor="officePrefecture">都道府県</Label>
+                <Input
+                  id="officePrefecture"
+                  type="text"
+                  placeholder="例: 東京都"
+                  value={formData.officePrefecture}
+                  onChange={(e) => setFormData({ ...formData, officePrefecture: e.target.value })}
+                />
+              </div>
 
-            {/* 事務局市区町村 */}
-            <div className="space-y-2">
-              <Label htmlFor="officeCity">市区町村</Label>
-              <Input
-                id="officeCity"
-                type="text"
-                placeholder="例: 渋谷区"
-                value={formData.officeCity}
-                onChange={(e) => setFormData({ ...formData, officeCity: e.target.value })}
-              />
+              {/* 事務局市区町村 */}
+              <div className="space-y-2">
+                <Label htmlFor="officeCity">市区町村</Label>
+                <Input
+                  id="officeCity"
+                  type="text"
+                  placeholder="例: 渋谷区"
+                  value={formData.officeCity}
+                  onChange={(e) => setFormData({ ...formData, officeCity: e.target.value })}
+                />
+              </div>
             </div>
 
             {/* 事務局番地 */}
@@ -416,12 +303,13 @@ export default function EditClubForm({ club }: EditClubFormProps) {
               <Input
                 id="officePhone"
                 type="tel"
+                numericInput="integer"
                 placeholder="例: 0312345678"
                 maxLength={11}
                 value={formData.officePhone}
-                onChange={(e) => setFormData({ ...formData, officePhone: e.target.value.replace(/[^0-9]/g, '') })}
+                onChange={(e) => setFormData({ ...formData, officePhone: e.target.value })}
               />
-              <p className="text-xs text-muted-foreground">ハイフンなし10〜11桁で入力してください</p>
+              <p className={fieldHintClass("compact")}>ハイフンなし10〜11桁で入力してください</p>
             </div>
 
             {/* 郵便物の宛名 */}
@@ -435,21 +323,32 @@ export default function EditClubForm({ club }: EditClubFormProps) {
                 onChange={(e) => setFormData({ ...formData, mailingName: e.target.value })}
               />
             </div>
-          </div>
+          </section>
 
           {/* ボタン */}
-          <div className="flex gap-3 pt-4">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => router.push(appRoutes.clubs.root(club.id))}
+              disabled={loading}
+              className="w-full sm:w-auto min-w-[160px]"
+            >
+              詳細ページへ戻る
+            </Button>
             <Button
               type="button"
               variant="outline"
               onClick={() => router.back()}
               disabled={loading}
-              className="flex-1"
+              className="w-full sm:w-auto min-w-[120px]"
             >
+              <X className="h-4 w-4" />
               キャンセル
             </Button>
-            <Button type="submit" disabled={loading} className="flex-1">
-              {loading ? "更新中..." : "更新"}
+            <Button type="submit" disabled={loading} className="w-full sm:w-auto min-w-[140px]">
+              <Save className="h-4 w-4" />
+              {loading ? "保存中..." : "変更を保存"}
             </Button>
           </div>
         </form>

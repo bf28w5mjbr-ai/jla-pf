@@ -1,9 +1,30 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { writeFile, unlink } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
+import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import {
+  canUseSupabaseStorage,
+  deletePublicAssetByUrl,
+  uploadPublicAsset,
+} from "@/lib/supabase/storage";
+import { validateRasterImageBuffer } from "@/lib/uploadValidation";
+
+type RelationLogo = { name: string; logoUrl: string };
+
+function asRelationLogoArray(value: unknown): RelationLogo[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (row): row is RelationLogo =>
+      typeof row === "object" &&
+      row !== null &&
+      "logoUrl" in row &&
+      typeof (row as RelationLogo).logoUrl === "string"
+  );
+}
 
 export async function POST(
   request: NextRequest,
@@ -36,9 +57,8 @@ export async function POST(
       return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });
     }
 
-    // 権限確認（OWNER または ADMIN）
-    const userRole = competition.organization.admins[0]?.role;
-    if (userRole !== "OWNER" && userRole !== "ADMIN") {
+    // 権限確認（管理者のみ）
+    if (!hasOrgAdminAccess(competition.organization.admins)) {
       return NextResponse.json(
         { error: "編集権限がありません" },
         { status: 403 }
@@ -70,21 +90,13 @@ export async function POST(
       );
     }
 
-    // ファイルタイプチェック
-    const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
-    if (!allowedTypes.includes(file.type)) {
-      return NextResponse.json(
-        { error: "画像ファイル（JPEG、PNG、WebP、GIF）のみアップロード可能です" },
-        { status: 400 }
-      );
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const validated = await validateRasterImageBuffer(buffer);
+    if (!validated.ok) {
+      return NextResponse.json({ error: validated.message }, { status: 400 });
     }
 
-    // ファイルを保存
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-
-    const ext = file.name.split(".").pop();
-    const fileName = `${id}-${type}-${Date.now()}.${ext}`;
+    const fileName = `${id}-${type}-${Date.now()}.${validated.value.ext}`;
     const uploadDir = join(process.cwd(), "public", "uploads", "competitions");
     
     // ディレクトリがなければ作成
@@ -92,14 +104,23 @@ export async function POST(
     await mkdir(uploadDir, { recursive: true });
 
     const filePath = join(uploadDir, fileName);
-    await writeFile(filePath, buffer);
-
-    const logoUrl = `/uploads/competitions/${fileName}`;
+    let logoUrl = `/uploads/competitions/${fileName}`;
+    if (canUseSupabaseStorage()) {
+      logoUrl = await uploadPublicAsset({
+        objectKey: `competitions/${fileName}`,
+        body: buffer,
+        contentType: validated.value.mime,
+      });
+    } else {
+      await writeFile(filePath, buffer);
+    }
 
     // 既存のロゴデータを取得
     const field = type === "cooperator" ? "cooperatorsLogos" : "grantsLogos";
-    const currentLogos = (competition[field] as any) || [];
-    
+    const currentLogos = asRelationLogoArray(
+      type === "cooperator" ? competition.cooperatorsLogos : competition.grantsLogos
+    );
+
     // 新しいロゴを追加
     const updatedLogos = [...currentLogos, { name, logoUrl }];
 
@@ -116,11 +137,7 @@ export async function POST(
       logoUrl,
     });
   } catch (error) {
-    console.error("Logo upload error:", error);
-    return NextResponse.json(
-      { error: "アップロードに失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("POST api/competitions/[id]/relations/logo/route.ts", error);
   }
 }
 
@@ -155,9 +172,8 @@ export async function DELETE(
       return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });
     }
 
-    // 権限確認（OWNER または ADMIN）
-    const userRole = competition.organization.admins[0]?.role;
-    if (userRole !== "OWNER" && userRole !== "ADMIN") {
+    // 権限確認（管理者のみ）
+    if (!hasOrgAdminAccess(competition.organization.admins)) {
       return NextResponse.json(
         { error: "編集権限がありません" },
         { status: 403 }
@@ -178,10 +194,12 @@ export async function DELETE(
 
     // 既存のロゴデータを取得
     const field = type === "cooperator" ? "cooperatorsLogos" : "grantsLogos";
-    const currentLogos = (competition[field] as any) || [];
-    
+    const currentLogos = asRelationLogoArray(
+      type === "cooperator" ? competition.cooperatorsLogos : competition.grantsLogos
+    );
+
     // ロゴを削除
-    const updatedLogos = currentLogos.filter((logo: any) => logo.logoUrl !== logoUrl);
+    const updatedLogos = currentLogos.filter((logo) => logo.logoUrl !== logoUrl);
 
     // データベースを更新
     await prisma.competition.update({
@@ -193,9 +211,13 @@ export async function DELETE(
 
     // ファイルを削除
     try {
-      const filePath = join(process.cwd(), "public", logoUrl);
-      if (existsSync(filePath)) {
-        await unlink(filePath);
+      if (logoUrl.startsWith("http")) {
+        await deletePublicAssetByUrl(logoUrl);
+      } else {
+        const filePath = join(process.cwd(), "public", logoUrl);
+        if (existsSync(filePath)) {
+          await unlink(filePath);
+        }
       }
     } catch (error) {
       console.error("File delete error:", error);
@@ -205,10 +227,6 @@ export async function DELETE(
       message: "ロゴを削除しました",
     });
   } catch (error) {
-    console.error("Logo delete error:", error);
-    return NextResponse.json(
-      { error: "削除に失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("DELETE api/competitions/[id]/relations/logo/route.ts", error);
   }
 }

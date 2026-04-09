@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -184,45 +184,54 @@ export default function CompetitionRelationsEditor({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle>関係組織</CardTitle>
+    <Card className="overflow-hidden">
+      <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <CardTitle className="text-base font-semibold">関係組織</CardTitle>
+            <CardDescription className="text-xs">後援・協賛・協力・助成（公開ページに表示）</CardDescription>
+          </div>
           {canEdit && !isEditing && (
-            <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
-              <Edit className="h-4 w-4 mr-2" />
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setIsEditing(true)}>
+              <Edit className="mr-1.5 h-3.5 w-3.5" />
               編集
             </Button>
           )}
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-4 py-3">
         {isEditing ? (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div>
-              <Label htmlFor="sponsors">後援</Label>
+              <Label htmlFor="sponsors" className="text-xs">
+                後援
+              </Label>
               <Textarea
                 id="sponsors"
                 value={formData.sponsors}
                 onChange={(e) => setFormData({ ...formData, sponsors: e.target.value })}
                 placeholder="複数ある場合は改行で区切ってください"
-                rows={3}
+                rows={2}
+                className="mt-1 min-h-[4rem] text-sm"
               />
             </div>
 
             <div>
-              <Label htmlFor="cooperators">協賛</Label>
+              <Label htmlFor="cooperators" className="text-xs">
+                協賛
+              </Label>
               <Textarea
                 id="cooperators"
                 value={formData.cooperators}
                 onChange={(e) => setFormData({ ...formData, cooperators: e.target.value })}
                 placeholder="複数ある場合は改行で区切ってください"
-                rows={3}
+                rows={2}
+                className="mt-1 min-h-[4rem] text-sm"
               />
-              
+
               {/* 協賛ロゴアップロード */}
-              <div className="mt-3 space-y-3">
-                <p className="text-sm font-medium">協賛ロゴ</p>
+              <div className="mt-2 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">協賛ロゴ</p>
                 
                 {cooperatorsLogos && cooperatorsLogos.length > 0 && (
                   <div className="flex flex-wrap gap-3">
@@ -290,29 +299,35 @@ export default function CompetitionRelationsEditor({
             </div>
 
             <div>
-              <Label htmlFor="supporters">協力</Label>
+              <Label htmlFor="supporters" className="text-xs">
+                協力
+              </Label>
               <Textarea
                 id="supporters"
                 value={formData.supporters}
                 onChange={(e) => setFormData({ ...formData, supporters: e.target.value })}
                 placeholder="複数ある場合は改行で区切ってください"
-                rows={3}
+                rows={2}
+                className="mt-1 min-h-[4rem] text-sm"
               />
             </div>
 
             <div>
-              <Label htmlFor="grants">助成</Label>
+              <Label htmlFor="grants" className="text-xs">
+                助成
+              </Label>
               <Textarea
                 id="grants"
                 value={formData.grants}
                 onChange={(e) => setFormData({ ...formData, grants: e.target.value })}
                 placeholder="複数ある場合は改行で区切ってください"
-                rows={3}
+                rows={2}
+                className="mt-1 min-h-[4rem] text-sm"
               />
-              
+
               {/* 助成ロゴアップロード */}
-              <div className="mt-3 space-y-3">
-                <p className="text-sm font-medium">助成ロゴ</p>
+              <div className="mt-2 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">助成ロゴ</p>
                 
                 {grantsLogos && grantsLogos.length > 0 && (
                   <div className="flex flex-wrap gap-3">
@@ -379,38 +394,38 @@ export default function CompetitionRelationsEditor({
               </div>
             </div>
 
-            <div className="flex gap-2">
-              <Button onClick={handleSave} disabled={loading}>
-                <Save className="h-4 w-4 mr-2" />
-                {loading ? "保存中..." : "保存"}
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button size="sm" className="h-8 text-xs" onClick={handleSave} disabled={loading}>
+                <Save className="mr-1.5 h-3.5 w-3.5" />
+                {loading ? "保存中…" : "保存"}
               </Button>
-              <Button variant="outline" onClick={handleCancel} disabled={loading}>
-                <X className="h-4 w-4 mr-2" />
+              <Button variant="outline" size="sm" className="h-8 text-xs" onClick={handleCancel} disabled={loading}>
+                <X className="mr-1.5 h-3.5 w-3.5" />
                 キャンセル
               </Button>
             </div>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {sponsors && (
               <div>
-                <h3 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-2">後援</h3>
-                <div className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
-                  {sponsors}
-                </div>
+                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  後援
+                </h3>
+                <div className="whitespace-pre-wrap text-sm text-foreground">{sponsors}</div>
               </div>
             )}
 
             {(cooperators || (cooperatorsLogos && cooperatorsLogos.length > 0)) && (
               <div>
-                <h3 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-2">協賛</h3>
+                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  協賛
+                </h3>
                 {cooperators && (
-                  <div className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap mb-3">
-                    {cooperators}
-                  </div>
+                  <div className="mb-2 whitespace-pre-wrap text-sm text-foreground">{cooperators}</div>
                 )}
                 {cooperatorsLogos && cooperatorsLogos.length > 0 && (
-                  <div className="flex flex-wrap gap-3 mt-2">
+                  <div className="mt-1 flex flex-wrap gap-2">
                     {cooperatorsLogos.map((logo, index) => (
                       <div key={index}>
                         <div className="relative w-32 h-16 rounded overflow-hidden">
@@ -431,23 +446,21 @@ export default function CompetitionRelationsEditor({
 
             {supporters && (
               <div>
-                <h3 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-2">協力</h3>
-                <div className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
-                  {supporters}
-                </div>
+                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  協力
+                </h3>
+                <div className="whitespace-pre-wrap text-sm text-foreground">{supporters}</div>
               </div>
             )}
 
             {(grants || (grantsLogos && grantsLogos.length > 0)) && (
               <div>
-                <h3 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-2">助成</h3>
-                {grants && (
-                  <div className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap mb-3">
-                    {grants}
-                  </div>
-                )}
+                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  助成
+                </h3>
+                {grants && <div className="mb-2 whitespace-pre-wrap text-sm text-foreground">{grants}</div>}
                 {grantsLogos && grantsLogos.length > 0 && (
-                  <div className="flex flex-wrap gap-3 mt-2">
+                  <div className="mt-1 flex flex-wrap gap-2">
                     {grantsLogos.map((logo, index) => (
                       <div key={index}>
                         <div className="relative w-32 h-16 rounded overflow-hidden">
@@ -467,9 +480,7 @@ export default function CompetitionRelationsEditor({
             )}
 
             {!hasAnyData && canEdit && (
-              <p className="text-sm text-gray-500 text-center py-4">
-                関係組織情報が登録されていません
-              </p>
+              <p className="py-3 text-center text-xs text-muted-foreground">関係組織情報が未登録です</p>
             )}
           </div>
         )}

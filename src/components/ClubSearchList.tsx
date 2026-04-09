@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -20,11 +20,10 @@ interface Club {
 }
 
 interface ClubSearchListProps {
-  userId: string;
   excludeClubIds: string[];
 }
 
-export default function ClubSearchList({ userId, excludeClubIds }: ClubSearchListProps) {
+export default function ClubSearchList({ excludeClubIds }: ClubSearchListProps) {
   const router = useRouter();
   const [clubs, setClubs] = useState<Club[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -77,9 +76,10 @@ export default function ClubSearchList({ userId, excludeClubIds }: ClubSearchLis
       setSelectedClubId(null);
       setSearchQuery("");
       router.refresh();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Apply error:", error);
-      toast.error(error.message || "申請に失敗しました");
+      const message = error instanceof Error ? error.message : "申請に失敗しました";
+      toast.error(message);
     } finally {
       setApplyingClubId(null);
     }
@@ -118,7 +118,7 @@ export default function ClubSearchList({ userId, excludeClubIds }: ClubSearchLis
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="text-gray-500 dark:text-gray-400">読み込み中...</div>
+        <div className="text-muted-foreground">読み込み中...</div>
       </div>
     );
   }
@@ -139,7 +139,7 @@ export default function ClubSearchList({ userId, excludeClubIds }: ClubSearchLis
                 }}
               />
               {suggestions.length > 0 && (
-                <div className="absolute z-10 mt-2 w-full rounded-xl border border-gray-200 bg-white shadow-lg">
+                <div className="absolute z-10 mt-2 w-full rounded-xl border border-border bg-card shadow-lg">
                   <ul className="max-h-64 overflow-y-auto py-2">
                     {suggestions.slice(0, 8).map((club) => (
                       <li key={club.id}>
@@ -149,10 +149,10 @@ export default function ClubSearchList({ userId, excludeClubIds }: ClubSearchLis
                             setSelectedClubId(club.id);
                             setSearchQuery(club.name);
                           }}
-                          className="flex w-full flex-col gap-1 px-4 py-2 text-left transition hover:bg-gray-50"
+                          className="flex w-full flex-col gap-1 px-4 py-2 text-left transition hover:bg-muted"
                         >
-                          <span className="text-sm font-semibold text-gray-900">{club.name}</span>
-                          <span className="text-xs text-gray-500">
+                          <span className="text-sm font-semibold text-foreground">{club.name}</span>
+                          <span className="text-xs text-muted-foreground">
                             {club.patrolLocation ?? "監視場所未登録"}
                           </span>
                         </button>
@@ -172,14 +172,14 @@ export default function ClubSearchList({ userId, excludeClubIds }: ClubSearchLis
               {selectedClub && applyingClubId === selectedClub.id ? "申請中..." : "申請"}
             </Button>
           </div>
-          <p className="mt-3 text-xs text-gray-500">
+          <p className="mt-3 text-xs text-muted-foreground">
             候補から選択すると正式名で固定され、申請ボタンが有効になります。
           </p>
         </CardContent>
       </Card>
 
       {searchQuery && suggestions.length === 0 && (
-        <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+        <div className="rounded-xl border border-dashed border-border bg-muted/50 p-4 text-sm text-muted-foreground">
           該当するクラブが見つかりませんでした。
         </div>
       )}

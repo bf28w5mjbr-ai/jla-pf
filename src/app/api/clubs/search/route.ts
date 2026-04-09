@@ -1,3 +1,4 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { verifySession } from "@/lib/auth";
@@ -46,10 +47,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ clubs });
   } catch (error) {
-    console.error("Search clubs error:", error);
-    return NextResponse.json(
-      { error: "クラブの取得に失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("GET api/clubs/search/route.ts", error);
   }
 }

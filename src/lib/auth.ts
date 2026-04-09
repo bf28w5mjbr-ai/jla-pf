@@ -1,7 +1,26 @@
 import { SignJWT, jwtVerify } from "jose";
 import { prisma } from "@/server/db";
 
-const secret = new TextEncoder().encode(process.env.AUTH_SECRET);
+const MIN_AUTH_SECRET_LEN = 32;
+
+function getAuthSecretBytes(): Uint8Array {
+  const raw = process.env.AUTH_SECRET;
+  if (process.env.NODE_ENV === "production") {
+    if (!raw || raw.length < MIN_AUTH_SECRET_LEN) {
+      throw new Error(
+        `AUTH_SECRET must be set and at least ${MIN_AUTH_SECRET_LEN} characters in production`
+      );
+    }
+    return new TextEncoder().encode(raw);
+  }
+  const fallback =
+    raw && raw.length >= MIN_AUTH_SECRET_LEN
+      ? raw
+      : "dev-only-auth-secret-do-not-use-in-production-32chars";
+  return new TextEncoder().encode(fallback);
+}
+
+const secret = getAuthSecretBytes();
 const ALG = "HS256";
 
 // セッション有効期限: 30日間（ユーザーに再ログインの手間をかけない）
@@ -26,12 +45,31 @@ export async function verifySession(token: string): Promise<SessionPayload | nul
   }
 }
 
-export async function isPfOrJlaAdmin(userId: string): Promise<boolean> {
+export async function isAssociationAdmin(userId: string): Promise<boolean> {
+  const associationAdmin = await prisma.associationAdmin.findFirst({
+    where: {
+      userId,
+      role: "ADMIN",
+    },
+    select: { id: true },
+  });
+  return !!associationAdmin;
+}
+
+export async function isPfOrAccAdmin(userId: string): Promise<boolean> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { role: true },
   });
-  return user?.role === "PF_ADMIN" || String(user?.role) === "JLA_ADMIN";
+  if (user?.role === "PF_ADMIN") {
+    return true;
+  }
+  return isAssociationAdmin(userId);
+}
+
+// backward compatibility alias
+export async function isPfOrJlaAdmin(userId: string): Promise<boolean> {
+  return isPfOrAccAdmin(userId);
 }
 
 export async function requireAuth(token: string | undefined): Promise<SessionPayload> {

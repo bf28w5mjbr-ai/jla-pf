@@ -6,8 +6,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import bcrypt from "bcrypt";
+import { sendSecurityNoticeSms } from "@/lib/sns";
+import { phoneToE164Loose } from "@/lib/phone";
+import { zodErrorJsonBody } from "@/lib/zodApiResponse";
+import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { safeServerErrorLog } from "@/lib/safeServerLog";
 
 const SecuritySetupSchema = z.object({
   email: z.string().email().optional(),
@@ -16,31 +22,22 @@ const SecuritySetupSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    console.log("=== /api/user/security POST ===");
-    
     // 認証チェック
     const jar = await cookies();
     const token = jar.get('session')?.value;
     if (!token) {
-      console.log("❌ No token");
       return NextResponse.json({ error: "ログインが必要です" }, { status: 401 });
     }
 
     const sess = await verifySession(token);
     if (!sess?.userId) {
-      console.log("❌ No session userId");
       return NextResponse.json({ error: "ログインが必要です" }, { status: 401 });
     }
-    console.log("✅ User ID:", sess.userId);
 
     const body = await req.json().catch(() => ({}));
-    console.log("📦 Request body:", body);
-    
     const data = SecuritySetupSchema.parse(body);
-    console.log("✅ Validated data:", data);
 
     if (!data.email && !data.password) {
-      console.log("❌ No email or password provided");
       return NextResponse.json(
         { error: "メールアドレスまたはパスワードを指定してください" },
         { status: 400 }
@@ -50,27 +47,23 @@ export async function POST(req: NextRequest) {
     // 現在のユーザー情報取得
     const user = await prisma.user.findUnique({
       where: { id: sess.userId },
-      select: { email: true, passwordHash: true },
+      select: { email: true, passwordHash: true, phoneNumber: true },
     });
-    console.log("👤 Current user:", { email: user?.email, hasPassword: !!user?.passwordHash });
 
     if (!user) {
-      console.log("❌ User not found");
       return NextResponse.json({ error: "ユーザーが見つかりません" }, { status: 404 });
     }
 
     // 更新データ準備
-    const updateData: any = {};
+    const updateData: Prisma.UserUpdateInput = {};
 
     if (data.email) {
-      console.log("📧 Checking email:", data.email);
       // メールアドレス重複チェック
       const existingUser = await prisma.user.findUnique({
         where: { email: data.email },
       });
 
       if (existingUser && existingUser.id !== sess.userId) {
-        console.log("❌ Email already in use");
         return NextResponse.json(
           { error: "このメールアドレスは既に使用されています" },
           { status: 400 }
@@ -79,13 +72,10 @@ export async function POST(req: NextRequest) {
 
       updateData.email = data.email;
       updateData.emailVerified = false; // メールアドレス変更時は再確認必要
-      console.log("✅ Email will be updated");
     }
 
     if (data.password) {
-      console.log("🔐 Password provided, checking if already set");
       if (user.passwordHash) {
-        console.log("❌ Password already set");
         return NextResponse.json(
           { error: "パスワードは既に設定されています。変更する場合は別の機能を使用してください。" },
           { status: 400 }
@@ -93,16 +83,33 @@ export async function POST(req: NextRequest) {
       }
 
       updateData.passwordHash = await bcrypt.hash(data.password, 10);
-      console.log("✅ Password hashed");
     }
 
     // 更新実行
-    console.log("💾 Update data:", updateData);
     await prisma.user.update({
       where: { id: sess.userId },
       data: updateData,
     });
-    console.log("✅ User updated successfully");
+
+    const smsTo = user.phoneNumber ? phoneToE164Loose(user.phoneNumber) : null;
+    if (smsTo) {
+      try {
+        if (data.password) {
+          await sendSecurityNoticeSms(
+            smsTo,
+            "Bluvium: アカウントにパスワードが設定されました。心当たりがない場合は至急ご確認ください。"
+          );
+        }
+        if (data.email) {
+          await sendSecurityNoticeSms(
+            smsTo,
+            "Bluvium: メールアドレスの変更手続きを行いました。心当たりがない場合は至急ご確認ください。"
+          );
+        }
+      } catch (e) {
+        safeServerErrorLog("Security notice SMS failed", e);
+      }
+    }
 
     return NextResponse.json({
       ok: true,
@@ -111,17 +118,9 @@ export async function POST(req: NextRequest) {
 
   } catch (error) {
     if (error instanceof z.ZodError) {
-      console.error("❌ Zod validation error:", error.errors);
-      return NextResponse.json(
-        { error: "入力内容に誤りがあります", details: error.errors },
-        { status: 400 }
-      );
+      return NextResponse.json(zodErrorJsonBody(error), { status: 400 });
     }
 
-    console.error("❌ Security setup error:", error);
-    return NextResponse.json(
-      { error: "設定に失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("POST api/user/security/route.ts", error);
   }
 }

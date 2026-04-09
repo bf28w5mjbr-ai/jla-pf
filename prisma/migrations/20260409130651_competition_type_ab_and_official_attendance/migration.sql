@@ -1,0 +1,2 @@
+-- RenameIndex
+ALTER INDEX "CompetitionOfficialAttendance_competitionId_userId_attendanceDa" RENAME TO "CompetitionOfficialAttendance_competitionId_userId_attendan_key";

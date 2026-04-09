@@ -15,7 +15,7 @@ export const theme = {
       primary: "text-gray-900 dark:text-gray-100",
       secondary: "text-gray-600 dark:text-gray-400",
       muted: "text-gray-500 dark:text-gray-500",
-      link: "text-blue-600 dark:text-blue-400 hover:underline",
+      link: "text-orange-600 dark:text-orange-400 hover:underline",
     },
   },
   spacing: {

@@ -8,6 +8,9 @@ import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { verifyOTP } from "@/lib/otp";
+import { sendSecurityNoticeSms } from "@/lib/sns";
+import { phoneToE164Loose } from "@/lib/phone";
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 
 const PhoneChangeVerifySchema = z.object({
   phone: z.string().regex(/^0\d{9,10}$/),
@@ -73,14 +76,29 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 電話番号更新
+    const before = await prisma.user.findUnique({
+      where: { id: sess.userId },
+      select: { phoneNumber: true },
+    });
+    const oldPhone = before?.phoneNumber;
+
     await prisma.user.update({
       where: { id: sess.userId },
       data: { phoneNumber: data.phone },
     });
 
-    // セッション削除
     await prisma.loginSession.delete({ where: { phoneNumber: data.phone } });
+
+    if (oldPhone && oldPhone !== data.phone) {
+      try {
+        await sendSecurityNoticeSms(
+          phoneToE164Loose(oldPhone),
+          "Bluvium: 登録電話番号が変更されました。心当たりがない場合は至急サポートへご連絡ください。"
+        );
+      } catch (e) {
+        console.error("Phone change notice SMS failed:", e);
+      }
+    }
 
     return NextResponse.json({
       ok: true,
@@ -95,10 +113,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.error("Phone change verify error:", error);
-    return NextResponse.json(
-      { error: "認証に失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("POST api/user/phone-change/verify/route.ts", error);
   }
 }

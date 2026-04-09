@@ -51,8 +51,7 @@ export default function ClubLogoUpload({ clubId, currentLogoUrl, clubName }: Clu
         throw new Error(errorData.error || 'アップロードに失敗しました');
       }
 
-      const data = await res.json();
-      console.log('Logo uploaded:', data);
+      await res.json();
       
       // 成功時は画面をリフレッシュ
       router.refresh();
@@ -95,7 +94,7 @@ export default function ClubLogoUpload({ clubId, currentLogoUrl, clubName }: Clu
           backgroundSize: displayUrl ? '20px 20px' : undefined,
           backgroundPosition: displayUrl ? '0 0, 0 10px, 10px -10px, -10px 0px' : undefined,
         }}
-        className="relative w-32 h-32 rounded-lg border-2 border-gray-300 dark:border-gray-600 overflow-hidden cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 transition-colors"
+        className="relative w-32 h-32 rounded-lg border-2 border-gray-300 dark:border-gray-600 overflow-hidden cursor-pointer hover:border-orange-500 dark:hover:border-orange-400 transition-colors"
       >
         {displayUrl ? (
           <Image

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Plus, Trash2 } from "lucide-react";
 
 type Announcement = {
@@ -77,41 +77,46 @@ export default function CompetitionAnnouncementsManager({
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle>お知らせ</CardTitle>
+    <Card className="overflow-hidden">
+      <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <CardTitle className="text-base font-semibold">お知らせ</CardTitle>
+            <CardDescription className="text-xs">大会ページに表示されるお知らせです。</CardDescription>
+          </div>
           {canEdit && !isEditing && (
-            <Button onClick={() => setIsEditing(true)} size="sm">
-              <Plus className="h-4 w-4 mr-1" />
+            <Button onClick={() => setIsEditing(true)} size="sm" className="h-8 text-xs">
+              <Plus className="mr-1 h-3.5 w-3.5" />
               追加
             </Button>
           )}
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3 px-4 py-3">
         {isEditing && (
-          <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg space-y-3">
+          <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
             <input
               type="text"
               placeholder="タイトル"
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
-              className="w-full px-3 py-2 border rounded-md"
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             />
             <textarea
               placeholder="内容"
               value={newContent}
               onChange={(e) => setNewContent(e.target.value)}
-              rows={4}
-              className="w-full px-3 py-2 border rounded-md"
+              rows={3}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             />
-            <div className="flex gap-2">
-              <Button onClick={handleAdd} disabled={isSubmitting}>
-                {isSubmitting ? "追加中..." : "追加"}
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" className="h-8 text-xs" onClick={handleAdd} disabled={isSubmitting}>
+                {isSubmitting ? "追加中…" : "追加"}
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
                 onClick={() => {
                   setIsEditing(false);
                   setNewTitle("");
@@ -125,26 +130,30 @@ export default function CompetitionAnnouncementsManager({
         )}
 
         {announcements.length > 0 ? (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {announcements.map((announcement) => (
-              <div key={announcement.id} className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <h4 className="font-semibold">{announcement.title}</h4>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 whitespace-pre-wrap">
+              <div
+                key={announcement.id}
+                className="rounded-md border border-border bg-muted/15 px-2.5 py-2"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-sm font-semibold">{announcement.title}</h4>
+                    <p className="mt-0.5 whitespace-pre-wrap text-xs text-muted-foreground">
                       {announcement.content}
                     </p>
-                    <p className="text-xs text-gray-500 mt-2">
+                    <p className="mt-1 text-[11px] text-muted-foreground">
                       {new Date(announcement.createdAt).toLocaleDateString("ja-JP")}
                     </p>
                   </div>
                   {canEdit && (
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
                       onClick={() => handleDelete(announcement.id)}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   )}
                 </div>
@@ -152,9 +161,7 @@ export default function CompetitionAnnouncementsManager({
             ))}
           </div>
         ) : (
-          <p className="text-gray-500 text-sm text-center py-4">
-            お知らせはまだありません
-          </p>
+          <p className="py-3 text-center text-xs text-muted-foreground">お知らせはまだありません</p>
         )}
       </CardContent>
     </Card>

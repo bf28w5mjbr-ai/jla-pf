@@ -1,26 +1,112 @@
 @import "tailwindcss";
 
+/* Design tokens — warm neutral base + orange accent */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fffbf7;
+  --foreground: #1c1917;
+  --muted: #fff7ed;
+  --muted-foreground: #78716c;
+  --border: #fed7aa;
+  --input: #fed7aa;
+  --ring: #ea580c;
+  --primary: #ea580c;
+  --primary-foreground: #fffbeb;
+  --accent: #ffedd5;
+  --accent-foreground: #9a3412;
+  --destructive: #dc2626;
+  --destructive-foreground: #fafafa;
+  --secondary: #ffedd5;
+  --secondary-foreground: #431407;
+  --card: #ffffff;
+  --card-foreground: #1c1917;
+  --safe-area-top: env(safe-area-inset-top);
+  --safe-area-right: env(safe-area-inset-right);
+  --safe-area-bottom: env(safe-area-inset-bottom);
+  --safe-area-left: env(safe-area-inset-left);
+  --app-content-max-width: 112rem;
+  --app-shell-gap: 1rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0c0a09;
+    --foreground: #fafaf9;
+    --muted: #1c1917;
+    --muted-foreground: #a8a29e;
+    --border: #44403c;
+    --input: #44403c;
+    --ring: #fb923c;
+    --primary: #fb923c;
+    --primary-foreground: #1c1917;
+    --accent: #431407;
+    --accent-foreground: #fdba74;
+    --destructive: #f87171;
+    --destructive-foreground: #1c1917;
+    --secondary: #292524;
+    --secondary-foreground: #fafaf9;
+    --card: #1c1917;
+    --card-foreground: #fafaf9;
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "rlig" 1, "calt" 1;
+  text-rendering: optimizeLegibility;
+}
+
+/* 主要ページの視認性と余白を揃える共通ユーティリティ */
+.app-page {
+  width: 100%;
+  max-width: var(--app-content-max-width);
+  margin-inline: auto;
+  padding-inline: clamp(1rem, 1.5vw, 1.75rem);
+}
+
+.app-section {
+  border: 1px solid color-mix(in oklab, var(--border) 75%, transparent);
+  border-radius: 1rem;
+  background: color-mix(in oklab, var(--card) 95%, transparent);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+/** ログイン後メインエリアの薄いレイヤー（レイアウト側で使用） */
+.app-main-canvas {
+  background:
+    radial-gradient(ellipse 120% 80% at 100% 0%, color-mix(in oklab, var(--ring) 8%, transparent) 0%, transparent 55%),
+    radial-gradient(ellipse 90% 60% at 0% 100%, color-mix(in oklab, var(--muted-foreground) 6%, transparent) 0%, transparent 50%),
+    linear-gradient(180deg, var(--background) 0%, color-mix(in oklab, var(--muted) 35%, var(--background)) 100%);
+}
+
+::selection {
+  background: color-mix(in oklab, var(--ring) 28%, transparent);
+  color: var(--foreground);
 }

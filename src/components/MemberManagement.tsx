@@ -32,7 +32,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { UserPlus, Trash2, Shield } from "lucide-react";
+import { UserPlus, Trash2 } from "lucide-react";
+import { isOrgAdminRole, normalizeOrgRoleForWrite } from "@/lib/roleScopes";
 
 type Member = {
   id: string;
@@ -69,8 +70,7 @@ export default function MemberManagement({
   const [changeRoleLoading, setChangeRoleLoading] = useState<string | null>(null);
   const [removeLoading, setRemoveLoading] = useState<string | null>(null);
 
-  const isOwner = userRole === "OWNER";
-  const canAddMembers = isOwner || userRole === "ADMIN";
+  const canAddMembers = isOrgAdminRole(userRole);
 
   // メンバー追加
   const handleAddMember = async () => {
@@ -113,13 +113,6 @@ export default function MemberManagement({
 
   // 役割変更
   const handleChangeRole = async (memberId: string, newRole: string) => {
-    if (newRole === "OWNER") {
-      const confirmed = confirm(
-        "オーナー権限を譲渡しますか？\n\nあなたは自動的に管理者に降格されます。この操作は慎重に行ってください。"
-      );
-      if (!confirmed) return;
-    }
-
     try {
       setChangeRoleLoading(memberId);
 
@@ -128,7 +121,7 @@ export default function MemberManagement({
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ role: newRole }),
+          body: JSON.stringify({ role: normalizeOrgRoleForWrite(newRole) }),
         }
       );
 
@@ -150,7 +143,7 @@ export default function MemberManagement({
   };
 
   // メンバー削除
-  const handleRemoveMember = async (memberId: string, memberName: string) => {
+  const handleRemoveMember = async (memberId: string) => {
     try {
       setRemoveLoading(memberId);
 
@@ -216,7 +209,6 @@ export default function MemberManagement({
                   <SelectContent>
                     <SelectItem value="MEMBER">メンバー</SelectItem>
                     <SelectItem value="ADMIN">管理者</SelectItem>
-                    {isOwner && <SelectItem value="OWNER">オーナー</SelectItem>}
                   </SelectContent>
                 </Select>
               </div>
@@ -241,9 +233,8 @@ export default function MemberManagement({
       <div className="space-y-2">
         {members.map((member) => {
           const isSelf = member.userId === currentUserId;
-          const isThisOwner = member.role === "OWNER";
-          const canChangeRole = isOwner && !isSelf;
-          const canRemove = isOwner && !isThisOwner;
+          const canChangeRole = canAddMembers && !isSelf;
+          const canRemove = canAddMembers && !isSelf;
 
           return (
             <div
@@ -274,16 +265,13 @@ export default function MemberManagement({
                     <SelectContent>
                       <SelectItem value="MEMBER">メンバー</SelectItem>
                       <SelectItem value="ADMIN">管理者</SelectItem>
-                      <SelectItem value="OWNER">オーナー</SelectItem>
                     </SelectContent>
                   </Select>
                 ) : (
                   <span
                     className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium ${
-                      member.role === "OWNER"
-                        ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400"
-                        : member.role === "ADMIN"
-                        ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                      member.role === "ADMIN"
+                        ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400"
                         : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400"
                     }`}
                   >
@@ -315,10 +303,7 @@ export default function MemberManagement({
                         <AlertDialogCancel>キャンセル</AlertDialogCancel>
                         <AlertDialogAction
                           onClick={() =>
-                            handleRemoveMember(
-                              member.id,
-                              `${member.user.familyName} ${member.user.givenName}`
-                            )
+                            handleRemoveMember(member.id)
                           }
                           className="bg-red-600 hover:bg-red-700"
                         >

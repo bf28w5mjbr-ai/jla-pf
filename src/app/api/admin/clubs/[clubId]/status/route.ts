@@ -1,3 +1,4 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
@@ -49,10 +50,6 @@ export async function PUT(
       club,
     });
   } catch (error) {
-    console.error("Update club status error:", error);
-    return NextResponse.json(
-      { error: "ステータスの更新に失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("PUT api/admin/clubs/[clubId]/status/route.ts", error);
   }
 }

@@ -1,9 +1,11 @@
 // src/app/api/admin/club-applications/route.ts
 export const runtime = "nodejs";
 
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
+import type { ClubStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 
 // GET /api/admin/club-applications - クラブ申請一覧取得（PF_ADMINのみ）
@@ -35,8 +37,8 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    const where: any = {
-      registrationStatus: status,
+    const where: Prisma.ClubWhereInput = {
+      status: status as ClubStatus,
     };
 
     const [applications, total] = await Promise.all([
@@ -70,7 +72,6 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err) {
-    console.error('Error in GET /api/admin/club-applications', err);
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+    return jsonInternalError500("GET api/admin/club-applications/route.ts", err);
   }
 }

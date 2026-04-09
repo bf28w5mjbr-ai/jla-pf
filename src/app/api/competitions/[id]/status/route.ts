@@ -1,7 +1,17 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
+import type { Prisma } from "@prisma/client";
+import { CompetitionStatus } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
+import { getRequestContext, logAuditAction } from "@/lib/auditLog";
+import { getCompetitionPublishErrors } from "@/lib/competitionPublishRules";
+import {
+  isCompetitionStatus,
+  validateCompetitionStatusTransition,
+} from "@/lib/competitionStatusRules";
+import { hasOrgAdminAccess } from "@/lib/roleScopes";
 
 export async function PUT(
   request: NextRequest,
@@ -21,12 +31,13 @@ export async function PUT(
     }
 
     const { status } = await request.json();
-
-    // 有効なステータスかチェック
-    const validStatuses = ["DRAFT", "PUBLISHED", "ONGOING", "COMPLETED", "CANCELLED"];
-    if (!validStatuses.includes(status)) {
+    if (!isCompetitionStatus(status)) {
       return NextResponse.json(
-        { error: "Invalid status" },
+        {
+          errorCode: "INVALID_STATUS",
+          error: "不正なステータスです",
+          allowedStatuses: Object.values(CompetitionStatus),
+        },
         { status: 400 }
       );
     }
@@ -35,6 +46,7 @@ export async function PUT(
     const competition = await prisma.competition.findUnique({
       where: { id },
       include: {
+        events: { select: { id: true } },
         organization: {
           include: {
             admins: {
@@ -47,31 +59,72 @@ export async function PUT(
 
     if (!competition) {
       return NextResponse.json(
-        { error: "Competition not found" },
+        { errorCode: "COMPETITION_NOT_FOUND", error: "Competition not found" },
         { status: 404 }
       );
     }
 
-    // 権限チェック（OWNER または ADMIN）
-    const userRole = competition.organization.admins[0]?.role;
-    if (userRole !== "OWNER" && userRole !== "ADMIN") {
+    // 権限チェック（管理者のみ）
+    if (!hasOrgAdminAccess(competition.organization.admins)) {
       return NextResponse.json(
-        { error: "Forbidden" },
+        { errorCode: "FORBIDDEN", error: "Forbidden" },
         { status: 403 }
       );
     }
 
+    const transition = validateCompetitionStatusTransition(competition.status, status);
+    if (!transition.ok) {
+      return NextResponse.json(
+        {
+          errorCode: transition.code,
+          error: transition.message,
+          currentStatus: competition.status,
+          nextStatus: status,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (
+      status === "PUBLISHED" &&
+      competition.status !== "PUBLISHED" &&
+      !competition.isPublished
+    ) {
+      const publishErrors = getCompetitionPublishErrors({
+        ...competition,
+        organization: { status: competition.organization.status },
+      });
+      if (publishErrors.length > 0) {
+        return NextResponse.json(
+          {
+            errorCode: "PUBLISH_REQUIREMENTS_NOT_MET",
+            error: "公開条件を満たしていません",
+            ...(process.env.NODE_ENV !== "production"
+              ? { details: publishErrors }
+              : {}),
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // ステータスを更新
-    const updateData: any = { status };
-    
+    const updateData: Prisma.CompetitionUpdateInput = {
+      status: status as CompetitionStatus,
+    };
+
     // PUBLISHEDに変更する場合、isPublishedとpublishedAtも設定
     if (status === "PUBLISHED") {
       updateData.isPublished = true;
       if (!competition.publishedAt) {
         updateData.publishedAt = new Date();
       }
+      // 初回公開時に誓約がオフなら、以後は誓約を有効化できない（publishedAt がある再公開では付けない）
+      if (!competition.publishedAt && !competition.entryPledgeEnabled) {
+        updateData.entryPledgeLockNoOffer = true;
+      }
     }
-    
+
     // DRAFTに戻す場合、isPublishedをfalseに
     if (status === "DRAFT") {
       updateData.isPublished = false;
@@ -82,12 +135,24 @@ export async function PUT(
       data: updateData,
     });
 
+    await logAuditAction({
+      action: "COMPETITION_STATUS_UPDATE",
+      actorType: "USER",
+      actorKey: `user:${session.userId}`,
+      actorUserId: session.userId,
+      targetType: "Competition",
+      targetId: id,
+      targetKey: `competition:${id}`,
+      metadata: {
+        previousStatus: competition.status,
+        nextStatus: status,
+      },
+      request: getRequestContext(request),
+      result: "SUCCESS",
+    });
+
     return NextResponse.json(updatedCompetition);
   } catch (error) {
-    console.error("Error updating competition status:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return jsonInternalError500("PUT api/competitions/[id]/status/route.ts", error);
   }
 }

@@ -66,8 +66,8 @@ export default function PaymentConfirmation({
         </div>
 
         {amount >= 10000 && (
-          <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
-            <p className="text-sm text-blue-800 dark:text-blue-200">
+          <div className="bg-orange-50 dark:bg-orange-950 border border-orange-200 dark:border-orange-800 rounded-lg p-3 mb-4">
+            <p className="text-sm text-orange-800 dark:text-orange-200">
               🔒 セキュリティ保護: この決済を実行するには、パスワード認証が必要です
             </p>
           </div>
@@ -92,7 +92,7 @@ export default function PaymentConfirmation({
           <button
             onClick={handleConfirmClick}
             disabled={processing}
-            className="flex-1 bg-blue-600 text-white text-base font-semibold py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex-1 bg-orange-600 text-white text-base font-semibold py-3 rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {processing ? "処理中..." : "決済を実行"}
           </button>

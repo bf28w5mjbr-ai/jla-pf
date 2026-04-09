@@ -1,8 +1,15 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
+import { requireClubAdmin } from "@/lib/accessControl";
+import { canUseSupabaseStorage, uploadPublicAsset } from "@/lib/supabase/storage";
+import {
+  sanitizeUploadBasename,
+  validateRasterImageBuffer,
+} from "@/lib/uploadValidation";
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,44 +28,49 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "ファイルとクラブIDが必要です" }, { status: 400 });
     }
 
-    // クラブの存在確認とメンバーシップ確認
-    const membership = await prisma.membership.findUnique({
-      where: {
-        userId_clubId: {
-          userId: sess.userId,
-          clubId: clubId,
-        }
-      },
-      include: {
-        club: true,
-      }
-    });
-
-    if (!membership || (membership.role !== 'OWNER' && membership.role !== 'ADMIN')) {
+    // クラブ管理者権限チェック
+    try {
+      await requireClubAdmin(clubId, sess.userId);
+    } catch {
       return NextResponse.json(
-        { error: "クラブのオーナーまたは管理者のみがロゴを変更できます" },
+        { error: "クラブの管理者のみがロゴを変更できます" },
         { status: 403 }
       );
     }
 
-    // ファイル保存
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    const maxBytes = 8 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      return NextResponse.json(
+        { error: "ファイルサイズは8MB以下にしてください" },
+        { status: 400 }
+      );
+    }
 
-    // uploads/clubs ディレクトリを作成 (存在しない場合)
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const validated = await validateRasterImageBuffer(buffer);
+    if (!validated.ok) {
+      return NextResponse.json({ error: validated.message }, { status: 400 });
+    }
+
     const uploadDir = path.join(process.cwd(), "public", "uploads", "clubs");
     await mkdir(uploadDir, { recursive: true });
 
-    // ファイル名を生成 (タイムスタンプ + 元のファイル名)
     const timestamp = Date.now();
-    const originalName = file.name.replace(/\s+/g, "_");
-    const filename = `${timestamp}-${originalName}`;
+    const base = sanitizeUploadBasename(file.name);
+    const filename = `${timestamp}-${base}.${validated.value.ext}`;
     const filepath = path.join(uploadDir, filename);
-
-    await writeFile(filepath, buffer);
+    let logoUrl = `/uploads/clubs/${filename}`;
+    if (canUseSupabaseStorage()) {
+      logoUrl = await uploadPublicAsset({
+        objectKey: `clubs/${filename}`,
+        body: buffer,
+        contentType: validated.value.mime,
+      });
+    } else {
+      await writeFile(filepath, buffer);
+    }
 
     // DBを更新
-    const logoUrl = `/uploads/clubs/${filename}`;
     await prisma.club.update({
       where: { id: clubId },
       data: { logoUrl },
@@ -69,10 +81,6 @@ export async function POST(req: NextRequest) {
       logoUrl,
     });
   } catch (error) {
-    console.error("Club logo upload error:", error);
-    return NextResponse.json(
-      { error: "ロゴのアップロードに失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("POST api/upload/club-logo/route.ts", error);
   }
 }

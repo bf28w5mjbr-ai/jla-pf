@@ -5,14 +5,17 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
+import { AuthPanel, AuthShell, authShellMainClassName } from "@/components/auth/AuthShell";
+import { cn } from "@/lib/utils";
+import { appendRedirectQuery, safePostLoginPath } from "@/lib/postLoginRedirect";
 
 function OTPLoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("sessionId");
   const phone = searchParams.get("phone");
+  const redirectAfterLogin = safePostLoginPath(searchParams.get("redirect"));
 
   const [loading, setLoading] = useState(false);
   const [otp, setOtp] = useState("");
@@ -23,9 +26,9 @@ function OTPLoginContent() {
   useEffect(() => {
     if (!sessionId) {
       toast.error("セッションが見つかりません");
-      router.push("/login/sms");
+      router.push(appendRedirectQuery("/login/sms", redirectAfterLogin));
     }
-  }, [sessionId, router]);
+  }, [sessionId, router, redirectAfterLogin]);
 
   useEffect(() => {
     if (countdown > 0) {
@@ -56,7 +59,7 @@ function OTPLoginContent() {
       }
 
       toast.success("ログインしました");
-      router.push("/dashboard");
+      router.push(redirectAfterLogin ?? "/dashboard");
     } catch (err) {
       console.error("OTP verify error:", err);
       const message = "認証に失敗しました";
@@ -102,73 +105,79 @@ function OTPLoginContent() {
     return null;
   }
 
+  const subtitle =
+    phone != null && phone !== ""
+      ? `${phone} に送信された6桁の認証コードを入力してください`
+      : "送信された6桁の認証コードを入力してください";
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>認証コード入力</CardTitle>
-          <CardDescription>
-            {phone ? `${phone} に送信された6桁の認証コードを入力してください` : "送信された6桁の認証コードを入力してください"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleVerify} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="otp">認証コード</Label>
-              <Input
-                id="otp"
-                type="text"
-                inputMode="numeric"
-                pattern="\d{6}"
-                placeholder="123456"
-                maxLength={6}
-                value={otp}
-                onChange={(e) => {
-                  setOtp(e.target.value.replace(/[^\d]/g, ''));
-                  if (error) setError(null);
-                }}
-                required
-                className="text-center text-2xl tracking-widest"
-              />
-              <p className="text-xs text-muted-foreground">
-                認証コードの有効期限は5分です
+    <AuthShell maxWidth="md" title="認証コード入力" subtitle={subtitle} subtitleDensity="balanced">
+      <AuthPanel>
+        <form onSubmit={handleVerify} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="otp">認証コード</Label>
+            <Input
+              id="otp"
+              type="text"
+              numericInput="integer"
+              pattern="\d{6}"
+              placeholder="123456"
+              maxLength={6}
+              value={otp}
+              onChange={(e) => {
+                setOtp(e.target.value);
+                if (error) setError(null);
+              }}
+              required
+              className="text-center text-2xl tracking-[0.35em]"
+            />
+            <p className="text-xs text-muted-foreground">認証コードの有効期限は5分です</p>
+            {error && (
+              <p className="text-xs text-red-600 dark:text-red-400" role="alert">
+                {error}
               </p>
-              {error && (
-                <p className="text-xs text-red-600" role="alert">
-                  {error}
-                </p>
-              )}
-            </div>
+            )}
+          </div>
 
-            <Button type="submit" className="w-full" disabled={loading || otp.length !== 6}>
-              {loading ? "認証中..." : "ログイン"}
-            </Button>
+          <Button type="submit" className="w-full" disabled={loading || otp.length !== 6}>
+            {loading ? "認証中..." : "ログイン"}
+          </Button>
 
-            <div className="text-center">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={handleResend}
-                disabled={countdown > 0 || resending}
-                className="text-sm"
-              >
-                {countdown > 0
-                  ? `再送信まで ${countdown}秒`
-                  : resending
+          <div className="text-center">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleResend}
+              disabled={countdown > 0 || resending}
+              className="text-sm"
+            >
+              {countdown > 0
+                ? `再送信まで ${countdown}秒`
+                : resending
                   ? "送信中..."
                   : "認証コードを再送信"}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+            </Button>
+          </div>
+        </form>
+      </AuthPanel>
+    </AuthShell>
+  );
+}
+
+function OTPLoginFallback() {
+  return (
+    <main
+      className={cn(authShellMainClassName, "flex flex-col items-center justify-center")}
+      aria-busy="true"
+    >
+      <p className="relative z-[1] text-sm text-muted-foreground">読み込み中...</p>
+    </main>
   );
 }
 
 export default function SMSLoginOTPPage() {
   return (
-    <Suspense fallback={<div>読み込み中...</div>}>
+    <Suspense fallback={<OTPLoginFallback />}>
       <OTPLoginContent />
     </Suspense>
   );

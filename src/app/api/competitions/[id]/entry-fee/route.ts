@@ -1,6 +1,13 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { verifySession } from "@/lib/auth";
+import {
+  assertEntryFeeEditable,
+  CompetitionEditForbiddenError,
+  loadCompetitionMutationState,
+} from "@/lib/competitionPublishedEditRules";
+import { isOrgAdminRole } from "@/lib/roleScopes";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -43,11 +50,11 @@ export async function PUT(
       );
     }
 
-    // 権限チェック（OWNER または ADMIN のみ）
+    // 権限チェック（管理者のみ）
     const isAdmin = competition.organization.admins.some(
       (admin) =>
         admin.userId === session.userId &&
-        (admin.role === "OWNER" || admin.role === "ADMIN")
+        isOrgAdminRole(admin.role)
     );
 
     if (!isAdmin) {
@@ -57,52 +64,39 @@ export async function PUT(
       );
     }
 
+    const mutationState = await loadCompetitionMutationState(competitionId);
+    try {
+      assertEntryFeeEditable(mutationState);
+    } catch (e) {
+      if (e instanceof CompetitionEditForbiddenError) {
+        return NextResponse.json({ message: e.message }, { status: 400 });
+      }
+      throw e;
+    }
+
     const body = await request.json();
-    const { baseFee, multiEventSurcharge, teamOnlyFee } = body;
+    const { individualEntryFee, teamEntryFeePerTeam } = body;
 
-    // バリデーション
-    if (typeof baseFee !== "number" || baseFee < 0) {
+    if (typeof individualEntryFee !== "number" || individualEntryFee < 0) {
       return NextResponse.json(
-        { message: "基本料金が正しくありません" },
+        { message: "個人エントリー料金が正しくありません" },
         { status: 400 }
       );
     }
 
-    if (multiEventSurcharge) {
-      if (!Array.isArray(multiEventSurcharge)) {
-        return NextResponse.json(
-          { message: "複数種目割増の形式が正しくありません" },
-          { status: 400 }
-        );
-      }
-
-      for (const surcharge of multiEventSurcharge) {
-        if (
-          typeof surcharge.minEvents !== "number" ||
-          surcharge.minEvents < 2 ||
-          typeof surcharge.feePerEvent !== "number" ||
-          surcharge.feePerEvent < 0
-        ) {
-          return NextResponse.json(
-            { message: "複数種目割増の設定が正しくありません" },
-            { status: 400 }
-          );
-        }
-      }
-    }
-
-    if (teamOnlyFee !== undefined && (typeof teamOnlyFee !== "number" || teamOnlyFee < 0)) {
+    if (
+      typeof teamEntryFeePerTeam !== "number" ||
+      teamEntryFeePerTeam < 0
+    ) {
       return NextResponse.json(
-        { message: "チーム種目のみ料金が正しくありません" },
+        { message: "チーム種目の1チームあたり料金が正しくありません" },
         { status: 400 }
       );
     }
 
-    // エントリー費用設定を更新
     const entryFeeData = {
-      baseFee,
-      multiEventSurcharge: multiEventSurcharge || [],
-      teamOnlyFee: teamOnlyFee || null,
+      individualEntryFee,
+      teamEntryFeePerTeam,
     };
 
     const updatedCompetition = await prisma.competition.update({
@@ -117,10 +111,6 @@ export async function PUT(
       entryFee: updatedCompetition.entryFee,
     });
   } catch (error) {
-    console.error("エントリー費用設定更新エラー:", error);
-    return NextResponse.json(
-      { message: "エントリー費用設定の更新に失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("PUT api/competitions/[id]/entry-fee/route.ts", error);
   }
 }

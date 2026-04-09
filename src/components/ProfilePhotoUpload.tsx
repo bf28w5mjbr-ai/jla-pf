@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 
 interface ProfilePhotoUploadProps {
   currentPhotoUrl?: string | null;
@@ -91,11 +92,14 @@ export default function ProfilePhotoUpload({ currentPhotoUrl, userName }: Profil
       <div className="relative">
         <div className="w-32 h-32 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 text-4xl font-medium border-2 border-gray-200 dark:border-gray-700 overflow-hidden">
           {preview ? (
-            <img 
-              src={preview} 
-              alt={userName}
-              className="w-full h-full object-cover"
-            />
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img 
+                src={preview} 
+                alt={userName}
+                className="w-full h-full object-cover"
+              />
+            </>
           ) : (
             <span>{userName.charAt(0)}</span>
           )}
@@ -108,16 +112,19 @@ export default function ProfilePhotoUpload({ currentPhotoUrl, userName }: Profil
       </div>
 
       <div className="flex gap-2">
-        <label className="px-4 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-medium rounded-md hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors cursor-pointer">
-          {preview ? "変更" : "アップロード"}
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleFileChange}
-            disabled={uploading}
-            className="hidden"
-          />
-        </label>
+        <Button asChild size="sm" disabled={uploading}>
+          <label htmlFor="profile-photo-upload-input" className="cursor-pointer">
+            {preview ? "変更" : "アップロード"}
+          </label>
+        </Button>
+        <input
+          id="profile-photo-upload-input"
+          type="file"
+          accept="image/*"
+          onChange={handleFileChange}
+          disabled={uploading}
+          className="hidden"
+        />
         
         {preview && (
           <button

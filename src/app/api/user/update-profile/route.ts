@@ -1,3 +1,4 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { verifySession } from "@/lib/auth";
@@ -73,10 +74,6 @@ export async function PUT(request: NextRequest) {
       user: updatedUser,
     });
   } catch (error) {
-    console.error("Profile update error:", error);
-    return NextResponse.json(
-      { error: "プロフィールの更新に失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("PUT api/user/update-profile/route.ts", error);
   }
 }

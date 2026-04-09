@@ -1,101 +1,55 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Plus, Trash2, Check } from "lucide-react";
-
-type OfficialPosition = {
-  positionName: string;
-  count: string;
-};
-
-type OfficialPositionsData = OfficialPosition[];
+import { Check, CircleAlert, ShieldCheck } from "lucide-react";
 
 type OfficialSettingsEditorProps = {
   competitionId: string;
   organizationId: string;
-  officialPositions?: OfficialPositionsData | null;
+  initialEnabled?: boolean;
+  templates?: Array<{ id: string; name: string; kind: string }>;
 };
 
 export function OfficialSettingsEditor({
   competitionId,
   organizationId,
-  officialPositions: initialOfficialPositions,
+  initialEnabled = false,
+  templates = [],
 }: OfficialSettingsEditorProps) {
-  const [positions, setPositions] = useState<OfficialPosition[]>(
-    initialOfficialPositions && Array.isArray(initialOfficialPositions)
-      ? initialOfficialPositions.map((position: any) => ({
-          positionName: position.positionName ?? "",
-          count:
-            typeof position.count === "number"
-              ? position.count.toString()
-              : "",
-        }))
-      : []
-  );
-  const [savedPositions, setSavedPositions] = useState<
-    { positionName: string; count: number }[]
-  >(
-    initialOfficialPositions && Array.isArray(initialOfficialPositions)
-      ? initialOfficialPositions.map((position: any) => ({
-          positionName: position.positionName ?? "",
-          count: typeof position.count === "number" ? position.count : 0,
-        }))
-      : []
-  );
+  const router = useRouter();
+  const [enabled, setEnabled] = useState<boolean>(initialEnabled);
+  const [savedEnabled, setSavedEnabled] = useState<boolean>(initialEnabled);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+  const dirty = enabled !== savedEnabled;
+  const editingStateLabel = enabled ? "設定する（資格要件あり）" : "設定しない（誰でも可）";
+  const savedStateLabel = savedEnabled ? "設定する（資格要件あり）" : "設定しない（誰でも可）";
 
-  const addPosition = () => {
-    setPositions([...positions, { positionName: "", count: "1" }]);
-  };
-
-  const removePosition = (index: number) => {
-    setPositions(positions.filter((_, i) => i !== index));
-  };
-
-  const updatePosition = (
-    index: number,
-    field: keyof OfficialPosition,
-    value: string
-  ) => {
-    const newPositions = [...positions];
-    newPositions[index][field] = value;
-    setPositions(newPositions);
-  };
+  const templateNameByKind = new Map(
+    templates.map((t) => [t.kind, t.name && t.name.trim().length > 0 ? t.name : t.kind])
+  );
+  const blsName = templateNameByKind.get("BLS") ?? "BLS";
+  const waterSafetyName = templateNameByKind.get("WaterSafety") ?? "ウォーターセーフティ";
+  const refereeNames = ["RefereeC", "RefereeB", "RefereeA", "RefereeS"].map(
+    (kind) => templateNameByKind.get(kind) ?? kind
+  );
 
   const handleSave = async () => {
     try {
       setIsSaving(true);
-
-      // バリデーション
-      const normalizedPositions = positions.map((position) => ({
-        positionName: position.positionName.trim(),
-        count: Number(position.count),
-      }));
-
-      const invalidPositions = normalizedPositions.filter(
-        (position) =>
-          !position.positionName ||
-          !Number.isFinite(position.count) ||
-          position.count < 1
-      );
-      if (invalidPositions.length > 0) {
-        toast.error("ポジション名を入力し、募集人数は1人以上にしてください");
-        return;
-      }
-
       const response = await fetch(
-        `/api/organizations/${organizationId}/competitions/${competitionId}/official-positions`,
+        `/api/organizations/${organizationId}/competitions/${competitionId}/official-qualification-settings`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ positions: normalizedPositions }),
+          body: JSON.stringify({
+            officialQualificationFilterEnabled: enabled,
+          }),
         }
       );
 
@@ -104,9 +58,10 @@ export function OfficialSettingsEditor({
         throw new Error(error.error || "保存に失敗しました");
       }
 
-      setSavedPositions(normalizedPositions);
+      setSavedEnabled(enabled);
       setLastSavedAt(new Date());
-      toast.success("オフィシャル設定を保存しました");
+      toast.success("資格要件を保存しました");
+      router.refresh();
       setJustSaved(true);
       setTimeout(() => setJustSaved(false), 2000);
     } catch (error) {
@@ -120,135 +75,100 @@ export function OfficialSettingsEditor({
   };
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>オフィシャル募集設定</CardTitle>
-          <CardDescription>
-            募集するポジションと人数を設定します。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-4">
-            {positions.length === 0 ? (
-              <div className="rounded-md border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-muted-foreground dark:border-gray-700 dark:bg-gray-900">
-                オフィシャルポジションが登録されていません。
-                <br />
-                「ポジションを追加」から登録できます。
-              </div>
-            ) : (
-              positions.map((position, index) => (
-                <div
-                  key={index}
-                  className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-950 md:flex-row md:items-end"
-                >
-                  <div className="flex-1 space-y-3">
-                    <div>
-                      <Label htmlFor={`position-name-${index}`}>ポジション名</Label>
-                      <Input
-                        id={`position-name-${index}`}
-                        value={position.positionName}
-                        onChange={(e) =>
-                          updatePosition(index, "positionName", e.target.value)
-                        }
-                        placeholder="例: 審判長、タイムキーパー、記録員"
-                        className="mt-1"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-end gap-2">
-                    <div className="w-32">
-                      <Label htmlFor={`position-count-${index}`}>募集人数</Label>
-                      <Input
-                        id={`position-count-${index}`}
-                        type="number"
-                        min="1"
-                        value={position.count}
-                        onChange={(e) =>
-                          updatePosition(index, "count", e.target.value)
-                        }
-                        className="mt-1"
-                      />
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removePosition(index)}
-                      aria-label="ポジションを削除"
-                      className="h-10 w-10"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+    <Card className="overflow-hidden">
+      <CardHeader className="space-y-1 border-b border-border bg-muted/15 px-4 py-3 sm:px-4">
+        <CardTitle className="text-base font-semibold">オフィシャル資格要件設定</CardTitle>
+        <CardDescription className="text-xs leading-relaxed">
+          オフィシャル応募時の資格チェック有無を切り替えます。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 px-4 py-3.5 sm:px-4">
+        <div className="rounded-md border border-border/80 bg-muted/20 px-3 py-2.5">
+          <p className="text-[11px] text-muted-foreground">編集中の設定</p>
+          <p className="mt-0.5 text-sm font-semibold text-foreground">{editingStateLabel}</p>
+        </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={addPosition}
-              className="gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              ポジションを追加
-            </Button>
-          </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button
+            type="button"
+            variant={enabled ? "default" : "outline"}
+            className="h-auto min-h-12 justify-start px-3 py-2 text-left"
+            onClick={() => setEnabled(true)}
+          >
+            <span className="block">
+              <span className="block text-sm font-semibold">設定する</span>
+              <span className="block text-[11px] opacity-90">資格を満たす応募者のみ受付</span>
+            </span>
+          </Button>
+          <Button
+            type="button"
+            variant={!enabled ? "default" : "outline"}
+            className="h-auto min-h-12 justify-start px-3 py-2 text-left"
+            onClick={() => setEnabled(false)}
+          >
+            <span className="block">
+              <span className="block text-sm font-semibold">設定しない</span>
+              <span className="block text-[11px] opacity-90">資格要件なしで受付</span>
+            </span>
+          </Button>
+        </div>
 
-          <div className="flex justify-end pt-4 border-t">
-            <Button 
-              onClick={handleSave} 
-              disabled={isSaving || justSaved}
-              className={justSaved ? "bg-green-600 hover:bg-green-700" : ""}
-            >
-              {isSaving ? (
-                "保存中..."
-              ) : justSaved ? (
-                <>
-                  <Check className="h-4 w-4 mr-2" />
-                  保存しました
-                </>
-              ) : (
-                "保存"
-              )}
-            </Button>
+        {enabled ? (
+          <div className="rounded-md border border-emerald-300/60 bg-emerald-50/40 px-3 py-2.5 dark:border-emerald-900/50 dark:bg-emerald-950/20">
+            <p className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              適用される資格フィルタ（テンプレート参照）
+            </p>
+            <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+              <li>
+                必須資格: <span className="font-medium text-foreground">{blsName}</span> /{" "}
+                <span className="font-medium text-foreground">{waterSafetyName}</span>
+              </li>
+              <li>
+                審判資格: <span className="font-medium text-foreground">{refereeNames.join(" / ")}</span>
+                のいずれか
+              </li>
+            </ul>
           </div>
+        ) : (
+          <div className="rounded-md border border-amber-300/60 bg-amber-50/40 px-3 py-2.5 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
+            <p className="flex items-center gap-1.5 font-medium">
+              <CircleAlert className="h-3.5 w-3.5" />
+              設定しない場合は資格による応募制限を行いません。
+            </p>
+          </div>
+        )}
 
-          <div className="border-t pt-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                保存済みの内容
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+          <div className="space-y-0.5">
+            <p className="text-[11px] text-muted-foreground">現在反映中: {savedStateLabel}</p>
+            {lastSavedAt ? (
+              <p className="text-[11px] tabular-nums text-muted-foreground">
+                最終保存: {lastSavedAt.toLocaleString("ja-JP")}
               </p>
-              {lastSavedAt && (
-                <p className="text-xs text-gray-500">
-                  {lastSavedAt.toLocaleString("ja-JP")}
-                </p>
-              )}
-            </div>
-            {savedPositions.length === 0 ? (
-              <p className="text-sm text-gray-500">保存済みの募集設定はありません。</p>
-            ) : (
-              <ul className="space-y-2">
-                {savedPositions.map((position, index) => (
-                  <li
-                    key={`${position.positionName}-${position.count}-${index}`}
-                    className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2 text-sm"
-                  >
-                    <span className="font-medium text-gray-900 dark:text-gray-100">
-                      {position.positionName || "（名称未設定）"}
-                    </span>
-                    <span className="text-gray-600 dark:text-gray-400">
-                      {position.count}人
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
+            ) : null}
           </div>
-        </CardContent>
-      </Card>
-    </div>
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={isSaving || justSaved || !dirty}
+            className={`h-8 text-xs ${justSaved ? "bg-green-600 hover:bg-green-700" : ""}`}
+          >
+            {isSaving ? (
+              "保存中…"
+            ) : justSaved ? (
+              <>
+                <Check className="mr-1.5 h-3.5 w-3.5" />
+                保存しました
+              </>
+            ) : !dirty ? (
+              "変更なし"
+            ) : (
+              "保存"
+            )}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

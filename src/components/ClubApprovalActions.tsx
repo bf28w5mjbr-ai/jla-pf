@@ -53,7 +53,7 @@ export default function ClubApprovalActions({ clubId, currentStatus }: ClubAppro
           <button
             onClick={() => handleUpdateStatus('JLA_APPROVED')}
             disabled={loading}
-            className="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="text-xs px-2 py-1 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             承認
           </button>
@@ -105,7 +105,7 @@ export default function ClubApprovalActions({ clubId, currentStatus }: ClubAppro
           <button
             onClick={() => handleUpdateStatus('JLA_APPROVED')}
             disabled={loading}
-            className="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="text-xs px-2 py-1 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             承認
           </button>

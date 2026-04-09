@@ -1,9 +1,11 @@
-import type { ReactElement } from 'react'
-import { renderToBuffer } from '@react-pdf/renderer'
-import { uploadPdfToS3 } from '@/lib/s3'
+import type { ComponentProps, ReactElement } from "react";
+import { Document, renderToBuffer } from "@react-pdf/renderer";
+import { uploadPdfToS3 } from "@/lib/s3";
+import { registerPdfJapaneseFonts } from "@/lib/registerPdfFonts";
 
 export async function generatePdfBuffer(component: ReactElement): Promise<Buffer> {
-  return renderToBuffer(component as any)
+  registerPdfJapaneseFonts();
+  return renderToBuffer(component as ReactElement<ComponentProps<typeof Document>>);
 }
 
 export async function generateAndUploadPdf(params: {

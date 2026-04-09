@@ -1,5 +1,5 @@
 // POST /api/registration/verify
-// OTP検証 → User作成
+// OTP検証 -> User作成
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
@@ -7,6 +7,14 @@ import { z } from "zod";
 import { prisma } from "@/server/db";
 import { verifyOTP, isOTPValid } from "@/lib/otp";
 import { normalizeKana } from "@/lib/normalize-kana";
+import { verifySmsOtpViaSupabase } from "@/lib/supabase/otp";
+import {
+  findUserByNormalizedNameAndDob,
+  findUserByPhoneCandidates,
+} from "@/lib/user-uniqueness";
+import { onAuthLoginSuccess } from "@/lib/authLoginSuccess";
+import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 
 const VerifyOTPSchema = z.object({
   sessionId: z.string().cuid(),
@@ -14,13 +22,13 @@ const VerifyOTPSchema = z.object({
 });
 
 const MAX_OTP_ATTEMPTS = 5;
+const USE_SUPABASE_SMS_OTP = process.env.USE_SUPABASE_SMS_OTP === "true";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const data = VerifyOTPSchema.parse(body);
 
-    // 1. セッション取得
     const session = await prisma.registrationSession.findUnique({
       where: { id: data.sessionId },
     });
@@ -32,7 +40,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. セッション有効期限チェック
     if (new Date() > session.expiresAt) {
       await prisma.registrationSession.delete({ where: { id: session.id } });
       return NextResponse.json(
@@ -41,7 +48,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. OTP有効期限チェック
     if (!isOTPValid(session.otpExpiresAt)) {
       return NextResponse.json(
         { error: "認証コードの有効期限が切れました。再送信してください。" },
@@ -49,23 +55,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. 失敗回数チェック
     if (session.otpAttempts >= MAX_OTP_ATTEMPTS) {
       await prisma.registrationSession.delete({ where: { id: session.id } });
       return NextResponse.json(
-        { 
+        {
           error: "認証に失敗しました。試行回数の上限に達したため、最初からやり直してください。",
-          maxAttemptsReached: true
+          maxAttemptsReached: true,
         },
         { status: 400 }
       );
     }
 
-    // 5. OTP検証
-    const isValid = await verifyOTP(data.otp, session.otpHash);
+    const valid = USE_SUPABASE_SMS_OTP
+      ? await verifySmsOtpViaSupabase(session.phoneNumber, data.otp)
+      : await verifyOTP(data.otp, session.otpHash);
 
-    if (!isValid) {
-      // 失敗回数を増やす
+    if (!valid) {
       const updatedSession = await prisma.registrationSession.update({
         where: { id: session.id },
         data: { otpAttempts: session.otpAttempts + 1 },
@@ -74,23 +79,60 @@ export async function POST(req: NextRequest) {
       const remainingAttempts = MAX_OTP_ATTEMPTS - updatedSession.otpAttempts;
 
       return NextResponse.json(
-        { 
+        {
           error: `認証コードが正しくありません。残り${remainingAttempts}回`,
-          remainingAttempts
+          remainingAttempts,
         },
         { status: 400 }
       );
     }
 
-    // 6. OTP検証成功 → User作成
     const normalizedFamilyName = normalizeKana(session.familyNameKana);
     const normalizedGivenName = normalizeKana(session.givenNameKana);
 
+    const existingPhone = await findUserByPhoneCandidates([session.phoneNumber]);
+    if (existingPhone) {
+      await prisma.registrationSession.delete({ where: { id: session.id } });
+      return NextResponse.json(
+        { error: "この電話番号は既に登録されています。最初からやり直してください。" },
+        { status: 409 }
+      );
+    }
+
+    if (session.email) {
+      const existingEmail = await prisma.user.findUnique({
+        where: { email: session.email },
+        select: { id: true },
+      });
+
+      if (existingEmail) {
+        await prisma.registrationSession.delete({ where: { id: session.id } });
+        return NextResponse.json(
+          { error: "このメールアドレスは既に登録されています。最初からやり直してください。" },
+          { status: 409 }
+        );
+      }
+    }
+
+    const duplicatePerson = await findUserByNormalizedNameAndDob({
+      normalizedFamilyName,
+      normalizedGivenName,
+      dateOfBirth: session.dateOfBirth,
+    });
+
+    if (duplicatePerson) {
+      await prisma.registrationSession.delete({ where: { id: session.id } });
+      return NextResponse.json(
+        { error: "同じ氏名・生年月日のアカウントが既に存在します。最初からやり直してください。" },
+        { status: 409 }
+      );
+    }
+
     const user = await prisma.user.create({
       data: {
-        email: session.email || `${session.phoneNumber.replace('+', '')}@temp.jla.local`,
-        emailVerified: session.email ? false : false,
-        passwordHash: session.password || null, // パスワードがあればセット（既にハッシュ化済み）
+        email: session.email || `${session.phoneNumber.replace("+", "")}@temp.jla.local`,
+        emailVerified: false,
+        passwordHash: session.password || null,
         familyName: session.familyName,
         givenName: session.givenName,
         familyNameKana: session.familyNameKana,
@@ -115,10 +157,8 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 7. セッション削除
     await prisma.registrationSession.delete({ where: { id: session.id } });
 
-    // 8. ログインセッション作成（既存のauth.tsを使用）
     const { signSession } = await import("@/lib/auth");
     const token = await signSession({ userId: user.id });
 
@@ -129,30 +169,20 @@ export async function POST(req: NextRequest) {
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
       path: "/",
-      maxAge: 60 * 60 * 24 * 30, // 30日間
+      maxAge: 60 * 60 * 24 * 30,
     });
+
+    await onAuthLoginSuccess(user.id, req, { channel: "REGISTRATION" });
 
     return NextResponse.json({
       success: true,
-      user: {
-        id: user.id,
-        familyName: user.familyName,
-        givenName: user.givenName,
-        phoneNumber: user.phoneNumber,
-      },
+      next: "/register/passkey",
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: "入力内容に誤りがあります", details: error.errors },
-        { status: 400 }
-      );
+      return NextResponse.json(zodErrorJsonBody(error), { status: 400 });
     }
 
-    console.error("OTP verification error:", error);
-    return NextResponse.json(
-      { error: "認証処理に失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("POST api/registration/verify/route.ts", error);
   }
 }

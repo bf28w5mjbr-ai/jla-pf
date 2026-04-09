@@ -37,7 +37,7 @@ export function isValidJapaneseMobile(phone: string): boolean {
     
     // プレフィックスチェック（70, 80, 90）
     const prefix = '0' + withoutCountryCode.slice(0, 2);
-    return MOBILE_PREFIXES.includes(prefix as any);
+    return (MOBILE_PREFIXES as readonly string[]).includes(prefix);
   }
   
   // 国内形式（0から始まる11桁）
@@ -46,7 +46,7 @@ export function isValidJapaneseMobile(phone: string): boolean {
   
   // プレフィックスチェック（070, 080, 090）
   const prefix = normalized.slice(0, 3);
-  return MOBILE_PREFIXES.includes(prefix as any);
+  return (MOBILE_PREFIXES as readonly string[]).includes(prefix);
 }
 
 /**
@@ -61,6 +61,19 @@ export function isValidJapaneseMobile(phone: string): boolean {
  * toE164("09012345678")   // => "+819012345678"
  * toE164("090-1234-5678") // => "+819012345678"
  */
+/**
+ * SMS 送信用: 既に E.164 ならそのまま、国内形式なら toE164、解釈不能なら元の文字列。
+ */
+export function phoneToE164Loose(phone: string): string {
+  const t = phone.trim();
+  if (t.startsWith("+")) return t;
+  try {
+    return toE164(t);
+  } catch {
+    return t;
+  }
+}
+
 export function toE164(phone: string): string {
   if (!isValidJapaneseMobile(phone)) {
     throw new Error('無効な日本国内携帯電話番号です');

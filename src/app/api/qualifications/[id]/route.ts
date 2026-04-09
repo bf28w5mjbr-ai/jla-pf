@@ -1,11 +1,18 @@
 // src/app/api/qualifications/[id]/route.ts
 export const runtime = "nodejs";
 
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { verifySession } from "@/lib/auth";
+import { isPfOrAccAdmin, verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { z } from "zod";
+import {
+  isPlayerRegistrationKind,
+  JLA_MEMBER_NUMBER_REGEX,
+  normalizeJlaMemberNumber,
+} from "@/lib/jlaMemberNumber";
+import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -46,8 +53,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json(qualification);
   } catch (err) {
-    console.error('Error in GET /api/qualifications/[id]', err);
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+    return jsonInternalError500("GET api/qualifications/[id]/route.ts", err);
   }
 }
 
@@ -62,15 +68,10 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    // JLA_ADMIN / ORG_ADMIN / PF_ADMIN 権限チェック
-    const user = await prisma.user.findUnique({
-      where: { id: sess.userId },
-      select: { role: true }
-    });
-
-    if (user?.role !== 'PF_ADMIN' && user?.role !== 'ORG_ADMIN' && user?.role !== 'JLA_ADMIN') {
+    // 協会管理者（AssociationAdmin.ADMIN）/ PF管理者 権限チェック
+    if (!(await isPfOrAccAdmin(sess.userId))) {
       return NextResponse.json(
-        { error: 'JLA管理者権限が必要です' },
+        { error: '協会管理者権限が必要です' },
         { status: 403 }
       );
     }
@@ -84,6 +85,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
         userId: true,
         kind: true,
         status: true,
+        certNumber: true,
       },
     });
 
@@ -98,33 +100,110 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     const UpdateQualificationSchema = z.object({
       status: z.enum(['APPROVED', 'REJECTED', 'EXPIRED']).optional(),
-      certNumber: z.string().optional(),
+      certNumber: z
+        .string()
+        .optional()
+        .transform((value) => {
+          if (typeof value !== "string") return undefined;
+          const normalized = normalizeJlaMemberNumber(value);
+          return normalized === "" ? undefined : normalized;
+        }),
       issueDate: z.string().datetime().optional(),
       expiryDate: z.string().datetime().optional(),
       rejectionReason: z.string().optional(),
     });
 
     const data = UpdateQualificationSchema.parse(body);
+    const nextCertNumber = data.certNumber ?? qualification.certNumber;
+    const approvingPlayerRegistration =
+      data.status === "APPROVED" && isPlayerRegistrationKind(qualification.kind);
 
-    // 資格を更新
-    const updated = await prisma.qualification.update({
-      where: { id },
-      data: {
-        status: data.status,
-        certNumber: data.certNumber,
-        issueDate: data.issueDate ? new Date(data.issueDate) : undefined,
-        expiryDate: data.expiryDate ? new Date(data.expiryDate) : undefined,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            givenName: true,
-            familyName: true,
+    if (approvingPlayerRegistration) {
+      if (!nextCertNumber) {
+        return NextResponse.json(
+          { error: "選手登録の承認にはJLA番号が必要です" },
+          { status: 400 }
+        );
+      }
+
+      if (!JLA_MEMBER_NUMBER_REGEX.test(nextCertNumber)) {
+        return NextResponse.json(
+          { error: "JLA番号は5000から始まる9桁で入力してください" },
+          { status: 400 }
+        );
+      }
+
+      const existingUser = await prisma.user.findFirst({
+        where: {
+          jlaMemberNumber: nextCertNumber,
+          NOT: { id: qualification.userId },
+        },
+        select: { id: true },
+      });
+
+      if (existingUser) {
+        return NextResponse.json(
+          { error: "このJLA番号は既に別の会員に紐づいています" },
+          { status: 400 }
+        );
+      }
+
+      const existingQualificationWithNumber = await prisma.qualification.findFirst({
+        where: {
+          certNumber: nextCertNumber,
+          status: { in: ["PENDING", "APPROVED"] },
+          NOT: {
+            id,
+            userId: qualification.userId,
           },
         },
-      },
+        select: {
+          id: true,
+          kind: true,
+        },
+      });
+
+      if (
+        existingQualificationWithNumber &&
+        isPlayerRegistrationKind(existingQualificationWithNumber.kind)
+      ) {
+        return NextResponse.json(
+          { error: "このJLA番号は既に申請または登録済みです" },
+          { status: 400 }
+        );
+      }
+    }
+
+    // 資格を更新
+    const updated = await prisma.$transaction(async (tx) => {
+      const updatedQualification = await tx.qualification.update({
+        where: { id },
+        data: {
+          status: data.status,
+          certNumber: data.certNumber,
+          issueDate: data.issueDate ? new Date(data.issueDate) : undefined,
+          expiryDate: data.expiryDate ? new Date(data.expiryDate) : undefined,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              givenName: true,
+              familyName: true,
+            },
+          },
+        },
+      });
+
+      if (approvingPlayerRegistration && nextCertNumber) {
+        await tx.user.update({
+          where: { id: qualification.userId },
+          data: { jlaMemberNumber: nextCertNumber },
+        });
+      }
+
+      return updatedQualification;
     });
 
     // AuditLog 記録
@@ -142,14 +221,10 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     return NextResponse.json(updated);
   } catch (err) {
     if (err instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'バリデーションエラー', details: err.errors },
-        { status: 400 }
-      );
+      return NextResponse.json(zodErrorJsonBody(err, "validation_message_ja"), { status: 400 });
     }
 
-    console.error('Error in PATCH /api/qualifications/[id]', err);
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+    return jsonInternalError500("PATCH api/qualifications/[id]/route.ts", err);
   }
 }
 
@@ -183,13 +258,8 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
 
     // 自分の資格かチェック
     if (qualification.userId !== sess.userId) {
-      // JLA_ADMIN / ORG_ADMIN / PF_ADMIN ならOK
-      const user = await prisma.user.findUnique({
-        where: { id: sess.userId },
-        select: { role: true }
-      });
-
-      if (user?.role !== 'PF_ADMIN' && user?.role !== 'ORG_ADMIN' && user?.role !== 'JLA_ADMIN') {
+      // 協会管理者 / PF管理者 ならOK
+      if (!(await isPfOrAccAdmin(sess.userId))) {
         return NextResponse.json(
           { error: '権限がありません' },
           { status: 403 }
@@ -213,7 +283,6 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error('Error in DELETE /api/qualifications/[id]', err);
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+    return jsonInternalError500("DELETE api/qualifications/[id]/route.ts", err);
   }
 }

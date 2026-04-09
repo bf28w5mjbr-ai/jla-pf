@@ -1,11 +1,15 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
+import { safeServerErrorLog } from "@/lib/safeServerLog";
 import type Stripe from "stripe";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
+import { logAuditAction } from "@/lib/auditLog";
+import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
 
 function toJsonValue(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
@@ -79,40 +83,81 @@ async function markStripeEventFailed(id: string, error: unknown) {
 
 async function updatePaymentByCheckoutSession(session: Stripe.Checkout.Session) {
   const paymentIntentId = extractPaymentIntentId(session.payment_intent);
-  const conditions: Prisma.PaymentWhereInput[] = [];
-
-  if (session.id) {
-    conditions.push({ stripeCheckoutSessionId: session.id });
-  }
-  if (paymentIntentId) {
-    conditions.push({ stripePaymentIntentId: paymentIntentId });
-  }
-  if (session.metadata?.paymentId) {
-    conditions.push({ id: session.metadata.paymentId });
-  }
-
-  if (conditions.length === 0) return;
-
   const paidAt = session.created
     ? new Date(session.created * 1000)
     : new Date();
-
   const updateData: Prisma.PaymentUpdateManyMutationInput = {
     status: "SUCCEEDED",
     paidAt,
+    stripeCheckoutSessionId: session.id ?? undefined,
+    stripePaymentIntentId: paymentIntentId ?? undefined,
   };
-  if (paymentIntentId) updateData.stripePaymentIntentId = paymentIntentId;
-  if (session.id) updateData.stripeCheckoutSessionId = session.id;
 
-  await prisma.payment.updateMany({
-    where: { OR: conditions },
-    data: updateData,
-  });
+  if (session.metadata?.paymentId) {
+    await prisma.payment.updateMany({
+      where: { id: session.metadata.paymentId },
+      data: updateData,
+    });
+    return;
+  }
+
+  if (session.id) {
+    await prisma.payment.updateMany({
+      where: { stripeCheckoutSessionId: session.id },
+      data: updateData,
+    });
+    return;
+  }
+
+  if (paymentIntentId) {
+    const payment = await prisma.payment.findFirst({
+      where: { stripePaymentIntentId: paymentIntentId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (!payment) return;
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: updateData,
+    });
+  }
 }
 
-async function updateEntryCheckoutSession(
-  session: Stripe.Checkout.Session
+async function markOrganizationOnboardingPaid(
+  paymentWhere: Prisma.PaymentWhereInput
 ) {
+  const payments = await prisma.payment.findMany({
+    where: {
+      ...paymentWhere,
+      ownerType: "ORGANIZATION",
+      type: "ORG_ONBOARDING_FEE",
+      status: "SUCCEEDED",
+    },
+    select: {
+      ownerId: true,
+      paidAt: true,
+    },
+  });
+
+  if (payments.length === 0) return;
+
+  await Promise.all(
+    payments.map((payment) =>
+      prisma.organization.update({
+        where: { id: payment.ownerId },
+        data: {
+          onboardingFeeStatus: "PAID",
+          onboardingFeePaidAt: payment.paidAt ?? new Date(),
+          status: "APPROVED",
+        },
+      })
+    )
+  );
+}
+
+async function expireEntryCheckoutSession(
+  session: Stripe.Checkout.Session
+): Promise<Array<{ id: string; entryId: string | null; competitionId: string }>> {
   const conditions: Prisma.EntryCheckoutSessionWhereInput[] = [];
   if (session.id) {
     conditions.push({ stripeCheckoutSessionId: session.id });
@@ -120,15 +165,25 @@ async function updateEntryCheckoutSession(
   if (session.metadata?.entryCheckoutSessionId) {
     conditions.push({ id: session.metadata.entryCheckoutSessionId });
   }
-  if (conditions.length === 0) return;
+  if (conditions.length === 0) return [];
+
+  const targets = await prisma.entryCheckoutSession.findMany({
+    where: { OR: conditions },
+    select: {
+      id: true,
+      entryId: true,
+      competitionId: true,
+    },
+  });
 
   await prisma.entryCheckoutSession.updateMany({
     where: { OR: conditions },
     data: {
-      status: "COMPLETED",
-      completedAt: new Date(),
+      status: "EXPIRED",
+      expiredAt: new Date(),
     },
   });
+  return targets;
 }
 
 async function updatePaymentByPaymentIntent(
@@ -145,6 +200,12 @@ async function updatePaymentByPaymentIntent(
           : undefined,
     },
   });
+
+  if (status === "SUCCEEDED") {
+    await markOrganizationOnboardingPaid({
+      stripePaymentIntentId: paymentIntent.id,
+    });
+  }
 }
 
 async function updatePaymentByRefund(charge: Stripe.Charge) {
@@ -190,10 +251,11 @@ export async function POST(req: NextRequest) {
 
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret) {
-    return NextResponse.json(
-      { error: "STRIPE_WEBHOOK_SECRET is not configured." },
-      { status: 500 }
+    safeServerErrorLog(
+      "POST api/webhooks/stripe/route.ts",
+      new Error("STRIPE_WEBHOOK_SECRET not configured")
     );
+    return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 
   let event: Stripe.Event;
@@ -201,7 +263,7 @@ export async function POST(req: NextRequest) {
   try {
     rawBody = await req.text();
     event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "Invalid Stripe webhook signature." },
       { status: 400 }
@@ -218,7 +280,108 @@ export async function POST(req: NextRequest) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         await updatePaymentByCheckoutSession(session);
-        await updateEntryCheckoutSession(session);
+        const paymentIntentId = extractPaymentIntentId(session.payment_intent);
+        const conditions: Prisma.PaymentWhereInput[] = [];
+        if (session.id) {
+          conditions.push({ stripeCheckoutSessionId: session.id });
+        }
+        if (paymentIntentId) {
+          conditions.push({ stripePaymentIntentId: paymentIntentId });
+        }
+        if (session.metadata?.paymentId) {
+          conditions.push({ id: session.metadata.paymentId });
+        }
+        if (conditions.length > 0) {
+          await markOrganizationOnboardingPaid({ OR: conditions });
+        }
+        const completedEntrySessions =
+          await finalizeEntryCheckoutSessionsFromStripeSession(session);
+        await Promise.all(
+          completedEntrySessions.map((entrySession) =>
+            logAuditAction({
+              action: "COMPETITION_ENTRY_PAYMENT_CONFIRMED",
+              actorType: "SYSTEM",
+              actorKey: "system:stripe_webhook",
+              targetType: "EntryCheckoutSession",
+              targetId: entrySession.id,
+              targetKey: `competition:${entrySession.competitionId}`,
+              metadata: {
+                entryCheckoutSessionId: entrySession.id,
+                entryId: entrySession.entryId,
+                competitionId: entrySession.competitionId,
+                stripeEventId: event.id,
+                stripeCheckoutSessionId: session.id ?? null,
+              },
+              result: "SUCCESS",
+            })
+          )
+        );
+        break;
+      }
+      /** 遅延決済が実際に成功したとき。completed 時点が unpaid だったエントリーはここで COMPLETED になる。 */
+      case "checkout.session.async_payment_succeeded": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        await updatePaymentByCheckoutSession(session);
+        const paymentIntentId = extractPaymentIntentId(session.payment_intent);
+        const conditions: Prisma.PaymentWhereInput[] = [];
+        if (session.id) {
+          conditions.push({ stripeCheckoutSessionId: session.id });
+        }
+        if (paymentIntentId) {
+          conditions.push({ stripePaymentIntentId: paymentIntentId });
+        }
+        if (session.metadata?.paymentId) {
+          conditions.push({ id: session.metadata.paymentId });
+        }
+        if (conditions.length > 0) {
+          await markOrganizationOnboardingPaid({ OR: conditions });
+        }
+        const asyncEntrySessions =
+          await finalizeEntryCheckoutSessionsFromStripeSession(session);
+        await Promise.all(
+          asyncEntrySessions.map((entrySession) =>
+            logAuditAction({
+              action: "COMPETITION_ENTRY_PAYMENT_CONFIRMED",
+              actorType: "SYSTEM",
+              actorKey: "system:stripe_webhook",
+              targetType: "EntryCheckoutSession",
+              targetId: entrySession.id,
+              targetKey: `competition:${entrySession.competitionId}`,
+              metadata: {
+                entryCheckoutSessionId: entrySession.id,
+                entryId: entrySession.entryId,
+                competitionId: entrySession.competitionId,
+                stripeEventId: event.id,
+                stripeCheckoutSessionId: session.id ?? null,
+                source: "checkout.session.async_payment_succeeded",
+              },
+              result: "SUCCESS",
+            })
+          )
+        );
+        break;
+      }
+      case "checkout.session.expired":
+      case "checkout.session.async_payment_failed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const paymentIntentId = extractPaymentIntentId(session.payment_intent);
+        const conditions: Prisma.PaymentWhereInput[] = [];
+        if (session.id) {
+          conditions.push({ stripeCheckoutSessionId: session.id });
+        }
+        if (paymentIntentId) {
+          conditions.push({ stripePaymentIntentId: paymentIntentId });
+        }
+        if (session.metadata?.paymentId) {
+          conditions.push({ id: session.metadata.paymentId });
+        }
+        if (conditions.length > 0) {
+          await prisma.payment.updateMany({
+            where: { OR: conditions },
+            data: { status: "FAILED" },
+          });
+        }
+        await expireEntryCheckoutSession(session);
         break;
       }
       case "payment_intent.succeeded": {
@@ -249,10 +412,7 @@ export async function POST(req: NextRequest) {
     await markStripeEventProcessed(record.id);
   } catch (error) {
     await markStripeEventFailed(record.id, error);
-    return NextResponse.json(
-      { error: "Failed to process Stripe webhook." },
-      { status: 500 }
-    );
+    return jsonInternalError500("POST api/webhooks/stripe/route.ts", error);
   }
 
   return NextResponse.json({ received: true });

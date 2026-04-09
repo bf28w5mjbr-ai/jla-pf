@@ -1,14 +1,37 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
+import { formatDateForDatetimeLocalInput } from "@/lib/datetimeLocal";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { Bold, Coins, Eye, Info, Plus, Trash2 } from "lucide-react";
+import {
+  competitionEventCategoryScopeLabel,
+  resolveCompetitionEventCategoryScope,
+} from "@/lib/competitionEventCategoryScope";
+import { cn } from "@/lib/utils";
+import {
+  buildEntryPeriodExtensionAnnouncement,
+  buildEventAddedAnnouncement,
+  buildEventSexOptionExpandAnnouncement,
+  buildQualificationRelaxAnnouncement,
+  eventSexOptionAddsGenders,
+  isPeriodShortening,
+  normalizeQualificationList,
+  PUBLISHED_ENTRY_PERIOD_SHORTEN_FORBIDDEN_MESSAGE,
+} from "@/lib/autoEntryChangeAnnouncement";
+import {
+  ENTRY_PLEDGE_TEXT_MAX_CHARS,
+  wrapMarkdownBoldAroundSelection,
+} from "@/lib/entryPledge";
+import SimpleMarkdown from "@/components/SimpleMarkdown";
 
 // デフォルト種目リスト
 const DEFAULT_EVENTS = {
@@ -50,29 +73,83 @@ const DEFAULT_EVENTS = {
   },
 };
 
+/** 種目設定カードのアンカー（クイックナビからジャンプ） */
+function eventSettingsCardDomId(eventId: string) {
+  return `ev-settings-${eventId}`;
+}
+
 type Event = {
   id: string;
   name: string;
-  sex: "MALE" | "FEMALE";
+  sex: "MALE" | "FEMALE" | "OTHER";
   type: "INDIVIDUAL" | "TEAM";
   category: "POOL" | "OCEAN";
   requiresEntryTime: boolean;
   displayOrder: number;
   minAge?: number | null;
   maxAge?: number | null;
+  /** 1レースあたりの最大レーン数（全ラウンド共通・プール／オーシャン） */
+  preliminaryHeatLaneCount?: number | null;
+  /** スタートリストのラウンド数（全ラウンドのタブ数） */
+  startListRoundCount?: number;
+  /** チーム種目: リレー等のポジション数 */
+  teamRelayPositionCount?: number | null;
+  /** チーム種目: ポジション名（JSON 配列） */
+  teamRelayPositionNames?: unknown;
 };
 
+function teamRelayStateKey(category: "POOL" | "OCEAN", eventName: string) {
+  return `${category}:${eventName}`;
+}
+
+function parseTeamRelayNamesFromEvent(e: Event): string[] {
+  const v = e.teamRelayPositionNames;
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((x): x is string => typeof x === "string")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function buildTeamRelayPositionsMap(evts: Event[]) {
+  const map: Record<string, { count: string; namesText: string }> = {};
+  for (const e of evts) {
+    if (e.type !== "TEAM") continue;
+    const k = teamRelayStateKey(e.category, e.name);
+    if (map[k]) continue;
+    const count =
+      typeof e.teamRelayPositionCount === "number" && e.teamRelayPositionCount >= 1
+        ? String(e.teamRelayPositionCount)
+        : "";
+    map[k] = { count, namesText: parseTeamRelayNamesFromEvent(e).join("\n") };
+  }
+  return map;
+}
+
+type SexOption = "BOTH" | "MALE_ONLY" | "FEMALE_ONLY" | "MIXED_ONLY";
+
 type EntryFee = {
-  baseFee: number;
-  multiEventSurcharge?: {
-    minEvents: number;
-    feePerEvent: number;
-  }[];
-  teamOnlyFee?: number;
+  individualEntryFee?: number;
+  teamEntryFeePerTeam?: number;
+  baseFee?: number;
 };
+
+export type EntrySettingsFocusSection =
+  | "period"
+  | "qualifications"
+  | "eligibility"
+  | "ageClub"
+  | "multiEvent"
+  | "events"
+  | "pledge";
 
 type EntrySettingsEditorProps = {
   competitionId: string;
+  /** 編集するブロック（項目別編集） */
+  focusSection: EntrySettingsFocusSection;
+  /** 公開済みかつエントリー成立済みのとき、延長・緩和・種目追加等で告知が必要 */
+  requiresParticipantNotice?: boolean;
+  isPublished?: boolean;
   initialData: {
     entryStartDate: Date | null;
     entryEndDate: Date | null;
@@ -80,33 +157,61 @@ type EntrySettingsEditorProps = {
     requiredQualifications?: string[] | null;
     participantEligibilityText?: string | null;
     allowMultipleEventEntries?: boolean | null;
+    maxEventEntriesPerPerson?: number | null;
     requireClubMembership?: boolean | null;
     minAge?: number | null;
     maxAge?: number | null;
+    competitionCategory?: string | null;
+    entryPledgeEnabled?: boolean | null;
+    entryPledgeText?: string | null;
+    entryPledgeLockNoOffer?: boolean | null;
   };
   initialEvents?: Event[];
   canEdit: boolean;
+  /** 保存成功後に親へ通知（エントリー設定の一覧へ戻す等） */
+  onSuccessfulSectionSave?: () => void;
 };
+
+function withOptionalAnnounce(
+  message: string | undefined,
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  return message && message.trim().length > 0
+    ? { ...payload, announcementMessage: message.trim() }
+    : payload;
+}
 
 export default function EntrySettingsEditor({
   competitionId,
+  focusSection,
+  requiresParticipantNotice = false,
+  isPublished = false,
   initialData,
   initialEvents = [],
   canEdit,
+  onSuccessfulSectionSave,
 }: EntrySettingsEditorProps) {
   const router = useRouter();
+  const notifySectionSaved = () => {
+    onSuccessfulSectionSave?.();
+  };
   const [entryStartDate, setEntryStartDate] = useState(
     initialData.entryStartDate
-      ? new Date(initialData.entryStartDate).toISOString().slice(0, 16)
+      ? formatDateForDatetimeLocalInput(new Date(initialData.entryStartDate))
       : ""
   );
   const [entryEndDate, setEntryEndDate] = useState(
     initialData.entryEndDate
-      ? new Date(initialData.entryEndDate).toISOString().slice(0, 16)
+      ? formatDateForDatetimeLocalInput(new Date(initialData.entryEndDate))
       : ""
   );
   const [allowMultipleEventEntries, setAllowMultipleEventEntries] = useState(
     initialData.allowMultipleEventEntries ?? true
+  );
+  const [maxEventEntriesPerPerson, setMaxEventEntriesPerPerson] = useState(
+    typeof initialData.maxEventEntriesPerPerson === "number"
+      ? initialData.maxEventEntriesPerPerson.toString()
+      : ""
   );
   const [requireClubMembership, setRequireClubMembership] = useState(
     initialData.requireClubMembership ?? false
@@ -119,11 +224,37 @@ export default function EntrySettingsEditor({
   );
   const [isUpdating, setIsUpdating] = useState(false);
 
+  const [entryPledgeEnabled, setEntryPledgeEnabled] = useState(
+    initialData.entryPledgeEnabled ?? false
+  );
+  const [entryPledgeText, setEntryPledgeText] = useState(
+    initialData.entryPledgeText ?? ""
+  );
+  const [isUpdatingPledge, setIsUpdatingPledge] = useState(false);
+  const pledgeTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const applyPledgeBold = useCallback(() => {
+    const el = pledgeTextareaRef.current;
+    if (!el || !canEdit) return;
+    const current = el.value;
+    const { value: next, caretStart, caretEnd } = wrapMarkdownBoldAroundSelection(
+      current,
+      el.selectionStart,
+      el.selectionEnd
+    );
+    flushSync(() => {
+      setEntryPledgeText(next);
+    });
+    el.focus();
+    el.setSelectionRange(caretStart, caretEnd);
+  }, [canEdit]);
+
+  const isSection = (s: EntrySettingsFocusSection) => focusSection === s;
+
   // 参加対象者
   const [participantEligibilityText, setParticipantEligibilityText] = useState(
     initialData.participantEligibilityText ?? ""
   );
-  const [isUpdatingEligibility, setIsUpdatingEligibility] = useState(false);
 
   // 出場に必要な資格（3種のみ）
   const allowedQualificationOptions = [
@@ -139,13 +270,15 @@ export default function EntrySettingsEditor({
   const [isUpdatingQualifications, setIsUpdatingQualifications] = useState(false);
   
   // エントリー費用設定
-  const [baseFee, setBaseFee] = useState(initialData.entryFee?.baseFee?.toString() || "");
-  const [teamOnlyFee, setTeamOnlyFee] = useState(initialData.entryFee?.teamOnlyFee?.toString() || "");
-  const [multiEventSurcharges, setMultiEventSurcharges] = useState<{minEvents: string; feePerEvent: string}[]>(
-    initialData.entryFee?.multiEventSurcharge?.map(d => ({
-      minEvents: d.minEvents.toString(),
-      feePerEvent: d.feePerEvent.toString()
-    })) || []
+  const [individualEntryFee, setIndividualEntryFee] = useState(
+    (
+      initialData.entryFee?.individualEntryFee ??
+      initialData.entryFee?.baseFee ??
+      0
+    ).toString()
+  );
+  const [teamEntryFeePerTeam, setTeamEntryFeePerTeam] = useState(
+    (initialData.entryFee?.teamEntryFeePerTeam ?? 0).toString()
   );
   const [isUpdatingFee, setIsUpdatingFee] = useState(false);
   
@@ -165,23 +298,146 @@ export default function EntrySettingsEditor({
       return map;
     }
   );
-  const [eventAgeSaveStatus, setEventAgeSaveStatus] = useState<Record<string, Date>>({});
-  const syncEvents = (updatedEvents: Event[]) => {
-    setEvents(updatedEvents);
-    const updatedMap: Record<string, { minAge: string; maxAge: string }> = {};
+  const [eventTableBulkSaveStatus, setEventTableBulkSaveStatus] = useState<Record<string, Date>>({});
+  const buildPreliminaryLanesMap = (evts: Event[]) => {
+    const map: Record<string, string> = {};
+    evts.forEach((e) => {
+      map[e.id] =
+        typeof e.preliminaryHeatLaneCount === "number"
+          ? String(e.preliminaryHeatLaneCount)
+          : "";
+    });
+    return map;
+  };
+
+  const buildStartListRoundCountsMap = (evts: Event[]) => {
+    const map: Record<string, string> = {};
+    evts.forEach((e) => {
+      const n =
+        typeof e.startListRoundCount === "number" && e.startListRoundCount >= 1
+          ? e.startListRoundCount
+          : 1;
+      map[e.id] = String(Math.min(32, n));
+    });
+    return map;
+  };
+
+  /** 種目の追加・削除などで一覧だけ更新するとき、入力中のレーン／ラウンドを消さない */
+  const mergePreliminaryLanesFromSync = (
+    prev: Record<string, string>,
+    updatedEvents: Event[]
+  ) => {
+    const surv = new Set(updatedEvents.map((e) => e.id));
+    const next = buildPreliminaryLanesMap(updatedEvents);
+    for (const id of Object.keys(prev)) {
+      if (surv.has(id)) next[id] = prev[id] as string;
+    }
+    return next;
+  };
+
+  const mergeStartListRoundCountsFromSync = (
+    prev: Record<string, string>,
+    updatedEvents: Event[]
+  ) => {
+    const surv = new Set(updatedEvents.map((e) => e.id));
+    const next = buildStartListRoundCountsMap(updatedEvents);
+    for (const id of Object.keys(prev)) {
+      if (surv.has(id)) next[id] = prev[id] as string;
+    }
+    return next;
+  };
+
+  const mergeEventAgeRangesFromSync = (
+    prev: Record<string, { minAge: string; maxAge: string }>,
+    updatedEvents: Event[]
+  ) => {
+    const next: Record<string, { minAge: string; maxAge: string }> = {};
     updatedEvents.forEach((event) => {
-      if (!updatedMap[event.name]) {
-        updatedMap[event.name] = {
+      if (next[event.name]) return;
+      const kept = prev[event.name];
+      if (kept) {
+        next[event.name] = { ...kept };
+      } else {
+        next[event.name] = {
           minAge: typeof event.minAge === "number" ? event.minAge.toString() : "",
           maxAge: typeof event.maxAge === "number" ? event.maxAge.toString() : "",
         };
       }
     });
-    setEventAgeRanges(updatedMap);
+    return next;
   };
 
-  const clearEventAgeSaveStatus = (key: string) => {
-    setEventAgeSaveStatus((prev) => {
+  const mergeTeamRelayPositionsFromSync = (
+    prev: Record<string, { count: string; namesText: string }>,
+    updatedEvents: Event[]
+  ) => {
+    const next = buildTeamRelayPositionsMap(updatedEvents);
+    for (const key of Object.keys(prev)) {
+      const stillThere = updatedEvents.some(
+        (e) => e.type === "TEAM" && teamRelayStateKey(e.category, e.name) === key
+      );
+      if (stillThere) next[key] = prev[key] as { count: string; namesText: string };
+    }
+    return next;
+  };
+
+  const eventSiblingsFor = (
+    name: string,
+    type: "INDIVIDUAL" | "TEAM",
+    category: "POOL" | "OCEAN"
+  ) =>
+    events
+      .filter((e) => e.category === category && e.type === type && e.name === name)
+      .slice()
+      .sort((a, b) => {
+        if (a.displayOrder !== b.displayOrder) {
+          return a.displayOrder - b.displayOrder;
+        }
+        return a.sex === "MALE" ? -1 : 1;
+      });
+  const [eventPreliminaryLanes, setEventPreliminaryLanes] = useState<Record<string, string>>(
+    () => buildPreliminaryLanesMap(initialEvents)
+  );
+  const [eventStartListRoundCounts, setEventStartListRoundCounts] = useState<
+    Record<string, string>
+  >(() => buildStartListRoundCountsMap(initialEvents));
+  const [eventTeamRelayPositions, setEventTeamRelayPositions] = useState<
+    Record<string, { count: string; namesText: string }>
+  >(() => buildTeamRelayPositionsMap(initialEvents));
+  const [bulkUpdatingEventSection, setBulkUpdatingEventSection] = useState<string | null>(null);
+  const [bulkSavingAllEventTables, setBulkSavingAllEventTables] = useState(false);
+  type SyncEventsOptions = {
+    /** 保存直後の再取得など、サーバー値でフォームを上書きするとき true */
+    resetEventTableForm?: boolean;
+  };
+
+  const syncEvents = (updatedEvents: Event[], options?: SyncEventsOptions) => {
+    setEvents(updatedEvents);
+    if (options?.resetEventTableForm) {
+      const updatedMap: Record<string, { minAge: string; maxAge: string }> = {};
+      updatedEvents.forEach((event) => {
+        if (!updatedMap[event.name]) {
+          updatedMap[event.name] = {
+            minAge: typeof event.minAge === "number" ? event.minAge.toString() : "",
+            maxAge: typeof event.maxAge === "number" ? event.maxAge.toString() : "",
+          };
+        }
+      });
+      setEventAgeRanges(updatedMap);
+      setEventPreliminaryLanes(buildPreliminaryLanesMap(updatedEvents));
+      setEventStartListRoundCounts(buildStartListRoundCountsMap(updatedEvents));
+      setEventTeamRelayPositions(buildTeamRelayPositionsMap(updatedEvents));
+      return;
+    }
+
+    setEventAgeRanges((prev) => mergeEventAgeRangesFromSync(prev, updatedEvents));
+    setEventPreliminaryLanes((prev) => mergePreliminaryLanesFromSync(prev, updatedEvents));
+    setEventStartListRoundCounts((prev) => mergeStartListRoundCountsFromSync(prev, updatedEvents));
+    setEventTeamRelayPositions((prev) => mergeTeamRelayPositionsFromSync(prev, updatedEvents));
+  };
+
+  const clearEventTableBulkSaveStatus = (key: string) => {
+    setEventTableBulkSaveStatus((prev) => {
       if (!prev[key]) return prev;
       const next = { ...prev };
       delete next[key];
@@ -189,21 +445,6 @@ export default function EntrySettingsEditor({
     });
   };
 
-  const getAgePreview = (eventName: string) => {
-    const range = eventAgeRanges[eventName] || { minAge: "", maxAge: "" };
-    const minValue = range.minAge.trim();
-    const maxValue = range.maxAge.trim();
-    if (!minValue && !maxValue) {
-      return { label: "未設定", isUnset: true };
-    }
-    if (minValue && maxValue) {
-      return { label: `${minValue}〜${maxValue}歳`, isUnset: false };
-    }
-    if (minValue) {
-      return { label: `${minValue}歳以上`, isUnset: false };
-    }
-    return { label: `${maxValue}歳以下`, isUnset: false };
-  };
   const [poolIndividualName, setPoolIndividualName] = useState("");
   const [poolTeamName, setPoolTeamName] = useState("");
   const [oceanIndividualName, setOceanIndividualName] = useState("");
@@ -216,35 +457,232 @@ export default function EntrySettingsEditor({
   const [poolTeamError, setPoolTeamError] = useState<string | null>(null);
   const [oceanIndividualError, setOceanIndividualError] = useState<string | null>(null);
   const [oceanTeamError, setOceanTeamError] = useState<string | null>(null);
+  const [updatingEventSexOptions, setUpdatingEventSexOptions] = useState<Record<string, boolean>>({});
 
   // デフォルト種目追加のローディング状態
   const [isAddingDefaultEvents, setIsAddingDefaultEvents] = useState<string | null>(null);
 
-  // Category selection state
-  const [selectedCategory, setSelectedCategory] = useState<"POOL" | "OCEAN">("POOL");
+  const categoryScope = resolveCompetitionEventCategoryScope(
+    initialData.competitionCategory
+  );
+  const hasTeamEvents = events.some((event) => event.type === "TEAM");
+  const hasIndividualEvents = events.some((event) => event.type === "INDIVIDUAL");
+  const selectedCategory: "POOL" | "OCEAN" =
+    categoryScope === "OCEAN_ONLY" ? "OCEAN" : "POOL";
+  const categoryMeta =
+    selectedCategory === "POOL"
+      ? {
+          title: "種目設定（プール）",
+          shortHint: "エントリー時は種目ごとのタイム入力が必要です。",
+          toneClass: "border-orange-200/70",
+        }
+      : {
+          title: "種目設定（オーシャン）",
+          shortHint: "エントリーは種目の選択のみです（タイム入力なし）。",
+          toneClass: "border-cyan-200/70",
+        };
+
+  const sexOptionLabel = (sexOption: SexOption) => {
+    if (sexOption === "MALE_ONLY") return "男子";
+    if (sexOption === "FEMALE_ONLY") return "女子";
+    if (sexOption === "MIXED_ONLY") return "混合";
+    return "男子・女子";
+  };
+
+  const renderSexOptionButtons = (
+    value: SexOption,
+    onChange: (next: SexOption) => void,
+    disabled: boolean,
+    compact = false
+  ) => {
+    const options: { value: SexOption; label: string }[] = [
+      { value: "BOTH", label: "男女" },
+      { value: "MALE_ONLY", label: "男" },
+      { value: "FEMALE_ONLY", label: "女" },
+      { value: "MIXED_ONLY", label: "混" },
+    ];
+    return (
+      <div
+        className={`inline-flex items-center rounded-md border border-input bg-background p-1 ${
+          compact ? "h-8" : "h-10"
+        }`}
+      >
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            disabled={disabled}
+            className={`rounded px-2 py-1 transition ${
+              compact ? "text-[11px]" : "text-xs"
+            } ${
+              value === option.value
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  const getEventGenderLabel = (
+    eventName: string,
+    category: "POOL" | "OCEAN",
+    type: "INDIVIDUAL" | "TEAM"
+  ) => {
+    const sexes = new Set(
+      events
+        .filter(
+          (event) =>
+            event.name === eventName &&
+            event.category === category &&
+            event.type === type
+        )
+        .map((event) => event.sex)
+    );
+    if (sexes.has("MALE") && sexes.has("FEMALE")) return "（男女）";
+    if (sexes.has("OTHER")) return "（混合）";
+    if (sexes.has("MALE")) return "（男子）";
+    if (sexes.has("FEMALE")) return "（女子）";
+    return "";
+  };
+
+  const getEventSexOption = (
+    eventName: string,
+    category: "POOL" | "OCEAN",
+    type: "INDIVIDUAL" | "TEAM"
+  ): SexOption => {
+    const sexes = new Set(
+      events
+        .filter(
+          (event) =>
+            event.name === eventName &&
+            event.category === category &&
+            event.type === type
+        )
+        .map((event) => event.sex)
+    );
+    if (sexes.has("OTHER")) return "MIXED_ONLY";
+    if (sexes.has("MALE") && sexes.has("FEMALE")) return "BOTH";
+    if (sexes.has("MALE")) return "MALE_ONLY";
+    if (sexes.has("FEMALE")) return "FEMALE_ONLY";
+    return "BOTH";
+  };
+
+  const makeEventSexOptionKey = (event: Event) =>
+    `${event.category}-${event.type}-${event.name}`;
+
+  const handleUpdateEventSexOption = async (
+    event: Event,
+    nextSexOption: SexOption
+  ) => {
+    const currentSexOption = getEventSexOption(event.name, event.category, event.type);
+    if (currentSexOption === nextSexOption) return;
+
+    const sexSetForOption = (option: SexOption): Set<"MALE" | "FEMALE" | "OTHER"> => {
+      if (option === "MALE_ONLY") return new Set(["MALE"]);
+      if (option === "FEMALE_ONLY") return new Set(["FEMALE"]);
+      if (option === "MIXED_ONLY") return new Set(["OTHER"]);
+      return new Set(["MALE", "FEMALE"]);
+    };
+    const currentSet = sexSetForOption(currentSexOption);
+    const nextSet = sexSetForOption(nextSexOption);
+    const needsRemoval = [...currentSet].some((sex) => !nextSet.has(sex));
+
+    if (
+      needsRemoval &&
+      !confirm("性別区分を変更すると、対象性別の既存設定が削除される場合があります。続行しますか？")
+    ) {
+      return;
+    }
+
+    const key = makeEventSexOptionKey(event);
+    setUpdatingEventSexOptions((prev) => ({ ...prev, [key]: true }));
+
+    try {
+      const addsGenders = eventSexOptionAddsGenders(events, event, nextSexOption);
+      const announce = addsGenders
+        ? buildEventSexOptionExpandAnnouncement(event.name, requiresParticipantNotice)
+        : undefined;
+      const response = await fetch(
+        `/api/competitions/${competitionId}/events/${event.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            withOptionalAnnounce(announce, {
+              sexOption: nextSexOption,
+            })
+          ),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "種目性別の更新に失敗しました");
+      }
+
+      const { events: updatedEvents } = await response.json();
+      syncEvents(updatedEvents);
+      toast.success(`「${event.name}」の性別区分を${sexOptionLabel(nextSexOption)}に変更しました`);
+      router.refresh();
+    } catch (error) {
+      console.error("種目性別更新エラー:", error);
+      toast.error(
+        error instanceof Error ? error.message : "種目性別の更新に失敗しました"
+      );
+    } finally {
+      setUpdatingEventSexOptions((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  };
 
   // デフォルト種目を一括追加
-  const handleAddDefaultEvents = async (category: "POOL" | "OCEAN", type: "INDIVIDUAL" | "TEAM") => {
+  const handleAddDefaultEvents = async (
+    category: "POOL" | "OCEAN",
+    type: "INDIVIDUAL" | "TEAM",
+    sexOption: SexOption = "BOTH"
+  ) => {
     const loadingKey = `${category}-${type}`;
     setIsAddingDefaultEvents(loadingKey);
     const defaultEventNames = DEFAULT_EVENTS[category][type];
-    const existingEventNames = new Set(
-      events
-        .filter(e => e.category === category && e.type === type)
-        .map(e => e.name)
-    );
+    const requestedSexes: Array<"MALE" | "FEMALE" | "OTHER"> =
+      sexOption === "MALE_ONLY"
+        ? ["MALE"]
+        : sexOption === "FEMALE_ONLY"
+          ? ["FEMALE"]
+          : sexOption === "MIXED_ONLY"
+            ? ["OTHER"]
+            : ["MALE", "FEMALE"];
 
-    const newEventNames = defaultEventNames.filter(name => !existingEventNames.has(name));
+    const categoryEvents = events.filter((e) => e.category === category && e.type === type);
+    const newEventNames = defaultEventNames.filter((name) => {
+      const sameNameEvents = categoryEvents.filter((event) => event.name === name);
+      if (sameNameEvents.length === 0) return true;
+      const existingSexes = new Set(sameNameEvents.map((event) => event.sex));
+      return requestedSexes.some((sex) => !existingSexes.has(sex));
+    });
 
     if (newEventNames.length === 0) {
-      toast.info("すべてのデフォルト種目は既に登録されています");
+      toast.info(
+        `${category === "POOL" ? "プール" : "オーシャン"}${
+          type === "INDIVIDUAL" ? "個人" : "チーム"
+        }種目は、選択中の性別（${sexOptionLabel(sexOption)}）で既に登録済みです`
+      );
+      setIsAddingDefaultEvents(null);
       return;
     }
 
     const categoryLabel = category === "POOL" ? "プール" : "オーシャン";
     const typeLabel = type === "INDIVIDUAL" ? "個人" : "チーム";
     
-    toast.loading(`${categoryLabel}${typeLabel}種目を追加中...`);
+    const loadingToastId = toast.loading(`${categoryLabel}${typeLabel}種目を追加中...`);
 
     try {
       let successCount = 0;
@@ -256,11 +694,17 @@ export default function EntrySettingsEditor({
           const response = await fetch(`/api/competitions/${competitionId}/events`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              name: eventName,
-              type,
-              category,
-            }),
+            body: JSON.stringify(
+              withOptionalAnnounce(
+                buildEventAddedAnnouncement(eventName, requiresParticipantNotice),
+                {
+                  name: eventName,
+                  type,
+                  category,
+                  sexOption,
+                }
+              )
+            ),
           });
 
           if (response.ok) {
@@ -282,19 +726,20 @@ export default function EntrySettingsEditor({
         const { events: updatedEvents } = await response.json();
         syncEvents(updatedEvents);
         
-        toast.dismiss();
+        toast.dismiss(loadingToastId);
         if (errorCount === 0) {
-          toast.success(`${categoryLabel}${typeLabel}種目のデフォルト種目を追加しました（${successCount}件）`);
+          toast.success(`${categoryLabel}${typeLabel}種目を追加しました（${sexOptionLabel(sexOption)} / ${successCount}件）`);
         } else {
           toast.warning(`${successCount}件追加、${errorCount}件失敗しました`);
         }
+        router.refresh();
       } else {
-        toast.dismiss();
+        toast.dismiss(loadingToastId);
         toast.error("種目一覧の更新に失敗しました");
       }
     } catch (error) {
       console.error("デフォルト種目追加エラー:", error);
-      toast.dismiss();
+      toast.dismiss(loadingToastId);
       toast.error("デフォルト種目の追加に失敗しました");
     } finally {
       setIsAddingDefaultEvents(null);
@@ -304,8 +749,9 @@ export default function EntrySettingsEditor({
   // 種目を一括削除
   const handleDeleteAllEvents = async (category: "POOL" | "OCEAN", type: "INDIVIDUAL" | "TEAM") => {
     const targetEvents = events.filter(e => e.category === category && e.type === type);
+    const uniqueNames = Array.from(new Set(targetEvents.map(e => e.name)));
     
-    if (targetEvents.length === 0) {
+    if (uniqueNames.length === 0) {
       toast.info("削除する種目がありません");
       return;
     }
@@ -313,7 +759,7 @@ export default function EntrySettingsEditor({
     const categoryLabel = category === "POOL" ? "プール" : "オーシャン";
     const typeLabel = type === "INDIVIDUAL" ? "個人" : "チーム";
     
-    if (!confirm(`${categoryLabel}${typeLabel}種目をすべて削除しますか？（${targetEvents.length}件）\n\nこの操作は取り消せません。`)) {
+    if (!confirm(`${categoryLabel}${typeLabel}種目をすべて削除しますか？（${uniqueNames.length}種目）\n\nこの操作は取り消せません。`)) {
       return;
     }
 
@@ -323,9 +769,7 @@ export default function EntrySettingsEditor({
       let successCount = 0;
       let errorCount = 0;
 
-      // 各種目を削除（男女ペアごとに削除）
-      const uniqueNames = Array.from(new Set(targetEvents.map(e => e.name)));
-      
+      // 各種目名ごとに削除（性別が複数あってもまとめて削除）
       for (const name of uniqueNames) {
         const eventToDelete = targetEvents.find(e => e.name === name);
         if (!eventToDelete) continue;
@@ -360,6 +804,7 @@ export default function EntrySettingsEditor({
         } else {
           toast.warning(`${successCount}件削除、${errorCount}件失敗しました`);
         }
+        router.refresh();
       } else {
         toast.dismiss();
         toast.error("種目一覧の更新に失敗しました");
@@ -371,65 +816,214 @@ export default function EntrySettingsEditor({
     }
   };
 
-  const handleSubmit = async (e?: React.SyntheticEvent) => {
-    e?.preventDefault?.();
-
+  const handleSavePeriod = async () => {
     if (!entryStartDate || !entryEndDate) {
       toast.error("エントリー期間を入力してください");
       return;
     }
-
     if (new Date(entryStartDate) > new Date(entryEndDate)) {
       toast.error("エントリー終了日時はエントリー開始日時より後にしてください");
       return;
     }
+    if (
+      isPublished &&
+      isPeriodShortening(
+        initialData.entryStartDate,
+        initialData.entryEndDate,
+        new Date(entryStartDate),
+        new Date(entryEndDate)
+      )
+    ) {
+      toast.error(PUBLISHED_ENTRY_PERIOD_SHORTEN_FORBIDDEN_MESSAGE);
+      return;
+    }
+    const announce = buildEntryPeriodExtensionAnnouncement(
+      initialData.entryStartDate,
+      initialData.entryEndDate,
+      entryStartDate,
+      entryEndDate,
+      requiresParticipantNotice
+    );
+    setIsUpdating(true);
+    try {
+      const response = await fetch(`/api/competitions/${competitionId}/entry-settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          withOptionalAnnounce(announce, {
+            entryStartDate,
+            entryEndDate,
+          })
+        ),
+      });
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        const msg =
+          typeof errBody === "object" &&
+          errBody !== null &&
+          "message" in errBody &&
+          typeof (errBody as { message: unknown }).message === "string"
+            ? (errBody as { message: string }).message
+            : "エントリー期間の更新に失敗しました";
+        toast.error(msg);
+        return;
+      }
+      toast.success("エントリー期間を更新しました");
+      router.refresh();
+      notifySectionSaved();
+    } catch (error) {
+      console.error("エントリー期間の更新エラー:", error);
+      toast.error(error instanceof Error ? error.message : "エントリー期間の更新に失敗しました");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
+  const handleSaveAgeClub = async () => {
     const minAgeValue = competitionMinAge.trim() === "" ? null : Number(competitionMinAge);
     const maxAgeValue = competitionMaxAge.trim() === "" ? null : Number(competitionMaxAge);
-
     if (minAgeValue !== null && (Number.isNaN(minAgeValue) || minAgeValue < 0)) {
       toast.error("最小年齢は0以上の数値で入力してください");
       return;
     }
-
     if (maxAgeValue !== null && (Number.isNaN(maxAgeValue) || maxAgeValue < 0)) {
       toast.error("最大年齢は0以上の数値で入力してください");
       return;
     }
-
     if (minAgeValue !== null && maxAgeValue !== null && minAgeValue > maxAgeValue) {
       toast.error("最小年齢は最大年齢以下にしてください");
       return;
     }
-
     setIsUpdating(true);
-
     try {
       const response = await fetch(`/api/competitions/${competitionId}/entry-settings`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          entryStartDate,
-          entryEndDate,
-          allowMultipleEventEntries,
           requireClubMembership,
           minAge: minAgeValue,
           maxAge: maxAgeValue,
         }),
       });
-
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || "エントリー設定の更新に失敗しました");
+        throw new Error(error.message || "年齢・所属クラブ設定の更新に失敗しました");
       }
-
-      toast.success("エントリー設定を更新しました");
+      toast.success("年齢・所属クラブを更新しました");
       router.refresh();
+      notifySectionSaved();
     } catch (error) {
-      console.error("エントリー設定の更新エラー:", error);
-      toast.error(error instanceof Error ? error.message : "エントリー設定の更新に失敗しました");
+      console.error("年齢・所属クラブの更新エラー:", error);
+      toast.error(
+        error instanceof Error ? error.message : "年齢・所属クラブ設定の更新に失敗しました"
+      );
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleSaveMultiEvent = async () => {
+    const maxEventEntriesValue =
+      maxEventEntriesPerPerson.trim() === "" ? null : Number(maxEventEntriesPerPerson);
+    if (
+      maxEventEntriesValue !== null &&
+      (!Number.isInteger(maxEventEntriesValue) || maxEventEntriesValue < 1)
+    ) {
+      toast.error("エントリー可能種目数の上限は1以上の整数で入力してください");
+      return;
+    }
+    setIsUpdating(true);
+    try {
+      const response = await fetch(`/api/competitions/${competitionId}/entry-settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          allowMultipleEventEntries,
+          maxEventEntriesPerPerson: allowMultipleEventEntries ? maxEventEntriesValue : 1,
+        }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "種目エントリー数の更新に失敗しました");
+      }
+      toast.success("種目エントリー数の設定を更新しました");
+      router.refresh();
+      notifySectionSaved();
+    } catch (error) {
+      console.error("種目エントリー数の更新エラー:", error);
+      toast.error(
+        error instanceof Error ? error.message : "種目エントリー数の更新に失敗しました"
+      );
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleSavePledge = async () => {
+    if (entryPledgeEnabled && !entryPledgeText.trim()) {
+      toast.error("誓約を有効にする場合は誓約文を入力してください");
+      return;
+    }
+    if (entryPledgeText.length > ENTRY_PLEDGE_TEXT_MAX_CHARS) {
+      toast.error(`誓約文は${ENTRY_PLEDGE_TEXT_MAX_CHARS}文字以内にしてください`);
+      return;
+    }
+    setIsUpdatingPledge(true);
+    try {
+      const response = await fetch(`/api/competitions/${competitionId}/entry-settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entryPledgeEnabled,
+          entryPledgeText: entryPledgeText.trim(),
+        }),
+      });
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        const msg =
+          typeof errBody === "object" &&
+          errBody !== null &&
+          "message" in errBody &&
+          typeof (errBody as { message: unknown }).message === "string"
+            ? (errBody as { message: string }).message
+            : "誓約設定の更新に失敗しました";
+        toast.error(msg);
+        return;
+      }
+      toast.success("誓約設定を更新しました");
+      router.refresh();
+      notifySectionSaved();
+    } catch (error) {
+      console.error("誓約設定の更新エラー:", error);
+      toast.error(error instanceof Error ? error.message : "誓約設定の更新に失敗しました");
+    } finally {
+      setIsUpdatingPledge(false);
+    }
+  };
+
+  const handleSaveEligibility = async () => {
+    setIsUpdating(true);
+    try {
+      const eligibilityResponse = await fetch(
+        `/api/competitions/${competitionId}/participant-eligibility`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            participantEligibilityText,
+          }),
+        }
+      );
+      if (!eligibilityResponse.ok) {
+        const error = await eligibilityResponse.json();
+        throw new Error(error.message || "参加対象者の更新に失敗しました");
+      }
+      toast.success("参加対象者の説明を更新しました");
+      router.refresh();
+      notifySectionSaved();
+    } catch (error) {
+      console.error("参加対象者の更新エラー:", error);
+      toast.error(error instanceof Error ? error.message : "参加対象者の更新に失敗しました");
     } finally {
       setIsUpdating(false);
     }
@@ -437,34 +1031,22 @@ export default function EntrySettingsEditor({
 
   // エントリー費用更新
   const handleUpdateEntryFee = async () => {
-    const baseFeeNum = parseFloat(baseFee);
-    if (isNaN(baseFeeNum) || baseFeeNum < 0) {
-      toast.error("基本料金を正しく入力してください");
+    if (!hasIndividualEvents && !hasTeamEvents) {
+      toast.error("種目を登録してから参加費を設定してください");
       return;
     }
 
-    // 複数種目割増のバリデーション
-    const surcharges = multiEventSurcharges
-      .filter(d => d.minEvents && d.feePerEvent)
-      .map(d => ({
-        minEvents: parseInt(d.minEvents),
-        feePerEvent: parseFloat(d.feePerEvent)
-      }));
-
-    for (const surcharge of surcharges) {
-      if (isNaN(surcharge.minEvents) || surcharge.minEvents < 2) {
-        toast.error("複数種目割増は2種目以上で設定してください");
-        return;
-      }
-      if (isNaN(surcharge.feePerEvent) || surcharge.feePerEvent < 0) {
-        toast.error("1種目あたりの料金を正しく入力してください");
-        return;
-      }
+    const individualEntryFeeNum = hasIndividualEvents
+      ? parseFloat(individualEntryFee)
+      : 0;
+    if (hasIndividualEvents && (isNaN(individualEntryFeeNum) || individualEntryFeeNum < 0)) {
+      toast.error("個人エントリー料金を正しく入力してください");
+      return;
     }
 
-    const teamOnlyFeeNum = teamOnlyFee ? parseFloat(teamOnlyFee) : undefined;
-    if (teamOnlyFee && (isNaN(teamOnlyFeeNum!) || teamOnlyFeeNum! < 0)) {
-      toast.error("チーム種目のみ料金を正しく入力してください");
+    const teamEntryFeePerTeamNum = hasTeamEvents ? parseFloat(teamEntryFeePerTeam) : 0;
+    if (hasTeamEvents && (isNaN(teamEntryFeePerTeamNum) || teamEntryFeePerTeamNum < 0)) {
+      toast.error("チーム種目の1チームあたり料金を正しく入力してください");
       return;
     }
 
@@ -477,9 +1059,8 @@ export default function EntrySettingsEditor({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          baseFee: baseFeeNum,
-          multiEventSurcharge: surcharges.length > 0 ? surcharges : undefined,
-          teamOnlyFee: teamOnlyFeeNum,
+          individualEntryFee: individualEntryFeeNum,
+          teamEntryFeePerTeam: teamEntryFeePerTeamNum,
         }),
       });
 
@@ -489,52 +1070,13 @@ export default function EntrySettingsEditor({
       }
 
       toast.success("エントリー費用設定を更新しました");
+      router.refresh();
+      notifySectionSaved();
     } catch (error) {
       console.error("エントリー費用設定の更新エラー:", error);
       toast.error(error instanceof Error ? error.message : "エントリー費用設定の更新に失敗しました");
     } finally {
       setIsUpdatingFee(false);
-    }
-  };
-
-  const handleUpdateEligibility = async () => {
-    setIsUpdatingEligibility(true);
-
-    try {
-      const response = await fetch(
-        `/api/competitions/${competitionId}/participant-eligibility`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            participantEligibilityText,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "参加対象者の更新に失敗しました");
-      }
-
-      const data = await response.json();
-      if (typeof data.participantEligibilityText === "string") {
-        setParticipantEligibilityText(data.participantEligibilityText);
-      } else if (data.participantEligibilityText === null) {
-        setParticipantEligibilityText("");
-      }
-
-      toast.success("参加対象者を更新しました");
-      router.refresh();
-    } catch (error) {
-      console.error("参加対象者の更新エラー:", error);
-      toast.error(
-        error instanceof Error ? error.message : "参加対象者の更新に失敗しました"
-      );
-    } finally {
-      setIsUpdatingEligibility(false);
     }
   };
 
@@ -550,6 +1092,12 @@ export default function EntrySettingsEditor({
     setIsUpdatingQualifications(true);
 
     try {
+      const baseline = normalizeQualificationList(initialData.requiredQualifications);
+      const announce = buildQualificationRelaxAnnouncement(
+        baseline,
+        requiredQualifications,
+        requiresParticipantNotice
+      );
       const response = await fetch(
         `/api/competitions/${competitionId}/entry-qualifications`,
         {
@@ -557,7 +1105,11 @@ export default function EntrySettingsEditor({
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ requiredQualifications }),
+          body: JSON.stringify(
+            withOptionalAnnounce(announce, {
+              requiredQualifications,
+            })
+          ),
         }
       );
 
@@ -573,6 +1125,7 @@ export default function EntrySettingsEditor({
 
       toast.success("出場に必要な資格を更新しました");
       router.refresh();
+      notifySectionSaved();
     } catch (error) {
       console.error("必要資格の更新エラー:", error);
       toast.error(
@@ -598,11 +1151,17 @@ export default function EntrySettingsEditor({
       const response = await fetch(`/api/competitions/${competitionId}/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: poolIndividualName.trim(),
-          type: "INDIVIDUAL",
-          category: "POOL",
-        }),
+        body: JSON.stringify(
+          withOptionalAnnounce(
+            buildEventAddedAnnouncement(poolIndividualName.trim(), requiresParticipantNotice),
+            {
+              name: poolIndividualName.trim(),
+              type: "INDIVIDUAL",
+              category: "POOL",
+              sexOption: "BOTH",
+            }
+          )
+        ),
       });
 
       if (!response.ok) {
@@ -613,8 +1172,10 @@ export default function EntrySettingsEditor({
 
       const { events: newEvents } = await response.json();
       syncEvents(newEvents);
+      const addedName = poolIndividualName.trim();
       setPoolIndividualName("");
-      toast.success(`プール個人種目「${poolIndividualName}」を追加しました（男子・女子）`);
+      toast.success(`プール個人種目「${addedName}」を追加しました（${sexOptionLabel("BOTH")}）`);
+      router.refresh();
     } catch (error) {
       console.error("種目追加エラー:", error);
       setPoolIndividualError(error instanceof Error ? error.message : "種目の追加に失敗しました");
@@ -638,11 +1199,17 @@ export default function EntrySettingsEditor({
       const response = await fetch(`/api/competitions/${competitionId}/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: poolTeamName.trim(),
-          type: "TEAM",
-          category: "POOL",
-        }),
+        body: JSON.stringify(
+          withOptionalAnnounce(
+            buildEventAddedAnnouncement(poolTeamName.trim(), requiresParticipantNotice),
+            {
+              name: poolTeamName.trim(),
+              type: "TEAM",
+              category: "POOL",
+              sexOption: "BOTH",
+            }
+          )
+        ),
       });
 
       if (!response.ok) {
@@ -653,8 +1220,10 @@ export default function EntrySettingsEditor({
 
       const { events: newEvents } = await response.json();
       syncEvents(newEvents);
+      const addedName = poolTeamName.trim();
       setPoolTeamName("");
-      toast.success(`プールチーム種目「${poolTeamName}」を追加しました（男子・女子）`);
+      toast.success(`プールチーム種目「${addedName}」を追加しました（${sexOptionLabel("BOTH")}）`);
+      router.refresh();
     } catch (error) {
       console.error("種目追加エラー:", error);
       setPoolTeamError(error instanceof Error ? error.message : "種目の追加に失敗しました");
@@ -678,11 +1247,17 @@ export default function EntrySettingsEditor({
       const response = await fetch(`/api/competitions/${competitionId}/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: oceanIndividualName.trim(),
-          type: "INDIVIDUAL",
-          category: "OCEAN",
-        }),
+        body: JSON.stringify(
+          withOptionalAnnounce(
+            buildEventAddedAnnouncement(oceanIndividualName.trim(), requiresParticipantNotice),
+            {
+              name: oceanIndividualName.trim(),
+              type: "INDIVIDUAL",
+              category: "OCEAN",
+              sexOption: "BOTH",
+            }
+          )
+        ),
       });
 
       if (!response.ok) {
@@ -693,8 +1268,10 @@ export default function EntrySettingsEditor({
 
       const { events: newEvents } = await response.json();
       syncEvents(newEvents);
+      const addedName = oceanIndividualName.trim();
       setOceanIndividualName("");
-      toast.success(`オーシャン個人種目「${oceanIndividualName}」を追加しました（男子・女子）`);
+      toast.success(`オーシャン個人種目「${addedName}」を追加しました（${sexOptionLabel("BOTH")}）`);
+      router.refresh();
     } catch (error) {
       console.error("種目追加エラー:", error);
       setOceanIndividualError(error instanceof Error ? error.message : "種目の追加に失敗しました");
@@ -718,11 +1295,17 @@ export default function EntrySettingsEditor({
       const response = await fetch(`/api/competitions/${competitionId}/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: oceanTeamName.trim(),
-          type: "TEAM",
-          category: "OCEAN",
-        }),
+        body: JSON.stringify(
+          withOptionalAnnounce(
+            buildEventAddedAnnouncement(oceanTeamName.trim(), requiresParticipantNotice),
+            {
+              name: oceanTeamName.trim(),
+              type: "TEAM",
+              category: "OCEAN",
+              sexOption: "BOTH",
+            }
+          )
+        ),
       });
 
       if (!response.ok) {
@@ -733,8 +1316,10 @@ export default function EntrySettingsEditor({
 
       const { events: newEvents } = await response.json();
       syncEvents(newEvents);
+      const addedName = oceanTeamName.trim();
       setOceanTeamName("");
-      toast.success(`オーシャンチーム種目「${oceanTeamName}」を追加しました（男子・女子）`);
+      toast.success(`オーシャンチーム種目「${addedName}」を追加しました（${sexOptionLabel("BOTH")}）`);
+      router.refresh();
     } catch (error) {
       console.error("種目追加エラー:", error);
       setOceanTeamError(error instanceof Error ? error.message : "種目の追加に失敗しました");
@@ -743,98 +1328,329 @@ export default function EntrySettingsEditor({
     }
   };
 
-  const handleBulkUpdateEventAgeRanges = async (
+  const getEventTableSectionTargets = (
     category: "POOL" | "OCEAN",
     type: "INDIVIDUAL" | "TEAM"
   ) => {
-    const targetEvents = Array.from(
+    const ageTargets = Array.from(
       new Map(
         events
           .filter((event) => event.category === category && event.type === type)
           .map((event) => [event.name, event])
       ).values()
     );
+    const rowTargets = events.filter((e) => e.category === category && e.type === type);
+    return { ageTargets, rowTargets, sectionKey: `${category}-${type}` as const };
+  };
 
-    if (targetEvents.length === 0) {
-      toast.info("対象の種目がありません");
-      return;
+  type EventTableValidate =
+    | { ok: true }
+    | { ok: false; reason: "empty" }
+    | { ok: false; message: string };
+
+  const validateEventTableSection = (
+    category: "POOL" | "OCEAN",
+    type: "INDIVIDUAL" | "TEAM"
+  ): EventTableValidate => {
+    const { ageTargets, rowTargets } = getEventTableSectionTargets(category, type);
+    if (rowTargets.length === 0) {
+      return { ok: false, reason: "empty" };
     }
 
-    for (const event of targetEvents) {
+    for (const event of ageTargets) {
       const range = eventAgeRanges[event.name] || { minAge: "", maxAge: "" };
       const minAgeValue = range.minAge.trim() === "" ? null : Number(range.minAge);
       const maxAgeValue = range.maxAge.trim() === "" ? null : Number(range.maxAge);
 
       if (minAgeValue !== null && (Number.isNaN(minAgeValue) || minAgeValue < 0)) {
-        toast.error("種目の最小年齢は0以上の数値で入力してください");
-        return;
+        return { ok: false, message: "種目の最小年齢は0以上の数値で入力してください" };
       }
 
       if (maxAgeValue !== null && (Number.isNaN(maxAgeValue) || maxAgeValue < 0)) {
-        toast.error("種目の最大年齢は0以上の数値で入力してください");
-        return;
+        return { ok: false, message: "種目の最大年齢は0以上の数値で入力してください" };
       }
 
       if (minAgeValue !== null && maxAgeValue !== null && minAgeValue > maxAgeValue) {
-        toast.error("種目の最小年齢は最大年齢以下にしてください");
-        return;
+        return { ok: false, message: "種目の最小年齢は最大年齢以下にしてください" };
       }
     }
 
-    const categoryLabel = category === "POOL" ? "プール" : "オーシャン";
-    const typeLabel = type === "INDIVIDUAL" ? "個人" : "チーム";
-    toast.loading(`${categoryLabel}${typeLabel}の年齢条件を保存中...`);
+    const sexLabelForToast = (sex: string) =>
+      sex === "MALE" ? "男子" : sex === "FEMALE" ? "女子" : sex === "OTHER" ? "混合" : "";
 
-    try {
-      let errorCount = 0;
+    for (const event of rowTargets) {
+      const raw = (eventPreliminaryLanes[event.id] ?? "").trim();
+      if (raw === "") continue;
+      const n = Number(raw);
+      if (Number.isNaN(n) || !Number.isInteger(n) || n < 1 || n > 32) {
+        return {
+          ok: false,
+          message: `「${event.name}」${sexLabelForToast(event.sex)}の1レースあたりの最大レーン数は1〜32の整数、または空欄（未設定）にしてください`,
+        };
+      }
+    }
 
-      for (const event of targetEvents) {
-        const range = eventAgeRanges[event.name] || { minAge: "", maxAge: "" };
-        const minAgeValue = range.minAge.trim() === "" ? null : Number(range.minAge);
-        const maxAgeValue = range.maxAge.trim() === "" ? null : Number(range.maxAge);
+    for (const event of rowTargets) {
+      const raw = (eventStartListRoundCounts[event.id] ?? "1").trim();
+      const n = Number(raw);
+      if (!Number.isInteger(n) || n < 1 || n > 32) {
+        return {
+          ok: false,
+          message: `「${event.name}」のスタートリストのラウンド数は1〜32の整数にしてください`,
+        };
+      }
+    }
+
+    if (type === "TEAM") {
+      for (const event of ageTargets) {
+        const k = teamRelayStateKey(category, event.name);
+        const st = eventTeamRelayPositions[k] ?? { count: "", namesText: "" };
+        const countRaw = st.count.trim();
+        const lines = st.namesText
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter(Boolean);
+        if (countRaw === "" && lines.length === 0) {
+          continue;
+        }
+        if (countRaw === "" && lines.length > 0) {
+          return {
+            ok: false,
+            message: `「${event.name}」のチームポジション数を入力してください（ポジション名のみは保存できません）`,
+          };
+        }
+        const n = Number(countRaw);
+        if (!Number.isInteger(n) || n < 1 || n > 32) {
+          return { ok: false, message: `「${event.name}」のチームポジション数は1〜32の整数にしてください` };
+        }
+        if (lines.length !== n) {
+          return {
+            ok: false,
+            message: `「${event.name}」のポジション名は${n}行（1行に1ポジション・上から順）にしてください`,
+          };
+        }
+      }
+    }
+
+    return { ok: true };
+  };
+
+  const persistEventTableSection = async (
+    category: "POOL" | "OCEAN",
+    type: "INDIVIDUAL" | "TEAM"
+  ): Promise<number> => {
+    const { ageTargets, rowTargets } = getEventTableSectionTargets(category, type);
+    let errorCount = 0;
+
+    for (const event of ageTargets) {
+      const range = eventAgeRanges[event.name] || { minAge: "", maxAge: "" };
+      const minAgeValue = range.minAge.trim() === "" ? null : Number(range.minAge);
+      const maxAgeValue = range.maxAge.trim() === "" ? null : Number(range.maxAge);
+
+      const response = await fetch(
+        `/api/competitions/${competitionId}/events/${event.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ minAge: minAgeValue, maxAge: maxAgeValue }),
+        }
+      );
+      if (!response.ok) errorCount += 1;
+    }
+
+    for (const event of rowTargets) {
+      const raw = (eventPreliminaryLanes[event.id] ?? "").trim();
+      const laneValue = raw === "" ? null : Number(raw);
+
+      const response = await fetch(
+        `/api/competitions/${competitionId}/events/${event.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ preliminaryHeatLaneCount: laneValue }),
+        }
+      );
+      if (!response.ok) errorCount += 1;
+    }
+
+    for (const event of rowTargets) {
+      const raw = (eventStartListRoundCounts[event.id] ?? "1").trim();
+      const roundCount = Number(raw);
+
+      const response = await fetch(
+        `/api/competitions/${competitionId}/events/${event.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ startListRoundCount: roundCount }),
+        }
+      );
+      if (!response.ok) errorCount += 1;
+    }
+
+    if (type === "TEAM") {
+      for (const event of ageTargets) {
+        const k = teamRelayStateKey(category, event.name);
+        const st = eventTeamRelayPositions[k] ?? { count: "", namesText: "" };
+        const countRaw = st.count.trim();
+        const lines = st.namesText
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter(Boolean);
+        const body =
+          countRaw === "" && lines.length === 0
+            ? { teamRelayPositionCount: null, teamRelayPositionNames: [] }
+            : {
+                teamRelayPositionCount: Number(countRaw),
+                teamRelayPositionNames: lines,
+              };
 
         const response = await fetch(
           `/api/competitions/${competitionId}/events/${event.id}`,
           {
             method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ minAge: minAgeValue, maxAge: maxAgeValue }),
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
           }
         );
-
-        if (!response.ok) {
-          errorCount += 1;
-        }
+        if (!response.ok) errorCount += 1;
       }
+    }
 
-      const response = await fetch(`/api/competitions/${competitionId}/events`);
-      if (response.ok) {
-        const { events: updatedEvents } = await response.json();
-        syncEvents(updatedEvents);
+    return errorCount;
+  };
+
+  const refreshEventsFromServer = async () => {
+    const response = await fetch(`/api/competitions/${competitionId}/events`);
+    if (response.ok) {
+      const { events: updatedEvents } = await response.json();
+      syncEvents(updatedEvents, { resetEventTableForm: true });
+    }
+  };
+
+  /** 年齢・最大レーン・ラウンド数（＋チームポジション）をブロック単位で保存 */
+  const handleBulkUpdateEventTable = async (
+    category: "POOL" | "OCEAN",
+    type: "INDIVIDUAL" | "TEAM"
+  ) => {
+    const { sectionKey } = getEventTableSectionTargets(category, type);
+    const vr = validateEventTableSection(category, type);
+    if (!vr.ok) {
+      if ("reason" in vr) {
+        toast.info("対象の種目がありません");
+        return;
       }
+      toast.error(vr.message);
+      return;
+    }
+
+    const categoryLabel = category === "POOL" ? "プール" : "オーシャン";
+    const typeLabel = type === "INDIVIDUAL" ? "個人" : "チーム";
+    setBulkUpdatingEventSection(sectionKey);
+    toast.loading(`${categoryLabel}${typeLabel}の種目表を保存中…`);
+
+    try {
+      const errorCount = await persistEventTableSection(category, type);
+      await refreshEventsFromServer();
 
       toast.dismiss();
       if (errorCount === 0) {
-        toast.success(`${categoryLabel}${typeLabel}の年齢条件を保存しました`);
-        setEventAgeSaveStatus((prev) => ({
+        toast.success(
+          type === "TEAM"
+            ? `${categoryLabel}${typeLabel}の種目表（年齢・最大レーン・ラウンド数・チームポジション）を保存しました`
+            : `${categoryLabel}${typeLabel}の種目表（年齢・最大レーン・ラウンド数）を保存しました`
+        );
+        setEventTableBulkSaveStatus((prev) => ({
           ...prev,
-          [`${category}-${type}`]: new Date(),
+          [sectionKey]: new Date(),
         }));
+        notifySectionSaved();
       } else {
         toast.warning("一部の種目で保存に失敗しました");
       }
       router.refresh();
     } catch (error) {
-      console.error("種目年齢条件一括更新エラー:", error);
+      console.error("種目表一括更新エラー:", error);
       toast.dismiss();
-      toast.error("種目の年齢条件の更新に失敗しました");
+      toast.error("種目表の更新に失敗しました");
+    } finally {
+      setBulkUpdatingEventSection(null);
+    }
+  };
+
+  const EVENT_TABLE_ALL_SECTIONS: ReadonlyArray<
+    ["POOL" | "OCEAN", "INDIVIDUAL" | "TEAM"]
+  > = [
+    ["POOL", "INDIVIDUAL"],
+    ["POOL", "TEAM"],
+    ["OCEAN", "INDIVIDUAL"],
+    ["OCEAN", "TEAM"],
+  ];
+
+  /** プール／オーシャン × 個人／チームの、入力済みブロックをまとめて一度に保存 */
+  const handleBulkUpdateAllEventTables = async () => {
+    const active = EVENT_TABLE_ALL_SECTIONS.filter(([c, t]) =>
+      events.some((e) => e.category === c && e.type === t)
+    );
+    if (active.length === 0) {
+      toast.info("保存対象の種目がありません");
+      return;
+    }
+
+    for (const [c, t] of active) {
+      const vr = validateEventTableSection(c, t);
+      if (!vr.ok) {
+        if ("reason" in vr) continue;
+        toast.error(vr.message);
+        return;
+      }
+    }
+
+    setBulkSavingAllEventTables(true);
+    toast.loading("種目表（全ブロック）を保存中…");
+
+    try {
+      let totalErrors = 0;
+      for (const [c, t] of active) {
+        const vr = validateEventTableSection(c, t);
+        if (!vr.ok) continue;
+        totalErrors += await persistEventTableSection(c, t);
+      }
+
+      await refreshEventsFromServer();
+      toast.dismiss();
+
+      const now = new Date();
+      setEventTableBulkSaveStatus((prev) => {
+        const next = { ...prev };
+        for (const [c, t] of active) {
+          next[`${c}-${t}`] = now;
+        }
+        return next;
+      });
+
+      if (totalErrors === 0) {
+        toast.success(
+          "種目表（年齢・最大レーン・ラウンド数・チームポジション）をすべて保存しました"
+        );
+        notifySectionSaved();
+      } else {
+        toast.warning(
+          "一部の種目で保存に失敗しました。各ブロック下部の保存ボタンから再試行できます。"
+        );
+      }
+      router.refresh();
+    } catch (error) {
+      console.error("種目表一括保存エラー:", error);
+      toast.dismiss();
+      toast.error("種目表の一括保存に失敗しました");
+    } finally {
+      setBulkSavingAllEventTables(false);
     }
   };
 
   const handleDeleteEvent = async (eventId: string, eventName: string) => {
-    if (!confirm(`「${eventName}」を削除しますか？`)) {
+    if (!confirm(`「${eventName}」を削除しますか？\n男子・女子をまとめて削除します。`)) {
       return;
     }
 
@@ -851,22 +1667,372 @@ export default function EntrySettingsEditor({
       const { events: updatedEvents } = await response.json();
       syncEvents(updatedEvents);
       toast.success(`「${eventName}」を削除しました`);
+      router.refresh();
     } catch (error) {
       console.error("種目削除エラー:", error);
       toast.error(error instanceof Error ? error.message : "種目の削除に失敗しました");
     }
   };
 
+  const sortedUniqueEventsBySection = (
+    category: "POOL" | "OCEAN",
+    type: "INDIVIDUAL" | "TEAM"
+  ): Event[] =>
+    Array.from(
+      new Map(
+        events
+          .filter((e) => e.category === category && e.type === type)
+          .map((e) => [e.name, e])
+      ).values()
+    ).sort((a, b) => a.displayOrder - b.displayOrder);
+
+  const renderEventSettingsQuickNav = (list: Event[], tone: "pool" | "ocean") => {
+    if (list.length === 0) return null;
+    const chipClass =
+      tone === "pool"
+        ? "border-orange-200/80 bg-orange-50/90 text-orange-900 hover:bg-orange-100 dark:border-orange-800 dark:bg-orange-950/50 dark:text-orange-100 dark:hover:bg-orange-900/40"
+        : "border-cyan-200/80 bg-cyan-50/90 text-cyan-950 hover:bg-cyan-100 dark:border-cyan-800 dark:bg-cyan-950/50 dark:text-cyan-100 dark:hover:bg-cyan-900/40";
+    return (
+      <nav
+        aria-label="このブロックに登録されている種目一覧"
+        className="rounded-lg border border-border/60 bg-muted/20 px-2.5 py-2"
+      >
+        <p className="mb-1.5 text-[10px] leading-snug text-muted-foreground">
+          <span className="font-semibold text-foreground">登録済み {list.length} 件</span>
+          <span className="mx-1">·</span>
+          種目名を押すと下の詳細へスクロールします（ここで全体を一覧できます）
+        </p>
+        <div className="flex flex-wrap gap-1">
+          {list.map((ev) => (
+            <a
+              key={ev.id}
+              href={`#${eventSettingsCardDomId(ev.id)}`}
+              className={cn(
+                "max-w-full truncate rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors",
+                chipClass
+              )}
+              title={ev.name}
+            >
+              {ev.name}
+            </a>
+          ))}
+        </div>
+      </nav>
+    );
+  };
+
+  /** 個人ブロックと団体ブロックの境界が分かるよう、ブロック名つきの保存バー */
+  const renderEventBlockSaveBar = (
+    sectionKey: string,
+    title: string,
+    hint: string,
+    saveLabel: string,
+    onSave: () => void
+  ) => {
+    if (!canEdit) return null;
+    const disabled =
+      bulkSavingAllEventTables || bulkUpdatingEventSection === sectionKey;
+    const saving = bulkUpdatingEventSection === sectionKey;
+    const savedAt = eventTableBulkSaveStatus[sectionKey];
+    return (
+      <div
+        className="flex flex-col gap-3 rounded-lg border-2 border-dashed border-primary/30 bg-primary/[0.05] px-3 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-primary/40 dark:bg-primary/[0.08]"
+        role="region"
+        aria-label={`${title}の設定を保存`}
+      >
+        <div className="min-w-0 space-y-0.5">
+          <p className="text-xs font-semibold text-foreground">{title}</p>
+          <p className="text-[10px] leading-snug text-muted-foreground">{hint}</p>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2 sm:shrink-0">
+          <Button
+            type="button"
+            size="sm"
+            variant="default"
+            className="h-9 min-w-[9.5rem] px-3 text-xs font-semibold"
+            onClick={() => void onSave()}
+            disabled={disabled}
+          >
+            {saving ? "保存中…" : saveLabel}
+          </Button>
+          {savedAt ? (
+            <span
+              className="text-[10px] tabular-nums text-muted-foreground"
+              title="このブロックを最後に保存した時刻"
+            >
+              最終 {savedAt.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          ) : null}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCompactEventCard = (
+    event: Event,
+    category: "POOL" | "OCEAN",
+    type: "INDIVIDUAL" | "TEAM",
+    sectionKey: string,
+    tone: "pool" | "ocean"
+  ) => {
+    const genderLabel = canEdit ? "" : getEventGenderLabel(event.name, category, type);
+    const sexOption = getEventSexOption(event.name, category, type);
+    const isUpdatingSexOption = !!updatingEventSexOptions[makeEventSexOptionKey(event)];
+    const siblings = eventSiblingsFor(event.name, type, category);
+    const relayKey = teamRelayStateKey(category, event.name);
+
+    const surface =
+      tone === "pool"
+        ? "border-orange-200/70 bg-orange-50/90 dark:border-orange-800/70 dark:bg-orange-950/40"
+        : "border-cyan-200/70 bg-cyan-50/90 dark:border-cyan-800/70 dark:bg-cyan-950/40";
+
+    return (
+      <div
+        key={event.name}
+        id={eventSettingsCardDomId(event.id)}
+        className={cn(
+          "scroll-mt-24 flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-start sm:justify-between",
+          surface
+        )}
+      >
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div className="text-sm font-semibold leading-tight text-foreground">
+              {event.name}
+              {genderLabel}
+            </div>
+            {canEdit ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0 text-destructive hover:text-destructive sm:order-last"
+                disabled={isUpdatingSexOption}
+                onClick={() => handleDeleteEvent(event.id, event.name)}
+                aria-label={`${event.name} を削除`}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            ) : null}
+          </div>
+
+          {canEdit ? (
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-medium text-muted-foreground">
+                性別区分（タップですぐ保存）
+              </p>
+              {renderSexOptionButtons(
+                sexOption,
+                (next) => {
+                  void handleUpdateEventSexOption(event, next);
+                },
+                isUpdatingSexOption,
+                true
+              )}
+            </div>
+          ) : null}
+
+          <div
+            className="space-y-2.5 rounded-md border border-border/50 bg-background/40 px-2.5 py-2.5"
+            role="group"
+            aria-label="進行・スタートリスト用（ブロック下部の保存ボタンでまとめて保存）"
+          >
+            <p className="text-[10px] font-medium text-muted-foreground">
+              進行・スタートリスト（
+              {type === "TEAM"
+                ? "このブロック下の「団体種目を保存」でまとめて反映"
+                : "このブロック下の「個人種目を保存」でまとめて反映"}
+              ）
+            </p>
+            <div className="space-y-2">
+              <div>
+                <p className="mb-1 text-[10px] text-muted-foreground">年齢（歳・空欄は大会の年齢設定に従う）</p>
+                <label className="inline-flex flex-wrap items-center gap-1 text-[11px]">
+                  <Input
+                    numericInput="integer"
+                    min={0}
+                    placeholder="最小"
+                    aria-label={`${event.name} 最小年齢`}
+                    value={eventAgeRanges[event.name]?.minAge ?? ""}
+                    onChange={(e) => {
+                      clearEventTableBulkSaveStatus(sectionKey);
+                      setEventAgeRanges((prev) => ({
+                        ...prev,
+                        [event.name]: {
+                          minAge: e.target.value,
+                          maxAge: prev[event.name]?.maxAge ?? "",
+                        },
+                      }));
+                    }}
+                    disabled={!canEdit}
+                    className="h-8 w-14 px-1.5 text-xs"
+                  />
+                  <span className="text-muted-foreground">〜</span>
+                  <Input
+                    numericInput="integer"
+                    min={0}
+                    placeholder="最大"
+                    aria-label={`${event.name} 最大年齢`}
+                    value={eventAgeRanges[event.name]?.maxAge ?? ""}
+                    onChange={(e) => {
+                      clearEventTableBulkSaveStatus(sectionKey);
+                      setEventAgeRanges((prev) => ({
+                        ...prev,
+                        [event.name]: {
+                          minAge: prev[event.name]?.minAge ?? "",
+                          maxAge: e.target.value,
+                        },
+                      }));
+                    }}
+                    disabled={!canEdit}
+                    className="h-8 w-14 px-1.5 text-xs"
+                  />
+                </label>
+              </div>
+              <div>
+                <p className="mb-1 text-[10px] text-muted-foreground">
+                  1レースの最大レーン数・全ラウンド共通（男女別・1〜32、空欄は未設定）
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {siblings.map((row) => (
+                    <label key={row.id} className="flex items-center gap-1">
+                      <span className="w-4 shrink-0 text-center text-[10px] font-medium text-muted-foreground">
+                        {row.sex === "MALE" ? "男" : row.sex === "FEMALE" ? "女" : "他"}
+                      </span>
+                      <Input
+                        numericInput="integer"
+                        min={1}
+                        max={32}
+                        placeholder="—"
+                        title="1〜32、空欄で未設定"
+                        value={eventPreliminaryLanes[row.id] ?? ""}
+                        onChange={(e) => {
+                          clearEventTableBulkSaveStatus(sectionKey);
+                          setEventPreliminaryLanes((prev) => ({
+                            ...prev,
+                            [row.id]: e.target.value,
+                          }));
+                        }}
+                        disabled={!canEdit}
+                        className="h-8 w-11 px-1 text-center text-xs tabular-nums"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="mb-1 text-[10px] text-muted-foreground">
+                  スタートリストのラウンド数（男女別・全ラウンド1〜32）
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {siblings.map((row) => (
+                    <label key={`rc-${row.id}`} className="flex items-center gap-1">
+                      <span className="w-4 shrink-0 text-center text-[10px] font-medium text-muted-foreground">
+                        {row.sex === "MALE" ? "男" : row.sex === "FEMALE" ? "女" : "他"}
+                      </span>
+                      <Input
+                        numericInput="integer"
+                        min={1}
+                        max={32}
+                        title="1〜32（全ラウンドのタブ数）"
+                        value={eventStartListRoundCounts[row.id] ?? "1"}
+                        onChange={(e) => {
+                          clearEventTableBulkSaveStatus(sectionKey);
+                          setEventStartListRoundCounts((prev) => ({
+                            ...prev,
+                            [row.id]: e.target.value,
+                          }));
+                        }}
+                        disabled={!canEdit}
+                        className="h-8 w-11 px-1 text-center text-xs tabular-nums"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {type === "TEAM" ? (
+                <div className="border-t border-border/50 pt-2.5">
+                  <p className="mb-1.5 text-[10px] font-medium text-muted-foreground">
+                    チームポジション（リレー等・男女共通・このブロック下の「団体種目を保存」で反映）
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-[5.5rem,1fr] sm:items-start sm:gap-3">
+                    <div>
+                      <p className="mb-1 text-[10px] text-muted-foreground">ポジション数</p>
+                      <Input
+                        numericInput="integer"
+                        min={1}
+                        max={32}
+                        placeholder="例: 4"
+                        className="h-8 w-full px-1.5 text-xs tabular-nums sm:w-16"
+                        value={eventTeamRelayPositions[relayKey]?.count ?? ""}
+                        onChange={(e) => {
+                          clearEventTableBulkSaveStatus(sectionKey);
+                          setEventTeamRelayPositions((prev) => ({
+                            ...prev,
+                            [relayKey]: {
+                              count: e.target.value,
+                              namesText: prev[relayKey]?.namesText ?? "",
+                            },
+                          }));
+                        }}
+                        disabled={!canEdit}
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="mb-1 text-[10px] text-muted-foreground">
+                        ポジション名（1行に1つ・上から第1ポジション）
+                      </p>
+                      <Textarea
+                        rows={4}
+                        className="min-h-[4.5rem] resize-y text-xs"
+                        placeholder={"例:\n1st\n2nd\n3rd\nAnchor"}
+                        value={eventTeamRelayPositions[relayKey]?.namesText ?? ""}
+                        onChange={(e) => {
+                          clearEventTableBulkSaveStatus(sectionKey);
+                          setEventTeamRelayPositions((prev) => ({
+                            ...prev,
+                            [relayKey]: {
+                              count: prev[relayKey]?.count ?? "",
+                              namesText: e.target.value,
+                            },
+                          }));
+                        }}
+                        disabled={!canEdit}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>エントリー期間</CardTitle>
-          <CardDescription>受付期間を設定します。</CardDescription>
+      {isPublished && canEdit && requiresParticipantNotice ? (
+        <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          公開済みでエントリー成立後の変更では、必要に応じて参加者への告知文が自動で付与されます（受付延長・資格緩和・種目追加など）。
+        </p>
+      ) : null}
+
+      {isSection("period") && (
+      <Card className="overflow-hidden">
+        <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
+          <CardTitle className="text-base font-semibold">エントリー期間</CardTitle>
+          <CardDescription className="text-xs">受付の開始・終了日時です。</CardDescription>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <CardContent className="px-4 py-3">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleSavePeriod();
+            }}
+            className="space-y-3"
+          >
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
                 <Label htmlFor="entryStartDate">エントリー開始日時 *</Label>
                 <Input
@@ -893,28 +2059,27 @@ export default function EntrySettingsEditor({
             </div>
 
             {canEdit && (
-              <div className="flex justify-end">
-                <Button type="submit" disabled={isUpdating} className="w-full md:w-auto">
-                  {isUpdating ? "更新中..." : "エントリー期間を更新"}
+              <div className="flex justify-end pt-0.5">
+                <Button type="submit" size="sm" disabled={isUpdating} className="h-8 w-full text-xs md:w-auto">
+                  {isUpdating ? "更新中…" : "期間を更新"}
                 </Button>
               </div>
             )}
           </form>
         </CardContent>
       </Card>
+      )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>エントリー条件</CardTitle>
-          <CardDescription>年齢条件と複数種目の可否を設定します。</CardDescription>
+      {isSection("ageClub") && (
+      <Card className="overflow-hidden">
+        <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
+          <CardTitle className="text-base font-semibold">年齢・所属クラブ</CardTitle>
+          <CardDescription className="text-xs">大会全体の年齢範囲と、エントリー時のクラブ所属の要否です。</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-            <p className="font-medium text-gray-800 dark:text-gray-200">現在の条件</p>
-            <div className="mt-2 flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full border border-gray-200 bg-white px-3 py-1 dark:border-gray-700 dark:bg-gray-950">
-                {allowMultipleEventEntries ? "複数種目OK" : "1種目のみ"}
-              </span>
+        <CardContent className="space-y-3 px-4 py-3">
+          <div className="rounded-md border border-border bg-muted/25 px-3 py-2 text-xs text-muted-foreground">
+            <p className="font-medium text-foreground">現在の条件</p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
               <span className="rounded-full border border-gray-200 bg-white px-3 py-1 dark:border-gray-700 dark:bg-gray-950">
                 {requireClubMembership ? "所属クラブ必須" : "所属クラブ任意"}
               </span>
@@ -924,12 +2089,14 @@ export default function EntrySettingsEditor({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
-              <Label htmlFor="competitionMinAge">最小年齢（任意）</Label>
+              <Label htmlFor="competitionMinAge" className="text-xs">
+                最小年齢（任意）
+              </Label>
               <Input
                 id="competitionMinAge"
-                type="number"
+                numericInput="integer"
                 min="0"
                 value={competitionMinAge}
                 onChange={(e) => setCompetitionMinAge(e.target.value)}
@@ -939,10 +2106,12 @@ export default function EntrySettingsEditor({
               <p className="text-xs text-gray-500 mt-1">空欄の場合は下限なし</p>
             </div>
             <div>
-              <Label htmlFor="competitionMaxAge">最大年齢（任意）</Label>
+              <Label htmlFor="competitionMaxAge" className="text-xs">
+                最大年齢（任意）
+              </Label>
               <Input
                 id="competitionMaxAge"
-                type="number"
+                numericInput="integer"
                 min="0"
                 value={competitionMaxAge}
                 onChange={(e) => setCompetitionMaxAge(e.target.value)}
@@ -953,29 +2122,9 @@ export default function EntrySettingsEditor({
             </div>
           </div>
 
-          <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-            <label className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                className="mt-1 h-4 w-4"
-                checked={allowMultipleEventEntries}
-                onChange={(e) => setAllowMultipleEventEntries(e.target.checked)}
-                disabled={!canEdit}
-              />
-              <span>
-                1人あたり複数種目のエントリーを許可する
-                <span className="block text-xs text-gray-500">
-                  オフの場合は1種目のみ選択可能になります。
-                </span>
-              </span>
-            </label>
-          </div>
-
-          <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                所属クラブ
-              </p>
+          <div className="rounded-md border border-border bg-muted/25 px-3 py-2 text-xs text-muted-foreground">
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-foreground">所属クラブ</p>
               <div className="grid gap-2 sm:grid-cols-2">
                 <label className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 transition hover:border-gray-300 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200">
                   <input
@@ -1005,26 +2154,70 @@ export default function EntrySettingsEditor({
           </div>
 
           {canEdit && (
-            <div className="flex justify-end">
-              <Button type="button" onClick={handleSubmit} disabled={isUpdating} className="w-full md:w-auto">
-                {isUpdating ? "更新中..." : "エントリー条件を更新"}
+            <div className="flex justify-end pt-0.5">
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 w-full text-xs md:w-auto"
+                onClick={() => void handleSaveAgeClub()}
+                disabled={isUpdating}
+              >
+                {isUpdating ? "更新中…" : "年齢・所属クラブを更新"}
               </Button>
             </div>
           )}
         </CardContent>
       </Card>
+      )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>出場に必要な資格</CardTitle>
-          <CardDescription>出場資格の条件を設定します。</CardDescription>
+      {isSection("eligibility") && (
+      <Card className="overflow-hidden">
+        <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
+          <CardTitle className="text-base font-semibold">参加対象者（自由記述）</CardTitle>
+          <CardDescription className="text-xs">公開ページに表示する補足文です。</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-3">
+        <CardContent className="space-y-3 px-4 py-3">
+          <div className="space-y-2">
+            <Label htmlFor="participantEligibility">内容</Label>
+            <Textarea
+              id="participantEligibility"
+              value={participantEligibilityText}
+              onChange={(e) => setParticipantEligibilityText(e.target.value)}
+              placeholder="例: ○○クラブ所属者のみ、18歳以上の男女、会員限定 など"
+              rows={4}
+              disabled={!canEdit}
+            />
             <p className="text-sm text-gray-500">
-              出場に必須とする資格を選択してください（複数可）。
-              未選択の場合は「資格不要」として扱われます。
+              未入力の場合は「制限なし」として表示されます。
             </p>
+            <p className="text-xs text-gray-500">{participantEligibilityText.length} 文字</p>
+          </div>
+          {canEdit && (
+            <div className="flex justify-end pt-0.5">
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 w-full text-xs md:w-auto"
+                onClick={() => void handleSaveEligibility()}
+                disabled={isUpdating}
+              >
+                {isUpdating ? "更新中…" : "参加対象者を更新"}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      )}
+
+      {isSection("qualifications") && (
+      <Card className="overflow-hidden">
+        <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
+          <CardTitle className="text-base font-semibold">出場に必要な資格</CardTitle>
+          <CardDescription className="text-xs">未選択の場合は資格不要です。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 px-4 py-3">
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">必須とする資格を複数選択できます。</p>
             {requiredQualifications.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {requiredQualifications.map((item) => (
@@ -1069,929 +2262,641 @@ export default function EntrySettingsEditor({
           )}
         </CardContent>
       </Card>
+      )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>参加対象者</CardTitle>
-          <CardDescription>参加対象者の条件を記載します。</CardDescription>
+      {isSection("multiEvent") && (
+      <Card className="overflow-hidden">
+        <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
+          <CardTitle className="text-base font-semibold">種目あたりのエントリー</CardTitle>
+          <CardDescription className="text-xs">1人が選べる種目数の上限です。</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="participantEligibility">参加対象者（自由記述）</Label>
-            <Textarea
-              id="participantEligibility"
-              value={participantEligibilityText}
-              onChange={(e) => setParticipantEligibilityText(e.target.value)}
-              placeholder="例: ○○クラブ所属者のみ、18歳以上の男女、JLA会員限定 など"
-              rows={4}
+        <CardContent className="space-y-4 px-4 py-3">
+          <label className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4"
+              checked={allowMultipleEventEntries}
+              onChange={(e) => setAllowMultipleEventEntries(e.target.checked)}
               disabled={!canEdit}
             />
-            <p className="text-sm text-gray-500">
-              参加対象者の条件を自由に記載できます（未入力の場合は制限なし）
+            <span className="text-sm text-gray-700 dark:text-gray-200">
+              1人あたり複数種目のエントリーを許可する
+              <span className="block text-xs text-gray-500">
+                オフの場合は1種目のみ選択可能になります。
+              </span>
+            </span>
+          </label>
+
+          <div className="space-y-2">
+            <Label htmlFor="maxEventEntriesPerPerson">エントリー可能種目数の上限（任意）</Label>
+            <Input
+              id="maxEventEntriesPerPerson"
+              numericInput="integer"
+              min="1"
+              step="1"
+              value={maxEventEntriesPerPerson}
+              onChange={(e) => setMaxEventEntriesPerPerson(e.target.value)}
+              placeholder="例: 3（空欄で上限なし）"
+              disabled={!canEdit || !allowMultipleEventEntries}
+            />
+            <p className="text-xs text-gray-500">
+              {!allowMultipleEventEntries
+                ? "現在は複数種目を許可していないため、1種目のみ選択可能です。"
+                : maxEventEntriesPerPerson.trim()
+                  ? `現在の上限: ${maxEventEntriesPerPerson}種目`
+                  : "空欄の場合は上限なしで複数種目を選択できます。"}
             </p>
-            <p className="text-xs text-gray-500">{participantEligibilityText.length} 文字</p>
           </div>
 
           {canEdit && (
             <div className="flex justify-end">
               <Button
                 type="button"
-                onClick={handleUpdateEligibility}
-                disabled={isUpdatingEligibility}
+                onClick={() => void handleSaveMultiEvent()}
+                disabled={isUpdating}
                 className="w-full md:w-auto"
               >
-                {isUpdatingEligibility ? "更新中..." : "参加対象者を更新"}
+                {isUpdating ? "更新中..." : "種目エントリー数を更新"}
               </Button>
             </div>
           )}
         </CardContent>
       </Card>
+      )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>種目設定</CardTitle>
-          <CardDescription>
-            プール競技はエントリータイム入力必須、オーシャン競技は種目選択のみ
-          </CardDescription>
+      {isSection("events") && (
+      <>
+      <Card className={cn(categoryMeta.toneClass, "overflow-hidden")}>
+        <CardHeader className="space-y-1.5 border-b border-border/60 bg-background/40 px-3 py-3 sm:px-4">
+          <CardTitle className="text-base font-semibold">{categoryMeta.title}</CardTitle>
+          <CardDescription className="text-xs leading-snug">{categoryMeta.shortHint}</CardDescription>
+          <p className="text-[11px] text-muted-foreground">
+            種目のカテゴリ（プール／オーシャン）は大会の基本情報で
+            {competitionEventCategoryScopeLabel(categoryScope)}に固定されています。
+          </p>
+          <details className="rounded-md border border-border/50 bg-muted/15 px-2.5 py-2 text-[11px] text-muted-foreground">
+            <summary className="cursor-pointer font-medium text-foreground outline-none">
+              もう少し詳しく
+            </summary>
+            <ul className="mt-2 list-inside list-disc space-y-1 pl-0.5 pt-1 leading-relaxed">
+              <li>最大レーン: 1レースあたりのレーン数で、全ラウンド共通（1〜32、空欄は未設定）</li>
+              <li>ラウンド数: スタートリストのタブ数（初回レースを含む全ラウンド・1〜32）</li>
+              <li>年齢: 種目ごとに大会全体の年齢条件を上書きできます（空欄は大会設定に従う）</li>
+            </ul>
+          </details>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Category Selection Tabs */}
-          <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900">
-            <div className="flex space-x-4">
-              <button
-                type="button"
-                onClick={() => setSelectedCategory("POOL")}
-                className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-                  selectedCategory === "POOL"
-                    ? "border-blue-500 text-blue-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                }`}
-              >
-                プール競技
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedCategory("OCEAN")}
-                className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-                  selectedCategory === "OCEAN"
-                    ? "border-cyan-500 text-cyan-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                }`}
-              >
-                オーシャン競技
-              </button>
-            </div>
+        <CardContent className="space-y-4 px-3 py-3 sm:px-4">
+          <div
+            className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground"
+            role="note"
+          >
+            <p className="mb-1.5 font-semibold text-foreground">操作の流れ</p>
+            <ol className="list-decimal space-y-1 pl-4 marker:text-muted-foreground">
+              <li>
+                <span className="text-foreground">種目を追加</span>
+                … 下の入力＋「＋」、または「＋デフォルト」
+              </li>
+              <li>
+                <span className="text-foreground">性別区分</span>（男女／男のみ／女のみ／混合）
+                … タップすると<span className="text-foreground">その場で保存</span>されます
+              </li>
+              <li>
+                <span className="text-foreground">年齢・最大レーン・ラウンド数</span>
+                … 一番下の「<span className="text-foreground">すべて保存</span>」で一括、または各ブロック下の「
+                <span className="text-foreground">個人種目を保存</span>」「
+                <span className="text-foreground">団体種目を保存</span>」でその枠だけ保存（未保存のままでは反映されません）
+              </li>
+              <li>
+                <span className="text-foreground">参加費</span>
+                … 下の「エントリー費用」で、登録した種目の区分に応じて個人・チームの料金を設定します
+              </li>
+            </ol>
           </div>
-
-          {/* プール競技 */}
           {selectedCategory === "POOL" && (
-            <div className="space-y-6">
-              {/* プール個人種目 */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-semibold text-blue-700">個人種目 (タイム入力必須)</h4>
-                  {canEdit && (
-                    <div className="flex gap-2">
+            <div className="space-y-8">
+              <section className="space-y-3 rounded-lg border border-border/90 bg-muted/20 p-3 sm:p-4 dark:border-border dark:bg-muted/10">
+                <div className="flex flex-col gap-2 border-b border-border/40 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="secondary"
+                      className="border-orange-200/80 bg-orange-100/90 text-[11px] text-orange-900 dark:border-orange-800 dark:bg-orange-950/50 dark:text-orange-100"
+                    >
+                      プール · 個人
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      種目ごとの一覧 · 下の団体種目とは別ブロック
+                    </span>
+                  </div>
+                  {canEdit ? (
+                    <div className="flex flex-wrap items-center gap-1">
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => handleBulkUpdateEventAgeRanges("POOL", "INDIVIDUAL")}
-                        className="text-xs"
-                      >
-                        年齢条件を保存
-                      </Button>
-                      {eventAgeSaveStatus["POOL-INDIVIDUAL"] && (
-                        <span className="self-center text-[11px] text-gray-500">
-                          保存済み {eventAgeSaveStatus["POOL-INDIVIDUAL"].toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      )}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleAddDefaultEvents("POOL", "INDIVIDUAL")}
+                        className="h-8 px-2 text-[11px]"
+                        onClick={() => handleAddDefaultEvents("POOL", "INDIVIDUAL", "BOTH")}
                         disabled={isAddingDefaultEvents === "POOL-INDIVIDUAL"}
-                        className="text-xs"
                       >
-                        {isAddingDefaultEvents === "POOL-INDIVIDUAL" ? "追加中..." : "デフォルト種目を追加"}
+                        {isAddingDefaultEvents === "POOL-INDIVIDUAL" ? "追加中…" : "＋デフォルト"}
                       </Button>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
+                        className="h-8 px-2 text-[11px] text-destructive hover:text-destructive"
                         onClick={() => handleDeleteAllEvents("POOL", "INDIVIDUAL")}
-                        className="text-xs text-red-600 hover:text-red-700"
                       >
-                        すべて削除
+                        全削除
                       </Button>
                     </div>
-                  )}
+                  ) : null}
                 </div>
-              {poolIndividualError && (
-                <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
-                  {poolIndividualError}
-                </div>
-              )}
-              
-              {canEdit && (
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="例: 100m障害物"
-                    value={poolIndividualName}
-                    onChange={(e) => {
-                      setPoolIndividualName(e.target.value);
-                      if (poolIndividualError) setPoolIndividualError(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleAddPoolIndividual();
+                {renderEventSettingsQuickNav(sortedUniqueEventsBySection("POOL", "INDIVIDUAL"), "pool")}
+                {poolIndividualError ? (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+                    {poolIndividualError}
+                  </div>
+                ) : null}
+                {canEdit ? (
+                  <div className="flex gap-1.5">
+                    <Input
+                      className="h-9 text-sm"
+                      placeholder="種目を追加（例: 100m障害物）"
+                      value={poolIndividualName}
+                      onChange={(e) => {
+                        setPoolIndividualName(e.target.value);
+                        if (poolIndividualError) setPoolIndividualError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddPoolIndividual();
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      className="h-9 shrink-0 px-3"
+                      onClick={handleAddPoolIndividual}
+                      disabled={
+                        isAddingPoolIndividual ||
+                        isAddingDefaultEvents === "POOL-INDIVIDUAL" ||
+                        !poolIndividualName.trim()
                       }
-                    }}
-                  />
-                  <Button
-                    onClick={handleAddPoolIndividual}
-                    disabled={isAddingPoolIndividual || !poolIndividualName.trim()}
-                    size="icon"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                {events.filter(e => e.category === "POOL" && e.type === "INDIVIDUAL").length === 0 ? (
-                  <p className="text-sm text-gray-500">プール個人種目が登録されていません</p>
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : null}
+                {events.filter((e) => e.category === "POOL" && e.type === "INDIVIDUAL").length ===
+                0 ? (
+                  <p className="text-xs text-muted-foreground">個人種目はまだありません。</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {Array.from(
                       new Map(
                         events
-                          .filter(e => e.category === "POOL" && e.type === "INDIVIDUAL")
-                          .map(e => [e.name, e])
+                          .filter((e) => e.category === "POOL" && e.type === "INDIVIDUAL")
+                          .map((e) => [e.name, e])
                       ).values()
                     )
                       .sort((a, b) => a.displayOrder - b.displayOrder)
-                      .map((event) => {
-                        // オーシャンマン/オーシャンウーマン系の種目は性別表記を除外
-                        const hideGenderLabel = [
-                          'オーシャンマン',
-                          'オーシャンウーマン',
-                          'オーシャンマンリレー',
-                          'オーシャンウーマンリレー'
-                        ].includes(event.name);
-                        
-                        return (
-                          <div
-                            key={event.name}
-                            className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-700 rounded-lg"
-                          >
-                            <div className="space-y-2">
-                                <span className="text-sm font-semibold text-black dark:text-white">
-                                  {event.name}{!hideGenderLabel && '(男女)'}
-                                  <span className="ml-2 text-xs font-normal text-blue-600 dark:text-blue-400">(タイム入力必須)</span>
-                                  {(() => {
-                                    const preview = getAgePreview(event.name);
-                                    return (
-                                      <span
-                                        className={
-                                          preview.isUnset
-                                            ? "ml-2 rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] font-normal text-gray-500"
-                                            : "ml-2 text-[11px] font-normal text-gray-500"
-                                        }
-                                      >
-                                        年齢: {preview.label}
-                                      </span>
-                                    );
-                                  })()}
-                                </span>
-                              <details className="text-xs text-gray-600">
-                                <summary className="cursor-pointer font-medium">年齢条件を設定</summary>
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    placeholder="—"
-                                    value={eventAgeRanges[event.name]?.minAge ?? ""}
-                                    onChange={(e) => {
-                                      clearEventAgeSaveStatus("POOL-INDIVIDUAL");
-                                      setEventAgeRanges((prev) => ({
-                                        ...prev,
-                                        [event.name]: {
-                                          minAge: e.target.value,
-                                          maxAge: prev[event.name]?.maxAge ?? "",
-                                        },
-                                      }));
-                                    }}
-                                    disabled={!canEdit}
-                                    className="h-8 w-16 text-xs"
-                                  />
-                                  <span>〜</span>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    placeholder="—"
-                                    value={eventAgeRanges[event.name]?.maxAge ?? ""}
-                                    onChange={(e) => {
-                                      clearEventAgeSaveStatus("POOL-INDIVIDUAL");
-                                      setEventAgeRanges((prev) => ({
-                                        ...prev,
-                                        [event.name]: {
-                                          minAge: prev[event.name]?.minAge ?? "",
-                                          maxAge: e.target.value,
-                                        },
-                                      }));
-                                    }}
-                                    disabled={!canEdit}
-                                    className="h-8 w-16 text-xs"
-                                  />
-                                </div>
-                              </details>
-                            </div>
-                            {canEdit && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleDeleteEvent(event.id, event.name)}
-                              >
-                                <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
-                              </Button>
-                            )}
-                          </div>
-                        );
-                      })}
+                      .map((event) =>
+                        renderCompactEventCard(
+                          event,
+                          "POOL",
+                          "INDIVIDUAL",
+                          "POOL-INDIVIDUAL",
+                          "pool"
+                        )
+                      )}
                   </div>
                 )}
-              </div>
-            </div>
+                {renderEventBlockSaveBar(
+                  "POOL-INDIVIDUAL",
+                  "プール · 個人種目の保存",
+                  "この枠の一覧に入力した年齢・最大レーン・ラウンド数だけをサーバーに反映します（下の団体種目とは別です）。",
+                  "個人種目を保存",
+                  () => handleBulkUpdateEventTable("POOL", "INDIVIDUAL")
+                )}
+              </section>
 
             {/* プールチーム種目 */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-semibold text-blue-700">チーム種目 (タイム入力必須)</h4>
-                {canEdit && (
-                  <div className="flex gap-2">
+              <section className="space-y-3 rounded-lg border border-border/90 bg-muted/20 p-3 sm:p-4 dark:border-border dark:bg-muted/10">
+                <div className="flex flex-col gap-2 border-b border-border/40 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="secondary"
+                      className="border-orange-200/80 bg-orange-100/90 text-[11px] text-orange-900 dark:border-orange-800 dark:bg-orange-950/50 dark:text-orange-100"
+                    >
+                      プール · 団体（チーム）
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">リレー等 · 上の個人種目とは別ブロック</span>
+                  </div>
+                  {canEdit ? (
+                    <div className="flex flex-wrap items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2 text-[11px]"
+                        onClick={() => handleAddDefaultEvents("POOL", "TEAM", "BOTH")}
+                        disabled={isAddingDefaultEvents === "POOL-TEAM"}
+                      >
+                        {isAddingDefaultEvents === "POOL-TEAM" ? "追加中…" : "＋デフォルト"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2 text-[11px] text-destructive hover:text-destructive"
+                        onClick={() => handleDeleteAllEvents("POOL", "TEAM")}
+                      >
+                        全削除
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+                {renderEventSettingsQuickNav(sortedUniqueEventsBySection("POOL", "TEAM"), "pool")}
+                {poolTeamError ? (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+                    {poolTeamError}
+                  </div>
+                ) : null}
+                {canEdit ? (
+                  <div className="flex gap-1.5">
+                    <Input
+                      className="h-9 text-sm"
+                      placeholder="チーム種目を追加（例: 4×50mメドレーリレー）"
+                      value={poolTeamName}
+                      onChange={(e) => {
+                        setPoolTeamName(e.target.value);
+                        if (poolTeamError) setPoolTeamError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddPoolTeam();
+                        }
+                      }}
+                    />
                     <Button
                       type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleBulkUpdateEventAgeRanges("POOL", "TEAM")}
-                      className="text-xs"
+                      className="h-9 shrink-0 px-3"
+                      onClick={handleAddPoolTeam}
+                      disabled={
+                        isAddingPoolTeam ||
+                        isAddingDefaultEvents === "POOL-TEAM" ||
+                        !poolTeamName.trim()
+                      }
                     >
-                      年齢条件を保存
-                    </Button>
-                    {eventAgeSaveStatus["POOL-TEAM"] && (
-                      <span className="self-center text-[11px] text-gray-500">
-                        保存済み {eventAgeSaveStatus["POOL-TEAM"].toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    )}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleAddDefaultEvents("POOL", "TEAM")}
-                      disabled={isAddingDefaultEvents === "POOL-TEAM"}
-                      className="text-xs"
-                    >
-                      {isAddingDefaultEvents === "POOL-TEAM" ? "追加中..." : "デフォルト種目を追加"}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDeleteAllEvents("POOL", "TEAM")}
-                      className="text-xs text-red-600 hover:text-red-700"
-                    >
-                      すべて削除
+                      <Plus className="h-4 w-4" />
                     </Button>
                   </div>
-                )}
-              </div>
-              {poolTeamError && (
-                <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
-                  {poolTeamError}
-                </div>
-              )}
-              
-              {canEdit && (
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="例: 4×50mメドレーリレー"
-                    value={poolTeamName}
-                    onChange={(e) => {
-                      setPoolTeamName(e.target.value);
-                      if (poolTeamError) setPoolTeamError(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleAddPoolTeam();
-                      }
-                    }}
-                  />
-                  <Button
-                    onClick={handleAddPoolTeam}
-                    disabled={isAddingPoolTeam || !poolTeamName.trim()}
-                    size="icon"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                {events.filter(e => e.category === "POOL" && e.type === "TEAM").length === 0 ? (
-                  <p className="text-sm text-gray-500">プールチーム種目が登録されていません</p>
+                ) : null}
+                {events.filter((e) => e.category === "POOL" && e.type === "TEAM").length === 0 ? (
+                  <p className="text-xs text-muted-foreground">チーム種目はまだありません。</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {Array.from(
                       new Map(
                         events
-                          .filter(e => e.category === "POOL" && e.type === "TEAM")
-                          .map(e => [e.name, e])
+                          .filter((e) => e.category === "POOL" && e.type === "TEAM")
+                          .map((e) => [e.name, e])
                       ).values()
                     )
                       .sort((a, b) => a.displayOrder - b.displayOrder)
-                      .map((event) => {
-                        // オーシャンマン/オーシャンウーマン系の種目は性別表記を除外
-                        const hideGenderLabel = [
-                          'オーシャンマン',
-                          'オーシャンウーマン',
-                          'オーシャンマンリレー',
-                          'オーシャンウーマンリレー'
-                        ].includes(event.name);
-                        
-                        return (
-                          <div
-                            key={event.name}
-                            className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-700 rounded-lg"
-                          >
-                            <div className="space-y-2">
-                                <span className="text-sm font-semibold text-black dark:text-white">
-                                  {event.name}{!hideGenderLabel && '（男女）'}
-                                  <span className="ml-2 text-xs font-normal text-blue-600 dark:text-blue-400">(タイム入力必須)</span>
-                                  {(() => {
-                                    const preview = getAgePreview(event.name);
-                                    return (
-                                      <span
-                                        className={
-                                          preview.isUnset
-                                            ? "ml-2 rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] font-normal text-gray-500"
-                                            : "ml-2 text-[11px] font-normal text-gray-500"
-                                        }
-                                      >
-                                        年齢: {preview.label}
-                                      </span>
-                                    );
-                                  })()}
-                                </span>
-                              <details className="text-xs text-gray-600">
-                                <summary className="cursor-pointer font-medium">年齢条件を設定</summary>
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    placeholder="—"
-                                    value={eventAgeRanges[event.name]?.minAge ?? ""}
-                                    onChange={(e) => {
-                                      clearEventAgeSaveStatus("POOL-TEAM");
-                                      setEventAgeRanges((prev) => ({
-                                        ...prev,
-                                        [event.name]: {
-                                          minAge: e.target.value,
-                                          maxAge: prev[event.name]?.maxAge ?? "",
-                                        },
-                                      }));
-                                    }}
-                                    disabled={!canEdit}
-                                    className="h-8 w-16 text-xs"
-                                  />
-                                  <span>〜</span>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    placeholder="—"
-                                    value={eventAgeRanges[event.name]?.maxAge ?? ""}
-                                    onChange={(e) => {
-                                      clearEventAgeSaveStatus("POOL-TEAM");
-                                      setEventAgeRanges((prev) => ({
-                                        ...prev,
-                                        [event.name]: {
-                                          minAge: prev[event.name]?.minAge ?? "",
-                                          maxAge: e.target.value,
-                                        },
-                                      }));
-                                    }}
-                                    disabled={!canEdit}
-                                    className="h-8 w-16 text-xs"
-                                  />
-                                </div>
-                              </details>
-                            </div>
-                            {canEdit && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleDeleteEvent(event.id, event.name)}
-                              >
-                                <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
-                              </Button>
-                            )}
-                          </div>
-                        );
-                      })}
+                      .map((event) =>
+                        renderCompactEventCard(event, "POOL", "TEAM", "POOL-TEAM", "pool")
+                      )}
                   </div>
                 )}
-              </div>
+                {renderEventBlockSaveBar(
+                  "POOL-TEAM",
+                  "プール · 団体（チーム）種目の保存",
+                  "この枠の一覧だけが対象です。チームポジション・レーン・ラウンドもここで保存します。",
+                  "団体種目を保存",
+                  () => handleBulkUpdateEventTable("POOL", "TEAM")
+                )}
+              </section>
             </div>
-          </div>
           )}
 
           {/* オーシャン競技 */}
           {selectedCategory === "OCEAN" && (
-            <div className="space-y-6">
-              {/* オーシャン個人種目 */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-semibold text-cyan-700">個人種目 (選択のみ)</h4>
-                  {canEdit && (
-                    <div className="flex gap-2">
+            <div className="space-y-8">
+              <section className="space-y-3 rounded-lg border border-border/90 bg-muted/20 p-3 sm:p-4 dark:border-border dark:bg-muted/10">
+                <div className="flex flex-col gap-2 border-b border-border/40 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="secondary"
+                      className="border-cyan-200/80 bg-cyan-100/90 text-[11px] text-cyan-950 dark:border-cyan-800 dark:bg-cyan-950/50 dark:text-cyan-100"
+                    >
+                      オーシャン · 個人
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      種目ごとの一覧 · 下の団体種目とは別ブロック
+                    </span>
+                  </div>
+                  {canEdit ? (
+                    <div className="flex flex-wrap items-center gap-1">
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => handleBulkUpdateEventAgeRanges("OCEAN", "INDIVIDUAL")}
-                        className="text-xs"
-                      >
-                        年齢条件を保存
-                      </Button>
-                      {eventAgeSaveStatus["OCEAN-INDIVIDUAL"] && (
-                        <span className="self-center text-[11px] text-gray-500">
-                          保存済み {eventAgeSaveStatus["OCEAN-INDIVIDUAL"].toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      )}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleAddDefaultEvents("OCEAN", "INDIVIDUAL")}
+                        className="h-8 px-2 text-[11px]"
+                        onClick={() => handleAddDefaultEvents("OCEAN", "INDIVIDUAL", "BOTH")}
                         disabled={isAddingDefaultEvents === "OCEAN-INDIVIDUAL"}
-                        className="text-xs"
                       >
-                        {isAddingDefaultEvents === "OCEAN-INDIVIDUAL" ? "追加中..." : "デフォルト種目を追加"}
+                        {isAddingDefaultEvents === "OCEAN-INDIVIDUAL" ? "追加中…" : "＋デフォルト"}
                       </Button>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
+                        className="h-8 px-2 text-[11px] text-destructive hover:text-destructive"
                         onClick={() => handleDeleteAllEvents("OCEAN", "INDIVIDUAL")}
-                        className="text-xs text-red-600 hover:text-red-700"
                       >
-                        すべて削除
+                        全削除
                       </Button>
                     </div>
-                  )}
+                  ) : null}
                 </div>
-              {oceanIndividualError && (
-                <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
-                  {oceanIndividualError}
-                </div>
-              )}
-              
-              {canEdit && (
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="例: ビーチフラッグス"
-                    value={oceanIndividualName}
-                    onChange={(e) => {
-                      setOceanIndividualName(e.target.value);
-                      if (oceanIndividualError) setOceanIndividualError(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleAddOceanIndividual();
+                {renderEventSettingsQuickNav(sortedUniqueEventsBySection("OCEAN", "INDIVIDUAL"), "ocean")}
+                {oceanIndividualError ? (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+                    {oceanIndividualError}
+                  </div>
+                ) : null}
+                {canEdit ? (
+                  <div className="flex gap-1.5">
+                    <Input
+                      className="h-9 text-sm"
+                      placeholder="種目を追加（例: ビーチフラッグス）"
+                      value={oceanIndividualName}
+                      onChange={(e) => {
+                        setOceanIndividualName(e.target.value);
+                        if (oceanIndividualError) setOceanIndividualError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddOceanIndividual();
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      className="h-9 shrink-0 px-3"
+                      onClick={handleAddOceanIndividual}
+                      disabled={
+                        isAddingOceanIndividual ||
+                        isAddingDefaultEvents === "OCEAN-INDIVIDUAL" ||
+                        !oceanIndividualName.trim()
                       }
-                    }}
-                  />
-                  <Button
-                    onClick={handleAddOceanIndividual}
-                    disabled={isAddingOceanIndividual || !oceanIndividualName.trim()}
-                    size="icon"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                {events.filter(e => e.category === "OCEAN" && e.type === "INDIVIDUAL").length === 0 ? (
-                  <p className="text-sm text-gray-500">オーシャン個人種目が登録されていません</p>
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : null}
+                {events.filter((e) => e.category === "OCEAN" && e.type === "INDIVIDUAL").length ===
+                0 ? (
+                  <p className="text-xs text-muted-foreground">個人種目はまだありません。</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {Array.from(
                       new Map(
                         events
-                          .filter(e => e.category === "OCEAN" && e.type === "INDIVIDUAL")
-                          .map(e => [e.name, e])
+                          .filter((e) => e.category === "OCEAN" && e.type === "INDIVIDUAL")
+                          .map((e) => [e.name, e])
                       ).values()
                     )
                       .sort((a, b) => a.displayOrder - b.displayOrder)
-                      .map((event) => {
-                        // オーシャンマン/オーシャンウーマン系の種目は性別表記を除外
-                        const hideGenderLabel = [
-                          'オーシャンマン',
-                          'オーシャンウーマン',
-                          'オーシャンマンリレー',
-                          'オーシャンウーマンリレー'
-                        ].includes(event.name);
-                        
-                        return (
-                          <div
-                            key={event.name}
-                            className="flex items-center justify-between p-3 bg-cyan-100 dark:bg-cyan-950 border border-cyan-300 dark:border-cyan-700 rounded-lg"
-                          >
-                            <div className="space-y-2">
-                                <span className="text-sm font-semibold text-black dark:text-white">
-                                  {event.name}{!hideGenderLabel && '（男女）'}
-                                  <span className="ml-2 text-xs font-normal text-cyan-700 dark:text-cyan-400">(選択のみ)</span>
-                                  {(() => {
-                                    const preview = getAgePreview(event.name);
-                                    return (
-                                      <span
-                                        className={
-                                          preview.isUnset
-                                            ? "ml-2 rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] font-normal text-gray-500"
-                                            : "ml-2 text-[11px] font-normal text-gray-500"
-                                        }
-                                      >
-                                        年齢: {preview.label}
-                                      </span>
-                                    );
-                                  })()}
-                                </span>
-                              <details className="text-xs text-gray-600">
-                                <summary className="cursor-pointer font-medium">年齢条件を設定</summary>
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    placeholder="—"
-                                    value={eventAgeRanges[event.name]?.minAge ?? ""}
-                                    onChange={(e) => {
-                                      clearEventAgeSaveStatus("OCEAN-INDIVIDUAL");
-                                      setEventAgeRanges((prev) => ({
-                                        ...prev,
-                                        [event.name]: {
-                                          minAge: e.target.value,
-                                          maxAge: prev[event.name]?.maxAge ?? "",
-                                        },
-                                      }));
-                                    }}
-                                    disabled={!canEdit}
-                                    className="h-8 w-16 text-xs"
-                                  />
-                                  <span>〜</span>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    placeholder="—"
-                                    value={eventAgeRanges[event.name]?.maxAge ?? ""}
-                                    onChange={(e) => {
-                                      clearEventAgeSaveStatus("OCEAN-INDIVIDUAL");
-                                      setEventAgeRanges((prev) => ({
-                                        ...prev,
-                                        [event.name]: {
-                                          minAge: prev[event.name]?.minAge ?? "",
-                                          maxAge: e.target.value,
-                                        },
-                                      }));
-                                    }}
-                                    disabled={!canEdit}
-                                    className="h-8 w-16 text-xs"
-                                  />
-                                </div>
-                              </details>
-                            </div>
-                            {canEdit && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleDeleteEvent(event.id, event.name)}
-                              >
-                                <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
-                              </Button>
-                            )}
-                          </div>
-                        );
-                      })}
+                      .map((event) =>
+                        renderCompactEventCard(
+                          event,
+                          "OCEAN",
+                          "INDIVIDUAL",
+                          "OCEAN-INDIVIDUAL",
+                          "ocean"
+                        )
+                      )}
                   </div>
                 )}
-              </div>
-            </div>
+                {renderEventBlockSaveBar(
+                  "OCEAN-INDIVIDUAL",
+                  "オーシャン · 個人種目の保存",
+                  "この枠の一覧に入力した年齢・最大レーン・ラウンド数だけをサーバーに反映します（下の団体種目とは別です）。",
+                  "個人種目を保存",
+                  () => handleBulkUpdateEventTable("OCEAN", "INDIVIDUAL")
+                )}
+              </section>
 
-            {/* オーシャンチーム種目 */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-semibold text-cyan-700">チーム種目 (選択のみ)</h4>
-                {canEdit && (
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleBulkUpdateEventAgeRanges("OCEAN", "TEAM")}
-                      className="text-xs"
+              <section className="space-y-3 rounded-lg border border-border/90 bg-muted/20 p-3 sm:p-4 dark:border-border dark:bg-muted/10">
+                <div className="flex flex-col gap-2 border-b border-border/40 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="secondary"
+                      className="border-cyan-200/80 bg-cyan-100/90 text-[11px] text-cyan-950 dark:border-cyan-800 dark:bg-cyan-950/50 dark:text-cyan-100"
                     >
-                      年齢条件を保存
-                    </Button>
-                    {eventAgeSaveStatus["OCEAN-TEAM"] && (
-                      <span className="self-center text-[11px] text-gray-500">
-                        保存済み {eventAgeSaveStatus["OCEAN-TEAM"].toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    )}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleAddDefaultEvents("OCEAN", "TEAM")}
-                      disabled={isAddingDefaultEvents === "OCEAN-TEAM"}
-                      className="text-xs"
-                    >
-                      {isAddingDefaultEvents === "OCEAN-TEAM" ? "追加中..." : "デフォルト種目を追加"}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDeleteAllEvents("OCEAN", "TEAM")}
-                      className="text-xs text-red-600 hover:text-red-700"
-                    >
-                      すべて削除
-                    </Button>
+                      オーシャン · 団体（チーム）
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      団体種目 · 上の個人種目とは別ブロック
+                    </span>
                   </div>
-                )}
-              </div>
-              {oceanTeamError && (
-                <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
-                  {oceanTeamError}
+                  {canEdit ? (
+                    <div className="flex flex-wrap items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2 text-[11px]"
+                        onClick={() => handleAddDefaultEvents("OCEAN", "TEAM", "BOTH")}
+                        disabled={isAddingDefaultEvents === "OCEAN-TEAM"}
+                      >
+                        {isAddingDefaultEvents === "OCEAN-TEAM" ? "追加中…" : "＋デフォルト"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2 text-[11px] text-destructive hover:text-destructive"
+                        onClick={() => handleDeleteAllEvents("OCEAN", "TEAM")}
+                      >
+                        全削除
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
-              )}
-              
-              {canEdit && (
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="例: ビーチリレー"
-                    value={oceanTeamName}
-                    onChange={(e) => {
-                      setOceanTeamName(e.target.value);
-                      if (oceanTeamError) setOceanTeamError(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleAddOceanTeam();
+                {renderEventSettingsQuickNav(sortedUniqueEventsBySection("OCEAN", "TEAM"), "ocean")}
+                {oceanTeamError ? (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+                    {oceanTeamError}
+                  </div>
+                ) : null}
+                {canEdit ? (
+                  <div className="flex gap-1.5">
+                    <Input
+                      className="h-9 text-sm"
+                      placeholder="チーム種目を追加（例: ビーチリレー）"
+                      value={oceanTeamName}
+                      onChange={(e) => {
+                        setOceanTeamName(e.target.value);
+                        if (oceanTeamError) setOceanTeamError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddOceanTeam();
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      className="h-9 shrink-0 px-3"
+                      onClick={handleAddOceanTeam}
+                      disabled={
+                        isAddingOceanTeam ||
+                        isAddingDefaultEvents === "OCEAN-TEAM" ||
+                        !oceanTeamName.trim()
                       }
-                    }}
-                  />
-                  <Button
-                    onClick={handleAddOceanTeam}
-                    disabled={isAddingOceanTeam || !oceanTeamName.trim()}
-                    size="icon"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                {events.filter(e => e.category === "OCEAN" && e.type === "TEAM").length === 0 ? (
-                  <p className="text-sm text-gray-500">オーシャンチーム種目が登録されていません</p>
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : null}
+                {events.filter((e) => e.category === "OCEAN" && e.type === "TEAM").length === 0 ? (
+                  <p className="text-xs text-muted-foreground">チーム種目はまだありません。</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {Array.from(
                       new Map(
                         events
-                          .filter(e => e.category === "OCEAN" && e.type === "TEAM")
-                          .map(e => [e.name, e])
+                          .filter((e) => e.category === "OCEAN" && e.type === "TEAM")
+                          .map((e) => [e.name, e])
                       ).values()
                     )
                       .sort((a, b) => a.displayOrder - b.displayOrder)
-                      .map((event) => {
-                        // オーシャンマン/オーシャンウーマン系の種目は性別表記を除外
-                        const hideGenderLabel = [
-                          'オーシャンマン',
-                          'オーシャンウーマン',
-                          'オーシャンマンリレー',
-                          'オーシャンウーマンリレー'
-                        ].includes(event.name);
-                        
-                        return (
-                          <div
-                            key={event.name}
-                            className="flex items-center justify-between p-3 bg-cyan-100 dark:bg-cyan-950 border border-cyan-300 dark:border-cyan-700 rounded-lg"
-                          >
-                            <div className="space-y-2">
-                                <span className="text-sm font-semibold text-black dark:text-white">
-                                  {event.name}{!hideGenderLabel && '（男女）'}
-                                  <span className="ml-2 text-xs font-normal text-cyan-700 dark:text-cyan-400">(選択のみ)</span>
-                                  {(() => {
-                                    const preview = getAgePreview(event.name);
-                                    return (
-                                      <span
-                                        className={
-                                          preview.isUnset
-                                            ? "ml-2 rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] font-normal text-gray-500"
-                                            : "ml-2 text-[11px] font-normal text-gray-500"
-                                        }
-                                      >
-                                        年齢: {preview.label}
-                                      </span>
-                                    );
-                                  })()}
-                                </span>
-                              <details className="text-xs text-gray-600">
-                                <summary className="cursor-pointer font-medium">年齢条件を設定</summary>
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    placeholder="—"
-                                    value={eventAgeRanges[event.name]?.minAge ?? ""}
-                                    onChange={(e) => {
-                                      clearEventAgeSaveStatus("OCEAN-TEAM");
-                                      setEventAgeRanges((prev) => ({
-                                        ...prev,
-                                        [event.name]: {
-                                          minAge: e.target.value,
-                                          maxAge: prev[event.name]?.maxAge ?? "",
-                                        },
-                                      }));
-                                    }}
-                                    disabled={!canEdit}
-                                    className="h-8 w-16 text-xs"
-                                  />
-                                  <span>〜</span>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    placeholder="—"
-                                    value={eventAgeRanges[event.name]?.maxAge ?? ""}
-                                    onChange={(e) => {
-                                      clearEventAgeSaveStatus("OCEAN-TEAM");
-                                      setEventAgeRanges((prev) => ({
-                                        ...prev,
-                                        [event.name]: {
-                                          minAge: prev[event.name]?.minAge ?? "",
-                                          maxAge: e.target.value,
-                                        },
-                                      }));
-                                    }}
-                                    disabled={!canEdit}
-                                    className="h-8 w-16 text-xs"
-                                  />
-                                </div>
-                              </details>
-                            </div>
-                            {canEdit && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleDeleteEvent(event.id, event.name)}
-                              >
-                                <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
-                              </Button>
-                            )}
-                          </div>
-                        );
-                      })}
+                      .map((event) =>
+                        renderCompactEventCard(event, "OCEAN", "TEAM", "OCEAN-TEAM", "ocean")
+                      )}
                   </div>
                 )}
-              </div>
+                {renderEventBlockSaveBar(
+                  "OCEAN-TEAM",
+                  "オーシャン · 団体（チーム）種目の保存",
+                  "この枠の一覧だけが対象です。チームポジション・レーン・ラウンドもここで保存します。",
+                  "団体種目を保存",
+                  () => handleBulkUpdateEventTable("OCEAN", "TEAM")
+                )}
+              </section>
             </div>
-          </div>
           )}
+          {canEdit ? (
+            <div className="flex flex-col gap-2 rounded-lg border border-primary/25 bg-primary/[0.06] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between dark:bg-primary/[0.08]">
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                <span className="font-semibold text-foreground">すべて保存</span>
+                … プール／オーシャン・個人／チームをまたいで、レーン・ラウンド・年齢・チームポジションを一度に書き込みます（各ブロックの保存ボタンは不要になります）。
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="default"
+                className="h-9 shrink-0 text-xs sm:min-w-[7.5rem]"
+                onClick={() => void handleBulkUpdateAllEventTables()}
+                disabled={bulkSavingAllEventTables || bulkUpdatingEventSection !== null}
+              >
+                {bulkSavingAllEventTables ? "保存中…" : "すべて保存"}
+              </Button>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
-      {/* エントリー費用設定 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>エントリー費用設定</CardTitle>
-          <CardDescription>料金体系を設定します。</CardDescription>
+      <Card className="overflow-hidden border-border/90 shadow-sm">
+        <CardHeader className="space-y-2 border-b border-border bg-gradient-to-r from-muted/40 to-background px-4 py-3 sm:px-5">
+          <div className="flex items-start gap-3">
+            <div
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/12 text-primary"
+              aria-hidden
+            >
+              <Coins className="h-4 w-4" strokeWidth={1.75} />
+            </div>
+            <div className="min-w-0 space-y-1">
+              <CardTitle className="text-base font-semibold">エントリー費用</CardTitle>
+              <CardDescription className="text-xs leading-relaxed">
+                個人種目・チーム種目を登録・保存したあと、該当する区分の料金を入力します。未登録の区分は入力できません。
+              </CardDescription>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {/* 基本料金 */}
+        <CardContent className="space-y-4 px-4 py-4 sm:px-5">
+          {!hasIndividualEvents && !hasTeamEvents ? (
+            <div
+              role="status"
+              className="flex gap-2.5 rounded-lg border border-amber-200/80 bg-amber-50/90 px-3 py-2.5 text-xs leading-relaxed text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/35 dark:text-amber-50"
+            >
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden />
+              <span>
+                まず上の種目表で個人またはチーム種目を追加し、「すべて保存」または各ブロックの保存で反映してください。種目がある区分だけ参加費を設定できます。
+              </span>
+            </div>
+          ) : null}
+
           <div className="space-y-2">
-            <Label htmlFor="baseFee">基本料金（円）</Label>
+            <Label htmlFor="individualEntryFee">個人エントリー料金（円）</Label>
             <div className="flex gap-2">
               <Input
-                id="baseFee"
-                type="number"
+                id="individualEntryFee"
+                numericInput="integer"
                 min="0"
                 step="100"
-                value={baseFee}
-                onChange={(e) => setBaseFee(e.target.value)}
+                value={individualEntryFee}
+                onChange={(e) => setIndividualEntryFee(e.target.value)}
                 placeholder="5000"
-                disabled={!canEdit}
+                disabled={!canEdit || !hasIndividualEvents}
               />
             </div>
-            <p className="text-sm text-gray-500">エントリーの基本料金を設定します（種目数に関わらず固定）</p>
+            <p className="text-sm text-muted-foreground">
+              {hasIndividualEvents
+                ? "選手本人が支払う大会参加料です。個人種目数に関係なく一律です。"
+                : "個人種目が未登録のため設定できません。個人種目を追加すると入力できます。"}
+            </p>
           </div>
 
-          {/* 複数種目割増 */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>複数種目割増</Label>
-              {canEdit && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setMultiEventSurcharges([...multiEventSurcharges, { minEvents: "", feePerEvent: "" }])}
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  割増を追加
-                </Button>
-              )}
-            </div>
-            {multiEventSurcharges.length === 0 ? (
-              <p className="text-sm text-gray-500">複数種目割増が設定されていません</p>
-            ) : (
-              <div className="space-y-2">
-                {multiEventSurcharges.map((surcharge, index) => (
-                  <div key={index} className="flex gap-2 items-center">
-                    <Input
-                      type="number"
-                      min="2"
-                      placeholder="種目数"
-                      value={surcharge.minEvents}
-                      onChange={(e) => {
-                        const newSurcharges = [...multiEventSurcharges];
-                        newSurcharges[index].minEvents = e.target.value;
-                        setMultiEventSurcharges(newSurcharges);
-                      }}
-                      disabled={!canEdit}
-                      className="w-24"
-                    />
-                    <span className="text-sm">種目以上1種目につき</span>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="100"
-                      placeholder="料金"
-                      value={surcharge.feePerEvent}
-                      onChange={(e) => {
-                        const newSurcharges = [...multiEventSurcharges];
-                        newSurcharges[index].feePerEvent = e.target.value;
-                        setMultiEventSurcharges(newSurcharges);
-                      }}
-                      disabled={!canEdit}
-                      className="w-32"
-                    />
-                    <span className="text-sm">円追加</span>
-                    {canEdit && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          const newSurcharges = multiEventSurcharges.filter((_, i) => i !== index);
-                          setMultiEventSurcharges(newSurcharges);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            <p className="text-sm text-gray-500">指定種目数以上になると、1種目増えるごとに追加される料金を設定します（例: 3種目以上1,000円追加）</p>
-          </div>
-
-          {/* チーム種目のみ料金 */}
-          <div className="space-y-2">
-            <Label htmlFor="teamOnlyFee">チーム種目のみ料金（円）</Label>
+            <Label htmlFor="teamEntryFeePerTeam">チーム種目料金（1チームあたり / 円）</Label>
             <div className="flex gap-2">
               <Input
-                id="teamOnlyFee"
-                type="number"
+                id="teamEntryFeePerTeam"
+                numericInput="integer"
                 min="0"
                 step="100"
-                value={teamOnlyFee}
-                onChange={(e) => setTeamOnlyFee(e.target.value)}
+                value={teamEntryFeePerTeam}
+                onChange={(e) => setTeamEntryFeePerTeam(e.target.value)}
                 placeholder="3000"
-                disabled={!canEdit}
+                disabled={!canEdit || !hasTeamEvents}
               />
             </div>
-            <p className="text-sm text-gray-500">チーム種目のみにエントリーする場合の料金（任意）</p>
+            <p className="text-sm text-muted-foreground">
+              {hasTeamEvents
+                ? "クラブが支払う単価です。1種目1チームごとにこの金額が加算されます。"
+                : "チーム種目が未登録のため設定できません。団体種目を追加すると入力できます。"}
+            </p>
+          </div>
+
+          <div className="rounded-md border border-border/80 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+            <p>個人種目: 種目数に関係なく選手ごとに一律課金</p>
+            <p>チーム種目: 1種目1チームごとにクラブへ課金</p>
+            <p>複数種目割増とチーム種目のみ特別料金は使用しません。</p>
           </div>
 
           {canEdit && (
             <div className="flex justify-end">
               <Button
                 onClick={handleUpdateEntryFee}
-                disabled={isUpdatingFee}
+                disabled={isUpdatingFee || (!hasIndividualEvents && !hasTeamEvents)}
                 className="w-full md:w-auto"
               >
                 {isUpdatingFee ? "更新中..." : "エントリー費用設定を更新"}
@@ -2000,6 +2905,173 @@ export default function EntrySettingsEditor({
           )}
         </CardContent>
       </Card>
+      </>
+      )}
+
+      {isSection("pledge") && (
+      <Card className="overflow-hidden">
+        <CardHeader className="space-y-1 border-b border-border bg-muted/15 px-4 py-3">
+          <CardTitle className="text-base font-semibold">エントリー時の誓約</CardTitle>
+          <CardDescription className="text-xs leading-relaxed">
+            オンにすると公開フォームに誓約文を表示し、参加者の同意を必須にします。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5 px-4 py-4">
+          {initialData.entryPledgeLockNoOffer && !initialData.entryPledgeEnabled ? (
+            <div
+              role="status"
+              className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950 dark:border-amber-900/55 dark:bg-amber-950/45 dark:text-amber-50"
+            >
+              <span className="font-medium">初回公開時にオフのため、誓約を有効化できません。</span>{" "}
+              <span className="text-amber-900/80 dark:text-amber-100/85">
+                案内は大会ページ・お知らせで行ってください。
+              </span>
+            </div>
+          ) : null}
+
+          <div className="rounded-lg border border-border bg-muted/15 p-3">
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-border"
+                checked={entryPledgeEnabled}
+                onChange={(e) => {
+                  if (
+                    initialData.entryPledgeLockNoOffer &&
+                    !initialData.entryPledgeEnabled &&
+                    e.target.checked
+                  ) {
+                    toast.error("公開時に誓約を有効にしていないため、後から有効化できません");
+                    return;
+                  }
+                  setEntryPledgeEnabled(e.target.checked);
+                }}
+                disabled={
+                  !canEdit ||
+                  Boolean(initialData.entryPledgeLockNoOffer && !initialData.entryPledgeEnabled)
+                }
+              />
+              <span className="text-sm text-foreground">
+                <span className="font-medium">エントリーフォームに誓約を表示する</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  オフのときは参加者に表示しません。
+                </span>
+              </span>
+            </label>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2 lg:gap-5">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label htmlFor="entryPledgeText" className="text-foreground">
+                  誓約文
+                </Label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={cn(
+                      "text-xs tabular-nums",
+                      entryPledgeText.length > ENTRY_PLEDGE_TEXT_MAX_CHARS * 0.9
+                        ? "font-medium text-amber-700 dark:text-amber-300"
+                        : "text-muted-foreground"
+                    )}
+                  >
+                    {entryPledgeText.length}/{ENTRY_PLEDGE_TEXT_MAX_CHARS}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 px-2.5 text-xs font-semibold"
+                    disabled={!canEdit}
+                    onClick={applyPledgeBold}
+                    title="太字（⌘B / Ctrl+B）"
+                  >
+                    <Bold className="h-3.5 w-3.5" aria-hidden />
+                    太字
+                  </Button>
+                </div>
+              </div>
+              <Textarea
+                ref={pledgeTextareaRef}
+                id="entryPledgeText"
+                rows={10}
+                value={entryPledgeText}
+                onChange={(e) => setEntryPledgeText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (!canEdit) return;
+                  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
+                    e.preventDefault();
+                    applyPledgeBold();
+                  }
+                }}
+                placeholder="例: 本大会の規定に同意のうえエントリーします。"
+                disabled={!canEdit}
+                className="min-h-[12rem] resize-y font-mono text-sm leading-relaxed"
+              />
+            </div>
+            <div className="flex min-h-0 flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Eye className="h-4 w-4 shrink-0" aria-hidden />
+                  <span className="text-sm font-medium text-foreground">プレビュー</span>
+                </div>
+                <span className="text-[10px] text-muted-foreground">参加者の画面</span>
+              </div>
+              <div className="min-h-[12rem] flex-1 overflow-y-auto rounded-lg border border-border bg-muted/20 p-4">
+                {entryPledgeEnabled && entryPledgeText.trim() ? (
+                  <SimpleMarkdown
+                    text={entryPledgeText.trim()}
+                    className="text-[15px] leading-relaxed text-foreground"
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    オンにして文言を入力すると表示されます。
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <details className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2 text-xs text-muted-foreground">
+            <summary className="cursor-pointer select-none font-medium text-foreground outline-none">
+              補足（書式・公開時の注意）
+            </summary>
+            <ul className="mt-2 list-inside list-disc space-y-1.5 pl-0.5">
+              <li>改行はそのまま表示されます。</li>
+              <li>
+                太字は「太字」ボタン、または{" "}
+                <kbd className="rounded border border-border bg-background px-1 py-px font-mono text-[10px]">
+                  ⌘B
+                </kbd>
+                /
+                <kbd className="rounded border border-border bg-background px-1 py-px font-mono text-[10px]">
+                  Ctrl+B
+                </kbd>
+                （未選択で挿入すると <code className="rounded bg-muted px-1">**|**</code> が入ります）。
+              </li>
+              {!initialData.entryPledgeLockNoOffer ? (
+                <li>
+                  初回公開の時点でオフのままにすると、後から有効化できません（公開前にオンにしてください）。
+                </li>
+              ) : null}
+            </ul>
+          </details>
+
+          {canEdit && (
+            <div className="flex flex-col gap-2 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-end">
+              <Button
+                type="button"
+                onClick={() => void handleSavePledge()}
+                disabled={isUpdatingPledge}
+                className="w-full sm:w-auto"
+              >
+                {isUpdatingPledge ? "保存中…" : "誓約設定を保存"}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      )}
     </>
   );
 }

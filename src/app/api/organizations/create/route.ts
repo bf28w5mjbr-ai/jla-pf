@@ -1,6 +1,9 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { verifySession } from "@/lib/auth";
+import { normalizeOrgRoleForWrite } from "@/lib/roleScopes";
+import { parseOptionalWebsiteUrlField } from "@/lib/safeExternalUrl";
 
 export async function POST(request: NextRequest) {
   try {
@@ -54,19 +57,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const websiteUrlParsed = parseOptionalWebsiteUrlField(websiteUrl);
+    if (!websiteUrlParsed.ok) {
+      return NextResponse.json(
+        { error: websiteUrlParsed.error },
+        { status: 400 }
+      );
+    }
+
     // 団体を作成（代表者情報は作成者の情報を使用）
     const organization = await prisma.organization.create({
       data: {
         name: name.trim(),
         nameKana: nameKana?.trim() || null,
         abbreviation: abbreviation?.trim() || null,
-        websiteUrl: websiteUrl?.trim() || null,
+        websiteUrl: websiteUrlParsed.value,
         email: email?.trim() || null,
         phoneNumber: phoneNumber?.trim() || null,
         representativeFamilyName: user.familyName,
         representativeGivenName: user.givenName,
         representativeFamilyNameKana: user.familyNameKana,
         representativeGivenNameKana: user.givenNameKana,
+        representativeUserId: session.userId,
         postalCode: postalCode?.trim() || null,
         prefecture: prefecture?.trim() || null,
         city: city?.trim() || null,
@@ -79,21 +91,17 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // 作成者を自動的にOWNERとして追加
+    // 作成者を自動的に管理者として追加
     await prisma.orgAdmin.create({
       data: {
         userId: session.userId,
         organizationId: organization.id,
-        role: "OWNER",
+        role: normalizeOrgRoleForWrite("ADMIN"),
       },
     });
 
     return NextResponse.json(organization);
   } catch (error) {
-    console.error("Create organization error:", error);
-    return NextResponse.json(
-      { error: "団体の作成に失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("POST api/organizations/create/route.ts", error);
   }
 }

@@ -1,6 +1,9 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { verifySession } from "@/lib/auth";
+import { normalizeClubRoleForWrite } from "@/lib/roleScopes";
+import { parseOptionalWebsiteUrlField } from "@/lib/safeExternalUrl";
 
 export async function POST(request: NextRequest) {
   try {
@@ -36,10 +39,12 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { 
-      name, 
+    const {
+      name,
       nameKana,
+      abbreviation,
       websiteUrl,
+      isLifesavingClub,
       patrolLocation,
       establishedYear,
       officePostalCode,
@@ -55,12 +60,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "クラブ名は必須です" }, { status: 400 });
     }
 
+    const websiteUrlParsed = parseOptionalWebsiteUrlField(websiteUrl);
+    if (!websiteUrlParsed.ok) {
+      return NextResponse.json(
+        { error: websiteUrlParsed.error },
+        { status: 400 }
+      );
+    }
+
+    const lifesaving = Boolean(isLifesavingClub);
+
     // クラブを作成（代表者情報は作成者の情報を使用）
     const club = await prisma.club.create({
       data: {
         name: name.trim(),
         nameKana: nameKana?.trim() || null,
-        websiteUrl: websiteUrl?.trim() || null,
+        abbreviation: abbreviation?.trim() || null,
+        websiteUrl: websiteUrlParsed.value,
+        isLifesavingClub: lifesaving,
         representativeFamilyName: user.familyName,
         representativeGivenName: user.givenName,
         representativeFamilyNameKana: user.familyNameKana,
@@ -71,7 +88,8 @@ export async function POST(request: NextRequest) {
         representativeAddressLine1: user.addressLine1,
         representativeAddressLine2: user.addressLine2,
         representativePhone: user.phoneNumber,
-        patrolLocation: patrolLocation?.trim() || null,
+        representativeUserId: session.userId,
+        patrolLocation: lifesaving ? patrolLocation?.trim() || null : null,
         establishedYear: establishedYear ? parseInt(establishedYear) : null,
         officePostalCode: officePostalCode?.trim() || null,
         officePrefecture: officePrefecture?.trim() || null,
@@ -85,13 +103,13 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // 作成者を自動的にオーナーとして登録
+    // 作成者を自動的に管理者として登録
     await prisma.membership.create({
       data: {
         userId: session.userId,
         clubId: club.id,
-        role: "OWNER",
-        status: "APPROVED", // オーナーは自動承認
+        role: normalizeClubRoleForWrite("ADMIN"),
+        status: "APPROVED",
       },
     });
 
@@ -104,10 +122,6 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Create club error:", error);
-    return NextResponse.json(
-      { error: "クラブの作成に失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("POST api/clubs/create/route.ts", error);
   }
 }

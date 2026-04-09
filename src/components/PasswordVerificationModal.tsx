@@ -43,7 +43,7 @@ export default function PasswordVerificationModal({
       // 認証成功
       setPassword("");
       onVerified();
-    } catch (err) {
+    } catch {
       setError("エラーが発生しました");
     } finally {
       setLoading(false);
@@ -87,7 +87,7 @@ export default function PasswordVerificationModal({
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-3 text-base bg-white dark:bg-gray-900 text-black dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-3 text-base bg-white dark:bg-gray-900 text-black dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="パスワードを入力"
               required
               minLength={8}
@@ -112,7 +112,7 @@ export default function PasswordVerificationModal({
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 bg-blue-600 text-white text-base font-semibold py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex-1 bg-orange-600 text-white text-base font-semibold py-3 rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {loading ? "確認中..." : "確認"}
             </button>

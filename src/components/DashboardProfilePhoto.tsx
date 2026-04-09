@@ -87,11 +87,14 @@ export default function DashboardProfilePhoto({ currentPhotoUrl, userName }: Das
         className="w-24 h-24 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 text-3xl font-medium border border-gray-200 dark:border-gray-700 overflow-hidden hover:opacity-80 transition-opacity cursor-pointer relative"
       >
         {preview ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
           <img 
             src={preview} 
             alt={userName}
-            className="w-full h-full object-contain"
+            className="w-full h-full object-cover"
           />
+          </>
         ) : (
           <span>{userName.charAt(0)}</span>
         )}

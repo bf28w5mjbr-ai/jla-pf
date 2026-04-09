@@ -1,7 +1,9 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
+import { hasOrgAdminAccess } from "@/lib/roleScopes";
 
 export async function POST(
   request: NextRequest,
@@ -47,8 +49,7 @@ export async function POST(
       );
     }
 
-    const userRole = competition.organization.admins[0]?.role;
-    if (userRole !== "OWNER" && userRole !== "ADMIN") {
+    if (!hasOrgAdminAccess(competition.organization.admins)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -64,10 +65,6 @@ export async function POST(
 
     return NextResponse.json(announcement);
   } catch (error) {
-    console.error("Error creating announcement:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return jsonInternalError500("POST api/competitions/[id]/announcements/route.ts", error);
   }
 }

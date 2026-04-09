@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Trash2, Calendar, MapPin, Users, Trophy } from "lucide-react";
+import { Trash2, Calendar, MapPin, Users, Trophy, Plus, X, Save } from "lucide-react";
+import { isClubAdminRole } from "@/lib/roleScopes";
 
 type ActivityAuthor = {
   id: string;
@@ -33,7 +34,7 @@ type ActivityRecord = {
 type ClubActivitiesProps = {
   clubId: string;
   currentUserId: string;
-  currentUserRole: "OWNER" | "ADMIN" | "MEMBER";
+  currentUserRole: "ADMIN" | "MEMBER" | string;
 };
 
 const activityTypes = [
@@ -64,13 +65,9 @@ export default function ClubActivities({
   const [participants, setParticipants] = useState("");
   const [achievements, setAchievements] = useState("");
 
-  const canCreateRecord = currentUserRole === "OWNER" || currentUserRole === "ADMIN";
+  const canCreateRecord = isClubAdminRole(currentUserRole);
 
-  useEffect(() => {
-    loadRecords();
-  }, [clubId]);
-
-  const loadRecords = async () => {
+  const loadRecords = useCallback(async () => {
     try {
       setLoading(true);
       const res = await fetch(`/api/clubs/${clubId}/activities`);
@@ -83,7 +80,11 @@ export default function ClubActivities({
     } finally {
       setLoading(false);
     }
-  };
+  }, [clubId]);
+
+  useEffect(() => {
+    void loadRecords();
+  }, [loadRecords]);
 
   const resetForm = () => {
     setActivityType("競技");
@@ -158,8 +159,23 @@ export default function ClubActivities({
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">活動記録</h2>
         {canCreateRecord && (
-          <Button onClick={() => setShowCreateForm(!showCreateForm)}>
-            {showCreateForm ? "キャンセル" : "活動記録を追加"}
+          <Button
+            onClick={() => setShowCreateForm(!showCreateForm)}
+            variant={showCreateForm ? "outline" : "default"}
+            size="sm"
+            className="h-9 px-4 shadow-sm"
+          >
+            {showCreateForm ? (
+              <>
+                <X className="h-4 w-4" />
+                入力を閉じる
+              </>
+            ) : (
+              <>
+                <Plus className="h-4 w-4" />
+                活動記録を追加
+              </>
+            )}
           </Button>
         )}
       </div>
@@ -218,7 +234,7 @@ export default function ClubActivities({
               <Label htmlFor="participants">参加人数</Label>
               <Input
                 id="participants"
-                type="number"
+                numericInput="integer"
                 min="1"
                 value={participants}
                 onChange={(e) => setParticipants(e.target.value)}
@@ -248,8 +264,9 @@ export default function ClubActivities({
               />
             </div>
 
-            <Button onClick={handleCreate} disabled={creating}>
-              {creating ? "登録中..." : "登録"}
+            <Button onClick={handleCreate} disabled={creating} className="h-9 px-4 shadow-sm">
+              <Save className="h-4 w-4" />
+              {creating ? "登録中..." : "登録する"}
             </Button>
           </div>
         </Card>
@@ -264,7 +281,7 @@ export default function ClubActivities({
           {records.map((record) => {
             const isAuthor = record.authorId === currentUserId;
             const canDelete =
-              isAuthor || currentUserRole === "OWNER" || currentUserRole === "ADMIN";
+              isAuthor || isClubAdminRole(currentUserRole);
 
             return (
               <Card key={record.id}>
@@ -272,7 +289,7 @@ export default function ClubActivities({
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
                           {record.activityType}
                         </span>
                         <h3 className="text-lg font-semibold">{record.title}</h3>

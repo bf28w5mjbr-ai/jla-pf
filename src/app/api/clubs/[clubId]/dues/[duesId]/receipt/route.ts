@@ -1,3 +1,4 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -117,6 +118,11 @@ export async function GET(
       const pdfComponent = React.createElement(ReceiptPDF, {
         receiptNumber,
         issuedDate: dues.paidDate,
+        subtitle: `${issuerName} 名義（クラブ会費）`,
+        purposeLine: `但、${dues.fiscalYear.fiscalYear}年度分のクラブ会費として`,
+        issuerSectionTitle: "発行元（クラブ）",
+        recipientSectionTitle: "納入者",
+        simplifyTotalsWhenNoTax: true,
         issuer: {
           name: issuerName,
           email: "",
@@ -183,7 +189,7 @@ export async function GET(
 
       const pdfBuffer = await generatePdfBuffer(pdfComponent);
 
-      return new NextResponse(pdfBuffer as any, {
+      return new NextResponse(new Uint8Array(pdfBuffer), {
         headers: {
           "Content-Type": "application/pdf",
           "Content-Disposition": `inline; filename=\"${receiptNumber}.pdf\"`,
@@ -207,23 +213,22 @@ export async function GET(
       receiptUrl: dues.receiptUrl ?? null,
     });
   } catch (error) {
-    console.error("GET /api/clubs/[clubId]/dues/[duesId]/receipt error:", error);
-    return NextResponse.json({ error: "領収書情報の取得に失敗しました" }, { status: 500 });
+    return jsonInternalError500("GET api/clubs/[clubId]/dues/[duesId]/receipt/route.ts", error);
   }
 }
 
-export async function POST(req: NextRequest) {
+export async function POST() {
   return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
 }
 
-export async function PUT(req: NextRequest) {
+export async function PUT() {
   return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
 }
 
-export async function PATCH(req: NextRequest) {
+export async function PATCH() {
   return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
 }
 
-export async function DELETE(req: NextRequest) {
+export async function DELETE() {
   return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
 }

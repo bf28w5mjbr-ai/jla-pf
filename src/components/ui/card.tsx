@@ -2,25 +2,25 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-// Notion-style Card component
 const Card = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement> & { padding?: "none" | "sm" | "md" | "lg" }
 >(({ className, padding = "md", ...props }, ref) => {
   const paddingClasses = {
     none: "",
-    sm: "p-4",
-    md: "p-6",
-    lg: "p-8",
+    sm: "p-3.5 sm:p-4",
+    md: "p-4 sm:p-5",
+    lg: "p-6 sm:p-7",
   };
 
   return (
     <div
       ref={ref}
       className={cn(
-        "bg-white dark:bg-[#2a2a2a]",
-        "border border-gray-200 dark:border-gray-700",
-        "rounded-lg overflow-hidden",
+        "bg-card text-card-foreground",
+        "border border-border/85",
+        "rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04),0_6px_20px_rgba(15,23,42,0.03)] overflow-hidden",
+        "dark:shadow-[0_1px_3px_rgba(0,0,0,0.35)]",
         paddingClasses[padding],
         className
       )}
@@ -37,7 +37,7 @@ const CardHeader = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#1f1f1f]",
+      "border-b border-border/70 bg-muted/30 px-4 py-3.5 sm:px-5 sm:py-4",
       className
     )}
     {...props}
@@ -52,7 +52,7 @@ const CardTitle = React.forwardRef<
   <h3
     ref={ref}
     className={cn(
-      "text-lg font-semibold text-gray-900 dark:text-gray-100",
+      "text-base font-semibold tracking-tight text-foreground sm:text-lg",
       className
     )}
     {...props}
@@ -66,7 +66,7 @@ const CardDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <p
     ref={ref}
-    className={cn("text-sm text-gray-600 dark:text-gray-400", className)}
+    className={cn("text-xs leading-relaxed text-muted-foreground sm:text-sm", className)}
     {...props}
   />
 ))
@@ -76,7 +76,7 @@ const CardContent = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
-  <div ref={ref} className={cn("p-6", className)} {...props} />
+  <div ref={ref} className={cn("p-4 sm:p-5", className)} {...props} />
 ))
 CardContent.displayName = "CardContent"
 
@@ -86,7 +86,7 @@ const CardFooter = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("flex items-center p-6 pt-0", className)}
+    className={cn("flex items-center p-4 pt-0 sm:p-5 sm:pt-0", className)}
     {...props}
   />
 ))

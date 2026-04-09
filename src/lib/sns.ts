@@ -30,7 +30,7 @@ export async function sendOTPviaSMS(phoneNumber: string, otp: string): Promise<v
     return;
   }
 
-  const message = `JLA PF 認証コード: ${otp}\n\n有効期限は5分です。\nこのコードを第三者に教えないでください。`;
+  const message = `Bluvium 認証コード: ${otp}\n\n有効期限は5分です。\nこのコードを第三者に教えないでください。`;
 
   const params: PublishCommandInput = {
     Message: message,
@@ -59,6 +59,37 @@ export async function sendOTPviaSMS(phoneNumber: string, otp: string): Promise<v
 }
 
 /**
+ * セキュリティ通知用 SMS（OTP 以外）。ログイン通知・アカウント変更通知など。
+ */
+export async function sendSecurityNoticeSms(
+  phoneNumber: string,
+  message: string
+): Promise<void> {
+  if (process.env.SKIP_SMS === 'true') {
+    console.log(`[DEV] Security SMS to ${phoneNumber}: ${message}`);
+    return;
+  }
+
+  const params: PublishCommandInput = {
+    Message: message.slice(0, 1400),
+    PhoneNumber: phoneNumber,
+    MessageAttributes: {
+      'AWS.SNS.SMS.SMSType': {
+        DataType: 'String',
+        StringValue: 'Transactional',
+      },
+      'AWS.SNS.SMS.SenderID': {
+        DataType: 'String',
+        StringValue: 'JLAPF',
+      },
+    },
+  };
+
+  const command = new PublishCommand(params);
+  await snsClient.send(command);
+}
+
+/**
  * テスト用: SMSをモック送信（開発環境）
  * 
  * @param phoneNumber 電話番号
@@ -66,7 +97,7 @@ export async function sendOTPviaSMS(phoneNumber: string, otp: string): Promise<v
  */
 export async function sendOTPviaSMS_Mock(phoneNumber: string, otp: string): Promise<void> {
   console.log(`[MOCK SMS] To: ${phoneNumber}`);
-  console.log(`[MOCK SMS] Message: JLA PF 認証コード: ${otp}`);
+  console.log(`[MOCK SMS] Message: Bluvium 認証コード: ${otp}`);
   console.log(`[MOCK SMS] 有効期限は5分です。`);
   
   // モック遅延（実際のSMS送信をシミュレート）

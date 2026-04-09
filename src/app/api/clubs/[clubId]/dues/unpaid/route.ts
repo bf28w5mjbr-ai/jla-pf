@@ -1,3 +1,4 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -59,23 +60,22 @@ export async function GET(
 
     return NextResponse.json({ dues });
   } catch (error) {
-    console.error("GET /api/clubs/[clubId]/dues/unpaid error:", error);
-    return NextResponse.json({ error: "未納会費の取得に失敗しました" }, { status: 500 });
+    return jsonInternalError500("GET api/clubs/[clubId]/dues/unpaid/route.ts", error);
   }
 }
 
-export async function POST(req: NextRequest) {
+export async function POST() {
   return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
 }
 
-export async function PUT(req: NextRequest) {
+export async function PUT() {
   return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
 }
 
-export async function PATCH(req: NextRequest) {
+export async function PATCH() {
   return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
 }
 
-export async function DELETE(req: NextRequest) {
+export async function DELETE() {
   return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
 }

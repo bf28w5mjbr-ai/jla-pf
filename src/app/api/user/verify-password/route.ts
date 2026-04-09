@@ -8,6 +8,7 @@ import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import bcrypt from "bcrypt";
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 
 const VerifyPasswordSchema = z.object({
   password: z.string().min(8),
@@ -59,10 +60,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.error("Password verification error:", error);
-    return NextResponse.json(
-      { error: "認証に失敗しました" },
-      { status: 500 }
-    );
+    return jsonInternalError500("POST api/user/verify-password/route.ts", error);
   }
 }

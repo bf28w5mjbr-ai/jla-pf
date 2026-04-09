@@ -1,9 +1,11 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAuditAction, getRequestContext } from "@/lib/auditLog";
 import { requireClubAdmin } from "@/lib/accessControl";
+import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 
 const createSchema = z.object({
   fiscalYear: z.coerce.number().int().min(2000).max(3000),
@@ -80,8 +82,7 @@ export async function GET(
 
     return NextResponse.json({ dues });
   } catch (error) {
-    console.error("GET /api/clubs/[clubId]/dues error:", error);
-    return NextResponse.json({ error: "会費の取得に失敗しました" }, { status: 500 });
+    return jsonInternalError500("GET api/clubs/[clubId]/dues/route.ts", error);
   }
 }
 
@@ -176,21 +177,20 @@ export async function POST(
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: "validation_error", details: error.errors }, { status: 400 });
+      return NextResponse.json(zodErrorJsonBody(error, "validation_error"), { status: 400 });
     }
-    console.error("POST /api/clubs/[clubId]/dues error:", error);
-    return NextResponse.json({ error: "会費の作成に失敗しました" }, { status: 500 });
+    return jsonInternalError500("POST api/clubs/[clubId]/dues/route.ts", error);
   }
 }
 
-export async function PUT(req: NextRequest) {
+export async function PUT() {
   return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
 }
 
-export async function PATCH(req: NextRequest) {
+export async function PATCH() {
   return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
 }
 
-export async function DELETE(req: NextRequest) {
+export async function DELETE() {
   return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
 }

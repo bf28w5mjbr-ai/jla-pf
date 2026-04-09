@@ -1,11 +1,14 @@
 // src/app/api/clubs/route.ts
 export const runtime = "nodejs";
 
+import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
+import type { ClubStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { z } from "zod";
+import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 
 // GET /api/clubs - クラブ一覧取得
 export async function GET(req: NextRequest) {
@@ -23,10 +26,10 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    const where: any = {};
+    const where: Prisma.ClubWhereInput = {};
 
     if (status) {
-      where.status = status;
+      where.status = status as ClubStatus;
     }
 
     const [clubs, total] = await Promise.all([
@@ -60,8 +63,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err) {
-    console.error('Error in GET /api/clubs', err);
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+    return jsonInternalError500("GET api/clubs/route.ts", err);
   }
 }
 
@@ -113,12 +115,15 @@ export async function POST(req: NextRequest) {
     }
 
     // クラブ作成（APPLYING状態）
+    const hasWatchPlace = Boolean(data.watchPlace?.trim());
+
     const club = await prisma.club.create({
       data: {
         creatorId: sess.userId,
         name: data.name,
         establishedYear: data.establishedYear,
-        patrolLocation: data.watchPlace,
+        isLifesavingClub: hasWatchPlace,
+        patrolLocation: hasWatchPlace ? data.watchPlace?.trim() || null : null,
         officeAddressLine1: data.officeAddress,
         officePhone: data.officeTel,
         mailingName: data.officeAttention,
@@ -150,13 +155,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(club, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'バリデーションエラー', details: err.issues },
-        { status: 400 }
-      );
+      return NextResponse.json(zodErrorJsonBody(err, "validation_message_ja"), { status: 400 });
     }
 
-    console.error('Error in POST /api/clubs', err);
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+    return jsonInternalError500("POST api/clubs/route.ts", err);
   }
 }

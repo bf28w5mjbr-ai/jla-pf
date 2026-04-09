@@ -8,10 +8,20 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
+import { toHalfWidthDigits } from "@/lib/numericInput";
+import { pageIntroTextClass } from "@/lib/explanation";
+import { cn } from "@/lib/utils";
 
-export default function CreateOrganizationForm() {
+type CreateOrganizationFormProps = {
+  onboardingFeeAmount: number;
+};
+
+export default function CreateOrganizationForm({
+  onboardingFeeAmount,
+}: CreateOrganizationFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const formattedFee = new Intl.NumberFormat("ja-JP").format(onboardingFeeAmount);
 
   // 基本情報
   const [name, setName] = useState("");
@@ -61,7 +71,7 @@ export default function CreateOrganizationForm() {
     e.preventDefault();
 
     if (!name.trim()) {
-      toast.error("団体名を入力してください");
+      toast.error("大会主催団体名を入力してください");
       return;
     }
 
@@ -90,16 +100,16 @@ export default function CreateOrganizationForm() {
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.error || "団体の作成に失敗しました");
+        throw new Error(data.error || "大会主催団体の作成に失敗しました");
       }
 
       const organization = await response.json();
-      toast.success("団体を作成しました");
+      toast.success("大会主催団体を作成しました。支払い完了後に正式化されます");
       router.push(`/organizations/${organization.id}`);
     } catch (error) {
       console.error("Create organization error:", error);
       toast.error(
-        error instanceof Error ? error.message : "団体の作成に失敗しました"
+        error instanceof Error ? error.message : "大会主催団体の作成に失敗しました"
       );
     } finally {
       setLoading(false);
@@ -107,14 +117,51 @@ export default function CreateOrganizationForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <div className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">大会主催団体を作成</h1>
+        <p className={cn(pageIntroTextClass("guided"), "mt-1")}>
+          大会主催団体の基本情報と連絡先を登録します。作成後は支払い完了で正式に有効化されます。
+        </p>
+      </div>
+
+      <Card className="border-amber-300 bg-amber-50/80 p-6 dark:border-amber-900/40 dark:bg-amber-950/20">
+        <h2 className="mb-4 text-lg font-semibold text-foreground">作成前に確認すること</h2>
+        <div className="space-y-4 text-sm leading-6 text-slate-700">
+          <div>
+            <p className="font-semibold text-slate-900">開催者の成立条件</p>
+            <p>
+              開催者は作成直後に利用開始状態にはならず、まず
+              <span className="font-semibold"> 仮状態 </span>
+              で作成されます。登録料の支払い完了後に正式な大会開催者として扱われます。
+            </p>
+          </div>
+
+          <div>
+            <p className="font-semibold text-slate-900">課金情報</p>
+            <p>
+              現在の登録料は
+              <span className="font-semibold"> {formattedFee}円 </span>
+              です。作成後、団体詳細画面から支払いに進み、支払い完了後に正式化されます。
+            </p>
+          </div>
+
+          <div>
+            <p className="font-semibold text-slate-900">作成時点でできること</p>
+            <p>
+              基本情報の登録、代表者の設定、管理者としての初期登録は作成時点で行われます。大会運営の正式利用は、支払い完了後を前提とします。
+            </p>
+          </div>
+        </div>
+      </Card>
+
       {/* 基本情報 */}
       <Card className="p-6">
-        <h2 className="text-xl font-bold mb-4">基本情報</h2>
+        <h2 className="mb-4 border-b border-border pb-2 text-lg font-semibold text-foreground">基本情報</h2>
         <div className="space-y-4">
           <div>
             <Label htmlFor="name">
-              団体名 <span className="text-red-500">*</span>
+              大会主催団体名 <span className="text-red-500">*</span>
             </Label>
             <Input
               id="name"
@@ -125,17 +172,16 @@ export default function CreateOrganizationForm() {
             />
           </div>
 
-          <div>
-            <Label htmlFor="nameKana">団体名（カナ）</Label>
-            <Input
-              id="nameKana"
-              value={nameKana}
-              onChange={(e) => setNameKana(e.target.value)}
-              placeholder="例: ニホンライフセービングキョウカイ"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <Label htmlFor="nameKana">大会主催団体名（カナ）</Label>
+              <Input
+                id="nameKana"
+                value={nameKana}
+                onChange={(e) => setNameKana(e.target.value)}
+                placeholder="例: ニホンライフセービングキョウカイ"
+              />
+            </div>
             <div>
               <Label htmlFor="abbreviation">略称</Label>
               <Input
@@ -150,7 +196,7 @@ export default function CreateOrganizationForm() {
               <Label htmlFor="establishedYear">設立年</Label>
               <Input
                 id="establishedYear"
-                type="number"
+                numericInput="integer"
                 min="1900"
                 max={new Date().getFullYear()}
                 value={establishedYear}
@@ -171,7 +217,7 @@ export default function CreateOrganizationForm() {
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <Label htmlFor="email">メールアドレス</Label>
               <Input
@@ -189,7 +235,7 @@ export default function CreateOrganizationForm() {
                 id="phoneNumber"
                 type="tel"
                 value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
+                onChange={(e) => setPhoneNumber(toHalfWidthDigits(e.target.value))}
                 placeholder="03-1234-5678"
               />
             </div>
@@ -201,7 +247,7 @@ export default function CreateOrganizationForm() {
               id="description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="団体の活動内容や目的を入力してください"
+              placeholder="大会主催団体の活動内容や目的を入力してください"
               rows={4}
             />
           </div>
@@ -210,20 +256,21 @@ export default function CreateOrganizationForm() {
 
       {/* 事務局住所 */}
       <Card className="p-6">
-        <h2 className="text-xl font-bold mb-4">事務局住所</h2>
+        <h2 className="mb-4 border-b border-border pb-2 text-lg font-semibold text-foreground">事務局住所</h2>
         <div className="space-y-4">
           <div>
             <Label htmlFor="postalCode">郵便番号</Label>
             <Input
               id="postalCode"
+              numericInput="integer"
               value={postalCode}
               onChange={(e) => handlePostalCodeChange(e.target.value)}
               placeholder="1234567（ハイフンなし）"
-              maxLength={8}
+              maxLength={7}
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <Label htmlFor="prefecture">都道府県</Label>
               <Input
@@ -267,17 +314,18 @@ export default function CreateOrganizationForm() {
         </div>
       </Card>
 
-      <div className="flex gap-4">
-        <Button type="submit" disabled={loading}>
-          {loading ? "作成中..." : "団体を作成"}
-        </Button>
+      <div className="flex flex-col-reverse gap-3 border-t border-border pt-6 sm:flex-row sm:justify-end">
         <Button
           type="button"
           variant="outline"
           onClick={() => router.back()}
           disabled={loading}
+          className="w-full sm:w-auto sm:min-w-[120px]"
         >
           キャンセル
+        </Button>
+        <Button type="submit" disabled={loading} className="w-full sm:w-auto sm:min-w-[160px]">
+          {loading ? "作成中..." : "大会主催団体を作成"}
         </Button>
       </div>
     </form>
