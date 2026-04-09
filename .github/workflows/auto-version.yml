@@ -1,13 +1,7 @@
 name: "Automatic Commit & Tag Release"
 
 on:
-  push:
-    branches: ["fix/login-localize-and-session-helper"]
-    paths:
-      - "src/**"
-      - "prisma/schema.prisma"
-      - "package.json"
-      - "tsconfig.json"
+  workflow_dispatch: {}
 
 jobs:
   release:

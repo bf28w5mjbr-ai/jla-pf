@@ -1,13 +1,13 @@
 # Branch Protection Rules
 
 ## Overview
-This repository has branch protection rules enforced on the main development branch (`fix/login-localize-and-session-helper`).
+This repository has branch protection rules enforced on the main development branch (`main`).
 
 ## Rules
 - **Require 1 review** before merging
 - **Require passing status checks**:
-	- `CI / build (pull_request)`
-	- `codeql`
+	- `CI / build`
+	- `CodeQL / Analyze`
 - **Dismiss stale reviews** when new commits are pushed
 - **Allow auto-merge** (squash merge)
 - **Disallow force pushes** and deletions

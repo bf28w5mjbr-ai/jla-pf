@@ -9,8 +9,13 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # next build は production 相当で AUTH_SECRET を要求する（本番値ではなくビルド通過用のダミー）
+      AUTH_SECRET: ci-build-placeholder-secret-min-32-chars-xx
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -21,9 +26,13 @@ jobs:
           corepack prepare pnpm@latest --activate
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Migration gate
+        run: node scripts/check-prisma-migration-consistency.mjs
       - name: Typecheck
         run: pnpm typecheck
       - name: Lint
         run: pnpm lint
+      - name: Test
+        run: pnpm test --run
       - name: Build
         run: pnpm build

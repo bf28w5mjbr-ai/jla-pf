@@ -2,14 +2,13 @@ name: "Deploy Canary"
 
 on:
   push:
-    branches: ["fix/login-localize-and-session-helper"]
-    tags: ["v*"]
+    branches: ["main"]
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Deployment environment'
+        description: "Deployment environment"
         required: true
-        default: 'staging'
+        default: "staging"
         type: choice
         options:
           - staging
@@ -19,29 +18,76 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-${{ github.ref_name }}
+      cancel-in-progress: false
     environment: ${{ github.event.inputs.environment || 'staging' }}
+    env:
+      # ランナー上でビルドや Prisma/Next を触るスクリプトがある場合に備える（ci.yml と同じダミー）
+      AUTH_SECRET: ci-build-placeholder-secret-min-32-chars-xx
     steps:
       - uses: actions/checkout@v4
-      - name: Configure deployment
-        id: deploy
-        run: |
-          ENV=${{ github.event.inputs.environment || 'staging' }}
-          echo "environment=${ENV}" >> $GITHUB_OUTPUT
-          echo "Preparing deployment to ${ENV}..."
-      - name: Deploy to ${{ steps.deploy.outputs.environment }}
+
+      - name: Resolve environment
+        id: target
+        run: echo "name=${{ github.event.inputs.environment || 'staging' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate deployment settings
         env:
-          DEPLOYMENT_ENV: ${{ steps.deploy.outputs.environment }}
+          MIGRATE_COMMAND: ${{ vars.MIGRATE_COMMAND }}
+          DEPLOY_COMMAND: ${{ vars.DEPLOY_COMMAND }}
+          HEALTHCHECK_URL: ${{ vars.HEALTHCHECK_URL }}
+          ROLLBACK_COMMAND: ${{ vars.ROLLBACK_COMMAND }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MIGRATE_COMMAND}" ]; then
+            echo "MIGRATE_COMMAND is required in environment variables."
+            exit 1
+          fi
+          if [ -z "${DEPLOY_COMMAND}" ]; then
+            echo "DEPLOY_COMMAND is required in environment variables."
+            exit 1
+          fi
+          if [ -z "${HEALTHCHECK_URL}" ]; then
+            echo "HEALTHCHECK_URL is required in environment variables."
+            exit 1
+          fi
+          if [ -z "${ROLLBACK_COMMAND}" ]; then
+            echo "ROLLBACK_COMMAND is required in environment variables."
+            exit 1
+          fi
+
+      - name: Migrate database
+        env:
+          MIGRATE_COMMAND: ${{ vars.MIGRATE_COMMAND }}
+        run: |
+          set -euo pipefail
+          bash -eo pipefail -c "${MIGRATE_COMMAND}"
+
+      - name: Deploy to ${{ steps.target.outputs.name }}
+        env:
+          DEPLOY_COMMAND: ${{ vars.DEPLOY_COMMAND }}
           DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
         run: |
-          echo "Deploying to ${DEPLOYMENT_ENV}"
-          # Add deployment commands here
-          # Example: kubectl apply -f deployment.yaml --namespace=${DEPLOYMENT_ENV}
+          set -euo pipefail
+          bash -eo pipefail -c "${DEPLOY_COMMAND}"
+
       - name: Verify deployment
+        env:
+          HEALTHCHECK_URL: ${{ vars.HEALTHCHECK_URL }}
         run: |
-          echo "Verifying deployment..."
-          # Add health checks here
+          set -euo pipefail
+          curl --fail --show-error --silent \
+            --retry 10 \
+            --retry-all-errors \
+            --retry-delay 5 \
+            --max-time 10 \
+            "${HEALTHCHECK_URL}"
+
       - name: Rollback on failure
         if: failure()
+        env:
+          ROLLBACK_COMMAND: ${{ vars.ROLLBACK_COMMAND }}
         run: |
-          echo "Deployment failed. Rolling back..."
-          # Add rollback commands here
+          set -euo pipefail
+          bash -eo pipefail -c "${ROLLBACK_COMMAND}"

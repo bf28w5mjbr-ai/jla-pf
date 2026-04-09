@@ -13,6 +13,6 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           merge_method: squash
-          # Auto-merge when PR has label 'automerge' or is a dependency PR from dependabot
-          labels: 'automerge,dependencies'
+          # Generic PR only; dependabot is handled in auto-approve-dependabot workflow.
+          labels: 'automerge'
           allow_no_review: false

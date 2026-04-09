@@ -3,7 +3,7 @@
 # Run this script to apply protection rules
 
 REPO="bf28w5mjbr-ai/jla-pf"
-BRANCH="fix/login-localize-and-session-helper"
+BRANCH="main"
 
 echo "Configuring branch protection for ${REPO}/${BRANCH}..."
 
@@ -12,8 +12,8 @@ gh api repos/${REPO}/branches/${BRANCH}/protection \
   -f required_status_checks='{
     "strict": true,
     "contexts": [
-      "CI / build (pull_request)",
-      "codeql"
+      "CI / build",
+      "CodeQL / Analyze"
     ]
   }' \
   -f required_pull_request_reviews='{
