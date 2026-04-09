@@ -26,7 +26,7 @@ jobs:
       # ランナー上でビルドや Prisma/Next を触るスクリプトがある場合に備える（ci.yml と同じダミー）
       AUTH_SECRET: ci-build-placeholder-secret-min-32-chars-xx
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Resolve environment
         id: target

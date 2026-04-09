@@ -11,8 +11,8 @@ jobs:
     env:
       AUTH_SECRET: ci-build-placeholder-secret-min-32-chars-xx
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '20'
       - name: Install dependencies
@@ -29,7 +29,7 @@ jobs:
           uploadArtifacts: true
       - name: Comment PR with results
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require('fs');
@@ -58,8 +58,8 @@ jobs:
     env:
       AUTH_SECRET: ci-build-placeholder-secret-min-32-chars-xx
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '20'
       - name: Install dependencies

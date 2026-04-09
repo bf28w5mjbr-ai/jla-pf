@@ -13,11 +13,11 @@ jobs:
       # next build は production 相当で AUTH_SECRET を要求する（本番値ではなくビルド通過用のダミー）
       AUTH_SECRET: ci-build-placeholder-secret-min-32-chars-xx
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
       - name: Enable pnpm
