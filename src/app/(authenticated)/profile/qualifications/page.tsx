@@ -5,10 +5,11 @@ import { redirect } from "next/navigation";
 import { ArrowLeft, ArrowRight, Award, BookOpen, ClipboardList, GraduationCap } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { cn } from "@/lib/utils";
 import QualificationRegisterButton from "./QualificationRegisterButton";
+import JlaMemberNumberEditor from "./JlaMemberNumberEditor";
 
 export const metadata: Metadata = {
   title: "保有資格の管理 | Bluvium",
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
 export default async function ProfileQualificationsPage() {
   const jar = await cookies();
   const token = jar.get("session")?.value ?? null;
-  const sess = token ? await verifySession(token) : null;
+  const sess = await verifySessionCached(token);
 
   if (!sess?.userId) {
     redirect("/login");
@@ -29,6 +30,7 @@ export default async function ProfileQualificationsPage() {
     where: { id: sess.userId },
     select: {
       id: true,
+      jlaMemberNumber: true,
     },
   });
 
@@ -211,6 +213,8 @@ export default async function ProfileQualificationsPage() {
         </div>
       </header>
 
+      <JlaMemberNumberEditor initialValue={user.jlaMemberNumber} />
+
       <Card padding="none" className="overflow-hidden border-border/90 shadow-sm">
         <CardHeader className="border-b border-border/80 bg-muted/25">
           <div className="flex items-center gap-2">
@@ -218,7 +222,7 @@ export default async function ProfileQualificationsPage() {
             <CardTitle className="text-lg">登録資格</CardTitle>
           </div>
           <CardDescription>
-            選手登録・BLS・WS・認定ライフセーバーの状況を確認できます。JLA番号は選手登録の申請時に入力します。
+            選手登録・BLS・WS・認定ライフセーバーの状況を確認できます。JLAメンバーIDは上の欄で登録すると、選手登録の申請時に自動で反映されます。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 p-5 sm:p-6">
@@ -269,6 +273,7 @@ export default async function ProfileQualificationsPage() {
                       </span>
                     ) : (
                       <QualificationRegisterButton
+                        defaultJlaMemberNumber={user.jlaMemberNumber}
                         item={{
                           id: template.id,
                           kind: template.kind,

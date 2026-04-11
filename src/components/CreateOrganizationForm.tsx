@@ -51,9 +51,7 @@ export default function CreateOrganizationForm({
 
     if (cleanedCode.length === 7) {
       try {
-        const response = await fetch(
-          `https://zipcloud.ibsnet.co.jp/api/search?zipcode=${cleanedCode}`
-        );
+        const response = await fetch(`/api/postal-code?zipcode=${cleanedCode}`);
         const data = await response.json();
 
         if (data.results && data.results.length > 0) {
@@ -133,16 +131,16 @@ export default function CreateOrganizationForm({
             <p>
               開催者は作成直後に利用開始状態にはならず、まず
               <span className="font-semibold"> 仮状態 </span>
-              で作成されます。登録料の支払い完了後に正式な大会開催者として扱われます。
+              で作成されます。年額のプラットフォーム利用料の登録完了後に正式な大会開催者として扱われます。
             </p>
           </div>
 
           <div>
             <p className="font-semibold text-slate-900">課金情報</p>
             <p>
-              現在の登録料は
+              現在の年額利用料は
               <span className="font-semibold"> {formattedFee}円 </span>
-              です。作成後、団体詳細画面から支払いに進み、支払い完了後に正式化されます。
+              です。作成後、団体詳細画面から Stripe で年額プランに登録し、完了後に正式化されます。
             </p>
           </div>
 

@@ -2,7 +2,7 @@
 # Configure branch protection for the main development branch
 # Run this script to apply protection rules
 
-REPO="bf28w5mjbr-ai/jla-pf"
+REPO="bf28w5mjbr-ai/bluvium"
 BRANCH="main"
 
 echo "Configuring branch protection for ${REPO}/${BRANCH}..."

@@ -35,7 +35,7 @@ export default function CreateClubForm() {
     setFormData((prev) => ({ ...prev, officePostalCode: postalCode }));
     if (postalCode.length === 7) {
       try {
-        const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${postalCode}`);
+        const res = await fetch(`/api/postal-code?zipcode=${postalCode}`);
         const data = await res.json();
         if (data.results?.[0]) {
           const address = data.results[0];

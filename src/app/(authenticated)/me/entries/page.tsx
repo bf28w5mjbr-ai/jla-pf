@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { appRoutes } from "@/lib/appRoutes";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { loadEntryHistoryForUser } from "@/lib/entryHistory";
 import EntryHistoryList from "@/components/EntryHistoryList";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 export default async function MyEntriesPage() {
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const session = token ? await verifySession(token) : null;
+  const session = await verifySessionCached(token);
 
   if (!session?.userId) {
     redirect("/login");

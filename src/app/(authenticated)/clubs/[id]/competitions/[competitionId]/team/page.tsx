@@ -3,7 +3,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -105,7 +105,7 @@ export default async function ClubCompetitionTeamHubPage({
 
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const session = token ? await verifySession(token) : null;
+  const session = await verifySessionCached(token);
 
   if (!session?.userId) {
     redirect("/login");

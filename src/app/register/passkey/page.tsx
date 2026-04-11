@@ -6,7 +6,7 @@ import { startRegistration } from "@simplewebauthn/browser";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { RegistrationStepper } from "@/components/auth/RegistrationStepper";
-import { AuthShell, AuthPanel } from "@/components/auth/AuthShell";
+import { AuthShell, AuthPanel, AuthShellBrandedFallback } from "@/components/auth/AuthShell";
 import { Fingerprint } from "lucide-react";
 import { safePostLoginPath } from "@/lib/postLoginRedirect";
 
@@ -126,13 +126,7 @@ function PasskeyRegisterContent() {
 
 export default function PasskeyRegisterPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-gray-50 via-white to-gray-50 px-4 text-sm text-gray-500">
-          読み込み中…
-        </div>
-      }
-    >
+    <Suspense fallback={<AuthShellBrandedFallback />}>
       <PasskeyRegisterContent />
     </Suspense>
   );

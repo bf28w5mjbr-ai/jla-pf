@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { Card } from "@/components/ui/card";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ export default async function LessonsPage({
 
   const jar = await cookies();
   const token = jar.get("session")?.value ?? null;
-  const sess = token ? await verifySession(token) : null;
+  const sess = await verifySessionCached(token);
 
   if (!sess?.userId) {
     redirect("/login");

@@ -1,7 +1,7 @@
 import { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import CreateAssociationForm from "@/components/CreateAssociationForm";
 
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 export default async function CreateAssociationPage() {
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const session = token ? await verifySession(token) : null;
+  const session = await verifySessionCached(token);
 
   if (!session?.userId) {
     redirect("/login");

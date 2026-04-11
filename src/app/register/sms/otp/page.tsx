@@ -10,7 +10,7 @@ import { RegistrationStepper } from "@/components/auth/RegistrationStepper";
 import Link from "next/link";
 import { clearRegistrationFormDraft } from "@/lib/registrationFormDraft";
 import { appendRedirectQuery, safePostLoginPath } from "@/lib/postLoginRedirect";
-import { AuthShell, AuthPanel } from "@/components/auth/AuthShell";
+import { AuthShell, AuthPanel, AuthShellBrandedFallback } from "@/components/auth/AuthShell";
 import { Smartphone } from "lucide-react";
 
 function OTPVerifyContent() {
@@ -212,13 +212,7 @@ function OTPVerifyContent() {
 
 export default function OTPVerifyPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-gray-50 via-white to-gray-50 px-4 text-sm text-gray-500">
-          読み込み中…
-        </div>
-      }
-    >
+    <Suspense fallback={<AuthShellBrandedFallback />}>
       <OTPVerifyContent />
     </Suspense>
   );

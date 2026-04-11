@@ -84,9 +84,7 @@ export default function EditOrganizationForm({
 
     if (cleanedCode.length === 7) {
       try {
-        const response = await fetch(
-          `https://zipcloud.ibsnet.co.jp/api/search?zipcode=${cleanedCode}`
-        );
+        const response = await fetch(`/api/postal-code?zipcode=${cleanedCode}`);
         const data = await response.json();
 
         if (data.results && data.results.length > 0) {

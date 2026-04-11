@@ -3,7 +3,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { OfficialResultManager } from "@/components/OfficialResultManager";
@@ -34,7 +34,7 @@ export default async function CompetitionResultManagePage({
   const { id } = await params;
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const session = token ? await verifySession(token) : null;
+  const session = await verifySessionCached(token);
 
   if (!session?.userId) {
     redirect("/login");

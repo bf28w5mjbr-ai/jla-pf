@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { getDayOpsAccess } from "@/lib/dayOpsAccess";
+import { getOrgAdminContextForCompetition } from "@/lib/dayOpsAccess";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
 
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
     }
 
-    const access = await getDayOpsAccess(competitionId, session.userId);
+    const access = await getOrgAdminContextForCompetition(competitionId, session.userId);
     if (!access.isOrgAdmin) {
       return NextResponse.json({ error: "主催管理者のみ操作できます" }, { status: 403 });
     }

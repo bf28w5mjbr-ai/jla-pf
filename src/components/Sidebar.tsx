@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import { BluviumWordmark } from "@/components/BluviumWordmark";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { appRoutes } from "@/lib/appRoutes";
@@ -239,16 +239,8 @@ export default function Sidebar({
               className="group flex min-w-0 flex-1 items-center rounded-2xl px-1.5 py-1.5 outline-none ring-offset-background transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring"
               onClick={() => setIsOpen(false)}
             >
-              <span className="relative h-7 w-[10rem] min-w-0 flex-1 overflow-hidden">
-                <Image
-                  src="/bluvium-wordmark.png?v=trim-1"
-                  alt="Bluvium"
-                  fill
-                  className="object-contain object-left"
-                  sizes="160px"
-                  unoptimized
-                  priority
-                />
+              <span className="min-w-0 flex-1 overflow-hidden text-left">
+                <BluviumWordmark variant="nav" />
               </span>
             </Link>
             <button

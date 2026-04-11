@@ -13,7 +13,7 @@ import {
   Sparkles,
   Trophy,
 } from "lucide-react";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { Button } from "@/components/ui/button";
@@ -99,7 +99,7 @@ export default async function CompetitionsPage({
 }) {
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const session = token ? await verifySession(token) : null;
+  const session = await verifySessionCached(token);
 
   if (!session?.userId) {
     redirect("/login");
@@ -139,39 +139,37 @@ export default async function CompetitionsPage({
     ];
   }
 
-  const competitions = await prisma.competition.findMany({
-    where: whereCondition,
-    include: {
-      organization: {
-        select: {
-          id: true,
-          name: true,
-          abbreviation: true,
-          logoUrl: true,
+  const [competitions, categoryGroups] = await Promise.all([
+    prisma.competition.findMany({
+      where: whereCondition,
+      include: {
+        organization: {
+          select: {
+            id: true,
+            name: true,
+            abbreviation: true,
+            logoUrl: true,
+          },
+        },
+        _count: {
+          select: { entries: true, teamEntries: true },
         },
       },
-      _count: {
-        select: { entries: true, teamEntries: true },
+      orderBy: { startDate: "desc" },
+    }),
+    prisma.competition.groupBy({
+      by: ["category"],
+      where: {
+        isPublished: true,
+        status: "PUBLISHED",
+        category: { not: null },
       },
-    },
-    orderBy: { startDate: "desc" },
-  });
-
-  const categoryCandidates = await prisma.competition.findMany({
-    where: {
-      isPublished: true,
-      status: "PUBLISHED",
-      category: {
-        not: null,
-      },
-    },
-    select: { category: true },
-    distinct: ["category"],
-    orderBy: { category: "asc" },
-  });
-  const availableCategories = categoryCandidates
+    }),
+  ]);
+  const availableCategories = categoryGroups
     .map((item) => item.category?.trim() ?? "")
-    .filter((value): value is string => value.length > 0);
+    .filter((value): value is string => value.length > 0)
+    .sort((a, b) => a.localeCompare(b, "ja"));
 
   const now = new Date();
   const upcomingCompetitions = competitions.filter(

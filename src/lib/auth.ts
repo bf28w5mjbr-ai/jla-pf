@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { SignJWT, jwtVerify } from "jose";
 import { prisma } from "@/server/db";
 
@@ -20,7 +21,20 @@ function getAuthSecretBytes(): Uint8Array {
   return new TextEncoder().encode(fallback);
 }
 
-const secret = getAuthSecretBytes();
+let secretCache: Uint8Array | null = null;
+
+function getSecret(): Uint8Array {
+  if (!secretCache) {
+    secretCache = getAuthSecretBytes();
+  }
+  return secretCache;
+}
+
+/** セッション以外の短命 JWT（当日運用アンロック等）でも同一鍵を使用する */
+export function getJwtSecretKeyBytes(): Uint8Array {
+  return getSecret();
+}
+
 const ALG = "HS256";
 
 // セッション有効期限: 30日間（ユーザーに再ログインの手間をかけない）
@@ -33,17 +47,28 @@ export async function signSession(payload: SessionPayload, maxAgeSec = DEFAULT_S
     .setProtectedHeader({ alg: ALG })
     .setIssuedAt()
     .setExpirationTime(`${maxAgeSec}s`)
-    .sign(secret);
+    .sign(getSecret());
 }
 
 export async function verifySession(token: string): Promise<SessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, secret, { algorithms: [ALG] });
+    const { payload } = await jwtVerify(token, getSecret(), { algorithms: [ALG] });
     return payload as SessionPayload;
   } catch {
     return null;
   }
 }
+
+/**
+ * App Router の同一リクエスト内で、レイアウトとページが二重に JWT 検証しないためのメモ化。
+ * API Route や middleware では従来どおり {@link verifySession} を使う。
+ */
+export const verifySessionCached = cache(
+  async (token: string | null | undefined): Promise<SessionPayload | null> => {
+    if (!token) return null;
+    return verifySession(token);
+  }
+);
 
 export async function isAssociationAdmin(userId: string): Promise<boolean> {
   const associationAdmin = await prisma.associationAdmin.findFirst({

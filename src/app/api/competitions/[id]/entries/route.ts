@@ -3,14 +3,16 @@ import { NextRequest, NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { stripe } from "@/lib/stripe";
+import { createPaymentCheckout, stripe } from "@/lib/stripe";
 import {
   assertEntryStripeCheckoutRateLimit,
   getClientIpFromRequest,
   isStripeCheckoutClientIpBlocked,
   STRIPE_CHECKOUT_CLIENT_FAILURE_MESSAGE,
-  stripeCheckoutCardPaymentMethodOptions,
 } from "@/lib/stripeCheckoutGuards";
+import { applicationFeeAmountYen } from "@/lib/platformFee";
+import { connectRequirementSkipped, paidEntryCheckoutBlockReason } from "@/lib/organizerBilling";
+import { refreshOrganizationStripeConnectFlags } from "@/lib/organizerStripeConnect";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
 import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
 import { refreshStartListSnapshotAfterEligibleEntryChange } from "@/lib/startListSnapshot";
@@ -525,6 +527,23 @@ export async function POST(request: NextRequest, context: RouteContext) {
     });
 
     if (totalFee > 0 && !latestCompletedCheckout) {
+      await refreshOrganizationStripeConnectFlags(competition.organizationId);
+      const orgBilling = await prisma.organization.findUnique({
+        where: { id: competition.organizationId },
+        select: {
+          onboardingFeeStatus: true,
+          organizerSubscriptionStatus: true,
+          stripeConnectAccountId: true,
+          stripeConnectChargesEnabled: true,
+        },
+      });
+      const paidBlock = orgBilling
+        ? paidEntryCheckoutBlockReason(orgBilling)
+        : "主催団体の決済設定を確認できませんでした。";
+      if (paidBlock) {
+        return NextResponse.json({ message: paidBlock }, { status: 403 });
+      }
+
       const latestStripeSession = await prisma.entryCheckoutSession.findFirst({
         where: {
           entryId: result.entry.id,
@@ -623,32 +642,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
       const origin = new URL(request.url).origin;
       let checkoutSession: Stripe.Checkout.Session;
+      const skipConnect = connectRequirementSkipped();
       try {
-        checkoutSession = await stripe.checkout.sessions.create({
-          mode: "payment",
-          payment_method_types: ["card"],
-          payment_method_options: stripeCheckoutCardPaymentMethodOptions,
-          ...(entryUser?.email ? { customer_email: entryUser.email } : {}),
-          line_items: [
-            {
-              price_data: {
-                currency: "jpy",
-                product_data: {
-                  name: `${competition.name} エントリー費`,
-                },
-                unit_amount: totalFee,
-              },
-              quantity: 1,
-            },
-          ],
+        checkoutSession = await createPaymentCheckout({
+          organizationId: competition.organizationId,
+          userId: session.userId,
+          amount: totalFee,
+          description: `${competition.name} エントリー費`,
+          customerEmail: entryUser?.email ?? null,
+          destinationConnectAccountId: skipConnect ? null : orgBilling?.stripeConnectAccountId ?? null,
+          applicationFeeAmountYen: skipConnect ? null : applicationFeeAmountYen(totalFee),
           metadata: {
             entryCheckoutSessionId: entryCheckoutSession.id,
             entryId: result.entry.id,
             competitionId,
             userId: session.userId,
           },
-          success_url: `${origin}/competitions/${competitionId}/entry?completed=1&entryId=${result.entry.id}&session_id={CHECKOUT_SESSION_ID}`,
-          cancel_url: `${origin}/competitions/${competitionId}/entry?payment=cancel&entryId=${result.entry.id}`,
+          successUrl: `${origin}/competitions/${competitionId}/entry?completed=1&entryId=${result.entry.id}&session_id={CHECKOUT_SESSION_ID}`,
+          cancelUrl: `${origin}/competitions/${competitionId}/entry?payment=cancel&entryId=${result.entry.id}`,
         });
       } catch (stripeErr) {
         console.error("Stripe checkout.sessions.create (entry) failed", stripeErr);

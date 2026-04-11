@@ -3,7 +3,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ArrowLeft, UserRound } from "lucide-react";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import EditProfileForm from "@/components/EditProfileForm";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export default async function EditProfilePage() {
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const sess = token ? await verifySession(token) : null;
+  const sess = await verifySessionCached(token);
   if (!sess?.userId) redirect("/login");
 
   const user = await prisma.user.findUnique({

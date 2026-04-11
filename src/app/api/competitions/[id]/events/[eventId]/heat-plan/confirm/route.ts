@@ -3,17 +3,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
+import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 
 type RouteContext = { params: Promise<{ id: string; eventId: string }> };
 
-export async function POST(_request: NextRequest, context: RouteContext) {
+export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const { id: competitionId, eventId } = await context.params;
-    const token = _request.cookies.get("session")?.value;
+    const token = request.cookies.get("session")?.value;
     const session = token ? await verifySession(token) : null;
+    const sessionUserId = session?.userId ?? null;
+    const hasDayOpsUnlock = await verifyDayOpsUnlockFromRequest(request, competitionId);
 
-    if (!session?.userId) {
-      return NextResponse.json({ message: "認証が必要です" }, { status: 401 });
+    if (!sessionUserId && !hasDayOpsUnlock) {
+      return NextResponse.json({ message: "認証または当日運用アクセスが必要です" }, { status: 401 });
     }
 
     const event = await prisma.event.findFirst({
@@ -24,19 +27,9 @@ export async function POST(_request: NextRequest, context: RouteContext) {
             organization: {
               include: {
                 admins: {
-                  where: { userId: session.userId },
+                  where: { userId: sessionUserId ?? "clinvalidnosessionuser0000" },
                 },
               },
-            },
-            officialApplications: {
-              where: { userId: session.userId },
-              select: { status: true },
-              take: 1,
-            },
-            officialAttendances: {
-              where: { userId: session.userId },
-              select: { id: true },
-              take: 1,
             },
           },
         },
@@ -50,8 +43,7 @@ export async function POST(_request: NextRequest, context: RouteContext) {
     if (
       !canManageCompetitionStartListSettings({
         orgAdminsForCurrentUser: event.competition.organization.admins,
-        officialApplicationStatus: event.competition.officialApplications[0]?.status ?? null,
-        hasOfficialAttendance: event.competition.officialAttendances.length > 0,
+        hasDayOpsUnlock,
       })
     ) {
       return NextResponse.json({ message: "権限がありません" }, { status: 403 });

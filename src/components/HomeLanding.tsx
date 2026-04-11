@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import { BluviumWordmark } from "@/components/BluviumWordmark";
 import { authShellMainClassName } from "@/components/auth/AuthShell";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -24,23 +25,12 @@ export function HomeLanding() {
     <main className={cn(authShellMainClassName, "flex flex-col")}>
       <div className="relative z-[1] mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-10 sm:py-14">
         <div className="mb-10 flex justify-center sm:mb-12">
-          <div className="inline-flex items-center gap-3 rounded-2xl px-2 py-1.5">
-            <span
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-orange-600 via-orange-700 to-orange-900 text-sm font-bold tracking-tight text-white shadow-md ring-1 ring-white/15 dark:from-orange-300 dark:via-orange-200 dark:to-orange-100 dark:text-orange-950 dark:ring-orange-950/10"
-              aria-hidden
-            >
-              B
-            </span>
-            <span className="text-lg font-semibold tracking-tight text-foreground">
-              Bluvium
-            </span>
+          <div className="inline-flex items-center rounded-2xl px-2 py-1.5">
+            <BluviumWordmark variant="hero" />
           </div>
         </div>
 
         <header className="mb-10 text-center sm:mb-12">
-          <p className="mb-3 text-sm font-medium uppercase tracking-wider text-muted-foreground">
-            JLA PF
-          </p>
           <h1 className="text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
             会員から大会まで、
             <br className="sm:hidden" />

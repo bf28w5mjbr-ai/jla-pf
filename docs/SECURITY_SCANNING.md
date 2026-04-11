@@ -38,7 +38,7 @@ npm audit --audit-level=moderate
 npm run lint -- --ext .ts,.tsx src/ || true
 
 # Docker scan (requires Trivy)
-trivy image jla-pf:latest
+trivy image bluvium:latest
 ```
 
 ## Response

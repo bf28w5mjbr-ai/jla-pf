@@ -7,7 +7,7 @@ import { Plus } from "lucide-react";
 import { appRoutes } from "@/lib/appRoutes";
 import ClubSearchList from "@/components/ClubSearchList";
 import { Button } from "@/components/ui/button";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 
 export const metadata: Metadata = {
@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 export default async function ProfileClubsPage() {
   const jar = await cookies();
   const token = jar.get("session")?.value ?? null;
-  const sess = token ? await verifySession(token) : null;
+  const sess = await verifySessionCached(token);
 
   if (!sess?.userId) {
     redirect("/login");

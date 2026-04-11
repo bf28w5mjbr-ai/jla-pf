@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
+import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 
 export async function PUT(
   request: NextRequest,
@@ -12,9 +13,11 @@ export async function PUT(
     const { id: competitionId } = await context.params;
     const token = request.cookies.get("session")?.value;
     const session = token ? await verifySession(token) : null;
+    const sessionUserId = session?.userId ?? null;
+    const hasDayOpsUnlock = await verifyDayOpsUnlockFromRequest(request, competitionId);
 
-    if (!session?.userId) {
-      return NextResponse.json({ message: "認証が必要です" }, { status: 401 });
+    if (!sessionUserId && !hasDayOpsUnlock) {
+      return NextResponse.json({ message: "認証または当日運用アクセスが必要です" }, { status: 401 });
     }
 
     const competition = await prisma.competition.findUnique({
@@ -23,21 +26,11 @@ export async function PUT(
         organization: {
           include: {
             admins: {
-              where: { userId: session.userId },
+              where: { userId: sessionUserId ?? "clinvalidnosessionuser0000" },
             },
           },
         },
         events: { select: { id: true } },
-        officialApplications: {
-          where: { userId: session.userId },
-          select: { status: true },
-          take: 1,
-        },
-        officialAttendances: {
-          where: { userId: session.userId },
-          select: { id: true },
-          take: 1,
-        },
       },
     });
 
@@ -48,8 +41,7 @@ export async function PUT(
     if (
       !canManageCompetitionStartListSettings({
         orgAdminsForCurrentUser: competition.organization.admins,
-        officialApplicationStatus: competition.officialApplications[0]?.status ?? null,
-        hasOfficialAttendance: competition.officialAttendances.length > 0,
+        hasDayOpsUnlock,
       })
     ) {
       return NextResponse.json({ message: "権限がありません" }, { status: 403 });

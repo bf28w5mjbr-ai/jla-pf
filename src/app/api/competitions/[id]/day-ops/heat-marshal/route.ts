@@ -2,7 +2,6 @@ import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import type { ResultRound } from "@prisma/client";
-import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import {
   assertDayOpsAdminWriteAccess,
@@ -48,17 +47,13 @@ const putSchema = z.object({
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const { id: competitionId } = await context.params;
-    const token = request.cookies.get("session")?.value;
-    const session = token ? await verifySession(token) : null;
-    if (!session?.userId) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
-    }
-    await assertDayOpsRecorderWriteAccess(competitionId, session.userId);
+    const getCtx = await assertDayOpsRecorderWriteAccess(competitionId, request);
+    const operatorUserId = getCtx.operatorUserId;
 
     try {
       await repairStartListSnapshotEmptyHeadHeatsWhenEntriesExist({
         competitionId,
-        createdByUserId: session.userId,
+        createdByUserId: operatorUserId ?? undefined,
       });
     } catch (e) {
       console.error("repairStartListSnapshotEmptyHeadHeatsWhenEntriesExist:", e);
@@ -287,6 +282,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (error instanceof Error && error.message === "DAY_OPS_FORBIDDEN") {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }
+    if (error instanceof Error && error.message === "DAY_OPS_UNAUTHORIZED") {
+      return NextResponse.json(
+        { error: "ログインするか、大会の当日運用暗号をスタートリスト画面で入力してください" },
+        { status: 401 }
+      );
+    }
     return jsonInternalError500(
       "GET api/competitions/[id]/day-ops/heat-marshal/route.ts",
       error
@@ -297,12 +298,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
 export async function PUT(request: NextRequest, context: RouteContext) {
   try {
     const { id: competitionId } = await context.params;
-    const token = request.cookies.get("session")?.value;
-    const session = token ? await verifySession(token) : null;
-    if (!session?.userId) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
-    }
-    await assertDayOpsAdminWriteAccess(competitionId, session.userId);
+    const putCtx = await assertDayOpsAdminWriteAccess(competitionId, request);
+    const putOperatorUserId = putCtx.operatorUserId;
 
     const parsed = putSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
@@ -380,9 +377,9 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     await logAuditAction({
       action: isClosed ? "COMPETITION_HEAT_CALL_WINDOW_CLOSE" : "COMPETITION_HEAT_CALL_WINDOW_REOPEN",
-      actorType: "USER",
-      actorKey: `user:${session.userId}`,
-      actorUserId: session.userId,
+      actorType: putOperatorUserId ? "USER" : "SYSTEM",
+      actorKey: putOperatorUserId ? `user:${putOperatorUserId}` : "dayops:unlock",
+      actorUserId: putOperatorUserId ?? undefined,
       targetType: "Competition",
       targetId: competitionId,
       targetKey: `competition:${competitionId}`,
@@ -398,6 +395,12 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     }
     if (error instanceof Error && error.message === "DAY_OPS_FORBIDDEN") {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
+    }
+    if (error instanceof Error && error.message === "DAY_OPS_UNAUTHORIZED") {
+      return NextResponse.json(
+        { error: "ログインするか、大会の当日運用暗号をスタートリスト画面で入力してください" },
+        { status: 401 }
+      );
     }
     return jsonInternalError500(
       "PUT api/competitions/[id]/day-ops/heat-marshal/route.ts",

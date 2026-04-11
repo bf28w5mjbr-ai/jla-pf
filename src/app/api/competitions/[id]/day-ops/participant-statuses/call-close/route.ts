@@ -1,7 +1,6 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { assertDayOpsAdminWriteAccess } from "@/lib/dayOpsAccess";
 import { buildCallWindowSettingsUpdate } from "@/lib/dayOpsCallWindow";
@@ -18,12 +17,8 @@ const payloadSchema = z.object({
 export async function PUT(request: NextRequest, context: RouteContext) {
   try {
     const { id: competitionId } = await context.params;
-    const token = request.cookies.get("session")?.value;
-    const session = token ? await verifySession(token) : null;
-    if (!session?.userId) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
-    }
-    await assertDayOpsAdminWriteAccess(competitionId, session.userId);
+    const ctx = await assertDayOpsAdminWriteAccess(competitionId, request);
+    const operatorUserId = ctx.operatorUserId;
 
     const parsed = payloadSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
@@ -72,9 +67,9 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     await logAuditAction({
       action: isClosed ? "COMPETITION_CALL_WINDOW_CLOSE" : "COMPETITION_CALL_WINDOW_REOPEN",
-      actorType: "USER",
-      actorKey: `user:${session.userId}`,
-      actorUserId: session.userId,
+      actorType: operatorUserId ? "USER" : "SYSTEM",
+      actorKey: operatorUserId ? `user:${operatorUserId}` : "dayops:unlock",
+      actorUserId: operatorUserId ?? undefined,
       targetType: "Competition",
       targetId: competitionId,
       targetKey: `competition:${competitionId}`,
@@ -90,6 +85,12 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     }
     if (error instanceof Error && error.message === "DAY_OPS_FORBIDDEN") {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
+    }
+    if (error instanceof Error && error.message === "DAY_OPS_UNAUTHORIZED") {
+      return NextResponse.json(
+        { error: "ログインするか、大会の当日運用暗号をスタートリスト画面で入力してください" },
+        { status: 401 }
+      );
     }
     return jsonInternalError500(
       "PUT api/competitions/[id]/day-ops/participant-statuses/call-close/route.ts",

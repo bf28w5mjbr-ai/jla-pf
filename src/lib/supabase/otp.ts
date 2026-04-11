@@ -6,7 +6,10 @@ function createOtpClient() {
   const url = getSupabaseUrl();
   const key = getSupabasePublishableKey();
   if (!url || !key) {
-    throw new Error("Supabase OTP用の環境変数が未設定です");
+    const missing = [!url && "URL", !key && "publishable/anon key"].filter(Boolean).join(", ");
+    throw new Error(
+      `Supabase OTP用の環境変数が未設定です（不足: ${missing}）。NEXT_PUBLIC_SUPABASE_URL（または SUPABASE_URL）と、NEXT_PUBLIC_SUPABASE_ANON_KEY（または SUPABASE_ANON_KEY / Publishable 系）を設定し、開発サーバーを再起動してください。`
+    );
   }
   return createClient(url, key, {
     auth: {

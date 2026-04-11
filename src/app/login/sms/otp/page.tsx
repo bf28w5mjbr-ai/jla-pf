@@ -6,8 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { AuthPanel, AuthShell, authShellMainClassName } from "@/components/auth/AuthShell";
-import { cn } from "@/lib/utils";
+import {
+  AuthPanel,
+  AuthShell,
+  AuthShellBrandedFallback,
+} from "@/components/auth/AuthShell";
 import { appendRedirectQuery, safePostLoginPath } from "@/lib/postLoginRedirect";
 
 function OTPLoginContent() {
@@ -165,14 +168,7 @@ function OTPLoginContent() {
 }
 
 function OTPLoginFallback() {
-  return (
-    <main
-      className={cn(authShellMainClassName, "flex flex-col items-center justify-center")}
-      aria-busy="true"
-    >
-      <p className="relative z-[1] text-sm text-muted-foreground">読み込み中...</p>
-    </main>
-  );
+  return <AuthShellBrandedFallback message="読み込み中…" />;
 }
 
 export default function SMSLoginOTPPage() {

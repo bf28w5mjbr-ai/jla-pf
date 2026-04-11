@@ -10,6 +10,10 @@ import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { logAuditAction } from "@/lib/auditLog";
 import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
+import {
+  finalizeOrganizerSubscriptionCheckoutSession,
+  syncOrganizerSubscriptionFromStripeSubscription,
+} from "@/lib/organizerSubscriptionStripe";
 
 function toJsonValue(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
@@ -130,7 +134,7 @@ async function markOrganizationOnboardingPaid(
     where: {
       ...paymentWhere,
       ownerType: "ORGANIZATION",
-      type: "ORG_ONBOARDING_FEE",
+      type: { in: ["ORG_ONBOARDING_FEE", "ORG_PLATFORM_SUBSCRIPTION"] },
       status: "SUCCEEDED",
     },
     select: {
@@ -280,6 +284,7 @@ export async function POST(req: NextRequest) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         await updatePaymentByCheckoutSession(session);
+        await finalizeOrganizerSubscriptionCheckoutSession(session);
         const paymentIntentId = extractPaymentIntentId(session.payment_intent);
         const conditions: Prisma.PaymentWhereInput[] = [];
         if (session.id) {
@@ -322,6 +327,7 @@ export async function POST(req: NextRequest) {
       case "checkout.session.async_payment_succeeded": {
         const session = event.data.object as Stripe.Checkout.Session;
         await updatePaymentByCheckoutSession(session);
+        await finalizeOrganizerSubscriptionCheckoutSession(session);
         const paymentIntentId = extractPaymentIntentId(session.payment_intent);
         const conditions: Prisma.PaymentWhereInput[] = [];
         if (session.id) {
@@ -403,6 +409,22 @@ export async function POST(req: NextRequest) {
       case "charge.dispute.closed": {
         const dispute = event.data.object as Stripe.Dispute;
         await updatePaymentByDispute(dispute, event.type);
+        break;
+      }
+      case "account.updated": {
+        const account = event.data.object as Stripe.Account;
+        if (account.id) {
+          await prisma.organization.updateMany({
+            where: { stripeConnectAccountId: account.id },
+            data: { stripeConnectChargesEnabled: account.charges_enabled === true },
+          });
+        }
+        break;
+      }
+      case "customer.subscription.updated":
+      case "customer.subscription.deleted": {
+        const sub = event.data.object as Stripe.Subscription;
+        await syncOrganizerSubscriptionFromStripeSubscription(sub);
         break;
       }
       default:

@@ -75,11 +75,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Build Docker image
-        run: docker build -t jla-pf:latest .
+        run: docker build -t bluvium:latest .
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.33.1
         with:
-          image-ref: jla-pf:latest
+          image-ref: bluvium:latest
           format: 'sarif'
           output: 'trivy-results.sarif'
       - name: Upload Trivy results to GitHub

@@ -5,6 +5,7 @@ import { prisma } from "@/server/db";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
 import { replaceCompetitionStartListSnapshot } from "@/lib/startListSnapshot";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
+import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -12,11 +13,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const token = request.cookies.get("session")?.value;
     const session = token ? await verifySession(token) : null;
-    if (!session?.userId) {
+    const sessionUserId = session?.userId ?? null;
+
+    const { id: competitionId } = await context.params;
+    const hasDayOpsUnlock = await verifyDayOpsUnlockFromRequest(request, competitionId);
+    if (!sessionUserId && !hasDayOpsUnlock) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id: competitionId } = await context.params;
     const competition = await prisma.competition.findUnique({
       where: { id: competitionId },
       select: {
@@ -25,20 +29,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
         organization: {
           select: {
             admins: {
-              where: { userId: session.userId },
+              where: { userId: sessionUserId ?? "clinvalidnosessionuser0000" },
               select: { role: true },
             },
           },
-        },
-        officialApplications: {
-          where: { userId: session.userId },
-          select: { status: true },
-          take: 1,
-        },
-        officialAttendances: {
-          where: { userId: session.userId },
-          select: { id: true },
-          take: 1,
         },
       },
     });
@@ -49,8 +43,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (
       !canManageCompetitionStartListSettings({
         orgAdminsForCurrentUser: competition.organization.admins,
-        officialApplicationStatus: competition.officialApplications[0]?.status ?? null,
-        hasOfficialAttendance: competition.officialAttendances.length > 0,
+        hasDayOpsUnlock,
       })
     ) {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
@@ -58,14 +51,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const result = await replaceCompetitionStartListSnapshot({
       competitionId,
-      createdByUserId: session.userId,
+      createdByUserId: sessionUserId ?? undefined,
     });
 
     await logAuditAction({
       action: "COMPETITION_START_LIST_SNAPSHOT_CAPTURE",
-      actorType: "USER",
-      actorKey: `user:${session.userId}`,
-      actorUserId: session.userId,
+      actorType: sessionUserId ? "USER" : "SYSTEM",
+      actorKey: sessionUserId ? `user:${sessionUserId}` : "dayops:unlock",
+      actorUserId: sessionUserId ?? undefined,
       targetType: "CompetitionStartListSnapshot",
       targetId: result.snapshotId,
       targetKey: `competition:${competitionId}`,

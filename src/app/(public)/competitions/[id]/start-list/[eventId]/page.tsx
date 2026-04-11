@@ -3,8 +3,8 @@ import nextDynamic from "next/dynamic";
 import { Metadata } from "next";
 import { cache } from "react";
 import { cookies } from "next/headers";
-import { notFound, redirect } from "next/navigation";
-import { verifySession } from "@/lib/auth";
+import { notFound } from "next/navigation";
+import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { Button } from "@/components/ui/button";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
@@ -23,6 +23,8 @@ import {
   repairStartListSnapshotEmptyHeadHeatsWhenEntriesExist,
 } from "@/lib/startListSnapshot";
 import { ChevronLeft } from "lucide-react";
+import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
+import DayOpsUnlockBanner from "@/components/DayOpsUnlockBanner";
 
 const CompetitionStartListEventBlock = nextDynamic(
   () => import("@/components/CompetitionStartListEventBlock"),
@@ -84,17 +86,14 @@ export default async function CompetitionEventStartListPage({
   const { id: competitionId, eventId } = await params;
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const session = token ? await verifySession(token) : null;
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
+  const session = await verifySessionCached(token);
+  const sessionUserId = session?.userId ?? null;
 
   try {
     await ensureStartListSnapshotIfEligible(competitionId);
     await repairStartListSnapshotEmptyHeadHeatsWhenEntriesExist({
       competitionId,
-      createdByUserId: session.userId,
+      createdByUserId: sessionUserId ?? undefined,
     });
   } catch (e) {
     console.error("ensureStartListSnapshotIfEligible / repair snapshot:", e);
@@ -111,20 +110,10 @@ export default async function CompetitionEventStartListPage({
         organization: {
           select: {
             admins: {
-              where: { userId: session.userId },
+              where: { userId: sessionUserId ?? "clinvalidnosessionuser0000" },
               select: { role: true },
             },
           },
-        },
-        officialApplications: {
-          where: { userId: session.userId },
-          select: { status: true },
-          take: 1,
-        },
-        officialAttendances: {
-          where: { userId: session.userId },
-          select: { id: true },
-          take: 1,
         },
         startListSnapshot: {
           select: { capturedAt: true, data: true },
@@ -142,14 +131,20 @@ export default async function CompetitionEventStartListPage({
     notFound();
   }
 
+  const dayOpsMeta = await prisma.competition.findUnique({
+    where: { id: competitionId },
+    select: { dayOpsAccessSecretHash: true },
+  });
+  const dayOpsUnlockConfigured = Boolean(dayOpsMeta?.dayOpsAccessSecretHash);
+  const hasDayOpsUnlock = await verifyDayOpsUnlockFromCookies(competitionId);
+
   const isOrgAdmin = hasOrgAdminAccess(competition.organization.admins);
-  const myOfficialApplication = competition.officialApplications[0] ?? null;
   const canEditStartListSplit = canManageCompetitionStartListSettings({
     orgAdminsForCurrentUser: competition.organization.admins,
-    officialApplicationStatus: myOfficialApplication?.status ?? null,
-    hasOfficialAttendance: competition.officialAttendances.length > 0,
+    hasDayOpsUnlock,
   });
   const showUnifiedStartListCard = canEditStartListSplit;
+  const showVenueOps = isOrgAdmin || hasDayOpsUnlock;
 
   if (competition.status === "DRAFT" && !isOrgAdmin) {
     notFound();
@@ -336,6 +331,11 @@ export default async function CompetitionEventStartListPage({
 
   return (
     <div className="app-page mx-auto max-w-3xl space-y-3.5 px-3 py-4 sm:max-w-4xl sm:px-5 sm:py-6">
+      <DayOpsUnlockBanner
+        competitionId={competitionId}
+        passphraseConfigured={dayOpsUnlockConfigured}
+        alreadyUnlocked={hasDayOpsUnlock}
+      />
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="outline" size="sm" className="h-9 gap-1 px-3 text-xs shadow-sm" asChild>
           <Link href={`/competitions/${competitionId}?tab=start-list`}>
@@ -372,8 +372,8 @@ export default async function CompetitionEventStartListPage({
           heatPlanConfirmedAtIso={event.startListHeatPlanConfirmedAt?.toISOString() ?? null}
           marshalStartedAtIso={event.marshalStartedAt?.toISOString() ?? null}
           canEditHeatConfiguration={canEditStartListSplit}
-          showMarshalOps={isOrgAdmin}
-          showResultOps={isOrgAdmin}
+          showMarshalOps={showVenueOps}
+          showResultOps={showVenueOps}
           participantStatusByKey={participantStatusByKey}
           initialParticipantStatusRows={participantStatusRows}
         />

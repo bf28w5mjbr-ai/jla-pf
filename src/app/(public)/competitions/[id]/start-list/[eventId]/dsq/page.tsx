@@ -1,9 +1,9 @@
 import { Metadata } from "next";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { getDayOpsAccess } from "@/lib/dayOpsAccess";
+import { getOrgAdminContextForCompetition } from "@/lib/dayOpsAccess";
 import { EventDsqManagementClient } from "@/components/EventDsqManagementClient";
 import { buildResultRoundLabelMap } from "@/lib/resultRoundLabels";
 
@@ -43,7 +43,7 @@ export default async function EventDsqManagementPage({
 
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const session = token ? await verifySession(token) : null;
+  const session = await verifySessionCached(token);
   if (!session?.userId) {
     redirect("/login");
   }
@@ -60,7 +60,7 @@ export default async function EventDsqManagementPage({
         },
       },
     }),
-    getDayOpsAccess(competitionId, session.userId),
+    getOrgAdminContextForCompetition(competitionId, session.userId),
   ]);
 
   if (!event) {

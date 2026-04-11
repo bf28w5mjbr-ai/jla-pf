@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { verifySession } from '@/lib/auth';
+import { verifySessionCached } from '@/lib/auth';
 import { prisma } from '@/server/db';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -18,7 +18,7 @@ export default async function QualificationDetailPage({ params }: RouteParams) {
   const { id } = await params;
   const jar = await cookies();
   const token = jar.get('session')?.value ?? null;
-  const sess = token ? await verifySession(token) : null;
+  const sess = await verifySessionCached(token);
 
   if (!sess?.userId) {
     redirect('/login');

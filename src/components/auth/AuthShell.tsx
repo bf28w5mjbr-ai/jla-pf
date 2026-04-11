@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import Link from "next/link";
+import { BluviumWordmark } from "@/components/BluviumWordmark";
 import type { ExplanationDensity } from "@/lib/explanation";
 import { pageIntroTextClass } from "@/lib/explanation";
 import { cn } from "@/lib/utils";
@@ -46,17 +47,9 @@ export function AuthShell({
           <div className="mb-8 flex justify-center sm:mb-10">
             <Link
               href="/"
-              className="group inline-flex items-center gap-3 rounded-2xl px-2 py-1.5 outline-none ring-offset-background transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-ring"
+              className="group inline-flex items-center justify-center rounded-2xl px-2 py-1.5 outline-none ring-offset-background transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <span
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-orange-600 via-orange-700 to-orange-900 text-sm font-bold tracking-tight text-white shadow-md ring-1 ring-white/15 dark:from-orange-300 dark:via-orange-200 dark:to-orange-100 dark:text-orange-950 dark:ring-orange-950/10"
-                aria-hidden
-              >
-                B
-              </span>
-              <span className="text-lg font-semibold tracking-tight text-foreground">
-                Bluvium
-              </span>
+              <BluviumWordmark variant="inline" />
             </Link>
           </div>
         )}
@@ -69,6 +62,30 @@ export function AuthShell({
           )}
         </header>
         {children}
+      </div>
+    </main>
+  );
+}
+
+/** Suspense fallback など、AuthShell 全体を出せないときのブランド付き待機画面 */
+export function AuthShellBrandedFallback({
+  message = "読み込み中…",
+}: {
+  message?: string;
+}) {
+  return (
+    <main
+      className={cn(authShellMainClassName, "flex flex-col items-center justify-center")}
+      aria-busy="true"
+    >
+      <div className="relative z-[1] flex flex-col items-center gap-5">
+        <Link
+          href="/"
+          className="rounded-2xl px-2 py-1.5 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <BluviumWordmark variant="inline" />
+        </Link>
+        <p className="text-sm text-muted-foreground">{message}</p>
       </div>
     </main>
   );

@@ -60,7 +60,7 @@ export default function EditClubForm({ club }: EditClubFormProps) {
     
     if (postalCode.length === 7) {
       try {
-        const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${postalCode}`);
+        const res = await fetch(`/api/postal-code?zipcode=${postalCode}`);
         const data = await res.json();
         
         if (data.results) {

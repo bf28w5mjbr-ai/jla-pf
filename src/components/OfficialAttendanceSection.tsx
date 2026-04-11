@@ -189,7 +189,7 @@ export default function OfficialAttendanceSection({
         <CardHeader className="border-b border-border/60 bg-muted/15 py-3">
           <CardTitle className="text-base">当日出席確認</CardTitle>
           <CardDescription className="text-xs sm:text-sm">
-            開催日ごとに承認済みオフィシャル（一般/TO含む）の出席を確認します。チェックボックスまたはNFCで出席登録できます。
+            開催日ごとに承認済みオフィシャル（一般/TO含む）の出席を確認します。チェックボックスまたはNFCで出席登録できます。出席記録は人数集計・CSV 等に利用され、当日運用の操作権限とは連動しません。
           </CardDescription>
         </CardHeader>
       ) : null}

@@ -8,6 +8,27 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 /**
+ * Supabase Transaction pooler（pgbouncer）経由では、同一接続以外で
+ * prepared statement 名が再利用され 42P05 "already exists" になる。
+ * Prisma は `pgbouncer=true` でプリペアドを使わない挙動になる。
+ * @see https://www.prisma.io/docs/orm/prisma-client/setup-and-configuration/databases-connections/pgbouncer
+ */
+function withSupabaseTransactionPooler(url: string | undefined): string | undefined {
+  if (!url) return url;
+  if (/[?&]pgbouncer=true(?:&|$)/i.test(url)) return url;
+  try {
+    const u = new URL(url);
+    if (!u.hostname.includes("pooler.supabase.com")) return url;
+    const port = u.port || "5432";
+    if (port !== "6543") return url;
+    u.searchParams.set("pgbouncer", "true");
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+/**
  * Next dev / プレビューでは HMR・並列 RSC で接続プールが詰まりやすい。
  * 未指定時のみ pool_timeout / connection_limit を調整する。
  * 本番は DATABASE_URL をそのまま使う。
@@ -19,8 +40,10 @@ function withNonProdPoolTuning(url: string | undefined): string | undefined {
   /**
    * 開発時はポーリングや並列RSCで同時接続が増えやすいので、
    * 既定値を 5 -> 10 に引き上げる（環境変数で上書き可能）。
+   * Supabase の transaction pooler（pgbouncer=true）では接続を抑えた方が安定することがある。
    */
-  const devConnectionLimit = process.env.PRISMA_DEV_CONNECTION_LIMIT ?? "10";
+  const defaultLimit = /[?&]pgbouncer=true/.test(url) ? "5" : "10";
+  const devConnectionLimit = process.env.PRISMA_DEV_CONNECTION_LIMIT ?? defaultLimit;
   const hasPoolTimeout = /[?&]pool_timeout=/.test(url);
   const hasConnectionLimit = /[?&]connection_limit=/.test(url);
   if (hasPoolTimeout && hasConnectionLimit) return url;
@@ -43,7 +66,9 @@ function withNonProdPoolTuning(url: string | undefined): string | undefined {
   }
 }
 
-const datasourceUrl = withNonProdPoolTuning(process.env.DATABASE_URL);
+const datasourceUrl = withNonProdPoolTuning(
+  withSupabaseTransactionPooler(process.env.DATABASE_URL)
+);
 
 export const prisma =
   globalForPrisma.prisma ??

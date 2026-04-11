@@ -3,7 +3,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Shield, ShieldAlert } from "lucide-react";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { isPfAdminRole } from "@/lib/governancePolicy";
 import AdminUserSecurityLookup from "@/components/admin/AdminUserSecurityLookup";
@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminUserSecurityPage() {
   const jar = await cookies();
   const token = jar.get("session")?.value ?? null;
-  const sess = token ? await verifySession(token) : null;
+  const sess = await verifySessionCached(token);
   if (!sess?.userId) redirect("/login");
 
   const me = await prisma.user.findUnique({

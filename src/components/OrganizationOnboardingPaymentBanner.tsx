@@ -24,7 +24,7 @@ export default function OrganizationOnboardingPaymentBanner({
       });
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error || "登録料の決済開始に失敗しました");
+        toast.error(data.error || "利用料の登録を開始できませんでした");
         return;
       }
       if (!data.checkoutUrl) {
@@ -34,7 +34,7 @@ export default function OrganizationOnboardingPaymentBanner({
       window.location.href = data.checkoutUrl as string;
     } catch (error) {
       console.error("Onboarding checkout error:", error);
-      toast.error("登録料の決済開始に失敗しました");
+      toast.error("利用料の登録を開始できませんでした");
     } finally {
       setLoading(false);
     }
@@ -45,10 +45,10 @@ export default function OrganizationOnboardingPaymentBanner({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
           <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
-            主催団体登録料のお支払いが必要です
+            プラットフォーム利用料（年額）のお支払いが必要です
           </p>
           <p className="text-xs leading-relaxed text-amber-800/90 dark:text-amber-200/90">
-            正式利用には登録料 {formatted} 円の決済完了が必要です。決済後に主催団体が有効化されます。
+            正式利用には年額 {formatted} 円のサブスクリプション登録が必要です。決済完了後に主催団体が有効化されます。
           </p>
         </div>
         <Button
@@ -57,7 +57,7 @@ export default function OrganizationOnboardingPaymentBanner({
           disabled={loading}
           className="sm:min-w-[170px]"
         >
-          {loading ? "決済ページへ遷移中..." : "登録料を支払う"}
+          {loading ? "決済ページへ遷移中..." : "年額プランに登録する"}
         </Button>
       </div>
     </div>

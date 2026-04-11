@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { getAuthenticatedLayoutUser } from "@/lib/authenticatedLayoutData";
 import Sidebar from "@/components/Sidebar";
 import React from "react";
@@ -13,7 +13,7 @@ export default async function AuthenticatedLayout({
 }) {
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const session = token ? await verifySession(token) : null;
+  const session = await verifySessionCached(token);
 
   if (!session?.userId) {
     redirect("/login");

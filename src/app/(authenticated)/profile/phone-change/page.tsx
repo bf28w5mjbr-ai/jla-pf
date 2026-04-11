@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import PhoneChangeForm from "./PhoneChangeForm";
 
@@ -9,7 +9,7 @@ export default async function PhoneChangePage() {
   const token = jar.get("session")?.value;
   if (!token) redirect("/login");
 
-  const sess = await verifySession(token);
+  const sess = await verifySessionCached(token);
   if (!sess?.userId) redirect("/login");
 
   const user = await prisma.user.findUnique({
