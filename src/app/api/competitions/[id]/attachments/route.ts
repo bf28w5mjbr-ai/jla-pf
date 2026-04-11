@@ -74,21 +74,38 @@ export async function POST(
     }
 
     const uploadDir = path.join(process.cwd(), "public", "uploads", "competitions");
-    await mkdir(uploadDir, { recursive: true });
-
     const timestamp = Date.now();
     const base = sanitizeUploadBasename(file.name);
     const fileName = `${id}-${timestamp}-${base}.${validated.value.ext}`;
     const filePath = path.join(uploadDir, fileName);
     let fileUrl = `/uploads/competitions/${fileName}`;
     if (canUseSupabaseStorage()) {
-      fileUrl = await uploadPublicAsset({
-        objectKey: `competitions/${fileName}`,
-        body: buffer,
-        contentType: validated.value.mime,
-      });
+      try {
+        fileUrl = await uploadPublicAsset({
+          objectKey: `competitions/${fileName}`,
+          body: buffer,
+          contentType: validated.value.mime,
+        });
+      } catch (e) {
+        const msg =
+          e instanceof Error
+            ? e.message
+            : "ストレージへのアップロードに失敗しました。Supabase Storage の設定とバケット権限を確認してください。";
+        return NextResponse.json({ error: msg }, { status: 502 });
+      }
     } else {
-      await writeFile(filePath, buffer);
+      try {
+        await mkdir(uploadDir, { recursive: true });
+        await writeFile(filePath, buffer);
+      } catch {
+        return NextResponse.json(
+          {
+            error:
+              "ファイルの保存に失敗しました。本番・サーバレス環境では Supabase Storage（SUPABASE_SERVICE_ROLE_KEY と SUPABASE_STORAGE_BUCKET）の設定が必要です。",
+          },
+          { status: 503 }
+        );
+      }
     }
 
     // データベースに保存
