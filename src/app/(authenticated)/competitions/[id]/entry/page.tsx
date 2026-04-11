@@ -1,4 +1,5 @@
 import type { ComponentProps } from "react";
+import type Stripe from "stripe";
 import { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
@@ -37,6 +38,27 @@ import {
 } from "@/lib/competitionEntryAgeTiered";
 
 type CompetitionEntryFormProps = ComponentProps<typeof CompetitionEntryForm>;
+
+/** エントリーページの RSC が Stripe 待ちで長時間ブロックしないよう、取得だけ短めに打ち切る */
+const ENTRY_PAGE_STRIPE_RETRIEVE_MS = 7000;
+
+async function retrieveCheckoutSessionForEntryPage(
+  sessionId: string
+): Promise<Stripe.Checkout.Session | null> {
+  try {
+    return await Promise.race([
+      stripe.checkout.sessions.retrieve(sessionId),
+      new Promise<Stripe.Checkout.Session>((_, reject) => {
+        setTimeout(
+          () => reject(new Error("stripe_retrieve_timeout")),
+          ENTRY_PAGE_STRIPE_RETRIEVE_MS
+        );
+      }),
+    ]);
+  } catch {
+    return null;
+  }
+}
 
 export const dynamic = "force-dynamic";
 
@@ -146,9 +168,12 @@ export default async function CompetitionEntryPage({
       pendingCheckout.status !== "COMPLETED"
     ) {
       try {
-        const stripeSession = await stripe.checkout.sessions.retrieve(
+        const stripeSession = await retrieveCheckoutSessionForEntryPage(
           pendingCheckout.stripeCheckoutSessionId
         );
+        if (!stripeSession) {
+          throw new Error("stripe_unavailable");
+        }
         const finalized =
           await finalizeEntryCheckoutSessionsFromStripeSession(stripeSession);
         if (finalized.length > 0) {
@@ -528,8 +553,10 @@ export default async function CompetitionEntryPage({
     const stripeSessionId = latestCheckout?.stripeCheckoutSessionId;
     if (stripeSessionId) {
       try {
-        const checkoutSession = await stripe.checkout.sessions.retrieve(stripeSessionId);
-        if (
+        const checkoutSession = await retrieveCheckoutSessionForEntryPage(stripeSessionId);
+        if (!checkoutSession) {
+          entryPaymentPhase = "awaiting_payment";
+        } else if (
           checkoutSession.payment_status === "paid" ||
           checkoutSession.payment_status === "no_payment_required"
         ) {
