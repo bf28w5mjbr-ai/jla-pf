@@ -5,10 +5,10 @@ import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { HeatSetting } from "@/lib/startListSettings";
 import {
+  dedupeFrozenTabIndicesBySnapshotRound,
   formatStartListTabLabelWithHeatCount,
   getLiveHeatsByTab,
   getLiveTabsAligned,
-  isStartListTabFrozen,
   snapshotRoundForTab,
   type StartListIndividualInput,
   type StartListTeamInput,
@@ -123,11 +123,8 @@ export default function CompetitionStartListEventBlock({
 
   const tabCount = liveTabs.length;
   const publicVisibleIndices = useMemo(
-    () =>
-      liveTabs
-        .map((_, i) => i)
-        .filter((i) => isStartListTabFrozen(i, tabCount, frozenSnapshotRounds)),
-    [liveTabs, tabCount, frozenSnapshotRounds]
+    () => dedupeFrozenTabIndicesBySnapshotRound(tabCount, frozenSnapshotRounds),
+    [tabCount, frozenSnapshotRounds]
   );
   const publicLiveTabs = publicVisibleIndices.map((i) => liveTabs[i]!);
   const publicLiveHeatsByTab = publicVisibleIndices.map((i) => liveHeatsByTab[i]!);

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { StartListRoundData } from "@/lib/startListRounds";
-import { getLiveHeatsByTab, getSnapshotTabPanels } from "./startListEventTabDisplay";
+import {
+  dedupeFrozenTabIndicesBySnapshotRound,
+  getLiveHeatsByTab,
+  getSnapshotTabPanels,
+} from "./startListEventTabDisplay";
 
 describe("getLiveHeatsByTab", () => {
   it("2本目以降は roundTabs のヒート数を全員数での enforce に潰さない", () => {
@@ -318,5 +322,41 @@ describe("getLiveHeatsByTab", () => {
     expect(panels![0]!.block?.round).toBe("HEAT");
     expect(panels![1]!.block).toBeNull();
     expect(panels![2]!.block?.round).toBe("FINAL");
+  });
+});
+
+describe("dedupeFrozenTabIndicesBySnapshotRound", () => {
+  const frozenHeatFinal: StartListRoundData[] = [
+    {
+      round: "HEAT",
+      generatedAt: "2020-01-01T00:00:00.000Z",
+      generatedBy: "BASELINE",
+      heats: [{ heatIndex: 1, participants: [] }],
+    },
+    {
+      round: "FINAL",
+      generatedAt: "2020-01-01T00:00:00.000Z",
+      generatedBy: "BASELINE",
+      heats: [{ heatIndex: 1, participants: [] }],
+    },
+  ];
+
+  it("タブ数が多くても同一スナップショット round に写るタブは 1 本だけ残す", () => {
+    const tabCount = 12;
+    const idx = dedupeFrozenTabIndicesBySnapshotRound(tabCount, frozenHeatFinal);
+    expect(idx).toEqual([0, 2]);
+  });
+
+  it("ヒート未凍結・決勝のみのときも重複 FINAL タブを潰す", () => {
+    const tabCount = 5;
+    const idx = dedupeFrozenTabIndicesBySnapshotRound(tabCount, [
+      {
+        round: "FINAL",
+        generatedAt: "2020-01-01T00:00:00.000Z",
+        generatedBy: "BASELINE",
+        heats: [{ heatIndex: 1, participants: [] }],
+      },
+    ]);
+    expect(idx).toEqual([2]);
   });
 });

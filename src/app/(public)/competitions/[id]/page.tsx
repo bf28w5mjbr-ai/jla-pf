@@ -32,7 +32,7 @@ import {
   competitionHostDisplayName,
 } from "@/lib/competitionHostDisplay";
 import { formatCompactJaDateRange } from "@/lib/datetimeLocal";
-import { buildParticipationEventRows } from "@/lib/competitionPublicParticipationEvents";
+import { buildParticipationEventSections } from "@/lib/competitionPublicParticipationEvents";
 import { ensureStartListSnapshotIfEligible } from "@/lib/startListSnapshot";
 import { parseTechnicalOfficialTiers } from "@/lib/technicalOfficialRules";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
@@ -105,6 +105,7 @@ export default async function CompetitionDetailPage({
           name: true,
           sex: true,
           type: true,
+          category: true,
           displayOrder: true,
           scheduledStartAt: true,
           scheduledEndAt: true,
@@ -376,7 +377,7 @@ export default async function CompetitionDetailPage({
   const hasIndividualEvents = competition.events.some((e) => e.type === "INDIVIDUAL");
   const hasTeamEvents = competition.events.some((e) => e.type === "TEAM");
 
-  const participationEventRows = buildParticipationEventRows(competition.events);
+  const participationEventSections = buildParticipationEventSections(competition.events);
   const technicalOfficialTiers = parseTechnicalOfficialTiers(competition.technicalOfficialTiers);
   const showTechnicalOfficialPublicBlock =
     (competition.officialRecruitmentEnabled ?? true) &&
@@ -646,23 +647,34 @@ export default async function CompetitionDetailPage({
                     <ListOrdered className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium text-muted-foreground">種目</p>
-                      <ul className="mt-1.5 flex flex-col gap-2">
-                        {participationEventRows.map((row) => (
-                          <li key={row.key} className="text-sm">
-                            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                              <span className="font-medium text-foreground">{row.name}</span>
-                              <span className="text-[11px] leading-snug text-muted-foreground">
-                                {row.metaLine}
-                              </span>
-                            </div>
-                            {row.scheduleLine ? (
-                              <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                                {row.scheduleLine}
+                      <div className="mt-1.5 flex flex-col gap-4">
+                        {participationEventSections.map((section) => (
+                          <div key={section.category}>
+                            {participationEventSections.length > 1 ? (
+                              <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-foreground/85">
+                                {section.label}
                               </p>
                             ) : null}
-                          </li>
+                            <ul className="flex flex-col gap-2">
+                              {section.rows.map((row) => (
+                                <li key={row.key} className="text-sm">
+                                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                    <span className="font-medium text-foreground">{row.name}</span>
+                                    <span className="text-[11px] leading-snug text-muted-foreground">
+                                      {row.metaLine}
+                                    </span>
+                                  </div>
+                                  {row.scheduleLine ? (
+                                    <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                                      {row.scheduleLine}
+                                    </p>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                         ))}
-                      </ul>
+                      </div>
                     </div>
                   </div>
                 ) : null}

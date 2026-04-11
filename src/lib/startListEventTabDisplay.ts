@@ -274,6 +274,29 @@ export function isStartListTabFrozen(
   return Boolean(block?.heats?.length);
 }
 
+/**
+ * 一般公開のスタートリスト用。
+ * `startListRoundCount` が大きいと複数タブが同じスナップショット round（例: FINAL）に写り、
+ * いずれも「凍結済み」と判定されてタブが雪だる式に増えるため、round キーごとに先頭タブだけ残す。
+ */
+export function dedupeFrozenTabIndicesBySnapshotRound(
+  tabCount: number,
+  frozenSnapshotRounds: StartListRoundData[] | null | undefined
+): number[] {
+  const n = Math.max(0, Math.floor(tabCount));
+  const seenRound = new Set<StartListRound>();
+  const out: number[] = [];
+  for (let i = 0; i < n; i += 1) {
+    if (!isStartListTabFrozen(i, n, frozenSnapshotRounds)) continue;
+    const key = snapshotRoundForTab(i, n);
+    if (!key) continue;
+    if (seenRound.has(key)) continue;
+    seenRound.add(key);
+    out.push(i);
+  }
+  return out;
+}
+
 function advanceQuotaForSnapshotHeat(
   heatIndex: number,
   quotas: { heat: number; quota: number }[] | undefined

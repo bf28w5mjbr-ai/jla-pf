@@ -1,3 +1,4 @@
+import type { EventCategory } from "@prisma/client";
 import { formatEventStartJa } from "@/lib/eventScheduleDisplay";
 
 export type ParticipationEventLite = {
@@ -5,8 +6,23 @@ export type ParticipationEventLite = {
   name: string;
   sex: string;
   type: string;
+  /** プール／オーシャンなど。同一種目名でもカテゴリが違えば別行にする */
+  category: EventCategory;
   scheduledStartAt: Date | null;
 };
+
+export function competitionEventCategoryPublicLabel(category: EventCategory): string {
+  switch (category) {
+    case "POOL":
+      return "プール競技";
+    case "OCEAN":
+      return "オーシャン競技";
+    default: {
+      const _exhaustive: never = category;
+      return _exhaustive;
+    }
+  }
+}
 
 function sexWord(sex: string): string {
   if (sex === "MALE") return "男子";
@@ -64,7 +80,7 @@ export type ParticipationEventRow = {
 export function buildParticipationEventRows(events: ParticipationEventLite[]): ParticipationEventRow[] {
   if (events.length === 0) return [];
 
-  const groupKey = (e: ParticipationEventLite) => `${e.type}\0${e.name}`;
+  const groupKey = (e: ParticipationEventLite) => `${e.category}\0${e.type}\0${e.name}`;
   const buckets = new Map<string, ParticipationEventLite[]>();
   for (const e of events) {
     const k = groupKey(e);
@@ -97,4 +113,43 @@ export function buildParticipationEventRows(events: ParticipationEventLite[]): P
       scheduleLine: formatScheduleLine(g),
     };
   });
+}
+
+export type ParticipationEventSection = {
+  category: EventCategory;
+  label: string;
+  rows: ParticipationEventRow[];
+};
+
+/**
+ * 大会公開ページ「参加情報」用。カテゴリ（プール／オーシャン）ごとに行を分け、表示順を整える。
+ */
+export function buildParticipationEventSections(events: ParticipationEventLite[]): ParticipationEventSection[] {
+  if (events.length === 0) return [];
+  const primaryOrder: EventCategory[] = ["POOL", "OCEAN"];
+  const used = new Set<EventCategory>();
+  const out: ParticipationEventSection[] = [];
+  for (const cat of primaryOrder) {
+    const sub = events.filter((e) => e.category === cat);
+    if (sub.length === 0) continue;
+    used.add(cat);
+    out.push({
+      category: cat,
+      label: competitionEventCategoryPublicLabel(cat),
+      rows: buildParticipationEventRows(sub),
+    });
+  }
+  const rest = events.filter((e) => !used.has(e.category));
+  if (rest.length > 0) {
+    const extraCats = [...new Set(rest.map((e) => e.category))];
+    for (const cat of extraCats) {
+      const sub = rest.filter((e) => e.category === cat);
+      out.push({
+        category: cat,
+        label: competitionEventCategoryPublicLabel(cat),
+        rows: buildParticipationEventRows(sub),
+      });
+    }
+  }
+  return out;
 }
