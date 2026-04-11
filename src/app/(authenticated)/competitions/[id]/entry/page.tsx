@@ -378,7 +378,7 @@ export default async function CompetitionEntryPage({
       )
     : null;
   const userSex = user?.sex ?? "OTHER";
-  const userQualifications = user?.qualifications.map((q) => q.kind) ?? [];
+  const userQualifications = user?.qualifications?.map((q) => q.kind) ?? [];
 
   const rq = resolveRequiredQualificationsForAge(
     competition.requiredQualifications,
