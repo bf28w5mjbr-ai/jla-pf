@@ -55,6 +55,22 @@ export function formatDateForDatetimeLocalInput(
   return `${y}-${m}-${day}T${h}:${min}`;
 }
 
+/**
+ * 管理画面の「エントリー期間」など、datetime-local の値と同じ数字列を人間向けに表示する。
+ * `datetime-local` は `YYYY-MM-DDTHH:mm`、ここでは読みやすく `YYYY-MM-DD HH:mm`（いずれも {@link COMPETITION_ADMIN_DATE_TIME_ZONE} の壁時計）。
+ */
+export function formatAdminWallClockSameAsDatetimeLocal(
+  value: Date | string | number | null | undefined
+): string | null {
+  if (value == null) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  const core = formatDateForDatetimeLocalInput(d, {
+    timeZone: COMPETITION_ADMIN_DATE_TIME_ZONE,
+  });
+  return core.replace("T", " ");
+}
+
 export type DatetimeLocalParseOptions = {
   /** IANA。`Asia/Tokyo` のときは JST 壁時計として解釈。省略時は実行環境のローカル暦で解釈 */
   timeZone?: string;

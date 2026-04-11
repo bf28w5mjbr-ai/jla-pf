@@ -28,4 +28,17 @@ describe("normalizeRelationLogos", () => {
       ]),
     ).toEqual([{ name: "D", logoUrl: "https://x/d.png" }]);
   });
+
+  it("parses JSON string payload (double-encoded or legacy)", () => {
+    const raw = JSON.stringify([{ name: "E", logoUrl: "https://x.example/e.png" }]);
+    expect(normalizeRelationLogos(raw)).toEqual([
+      { name: "E", logoUrl: "https://x.example/e.png" },
+    ]);
+  });
+
+  it("accepts logoURL camel variant", () => {
+    expect(normalizeRelationLogos([{ name: "F", logoURL: "https://x.example/f.png" }])).toEqual([
+      { name: "F", logoUrl: "https://x.example/f.png" },
+    ]);
+  });
 });

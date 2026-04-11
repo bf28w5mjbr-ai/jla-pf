@@ -147,6 +147,8 @@ export async function POST(
     return NextResponse.json({
       message: "ロゴをアップロードしました",
       logoUrl,
+      name,
+      logos: updatedLogos,
     });
   } catch (error) {
     return jsonInternalError500("POST api/competitions/[id]/relations/logo/route.ts", error);

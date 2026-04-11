@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   COMPETITION_ADMIN_DATE_TIME_ZONE,
   datetimeLocalInputValueToUtcIsoString,
+  formatAdminWallClockSameAsDatetimeLocal,
   formatDateForDatetimeLocalInput,
 } from "./datetimeLocal";
 
@@ -57,6 +58,12 @@ describe("entry period (Asia/Tokyo) datetime-local", () => {
         timeZone: COMPETITION_ADMIN_DATE_TIME_ZONE,
       })
     ).toBe(utc);
+  });
+
+  it("formatAdminWallClockSameAsDatetimeLocal matches datetime-local digits (space not T)", () => {
+    process.env.TZ = "America/Los_Angeles";
+    const s = formatAdminWallClockSameAsDatetimeLocal("2026-07-01T06:00:00.000Z");
+    expect(s).toBe("2026-07-01 15:00");
   });
 });
 

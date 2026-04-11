@@ -2508,7 +2508,9 @@ export default function EntrySettingsEditor({
       <Card className="overflow-hidden">
         <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
           <CardTitle className="text-base font-semibold">エントリー期間</CardTitle>
-          <CardDescription className="text-xs">受付の開始・終了日時です。</CardDescription>
+          <CardDescription className="text-xs">
+            受付の開始・終了日時です。日時は日本時間（Asia/Tokyo）の壁時計で入力・保存され、設定一覧の表示とも同じ基準です。
+          </CardDescription>
         </CardHeader>
         <CardContent className="px-4 py-3">
           <AutofillSyncForm
