@@ -10,6 +10,11 @@ import { z } from "zod";
 import { onAuthLoginSuccess } from "@/lib/authLoginSuccess";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
+import {
+  resolveWebAuthnExpectedOrigins,
+  tryWebAuthnVerifyErrorResponse,
+  webAuthnRequireUserVerification,
+} from "@/lib/webauthnServer";
 
 type PasskeyWithUser = {
   id: string;
@@ -49,7 +54,7 @@ export async function POST(req: NextRequest) {
 
     const host = req.headers.get("host") ?? "localhost";
     const rpID = process.env.WEBAUTHN_RP_ID ?? host.split(":")[0];
-    const expectedOrigin = process.env.WEBAUTHN_ORIGIN ?? req.nextUrl.origin;
+    const expectedOrigin = resolveWebAuthnExpectedOrigins(req);
 
     const credentialId = isoBase64URL.toBuffer(data.credential?.id ?? "");
 
@@ -67,7 +72,7 @@ export async function POST(req: NextRequest) {
       expectedChallenge,
       expectedOrigin,
       expectedRPID: rpID,
-      requireUserVerification: true,
+      requireUserVerification: webAuthnRequireUserVerification(),
       authenticator: {
         credentialID: isoBase64URL.fromBuffer(credential.credentialId),
         credentialPublicKey: credential.publicKey,
@@ -111,6 +116,9 @@ export async function POST(req: NextRequest) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(zodErrorJsonBody(error), { status: 400 });
     }
+
+    const mapped = tryWebAuthnVerifyErrorResponse(error);
+    if (mapped) return mapped;
 
     return jsonInternalError500(
       "POST api/passkeys/authentication/verify/route.ts",

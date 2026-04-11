@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { tryWebAuthnRegistrationOptionsError } from "@/lib/webauthnServer";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { generateRegistrationOptions } from "@simplewebauthn/server";
@@ -70,6 +71,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(options);
   } catch (error) {
+    const mapped = tryWebAuthnRegistrationOptionsError(error);
+    if (mapped) return mapped;
     return jsonInternalError500("POST api/passkeys/registration/options/route.ts", error);
   }
 }
