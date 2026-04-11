@@ -37,6 +37,11 @@ import { ensureStartListSnapshotIfEligible } from "@/lib/startListSnapshot";
 import { parseTechnicalOfficialTiers } from "@/lib/technicalOfficialRules";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
 import DayOpsUnlockBanner from "@/components/DayOpsUnlockBanner";
+import {
+  parseAgeFeeTiers,
+  parseAgeQualificationTiers,
+  unionRequiredQualifications,
+} from "@/lib/competitionEntryAgeTiered";
 
 export const dynamic = "force-dynamic";
 
@@ -189,6 +194,32 @@ export default async function CompetitionDetailPage({
       return <p className="text-sm font-medium">未設定</p>;
     }
 
+    const feeTiers = parseAgeFeeTiers(entryFee);
+    if (feeTiers?.length) {
+      return (
+        <div className="space-y-1">
+          <p className="text-[11px] font-medium text-muted-foreground">年齢帯別（開催日時点の満年齢）</p>
+          {feeTiers.map((t, i) => (
+            <p key={i} className="text-sm font-medium leading-snug">
+              {t.minAge}歳〜{t.maxAge == null ? "上限なし" : `${t.maxAge}歳`}
+              {hasIndividualEvents ? (
+                <>
+                  {" "}
+                  · 個人 ¥{formatCurrency(t.individualEntryFee)}
+                </>
+              ) : null}
+              {hasTeamEvents ? (
+                <>
+                  {" "}
+                  · チーム（1）¥{formatCurrency(t.teamEntryFeePerTeam)}
+                </>
+              ) : null}
+            </p>
+          ))}
+        </div>
+      );
+    }
+
     const fee = entryFee as {
       individualEntryFee?: number;
       teamEntryFeePerTeam?: number;
@@ -220,13 +251,24 @@ export default async function CompetitionDetailPage({
   };
 
   const renderRequiredQualifications = (requiredQualifications: unknown) => {
-    if (!Array.isArray(requiredQualifications)) {
-      return <p className="text-sm font-medium">資格不要</p>;
+    const tiered = parseAgeQualificationTiers(requiredQualifications);
+    if (tiered?.length) {
+      return (
+        <div className="space-y-1">
+          <p className="text-[11px] font-medium text-muted-foreground">年齢帯別</p>
+          {tiered.map((t, i) => (
+            <p key={i} className="text-sm font-medium leading-snug">
+              {t.minAge}〜{t.maxAge == null ? "上限なし" : `${t.maxAge}歳`}
+              {t.requiredQualifications.length > 0
+                ? ` · ${t.requiredQualifications.join("、")}`
+                : " · 資格不要"}
+            </p>
+          ))}
+        </div>
+      );
     }
 
-    const items = requiredQualifications
-      .map((item) => (typeof item === "string" ? item.trim() : ""))
-      .filter((item) => item.length > 0);
+    const items = unionRequiredQualifications(requiredQualifications);
 
     if (items.length === 0) {
       return <p className="text-sm font-medium">資格不要</p>;

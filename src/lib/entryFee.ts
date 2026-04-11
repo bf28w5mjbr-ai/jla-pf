@@ -1,7 +1,16 @@
+import { resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
+
 export type CompetitionEntryFeeConfig = {
   individualEntryFee?: number;
   teamEntryFeePerTeam?: number;
   baseFee?: number;
+  /** 年齢帯別（大会開催日基準の満年齢）。非空配列のとき年齢帯別として解釈 */
+  ageFeeTiers?: Array<{
+    minAge: number;
+    maxAge: number | null;
+    individualEntryFee: number;
+    teamEntryFeePerTeam: number;
+  }>;
 };
 
 export function calculateCompetitionEntryFee(
@@ -9,7 +18,8 @@ export function calculateCompetitionEntryFee(
   counts: {
     individualCount: number;
     teamCount: number;
-  }
+  },
+  options?: { userAgeYearsAtCompetitionStart?: number | null }
 ): number {
   const individualCount = Math.max(0, counts.individualCount);
   const teamCount = Math.max(0, counts.teamCount);
@@ -18,13 +28,11 @@ export function calculateCompetitionEntryFee(
   if (selectedCount === 0 || entryFee === null || entryFee === undefined) return 0;
   if (typeof entryFee === "number") return entryFee;
 
-  const individualFee =
-    typeof entryFee.individualEntryFee === "number"
-      ? entryFee.individualEntryFee
-      : typeof entryFee.baseFee === "number"
-        ? entryFee.baseFee
-        : 0;
-  const teamFee = typeof entryFee.teamEntryFeePerTeam === "number" ? entryFee.teamEntryFeePerTeam : 0;
+  const { individualUnit, teamUnit, ageTierMissing } = resolveEntryFeeUnits(
+    entryFee,
+    options?.userAgeYearsAtCompetitionStart ?? null
+  );
+  if (ageTierMissing) return 0;
 
-  return (individualCount > 0 ? individualFee : 0) + teamFee * teamCount;
+  return (individualCount > 0 ? individualUnit : 0) + teamUnit * teamCount;
 }

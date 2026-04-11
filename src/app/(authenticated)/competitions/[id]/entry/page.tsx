@@ -27,6 +27,13 @@ import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
 import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import { meetsEventAgeOrBirthRule } from "@/lib/eventBirthDateEligibility";
+import {
+  isTieredEntryFee,
+  isTieredRequiredQualifications,
+  parseAgeFeeTiers,
+  resolveEntryFeeUnits,
+  resolveRequiredQualificationsForAge,
+} from "@/lib/competitionEntryAgeTiered";
 
 type CompetitionEntryFormProps = ComponentProps<typeof CompetitionEntryForm>;
 
@@ -162,6 +169,7 @@ export default async function CompetitionEntryPage({
     new Intl.NumberFormat("ja-JP").format(value);
 
   const hasTeamEvents = competition.events.some((event) => event.type === "TEAM");
+  const hasIndividualEvents = competition.events.some((event) => event.type === "INDIVIDUAL");
 
   const renderEntryFee = (entryFee: unknown) => {
     if (entryFee === null || entryFee === undefined) {
@@ -174,6 +182,34 @@ export default async function CompetitionEntryPage({
 
     if (typeof entryFee !== "object") {
       return <p className="text-xs font-medium">未設定</p>;
+    }
+
+    const tiers = parseAgeFeeTiers(entryFee);
+    if (tiers) {
+      return (
+        <div className="space-y-1">
+          <p className="text-[10px] font-medium text-muted-foreground">
+            年齢帯別（開催日時点の満年齢）
+          </p>
+          {tiers.map((t, i) => (
+            <p key={i} className="text-xs font-medium leading-snug">
+              {t.minAge}歳〜{t.maxAge == null ? "上限なし" : `${t.maxAge}歳`}
+              {hasIndividualEvents ? (
+                <>
+                  {" "}
+                  · 個人 ¥{formatCurrency(t.individualEntryFee)}
+                </>
+              ) : null}
+              {hasTeamEvents ? (
+                <>
+                  {" "}
+                  · チーム（1）¥{formatCurrency(t.teamEntryFeePerTeam)}
+                </>
+              ) : null}
+            </p>
+          ))}
+        </div>
+      );
     }
 
     const fee = entryFee as {
@@ -279,15 +315,21 @@ export default async function CompetitionEntryPage({
   const userSex = user?.sex ?? "OTHER";
   const userQualifications = user?.qualifications.map((q) => q.kind) ?? [];
 
-  const requiredQualifications = Array.isArray(competition.requiredQualifications)
-    ? (competition.requiredQualifications as string[])
-    : [];
+  const rq = resolveRequiredQualificationsForAge(
+    competition.requiredQualifications,
+    userAge
+  );
+  const meetsQualification =
+    !rq.tierMissing &&
+    (rq.list.length === 0
+      ? true
+      : rq.list.every((req) =>
+          userQualifications.some((q) => matchesQualification(q, req))
+        ));
 
-  const meetsQualification = requiredQualifications.length === 0
-    ? true
-    : requiredQualifications.every((req) =>
-        userQualifications.some((q) => matchesQualification(q, req))
-      );
+  const feeResolution = resolveEntryFeeUnits(competition.entryFee, userAge);
+  const meetsFeeAgeTier =
+    !isTieredEntryFee(competition.entryFee) || !feeResolution.ageTierMissing;
 
   const meetsCompetitionAge = (() => {
     if (userAge === null) return true;
@@ -298,7 +340,11 @@ export default async function CompetitionEntryPage({
 
   const hasMembership = memberships.length > 0;
   const meetsClubRequirement = requireClubMembership ? hasMembership : true;
-  const isCompetitionEligible = meetsQualification && meetsCompetitionAge && meetsClubRequirement;
+  const isCompetitionEligible =
+    meetsQualification &&
+    meetsCompetitionAge &&
+    meetsClubRequirement &&
+    meetsFeeAgeTier;
 
   const eligibleEvents = competition.events.filter((event) => {
     if (!isCompetitionEligible) return false;
@@ -322,19 +368,32 @@ export default async function CompetitionEntryPage({
     return true;
   });
 
-  const missingQualificationLabels = requiredQualifications.filter(
+  const missingQualificationLabels = rq.list.filter(
     (req) => !userQualifications.some((q) => matchesQualification(q, req))
   );
 
   const eligibilityMessages: string[] = [];
   if (!meetsQualification) {
-    if (missingQualificationLabels.length > 0) {
+    if (rq.tierMissing && isTieredRequiredQualifications(competition.requiredQualifications)) {
+      eligibilityMessages.push(
+        userAge === null
+          ? "この大会は年齢帯ごとの出場資格が設定されています。プロフィールに生年月日を登録してください。"
+          : "出場資格の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
+      );
+    } else if (missingQualificationLabels.length > 0) {
       eligibilityMessages.push(
         `次の資格を満たしていません: ${missingQualificationLabels.join("、")}`
       );
     } else {
       eligibilityMessages.push("参加に必要な資格を満たしていません。");
     }
+  }
+  if (!meetsFeeAgeTier) {
+    eligibilityMessages.push(
+      userAge === null
+        ? "この大会は年齢帯別の参加費です。プロフィールに生年月日を登録してください。"
+        : "参加費の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
+    );
   }
   if (!meetsCompetitionAge && userAge !== null) {
     if (typeof competition.minAge === "number" && userAge < competition.minAge) {
@@ -669,6 +728,7 @@ export default async function CompetitionEntryPage({
         memberships={memberships}
         entryWindowOpen={isEntryWindowOpen}
         entryFee={competition.entryFee as unknown as CompetitionEntryFormProps["entryFee"]}
+        userAgeYearsAtCompetitionStart={userAge}
         entryFeeSummary={renderEntryFee(competition.entryFee)}
         allowMultipleEventEntries={allowMultipleEventEntries}
         maxEventEntriesPerPerson={maxEventEntriesPerPerson}

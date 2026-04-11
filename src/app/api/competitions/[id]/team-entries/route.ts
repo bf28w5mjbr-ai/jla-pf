@@ -4,6 +4,8 @@ import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { isClubAdminRole } from "@/lib/roleScopes";
 import { buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
+import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
+import { isTieredEntryFee, resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -98,6 +100,34 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       );
     }
 
+    const feeUser = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { dateOfBirth: true },
+    });
+    const userAge = feeUser?.dateOfBirth
+      ? getCompetitionEligibilityAgeYears(
+          new Date(feeUser.dateOfBirth),
+          new Date(competition.startDate)
+        )
+      : null;
+    const feeUnits = resolveEntryFeeUnits(competition.entryFee, userAge);
+    if (
+      feeUnits.ageTierMissing &&
+      isTieredEntryFee(competition.entryFee) &&
+      normalizedTeams.length > 0
+    ) {
+      return NextResponse.json(
+        {
+          message: feeUser?.dateOfBirth
+            ? "参加費の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
+            : "この大会は年齢帯別の参加費です。プロフィールに生年月日を登録してください。",
+        },
+        { status: 400 }
+      );
+    }
+
+    const teamEntryFeePerTeam = feeUnits.teamUnit;
+
     await prisma.$transaction(async (tx) => {
       await tx.teamEntry.deleteMany({
         where: {
@@ -117,12 +147,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         });
       }
 
-      const teamEntryFeePerTeam =
-        competition.entryFee &&
-        typeof competition.entryFee === "object" &&
-        typeof (competition.entryFee as { teamEntryFeePerTeam?: unknown }).teamEntryFeePerTeam === "number"
-          ? ((competition.entryFee as { teamEntryFeePerTeam?: number }).teamEntryFeePerTeam ?? 0)
-          : 0;
       const totalAmount = normalizedTeams.length * teamEntryFeePerTeam;
       const paymentOwnerId = buildTeamEntryPaymentOwnerId(competitionId, clubId);
 

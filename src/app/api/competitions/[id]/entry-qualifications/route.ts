@@ -9,9 +9,44 @@ import {
   CompetitionEditForbiddenError,
   loadCompetitionMutationState,
 } from "@/lib/competitionPublishedEditRules";
+import {
+  ALLOWED_ENTRY_REQUIRED_QUALIFICATIONS,
+  validateAgeQualificationTiersCoverCompetitionRange,
+  validateAgeTiersNoOverlap,
+  type AgeQualificationTier,
+} from "@/lib/competitionEntryAgeTiered";
 import { isOrgAdminRole } from "@/lib/roleScopes";
 
 type RouteContext = { params: Promise<{ id: string }> };
+
+function normalizeTierList(items: unknown[]): AgeQualificationTier[] {
+  const allowed = new Set<string>(ALLOWED_ENTRY_REQUIRED_QUALIFICATIONS);
+  const out: AgeQualificationTier[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const t = item as Record<string, unknown>;
+    const minAge = typeof t.minAge === "number" ? Math.floor(t.minAge) : NaN;
+    const maxAge =
+      t.maxAge === null || t.maxAge === undefined
+        ? null
+        : typeof t.maxAge === "number"
+          ? Math.floor(t.maxAge)
+          : NaN;
+    if (!Number.isFinite(minAge) || minAge < 0) continue;
+    if (maxAge !== null && (!Number.isFinite(maxAge) || maxAge < minAge)) continue;
+    const qualsRaw = t.requiredQualifications;
+    if (!Array.isArray(qualsRaw)) continue;
+    const requiredQualifications = Array.from(
+      new Set(
+        qualsRaw
+          .map((x) => (typeof x === "string" ? x.trim() : ""))
+          .filter((s) => s.length > 0 && allowed.has(s))
+      )
+    );
+    out.push({ minAge, maxAge, requiredQualifications });
+  }
+  return out;
+}
 
 export async function PUT(request: NextRequest, context: RouteContext) {
   try {
@@ -59,50 +94,73 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     const body = (await request.json().catch(() => ({}))) as {
       requiredQualifications?: unknown;
+      ageQualificationTiers?: unknown;
       announcementMessage?: unknown;
     };
-    const { requiredQualifications, announcementMessage } = body;
+    const { requiredQualifications, ageQualificationTiers, announcementMessage } = body;
 
-    if (!Array.isArray(requiredQualifications)) {
-      return NextResponse.json(
-        { message: "必要資格の形式が正しくありません" },
-        { status: 400 }
+    let stored: unknown;
+
+    if (ageQualificationTiers !== undefined) {
+      if (!Array.isArray(ageQualificationTiers)) {
+        return NextResponse.json(
+          { message: "年齢帯別の資格の形式が正しくありません" },
+          { status: 400 }
+        );
+      }
+      const tiers = normalizeTierList(ageQualificationTiers);
+      if (tiers.length === 0) {
+        return NextResponse.json(
+          { message: "年齢帯を1件以上指定してください" },
+          { status: 400 }
+        );
+      }
+      const overlap = validateAgeTiersNoOverlap(tiers);
+      if (overlap) {
+        return NextResponse.json({ message: overlap }, { status: 400 });
+      }
+      const coverErr = validateAgeQualificationTiersCoverCompetitionRange(
+        tiers,
+        competition.minAge,
+        competition.maxAge
       );
-    }
+      if (coverErr) {
+        return NextResponse.json({ message: coverErr }, { status: 400 });
+      }
+      stored = { ageQualificationTiers: tiers };
+    } else {
+      if (!Array.isArray(requiredQualifications)) {
+        return NextResponse.json(
+          { message: "必要資格の形式が正しくありません" },
+          { status: 400 }
+        );
+      }
 
-    const allowedQualifications = [
-      "選手登録",
-      "BLS・WS",
-      "認定ライフセーバー",
-    ];
+      const normalizedQualifications = requiredQualifications
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter((item) => item.length > 0);
 
-    const normalizedQualifications = requiredQualifications
-      .map((item) => (typeof item === "string" ? item.trim() : ""))
-      .filter((item) => item.length > 0);
+      const uniqueQualifications = Array.from(new Set(normalizedQualifications));
 
-    const uniqueQualifications = Array.from(new Set(normalizedQualifications));
-
-    const hasInvalid = uniqueQualifications.some(
-      (item) => !allowedQualifications.includes(item)
-    );
-
-    if (hasInvalid) {
-      return NextResponse.json(
-        { message: "必要資格は選手登録・BLS・WS・認定ライフセーバーのみ設定できます" },
-        { status: 400 }
+      const hasInvalid = uniqueQualifications.some(
+        (item) => !ALLOWED_ENTRY_REQUIRED_QUALIFICATIONS.includes(item as (typeof ALLOWED_ENTRY_REQUIRED_QUALIFICATIONS)[number])
       );
+
+      if (hasInvalid) {
+        return NextResponse.json(
+          { message: "必要資格は選手登録・BLS・WS・認定ライフセーバーのみ設定できます" },
+          { status: 400 }
+        );
+      }
+
+      stored = uniqueQualifications;
     }
 
     const mutationState = await loadCompetitionMutationState(competitionId);
     const announce =
       typeof announcementMessage === "string" ? announcementMessage.trim() : undefined;
     try {
-      assertRequiredQualificationsChange(
-        competition,
-        uniqueQualifications,
-        mutationState,
-        announce
-      );
+      assertRequiredQualificationsChange(competition, stored, mutationState, announce);
     } catch (e) {
       if (e instanceof CompetitionEditForbiddenError) {
         return NextResponse.json({ message: e.message }, { status: 400 });
@@ -113,7 +171,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const updated = await prisma.competition.update({
       where: { id: competitionId },
       data: {
-        requiredQualifications: uniqueQualifications,
+        requiredQualifications: stored as object | string[],
       },
     });
 

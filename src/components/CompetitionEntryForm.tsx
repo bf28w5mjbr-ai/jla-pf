@@ -42,6 +42,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { calculateCompetitionEntryFee } from "@/lib/entryFee";
+import { isTieredEntryFee, resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
 import type { EntryReceiptForClient } from "@/lib/entryCompletionReceipt";
 import EntryDetailsSummary from "@/components/EntryDetailsSummary";
 import { EntryPaymentConfirmPoller } from "@/components/competitions/EntryPaymentConfirmPoller";
@@ -168,6 +169,8 @@ type CompetitionEntryFormProps = {
   } | null;
   /** 設定されているときのみフォーム末尾に誓約を表示 */
   entryPledge?: { markdown: string; initialAccepted: boolean } | null;
+  /** 大会開催日基準の満年齢。年齢帯別参加費の概算に使用 */
+  userAgeYearsAtCompetitionStart?: number | null;
 };
 
 export default function CompetitionEntryForm({
@@ -191,6 +194,7 @@ export default function CompetitionEntryForm({
   entryWithdrawAppliedCount = 0,
   initialEntry,
   entryPledge = null,
+  userAgeYearsAtCompetitionStart = null,
 }: CompetitionEntryFormProps) {
   const router = useRouter();
   const [showEstablishedEdit, setShowEstablishedEdit] = useState(false);
@@ -241,10 +245,28 @@ export default function CompetitionEntryForm({
   const selectedTeamEvents = selectedEvents.filter((event) => event.type === "TEAM");
   const selectedIndividualEvents = selectedEvents.filter((event) => event.type === "INDIVIDUAL");
   const selectedCount = selectedEvents.length;
-  const estimatedFee = calculateCompetitionEntryFee(entryFee, {
-    individualCount: selectedIndividualEvents.length,
-    teamCount: selectedTeamEvents.length,
-  });
+  const estimatedFee = useMemo(() => {
+    const individualCount = selectedIndividualEvents.length;
+    const teamCount = selectedTeamEvents.length;
+    if (individualCount + teamCount === 0) return 0;
+    const r = resolveEntryFeeUnits(entryFee, userAgeYearsAtCompetitionStart ?? null);
+    if (r.ageTierMissing && isTieredEntryFee(entryFee)) {
+      return null;
+    }
+    return calculateCompetitionEntryFee(
+      entryFee,
+      {
+        individualCount,
+        teamCount,
+      },
+      { userAgeYearsAtCompetitionStart: userAgeYearsAtCompetitionStart ?? null }
+    );
+  }, [
+    entryFee,
+    selectedIndividualEvents.length,
+    selectedTeamEvents.length,
+    userAgeYearsAtCompetitionStart,
+  ]);
   const effectiveMaxSelectable = !allowMultipleEventEntries
     ? 1
     : typeof maxEventEntriesPerPerson === "number" && maxEventEntriesPerPerson > 0
@@ -1007,7 +1029,7 @@ export default function CompetitionEntryForm({
                   </label>
 
                   <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                    {estimatedFee > 0 && !isSubmitDisabled ? (
+                    {estimatedFee != null && estimatedFee > 0 && !isSubmitDisabled ? (
                       <p className={cn(fieldHintClass("guided"), "sm:max-w-[14rem]")}>
                         「決済へ進む」から外部の決済画面に進みます。決済完了後にエントリーが成立します。
                       </p>
@@ -1027,7 +1049,7 @@ export default function CompetitionEntryForm({
                           ? "反映待ち"
                           : isPaidEntry
                             ? "更新する"
-                            : estimatedFee > 0
+                            : estimatedFee != null && estimatedFee > 0
                               ? "決済へ進む"
                               : initialEntry
                                 ? "更新する"
@@ -1052,7 +1074,13 @@ export default function CompetitionEntryForm({
                   <p className="text-sm tabular-nums">
                     <span className="font-medium text-muted-foreground">お支払い概算</span>
                     <span className="mt-1 block text-xl font-bold tracking-tight text-foreground">
-                      ¥{formatCurrency(estimatedFee)}
+                      {estimatedFee === null ? (
+                        <span className="text-sm font-normal leading-snug text-muted-foreground">
+                          年齢帯別のため、プロフィールの生年月日が必要です
+                        </span>
+                      ) : (
+                        <>¥{formatCurrency(estimatedFee)}</>
+                      )}
                     </span>
                   </p>
                 </div>

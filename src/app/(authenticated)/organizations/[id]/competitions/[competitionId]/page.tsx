@@ -458,7 +458,7 @@ export default async function CompetitionDetailPage({
               entryFee: competition.entryFee as unknown as NonNullable<
                 EntrySettingsEditorProps["initialData"]
               >["entryFee"],
-              requiredQualifications: competition.requiredQualifications as unknown as string[] | null,
+              requiredQualifications: competition.requiredQualifications as unknown,
               participantEligibilityText: competition.participantEligibilityText,
               allowMultipleEventEntries,
               maxEventEntriesPerPerson,

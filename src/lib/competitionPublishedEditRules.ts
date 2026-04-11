@@ -3,6 +3,11 @@ import {
   isPeriodShortening,
   PUBLISHED_ENTRY_PERIOD_SHORTEN_FORBIDDEN_MESSAGE,
 } from "@/lib/autoEntryChangeAnnouncement";
+import {
+  isQualificationRelaxedMulti,
+  isQualificationTighteningMulti,
+  parseFlatRequiredQualifications,
+} from "@/lib/competitionEntryAgeTiered";
 import { prisma } from "@/server/db";
 import { createNotification } from "@/lib/notificationService";
 
@@ -21,17 +26,13 @@ export type CompetitionMutationState = {
   hasEstablishedEntry: boolean;
 };
 
-function parseQualificationList(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => (typeof item === "string" ? item.trim() : ""))
-    .filter(Boolean);
+/** @deprecated フラット配列のみのときは parseFlatRequiredQualifications と同じ */
+export function parseQualificationList(value: unknown): string[] {
+  return parseFlatRequiredQualifications(value);
 }
 
 export function isQualificationTightening(oldList: unknown, newList: string[]): boolean {
-  const oldArr = parseQualificationList(oldList);
-  const oldSet = new Set(oldArr);
-  return newList.some((q) => !oldSet.has(q));
+  return isQualificationTighteningMulti(oldList, newList);
 }
 
 export async function loadCompetitionMutationState(
@@ -230,7 +231,7 @@ export function assertEntrySettingsChange(
 
 export function assertRequiredQualificationsChange(
   competition: Competition,
-  newQuals: string[],
+  newStored: unknown,
   state: CompetitionMutationState,
   announcementMessage: string | undefined
 ): void {
@@ -238,16 +239,13 @@ export function assertRequiredQualificationsChange(
   if (!state.hasEstablishedEntry) return;
 
   const oldRaw = competition.requiredQualifications;
-  if (isQualificationTightening(oldRaw, newQuals)) {
+  if (isQualificationTighteningMulti(oldRaw, newStored)) {
     throw new CompetitionEditForbiddenError(
       "エントリー成立後は、必要資格を厳しくする変更はできません。"
     );
   }
 
-  const oldArr = parseQualificationList(oldRaw);
-  const newSet = new Set(newQuals);
-  const isRelaxed = oldArr.some((q) => !newSet.has(q));
-  if (isRelaxed && !announcementMessage?.trim()) {
+  if (isQualificationRelaxedMulti(oldRaw, newStored) && !announcementMessage?.trim()) {
     throw new CompetitionEditForbiddenError(
       "必要資格を緩和する場合は announcementMessage で参加者への告知内容を入力してください。"
     );

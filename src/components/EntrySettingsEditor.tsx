@@ -22,12 +22,17 @@ import {
   buildEntryPeriodExtensionAnnouncement,
   buildEventAddedAnnouncement,
   buildEventSexOptionExpandAnnouncement,
-  buildQualificationRelaxAnnouncement,
   eventSexOptionAddsGenders,
   isPeriodShortening,
-  normalizeQualificationList,
   PUBLISHED_ENTRY_PERIOD_SHORTEN_FORBIDDEN_MESSAGE,
 } from "@/lib/autoEntryChangeAnnouncement";
+import {
+  buildQualificationRelaxAnnouncementFromConfigs,
+  parseAgeFeeTiers,
+  parseAgeQualificationTiers,
+  type AgeFeeTier,
+  type AgeQualificationTier,
+} from "@/lib/competitionEntryAgeTiered";
 import {
   ENTRY_PLEDGE_TEXT_MAX_CHARS,
   wrapMarkdownBoldAroundSelection,
@@ -146,6 +151,7 @@ type EntryFee = {
   individualEntryFee?: number;
   teamEntryFeePerTeam?: number;
   baseFee?: number;
+  ageFeeTiers?: AgeFeeTier[];
 };
 
 export type EntrySettingsFocusSection =
@@ -168,7 +174,8 @@ type EntrySettingsEditorProps = {
     entryStartDate: Date | null;
     entryEndDate: Date | null;
     entryFee?: EntryFee;
-    requiredQualifications?: string[] | null;
+    /** フラット配列または `{ ageQualificationTiers }` */
+    requiredQualifications?: unknown;
     participantEligibilityText?: string | null;
     allowMultipleEventEntries?: boolean | null;
     maxEventEntriesPerPerson?: number | null;
@@ -278,7 +285,9 @@ export default function EntrySettingsEditor({
   ] as const;
   const [requiredQualifications, setRequiredQualifications] = useState<string[]>(
     Array.isArray(initialData.requiredQualifications)
-      ? initialData.requiredQualifications
+      ? (initialData.requiredQualifications as unknown[])
+          .map((x) => (typeof x === "string" ? x.trim() : ""))
+          .filter(Boolean)
       : []
   );
   const [isUpdatingQualifications, setIsUpdatingQualifications] = useState(false);
@@ -295,7 +304,70 @@ export default function EntrySettingsEditor({
     (initialData.entryFee?.teamEntryFeePerTeam ?? 0).toString()
   );
   const [isUpdatingFee, setIsUpdatingFee] = useState(false);
-  
+
+  const tierIdRef = useRef(1);
+  const mkTierRowId = () => `age-tier-${tierIdRef.current++}`;
+
+  const initialParsedFeeTiers = parseAgeFeeTiers(initialData.entryFee as unknown);
+  const [feePricingMode, setFeePricingMode] = useState<"flat" | "byAge">(
+    initialParsedFeeTiers ? "byAge" : "flat"
+  );
+  const [ageFeeFormRows, setAgeFeeFormRows] = useState<
+    { id: string; minAge: string; maxAge: string; individual: string; team: string }[]
+  >(() => {
+    if (initialParsedFeeTiers?.length) {
+      return initialParsedFeeTiers.map((t) => ({
+        id: mkTierRowId(),
+        minAge: String(t.minAge),
+        maxAge: t.maxAge === null ? "" : String(t.maxAge),
+        individual: String(t.individualEntryFee),
+        team: String(t.teamEntryFeePerTeam),
+      }));
+    }
+    return [
+      {
+        id: mkTierRowId(),
+        minAge: "0",
+        maxAge: "",
+        individual: String(
+          initialData.entryFee?.individualEntryFee ??
+            initialData.entryFee?.baseFee ??
+            0
+        ),
+        team: String(initialData.entryFee?.teamEntryFeePerTeam ?? 0),
+      },
+    ];
+  });
+
+  const initialParsedQualTiers = parseAgeQualificationTiers(initialData.requiredQualifications);
+  const [qualPricingMode, setQualPricingMode] = useState<"flat" | "byAge">(
+    initialParsedQualTiers ? "byAge" : "flat"
+  );
+  const [ageQualFormRows, setAgeQualFormRows] = useState<
+    { id: string; minAge: string; maxAge: string; qualifications: string[] }[]
+  >(() => {
+    if (initialParsedQualTiers?.length) {
+      return initialParsedQualTiers.map((t) => ({
+        id: mkTierRowId(),
+        minAge: String(t.minAge),
+        maxAge: t.maxAge === null ? "" : String(t.maxAge),
+        qualifications: [...t.requiredQualifications],
+      }));
+    }
+    return [
+      {
+        id: mkTierRowId(),
+        minAge: "0",
+        maxAge: "",
+        qualifications: Array.isArray(initialData.requiredQualifications)
+          ? (initialData.requiredQualifications as string[])
+              .map((x) => (typeof x === "string" ? x.trim() : ""))
+              .filter(Boolean)
+          : [],
+      },
+    ];
+  });
+
   // 種目管理
   const [events, setEvents] = useState<Event[]>(initialEvents);
   const [eventBirthDateRanges, setEventBirthDateRanges] = useState<
@@ -1033,18 +1105,67 @@ export default function EntrySettingsEditor({
       return;
     }
 
-    const individualEntryFeeNum = hasIndividualEvents
-      ? parseFloat(individualEntryFee)
-      : 0;
-    if (hasIndividualEvents && (isNaN(individualEntryFeeNum) || individualEntryFeeNum < 0)) {
-      toast.error("個人エントリー料金を正しく入力してください");
-      return;
-    }
+    let payload: Record<string, unknown>;
 
-    const teamEntryFeePerTeamNum = hasTeamEvents ? parseFloat(teamEntryFeePerTeam) : 0;
-    if (hasTeamEvents && (isNaN(teamEntryFeePerTeamNum) || teamEntryFeePerTeamNum < 0)) {
-      toast.error("チーム種目の1チームあたり料金を正しく入力してください");
-      return;
+    if (feePricingMode === "byAge") {
+      const tiers: AgeFeeTier[] = [];
+      for (const row of ageFeeFormRows) {
+        const minAge = parseInt(row.minAge, 10);
+        const maxRaw = row.maxAge.trim();
+        const maxAge = maxRaw === "" ? null : parseInt(maxRaw, 10);
+        const individualEntryFee = parseFloat(row.individual);
+        const teamEntryFeePerTeam = parseFloat(row.team);
+        if (!Number.isFinite(minAge) || minAge < 0) {
+          toast.error("各年齢帯の下限年齢を正しく入力してください");
+          return;
+        }
+        if (maxAge !== null && (!Number.isFinite(maxAge) || maxAge < minAge)) {
+          toast.error("上限年齢は下限以上にするか、上限なしの場合は空欄にしてください");
+          return;
+        }
+        if (
+          hasIndividualEvents &&
+          (!Number.isFinite(individualEntryFee) || individualEntryFee < 0)
+        ) {
+          toast.error("個人エントリー料金を正しく入力してください");
+          return;
+        }
+        if (hasTeamEvents && (!Number.isFinite(teamEntryFeePerTeam) || teamEntryFeePerTeam < 0)) {
+          toast.error("チーム種目の1チームあたり料金を正しく入力してください");
+          return;
+        }
+        tiers.push({
+          minAge,
+          maxAge,
+          individualEntryFee: hasIndividualEvents ? individualEntryFee : 0,
+          teamEntryFeePerTeam: hasTeamEvents ? teamEntryFeePerTeam : 0,
+        });
+      }
+      if (tiers.length === 0) {
+        toast.error("年齢帯を1件以上追加してください");
+        return;
+      }
+      payload = { pricingMode: "byAge", ageFeeTiers: tiers };
+    } else {
+      const individualEntryFeeNum = hasIndividualEvents
+        ? parseFloat(individualEntryFee)
+        : 0;
+      if (hasIndividualEvents && (isNaN(individualEntryFeeNum) || individualEntryFeeNum < 0)) {
+        toast.error("個人エントリー料金を正しく入力してください");
+        return;
+      }
+
+      const teamEntryFeePerTeamNum = hasTeamEvents ? parseFloat(teamEntryFeePerTeam) : 0;
+      if (hasTeamEvents && (isNaN(teamEntryFeePerTeamNum) || teamEntryFeePerTeamNum < 0)) {
+        toast.error("チーム種目の1チームあたり料金を正しく入力してください");
+        return;
+      }
+
+      payload = {
+        pricingMode: "flat",
+        individualEntryFee: individualEntryFeeNum,
+        teamEntryFeePerTeam: teamEntryFeePerTeamNum,
+      };
     }
 
     setIsUpdatingFee(true);
@@ -1055,10 +1176,7 @@ export default function EntrySettingsEditor({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          individualEntryFee: individualEntryFeeNum,
-          teamEntryFeePerTeam: teamEntryFeePerTeamNum,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
@@ -1085,16 +1203,69 @@ export default function EntrySettingsEditor({
     }
   };
 
+  const toggleQualInTier = (rowId: string, option: string) => {
+    setAgeQualFormRows((rows) =>
+      rows.map((r) => {
+        if (r.id !== rowId) return r;
+        const has = r.qualifications.includes(option);
+        return {
+          ...r,
+          qualifications: has
+            ? r.qualifications.filter((q) => q !== option)
+            : [...r.qualifications, option],
+        };
+      })
+    );
+  };
+
   const handleUpdateQualifications = async () => {
+    if (qualPricingMode === "byAge") {
+      for (const row of ageQualFormRows) {
+        const minAge = parseInt(row.minAge, 10);
+        const maxRaw = row.maxAge.trim();
+        const maxAge = maxRaw === "" ? null : parseInt(maxRaw, 10);
+        if (!Number.isFinite(minAge) || minAge < 0) {
+          toast.error("各年齢帯の下限年齢を正しく入力してください");
+          return;
+        }
+        if (maxAge !== null && (!Number.isFinite(maxAge) || maxAge < minAge)) {
+          toast.error("上限年齢は下限以上にするか、上限なしの場合は空欄にしてください");
+          return;
+        }
+      }
+    }
+
+    const nextStored: unknown =
+      qualPricingMode === "byAge"
+        ? {
+            ageQualificationTiers: ageQualFormRows.map((row) => {
+              const minAge = parseInt(row.minAge, 10);
+              const maxRaw = row.maxAge.trim();
+              const maxAge = maxRaw === "" ? null : parseInt(maxRaw, 10);
+              return {
+                minAge,
+                maxAge,
+                requiredQualifications: row.qualifications,
+              };
+            }),
+          }
+        : requiredQualifications;
+
     setIsUpdatingQualifications(true);
 
     try {
-      const baseline = normalizeQualificationList(initialData.requiredQualifications);
-      const announce = buildQualificationRelaxAnnouncement(
-        baseline,
-        requiredQualifications,
+      const announce = buildQualificationRelaxAnnouncementFromConfigs(
+        initialData.requiredQualifications,
+        nextStored,
         requiresParticipantNotice
       );
+      const basePayload =
+        qualPricingMode === "byAge"
+          ? {
+              ageQualificationTiers: (nextStored as { ageQualificationTiers: AgeQualificationTier[] })
+                .ageQualificationTiers,
+            }
+          : { requiredQualifications };
       const response = await fetch(
         `/api/competitions/${competitionId}/entry-qualifications`,
         {
@@ -1102,11 +1273,7 @@ export default function EntrySettingsEditor({
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(
-            withOptionalAnnounce(announce, {
-              requiredQualifications,
-            })
-          ),
+          body: JSON.stringify(withOptionalAnnounce(announce, basePayload)),
         }
       );
 
@@ -2239,36 +2406,159 @@ export default function EntrySettingsEditor({
           <CardDescription className="text-xs">未選択の場合は資格不要です。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 px-4 py-3">
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">必須とする資格を複数選択できます。</p>
-            {requiredQualifications.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {requiredQualifications.map((item) => (
-                  <span
-                    key={item}
-                    className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-3 text-xs">
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="radio"
+                  className="h-3.5 w-3.5"
+                  checked={qualPricingMode === "flat"}
+                  onChange={() => setQualPricingMode("flat")}
+                  disabled={!canEdit}
+                />
+                全員同一
+              </label>
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="radio"
+                  className="h-3.5 w-3.5"
+                  checked={qualPricingMode === "byAge"}
+                  onChange={() => setQualPricingMode("byAge")}
+                  disabled={!canEdit}
+                />
+                年齢帯別
+              </label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              年齢は大会の「年齢・所属クラブ」で設定した範囲（開催日時点の満年齢）に合わせて帯を分けてください。帯が重なると保存できません。
+            </p>
+
+            {qualPricingMode === "flat" ? (
+              <div className="space-y-2">
+                {requiredQualifications.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {requiredQualifications.map((item) => (
+                      <span
+                        key={item}
+                        className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                      >
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {allowedQualificationOptions.map((option) => (
+                    <label
+                      key={option}
+                      className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 transition hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={requiredQualifications.includes(option)}
+                        onChange={() => toggleQualification(option)}
+                        disabled={!canEdit}
+                      />
+                      <span>{option}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {ageQualFormRows.map((row) => (
+                  <div
+                    key={row.id}
+                    className="space-y-2 rounded-lg border border-border/80 bg-muted/15 p-3"
                   >
-                    {item}
-                  </span>
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[10px]">下限（歳）</Label>
+                        <Input
+                          numericInput="integer"
+                          min={0}
+                          className="h-8 w-20 text-xs"
+                          value={row.minAge}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setAgeQualFormRows((prev) =>
+                              prev.map((r) => (r.id === row.id ? { ...r, minAge: v } : r))
+                            );
+                          }}
+                          disabled={!canEdit}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px]">上限（空=なし）</Label>
+                        <Input
+                          numericInput="integer"
+                          min={0}
+                          className="h-8 w-20 text-xs"
+                          value={row.maxAge}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setAgeQualFormRows((prev) =>
+                              prev.map((r) => (r.id === row.id ? { ...r, maxAge: v } : r))
+                            );
+                          }}
+                          disabled={!canEdit}
+                        />
+                      </div>
+                      {canEdit && ageQualFormRows.length > 1 ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 text-xs text-destructive"
+                          onClick={() =>
+                            setAgeQualFormRows((prev) => prev.filter((r) => r.id !== row.id))
+                          }
+                        >
+                          削除
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {allowedQualificationOptions.map((option) => (
+                        <label
+                          key={`${row.id}-${option}`}
+                          className="flex items-center gap-2 rounded-md border border-gray-200 bg-background px-2 py-1.5 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={row.qualifications.includes(option)}
+                            onChange={() => toggleQualInTier(row.id, option)}
+                            disabled={!canEdit}
+                          />
+                          <span>{option}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 ))}
+                {canEdit ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() =>
+                      setAgeQualFormRows((prev) => [
+                        ...prev,
+                        {
+                          id: mkTierRowId(),
+                          minAge: "0",
+                          maxAge: "",
+                          qualifications: [],
+                        },
+                      ])
+                    }
+                  >
+                    年齢帯を追加
+                  </Button>
+                ) : null}
               </div>
             )}
-            <div className="grid gap-2 sm:grid-cols-2">
-              {allowedQualificationOptions.map((option) => (
-                <label
-                  key={option}
-                  className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 transition hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                >
-                  <input
-                    type="checkbox"
-                    checked={requiredQualifications.includes(option)}
-                    onChange={() => toggleQualification(option)}
-                    disabled={!canEdit}
-                  />
-                  <span>{option}</span>
-                </label>
-              ))}
-            </div>
           </div>
 
           {canEdit && (
@@ -2869,51 +3159,196 @@ export default function EntrySettingsEditor({
             </div>
           ) : null}
 
-          <div className="space-y-2">
-            <Label htmlFor="individualEntryFee">個人エントリー料金（円）</Label>
-            <div className="flex gap-2">
-              <Input
-                id="individualEntryFee"
-                numericInput="integer"
-                min="0"
-                step="100"
-                value={individualEntryFee}
-                onChange={(e) => setIndividualEntryFee(e.target.value)}
-                placeholder="5000"
-                disabled={!canEdit || !hasIndividualEvents}
+          <div className="flex flex-wrap gap-3 text-xs">
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="radio"
+                className="h-3.5 w-3.5"
+                checked={feePricingMode === "flat"}
+                onChange={() => setFeePricingMode("flat")}
+                disabled={!canEdit}
               />
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {hasIndividualEvents
-                ? "選手本人が支払う大会参加料です。個人種目数に関係なく一律です。"
-                : "個人種目が未登録のため設定できません。個人種目を追加すると入力できます。"}
-            </p>
+              全員同一料金
+            </label>
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="radio"
+                className="h-3.5 w-3.5"
+                checked={feePricingMode === "byAge"}
+                onChange={() => setFeePricingMode("byAge")}
+                disabled={!canEdit}
+              />
+              年齢帯別
+            </label>
           </div>
+          <p className="text-xs text-muted-foreground">
+            年齢は大会開催日基準の満年齢です。大会に参加年齢の上下限がある場合、その範囲をすべての帯で覆う必要があります。
+          </p>
 
-          <div className="space-y-2">
-            <Label htmlFor="teamEntryFeePerTeam">チーム種目料金（1チームあたり / 円）</Label>
-            <div className="flex gap-2">
-              <Input
-                id="teamEntryFeePerTeam"
-                numericInput="integer"
-                min="0"
-                step="100"
-                value={teamEntryFeePerTeam}
-                onChange={(e) => setTeamEntryFeePerTeam(e.target.value)}
-                placeholder="3000"
-                disabled={!canEdit || !hasTeamEvents}
-              />
+          {feePricingMode === "byAge" ? (
+            <div className="space-y-3">
+              {ageFeeFormRows.map((row) => (
+                <div
+                  key={row.id}
+                  className="grid gap-2 rounded-lg border border-border/80 bg-muted/15 p-3 sm:grid-cols-2 lg:grid-cols-4"
+                >
+                  <div className="space-y-1">
+                    <Label className="text-[10px]">下限（歳）</Label>
+                    <Input
+                      numericInput="integer"
+                      min={0}
+                      className="h-8 text-xs"
+                      value={row.minAge}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setAgeFeeFormRows((prev) =>
+                          prev.map((r) => (r.id === row.id ? { ...r, minAge: v } : r))
+                        );
+                      }}
+                      disabled={!canEdit}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px]">上限（空=なし）</Label>
+                    <Input
+                      numericInput="integer"
+                      min={0}
+                      className="h-8 text-xs"
+                      value={row.maxAge}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setAgeFeeFormRows((prev) =>
+                          prev.map((r) => (r.id === row.id ? { ...r, maxAge: v } : r))
+                        );
+                      }}
+                      disabled={!canEdit}
+                    />
+                  </div>
+                  {hasIndividualEvents ? (
+                    <div className="space-y-1">
+                      <Label className="text-[10px]">個人（円）</Label>
+                      <Input
+                        numericInput="integer"
+                        min={0}
+                        className="h-8 text-xs"
+                        value={row.individual}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setAgeFeeFormRows((prev) =>
+                            prev.map((r) => (r.id === row.id ? { ...r, individual: v } : r))
+                          );
+                        }}
+                        disabled={!canEdit}
+                      />
+                    </div>
+                  ) : null}
+                  {hasTeamEvents ? (
+                    <div className="space-y-1">
+                      <Label className="text-[10px]">チーム1組（円）</Label>
+                      <Input
+                        numericInput="integer"
+                        min={0}
+                        className="h-8 text-xs"
+                        value={row.team}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setAgeFeeFormRows((prev) =>
+                            prev.map((r) => (r.id === row.id ? { ...r, team: v } : r))
+                          );
+                        }}
+                        disabled={!canEdit}
+                      />
+                    </div>
+                  ) : null}
+                  {canEdit && ageFeeFormRows.length > 1 ? (
+                    <div className="flex items-end sm:col-span-2 lg:col-span-4">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 text-xs text-destructive"
+                        onClick={() =>
+                          setAgeFeeFormRows((prev) => prev.filter((r) => r.id !== row.id))
+                        }
+                      >
+                        この帯を削除
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+              {canEdit ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() =>
+                    setAgeFeeFormRows((prev) => [
+                      ...prev,
+                      {
+                        id: mkTierRowId(),
+                        minAge: "0",
+                        maxAge: "",
+                        individual: hasIndividualEvents ? "0" : "0",
+                        team: hasTeamEvents ? "0" : "0",
+                      },
+                    ])
+                  }
+                >
+                  年齢帯を追加
+                </Button>
+              ) : null}
             </div>
-            <p className="text-sm text-muted-foreground">
-              {hasTeamEvents
-                ? "クラブが支払う単価です。1種目1チームごとにこの金額が加算されます。"
-                : "チーム種目が未登録のため設定できません。団体種目を追加すると入力できます。"}
-            </p>
-          </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="individualEntryFee">個人エントリー料金（円）</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="individualEntryFee"
+                    numericInput="integer"
+                    min="0"
+                    step="100"
+                    value={individualEntryFee}
+                    onChange={(e) => setIndividualEntryFee(e.target.value)}
+                    placeholder="5000"
+                    disabled={!canEdit || !hasIndividualEvents}
+                  />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {hasIndividualEvents
+                    ? "選手本人が支払う大会参加料です。個人種目数に関係なく一律です。"
+                    : "個人種目が未登録のため設定できません。個人種目を追加すると入力できます。"}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="teamEntryFeePerTeam">チーム種目料金（1チームあたり / 円）</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="teamEntryFeePerTeam"
+                    numericInput="integer"
+                    min="0"
+                    step="100"
+                    value={teamEntryFeePerTeam}
+                    onChange={(e) => setTeamEntryFeePerTeam(e.target.value)}
+                    placeholder="3000"
+                    disabled={!canEdit || !hasTeamEvents}
+                  />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {hasTeamEvents
+                    ? "クラブが支払う単価です。1種目1チームごとにこの金額が加算されます。"
+                    : "チーム種目が未登録のため設定できません。団体種目を追加すると入力できます。"}
+                </p>
+              </div>
+            </>
+          )}
 
           <div className="rounded-md border border-border/80 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
             <p>個人種目: 種目数に関係なく選手ごとに一律課金</p>
-            <p>チーム種目: 1種目1チームごとにクラブへ課金</p>
+            <p>チーム種目: 1種目1チームごとにクラブへ課金（年齢帯別の場合は登録者の満年齢で単価を決定）</p>
             <p>複数種目割増とチーム種目のみ特別料金は使用しません。</p>
           </div>
 

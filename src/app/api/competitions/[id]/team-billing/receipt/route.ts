@@ -9,6 +9,8 @@ import { generatePdfBuffer } from "@/lib/pdf-helper";
 import { fetchStripeReceiptUrlForCheckoutSessionId } from "@/lib/stripeEntryReceiptUrl";
 import { buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
 import { isClubAdminRole } from "@/lib/roleScopes";
+import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
+import { resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -84,6 +86,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         select: {
           id: true,
           name: true,
+          startDate: true,
           entryFee: true,
           organization: {
             select: {
@@ -133,16 +136,25 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "チームエントリーがありません" }, { status: 400 });
     }
 
-    const teamEntryFeePerTeam =
-      competition.entryFee &&
-      typeof competition.entryFee === "object" &&
-      typeof (competition.entryFee as { teamEntryFeePerTeam?: unknown }).teamEntryFeePerTeam ===
-        "number"
-        ? ((competition.entryFee as { teamEntryFeePerTeam?: number }).teamEntryFeePerTeam ?? 0)
-        : 0;
+    const payerUserId = payment?.userId ?? session.userId;
+    const payerForAge = await prisma.user.findUnique({
+      where: { id: payerUserId },
+      select: { dateOfBirth: true },
+    });
+    const payerAge = payerForAge?.dateOfBirth
+      ? getCompetitionEligibilityAgeYears(
+          new Date(payerForAge.dateOfBirth),
+          new Date(competition.startDate)
+        )
+      : null;
+    const teamUnit = resolveEntryFeeUnits(competition.entryFee, payerAge).teamUnit;
+    const totalFeeFromPricing = teamCount * teamUnit;
+    const totalFee =
+      typeof payment?.amount === "number" && payment.amount >= 0
+        ? payment.amount
+        : totalFeeFromPricing;
 
-    const isFree = teamEntryFeePerTeam <= 0;
-    const totalFee = teamCount * teamEntryFeePerTeam;
+    const isFree = totalFee <= 0;
 
     const canIssuePdf = isFree || payment?.status === "SUCCEEDED";
 
@@ -152,8 +164,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
         { status: 400 }
       );
     }
-
-    const payerUserId = payment?.userId ?? session.userId;
     const payerUser = await prisma.user.findUnique({
       where: { id: payerUserId },
       select: {

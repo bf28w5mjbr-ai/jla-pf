@@ -4,6 +4,8 @@ import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { isOrgAdminRole } from "@/lib/roleScopes";
 import { buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
+import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
+import { resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -71,13 +73,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
       teamCounts.set(entry.clubId, (teamCounts.get(entry.clubId) ?? 0) + 1);
     });
 
-    const teamEntryFeePerTeam =
-      competition.entryFee &&
-      typeof competition.entryFee === "object" &&
-      typeof (competition.entryFee as { teamEntryFeePerTeam?: unknown }).teamEntryFeePerTeam === "number"
-        ? ((competition.entryFee as { teamEntryFeePerTeam?: number }).teamEntryFeePerTeam ?? 0)
-        : 0;
-
     const finalizedAt = now.toISOString();
     const targetClubIds = Array.from(teamCounts.keys());
 
@@ -89,21 +84,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     await prisma.$transaction(async (tx) => {
+      const feeUser = await tx.user.findUnique({
+        where: { id: session.userId },
+        select: { dateOfBirth: true },
+      });
+      const userAge = feeUser?.dateOfBirth
+        ? getCompetitionEligibilityAgeYears(
+            new Date(feeUser.dateOfBirth),
+            new Date(competition.startDate)
+          )
+        : null;
+      const defaultTeamUnit = resolveEntryFeeUnits(competition.entryFee, userAge).teamUnit;
+
       for (const targetClubId of targetClubIds) {
         const teamCount = teamCounts.get(targetClubId) ?? 0;
-        const amount = teamCount * teamEntryFeePerTeam;
         const ownerId = buildTeamEntryPaymentOwnerId(competitionId, targetClubId);
-
-        if (amount <= 0) {
-          await tx.payment.deleteMany({
-            where: {
-              ownerType: "CLUB",
-              ownerId,
-              type: "COMPETITION_ENTRY_FEE",
-            },
-          });
-          continue;
-        }
 
         const existingPayment = await tx.payment.findUnique({
           where: {
@@ -116,8 +111,31 @@ export async function POST(request: NextRequest, context: RouteContext) {
           select: {
             id: true,
             status: true,
+            metadata: true,
           },
         });
+
+        let teamEntryFeePerTeam = defaultTeamUnit;
+        const meta = existingPayment?.metadata;
+        if (meta && typeof meta === "object" && !Array.isArray(meta)) {
+          const m = meta as Record<string, unknown>;
+          if (typeof m.unitPrice === "number" && Number.isFinite(m.unitPrice) && m.unitPrice >= 0) {
+            teamEntryFeePerTeam = m.unitPrice;
+          }
+        }
+
+        const amount = teamCount * teamEntryFeePerTeam;
+
+        if (amount <= 0) {
+          await tx.payment.deleteMany({
+            where: {
+              ownerType: "CLUB",
+              ownerId,
+              type: "COMPETITION_ENTRY_FEE",
+            },
+          });
+          continue;
+        }
         const nextStatus =
           existingPayment?.status === "SUCCEEDED" ||
           existingPayment?.status === "REFUNDED" ||

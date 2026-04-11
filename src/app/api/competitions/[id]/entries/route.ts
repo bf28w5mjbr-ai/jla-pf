@@ -20,6 +20,12 @@ import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { calculateCompetitionEntryFee, type CompetitionEntryFeeConfig } from "@/lib/entryFee";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import { meetsEventAgeOrBirthRule } from "@/lib/eventBirthDateEligibility";
+import {
+  isTieredEntryFee,
+  isTieredRequiredQualifications,
+  resolveEntryFeeUnits,
+  resolveRequiredQualificationsForAge,
+} from "@/lib/competitionEntryAgeTiered";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -230,15 +236,27 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const userSex = user?.sex ?? "OTHER";
     const userQualifications = user?.qualifications.map((q) => q.kind) ?? [];
 
-    const requiredQualifications = Array.isArray(competition.requiredQualifications)
-      ? (competition.requiredQualifications as string[])
-      : [];
+    const rq = resolveRequiredQualificationsForAge(
+      competition.requiredQualifications,
+      userAge
+    );
+    if (rq.tierMissing && isTieredRequiredQualifications(competition.requiredQualifications)) {
+      return NextResponse.json(
+        {
+          message: user?.dateOfBirth
+            ? "出場資格の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
+            : "この大会は年齢帯ごとの出場資格が設定されています。プロフィールに生年月日を登録してください。",
+        },
+        { status: 400 }
+      );
+    }
 
-    const meetsQualification = requiredQualifications.length === 0
-      ? true
-      : requiredQualifications.every((req) =>
-          userQualifications.some((q) => matchesQualification(q, req))
-        );
+    const meetsQualification =
+      rq.list.length === 0
+        ? true
+        : rq.list.every((req) =>
+            userQualifications.some((q) => matchesQualification(q, req))
+          );
 
     if (!meetsQualification) {
       return NextResponse.json(
@@ -367,12 +385,32 @@ export async function POST(request: NextRequest, context: RouteContext) {
       };
     });
 
+    const feeUnits = resolveEntryFeeUnits(
+      competition.entryFee,
+      userAge
+    );
+    if (
+      feeUnits.ageTierMissing &&
+      isTieredEntryFee(competition.entryFee) &&
+      entryItemsData.length + teamEntriesData.length > 0
+    ) {
+      return NextResponse.json(
+        {
+          message: user?.dateOfBirth
+            ? "参加費の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
+            : "この大会は年齢帯別の参加費です。プロフィールに生年月日を登録してください。",
+        },
+        { status: 400 }
+      );
+    }
+
     const totalFee = calculateCompetitionEntryFee(
       competition.entryFee as CompetitionEntryFeeConfig | number | null,
       {
         individualCount: entryItemsData.length,
         teamCount: teamEntriesData.length,
-      }
+      },
+      { userAgeYearsAtCompetitionStart: userAge }
     );
 
     if (totalFee > 0 && (!clubId || typeof clubId !== "string")) {

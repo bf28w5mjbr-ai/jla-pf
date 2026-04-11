@@ -12,6 +12,11 @@ import CopyEntrySettingsFromCompetition, {
 import { buildEntrySettingsReadinessItems } from "@/lib/entrySettingsReadiness";
 import { cn } from "@/lib/utils";
 import { User, UsersRound } from "lucide-react";
+import {
+  parseAgeFeeTiers,
+  parseAgeQualificationTiers,
+  unionRequiredQualifications,
+} from "@/lib/competitionEntryAgeTiered";
 
 type EntrySettingsEditorProps = ComponentProps<typeof EntrySettingsEditor>;
 
@@ -110,6 +115,22 @@ export default function CompetitionEntrySettingsEditor({
       return <p className="font-medium">未設定</p>;
     }
 
+    const tiers = parseAgeFeeTiers(entryFee as unknown);
+    if (tiers?.length) {
+      return (
+        <div className="space-y-1 text-sm">
+          <p className="text-[10px] font-medium text-muted-foreground">年齢帯別</p>
+          {tiers.map((t, i) => (
+            <p key={i} className="font-medium leading-snug">
+              {t.minAge}〜{t.maxAge == null ? "上限なし" : `${t.maxAge}歳`}
+              {hasIndividualEvents ? <> · 個人 ¥{formatCurrency(t.individualEntryFee)}</> : null}
+              {hasTeamEvents ? <> · チーム ¥{formatCurrency(t.teamEntryFeePerTeam)}</> : null}
+            </p>
+          ))}
+        </div>
+      );
+    }
+
     const individualFee = entryFee.individualEntryFee ?? entryFee.baseFee;
     const teamFee = entryFee.teamEntryFeePerTeam;
 
@@ -134,13 +155,32 @@ export default function CompetitionEntrySettingsEditor({
     );
   };
 
-  const renderRequiredQualifications = (requiredQualifications: string[] | null | undefined) => {
-    if (!Array.isArray(requiredQualifications) || requiredQualifications.length === 0) {
+  const renderRequiredQualifications = (requiredQualifications: unknown) => {
+    const tiered = parseAgeQualificationTiers(requiredQualifications);
+    if (tiered?.length) {
+      return (
+        <div className="space-y-1.5 text-sm">
+          <p className="text-[10px] font-medium text-muted-foreground">年齢帯別</p>
+          {tiered.map((t, i) => (
+            <p key={i} className="text-xs leading-snug">
+              <span className="font-medium">
+                {t.minAge}〜{t.maxAge == null ? "上限なし" : `${t.maxAge}歳`}
+              </span>
+              {t.requiredQualifications.length > 0
+                ? ` · ${t.requiredQualifications.join("、")}`
+                : " · 資格不要"}
+            </p>
+          ))}
+        </div>
+      );
+    }
+    const flat = unionRequiredQualifications(requiredQualifications);
+    if (flat.length === 0) {
       return <p className="font-medium">資格不要</p>;
     }
     return (
       <div className="flex flex-wrap gap-2">
-        {requiredQualifications.map((item) => (
+        {flat.map((item) => (
           <span
             key={item}
             className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-foreground"
