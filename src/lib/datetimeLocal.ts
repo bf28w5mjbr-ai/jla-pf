@@ -71,6 +71,20 @@ export function formatAdminWallClockSameAsDatetimeLocal(
   return core.replace("T", " ");
 }
 
+/**
+ * エントリー受付の開始〜終了を一行で表示（{@link COMPETITION_ADMIN_DATE_TIME_ZONE} の壁時計・datetime-local と同じ数字列）。
+ * どちらか欠けるときは null。
+ */
+export function formatCompetitionEntryPeriodRangeJa(
+  start: Date | string | number | null | undefined,
+  end: Date | string | number | null | undefined
+): string | null {
+  const a = formatAdminWallClockSameAsDatetimeLocal(start);
+  const b = formatAdminWallClockSameAsDatetimeLocal(end);
+  if (!a || !b) return null;
+  return `${a} 〜 ${b}（日本時間）`;
+}
+
 export type DatetimeLocalParseOptions = {
   /** IANA。`Asia/Tokyo` のときは JST 壁時計として解釈。省略時は実行環境のローカル暦で解釈 */
   timeZone?: string;

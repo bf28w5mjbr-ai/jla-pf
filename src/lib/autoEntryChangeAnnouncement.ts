@@ -1,3 +1,5 @@
+import { formatAdminWallClockSameAsDatetimeLocal } from "@/lib/datetimeLocal";
+
 export type EventSexOption = "BOTH" | "MALE_ONLY" | "FEMALE_ONLY" | "MIXED_ONLY";
 
 type EventLike = {
@@ -7,15 +9,10 @@ type EventLike = {
   sex: string;
 };
 
+/** 大会エントリー期間まわりの告知・ログ用（東京壁時計・管理画面の datetime-local と同じ基準） */
 export function formatCompetitionDateTimeJa(d: Date): string {
-  return d.toLocaleString("ja-JP", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const core = formatAdminWallClockSameAsDatetimeLocal(d);
+  return core ? `${core}（日本時間）` : "";
 }
 
 export function isPeriodExtension(

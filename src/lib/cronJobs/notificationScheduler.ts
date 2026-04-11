@@ -2,6 +2,7 @@
  * 通知スケジューラ
  */
 import { prisma } from "@/lib/prisma";
+import { formatAdminWallClockSameAsDatetimeLocal } from "@/lib/datetimeLocal";
 import { createNotification } from "@/lib/notificationService";
 import { SHOW_PROFILE_QUALIFICATIONS_MANAGEMENT_NAV } from "@/lib/profileQualificationsNav";
 
@@ -47,7 +48,9 @@ export async function sendEntryDeadlineReminders(): Promise<void> {
           category: "COMPETITION",
           type: "ENTRY_DEADLINE_REMINDER",
           title: "エントリー締切が近づいています",
-          body: `${competition.name} のエントリー締切: ${competition.entryEndDate?.toLocaleString('ja-JP')}`,
+          body: `${competition.name} のエントリー締切: ${
+            formatAdminWallClockSameAsDatetimeLocal(competition.entryEndDate) ?? "未設定"
+          }（日本時間）`,
           linkUrl: `/competitions/${competition.id}`,
         })
       )

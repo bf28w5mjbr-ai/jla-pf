@@ -18,6 +18,7 @@ import {
   getTeamEntryMarshalAssignmentBlockedMap,
   getTeamMemberAssignmentWindowState,
 } from "@/lib/teamMemberAssignmentWindow";
+import { formatCompetitionEntryPeriodRangeJa } from "@/lib/datetimeLocal";
 
 function parseRelayPositionNames(raw: unknown): string[] {
   if (!raw || !Array.isArray(raw)) return [];
@@ -411,8 +412,7 @@ export default async function ClubCompetitionTeamHubPage({
                 </CardDescription>
                 {entryStart && entryEnd ? (
                   <p className="text-xs text-muted-foreground">
-                    エントリー期間: {entryStart.toLocaleString("ja-JP")} 〜{" "}
-                    {entryEnd.toLocaleString("ja-JP")}
+                    エントリー期間: {formatCompetitionEntryPeriodRangeJa(entryStart, entryEnd)}
                   </p>
                 ) : null}
               </div>

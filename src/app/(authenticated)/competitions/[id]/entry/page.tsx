@@ -17,7 +17,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, ArrowLeft, Calendar, CircleCheck, MapPin, Users } from "lucide-react";
-import { formatCompactJaDateRange } from "@/lib/datetimeLocal";
+import {
+  formatAdminWallClockSameAsDatetimeLocal,
+  formatCompactJaDateRange,
+} from "@/lib/datetimeLocal";
 import { EntryDeadlineCountdown } from "@/components/competitions/EntryDeadlineCountdown";
 import CompetitionEntryForm from "@/components/CompetitionEntryForm";
 import { hasOrgAdminAccess, isClubAdminRole } from "@/lib/roleScopes";
@@ -192,15 +195,6 @@ export default async function CompetitionEntryPage({
     }
   }
 
-  const formatDateTimeCompact = (date: Date) =>
-    new Date(date).toLocaleString("ja-JP", {
-      year: "numeric",
-      month: "numeric",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("ja-JP").format(value);
 
@@ -306,8 +300,10 @@ export default async function CompetitionEntryPage({
   const isEntryWindowOpen = entryStart && entryEnd ? now >= entryStart && now <= entryEnd : false;
   const entryStartISO = entryStart?.toISOString() ?? null;
   const entryEndISO = entryEnd?.toISOString() ?? null;
-  const formattedEntryStart = entryStart ? formatDateTimeCompact(entryStart) : null;
-  const formattedEntryEnd = entryEnd ? formatDateTimeCompact(entryEnd) : null;
+  const formattedEntryStart = entryStart
+    ? formatAdminWallClockSameAsDatetimeLocal(entryStart)
+    : null;
+  const formattedEntryEnd = entryEnd ? formatAdminWallClockSameAsDatetimeLocal(entryEnd) : null;
 
   const competitionPeriodLabel = formatCompactJaDateRange(
     new Date(competition.startDate),

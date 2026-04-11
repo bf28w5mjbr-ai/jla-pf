@@ -61,11 +61,18 @@ export function EntryDeadlineCountdown({
     );
   }
 
+  const endDisplay =
+    formattedEnd != null && formattedEnd !== "" ? `${formattedEnd}（日本時間）` : "—";
+  const startDisplay =
+    formattedStart != null && formattedStart !== ""
+      ? `${formattedStart}（日本時間）`
+      : "—";
+
   if (now === null) {
     return (
       <div className="flex items-start gap-2 rounded-lg border border-border/70 bg-muted/25 px-3 py-2.5 text-xs text-muted-foreground">
         <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-pulse" />
-        <span>締切: {formattedEnd ?? "—"}</span>
+        <span>締切: {endDisplay}</span>
       </div>
     );
   }
@@ -80,7 +87,7 @@ export function EntryDeadlineCountdown({
         <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <div className="min-w-0 space-y-0.5 leading-snug">
           <p className="font-semibold text-foreground">締切済み</p>
-          <p className="tabular-nums text-muted-foreground">締切 {formattedEnd}</p>
+          <p className="tabular-nums text-muted-foreground">締切 {endDisplay}</p>
         </div>
       </div>
     );
@@ -94,7 +101,7 @@ export function EntryDeadlineCountdown({
         <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700 dark:text-amber-400" />
         <div className="min-w-0 space-y-0.5 leading-snug">
           <p className="font-semibold text-foreground">受付前</p>
-          <p className="tabular-nums text-muted-foreground">開始 {formattedStart ?? "—"}</p>
+          <p className="tabular-nums text-muted-foreground">開始 {startDisplay}</p>
           {remaining ? (
             <p className="font-semibold tabular-nums text-amber-900 dark:text-amber-200">
               開始まで {remaining}
@@ -113,7 +120,7 @@ export function EntryDeadlineCountdown({
         <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-700 dark:text-emerald-400" />
         <div className="min-w-0 space-y-0.5 leading-snug">
           <p className="font-semibold text-emerald-900 dark:text-emerald-200">受付中</p>
-          <p className="tabular-nums text-muted-foreground">締切 {formattedEnd}</p>
+          <p className="tabular-nums text-muted-foreground">締切 {endDisplay}</p>
           {remaining ? (
             <p className="text-sm font-bold tabular-nums text-emerald-900 dark:text-emerald-100">
               あと {remaining}

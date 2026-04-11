@@ -11,7 +11,7 @@ import CopyEntrySettingsFromCompetition, {
   type SiblingCompetitionOption,
 } from "@/components/CopyEntrySettingsFromCompetition";
 import { buildEntrySettingsReadinessItems } from "@/lib/entrySettingsReadiness";
-import { formatAdminWallClockSameAsDatetimeLocal } from "@/lib/datetimeLocal";
+import { formatCompetitionEntryPeriodRangeJa } from "@/lib/datetimeLocal";
 import { cn } from "@/lib/utils";
 import { User, UsersRound } from "lucide-react";
 import {
@@ -102,12 +102,8 @@ function CompetitionEntrySettingsEditorInner({
     ]
   );
 
-  const formatEntryPeriodSummary = (start: Date | null, end: Date | null) => {
-    const a = formatAdminWallClockSameAsDatetimeLocal(start);
-    const b = formatAdminWallClockSameAsDatetimeLocal(end);
-    if (a == null || b == null) return "未設定";
-    return `${a} 〜 ${b}（日本時間）`;
-  };
+  const formatEntryPeriodSummary = (start: Date | null, end: Date | null) =>
+    formatCompetitionEntryPeriodRangeJa(start, end) ?? "未設定";
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("ja-JP").format(value);

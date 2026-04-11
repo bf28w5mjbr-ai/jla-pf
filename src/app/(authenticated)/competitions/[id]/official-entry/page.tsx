@@ -9,7 +9,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Calendar, CircleDollarSign, MapPin, ShieldCheck, UserCheck } from "lucide-react";
-import { formatCompactJaDateRange } from "@/lib/datetimeLocal";
+import {
+  formatAdminWallClockSameAsDatetimeLocal,
+  formatCompactJaDateRange,
+} from "@/lib/datetimeLocal";
 import { EntryDeadlineCountdown } from "@/components/competitions/EntryDeadlineCountdown";
 import { OfficialApplicationForm } from "@/components/OfficialApplicationForm";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
@@ -116,16 +119,10 @@ export default async function CompetitionOfficialEntryPage({
   const entryEnd = competition.entryEndDate ? new Date(competition.entryEndDate) : null;
   const entryStartISO = entryStart?.toISOString() ?? null;
   const entryEndISO = entryEnd?.toISOString() ?? null;
-  const formatDateTimeCompact = (date: Date) =>
-    new Date(date).toLocaleString("ja-JP", {
-      year: "numeric",
-      month: "numeric",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  const formattedEntryStart = entryStart ? formatDateTimeCompact(entryStart) : null;
-  const formattedEntryEnd = entryEnd ? formatDateTimeCompact(entryEnd) : null;
+  const formattedEntryStart = entryStart
+    ? formatAdminWallClockSameAsDatetimeLocal(entryStart)
+    : null;
+  const formattedEntryEnd = entryEnd ? formatAdminWallClockSameAsDatetimeLocal(entryEnd) : null;
 
   const competitionPeriodLabel = formatCompactJaDateRange(
     new Date(competition.startDate),

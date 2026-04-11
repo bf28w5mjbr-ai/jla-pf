@@ -33,7 +33,10 @@ import {
   competitionHostAbbreviation,
   competitionHostDisplayName,
 } from "@/lib/competitionHostDisplay";
-import { formatCompactJaDateRange } from "@/lib/datetimeLocal";
+import {
+  formatCompactJaDateRange,
+  formatCompetitionEntryPeriodRangeJa,
+} from "@/lib/datetimeLocal";
 import {
   buildParticipationEventSections,
   isUnassignedParticipationAgeBlock,
@@ -171,15 +174,6 @@ export default async function CompetitionDetailPage({
   )?.club;
 
   const hostAbbr = competitionHostAbbreviation(competition);
-
-  const formatDateTimeCompact = (date: Date) =>
-    new Date(date).toLocaleString("ja-JP", {
-      year: "numeric",
-      month: "numeric",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("ja-JP").format(value);
@@ -524,7 +518,7 @@ export default async function CompetitionDetailPage({
                             <span className="font-medium text-foreground/80">受付期間</span>
                             <span className="max-sm:hidden"> · </span>
                             <span className="mt-0.5 block tabular-nums sm:mt-0 sm:inline">
-                              {formatDateTimeCompact(entryStart)} 〜 {formatDateTimeCompact(entryEnd)}
+                              {formatCompetitionEntryPeriodRangeJa(entryStart, entryEnd)}
                             </span>
                           </p>
                         ) : (
