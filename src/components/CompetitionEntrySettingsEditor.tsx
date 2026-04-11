@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentProps, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -52,7 +52,11 @@ const SECTION_LABEL: Record<EntrySettingsFocusSection, string> = {
   pledge: "エントリー時の誓約",
 };
 
-export default function CompetitionEntrySettingsEditor({
+export default function CompetitionEntrySettingsEditor(props: Props) {
+  return <CompetitionEntrySettingsEditorInner key={props.settingsVersion} {...props} />;
+}
+
+function CompetitionEntrySettingsEditorInner({
   competitionId,
   canEdit,
   isPublished,
@@ -68,10 +72,6 @@ export default function CompetitionEntrySettingsEditor({
   const router = useRouter();
   const [editingSection, setEditingSection] = useState<EntrySettingsFocusSection | null>(null);
   const [overviewEvents, setOverviewEvents] = useState<EntryEventRow[]>(initialEvents);
-
-  useEffect(() => {
-    setOverviewEvents(initialEvents);
-  }, [settingsVersion]);
 
   const individualEventCount = useMemo(
     () => overviewEvents.filter((e) => e.type === "INDIVIDUAL").length,

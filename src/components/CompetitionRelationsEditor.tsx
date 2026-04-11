@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useMemo, useEffect } from "react";
+import { useState, useRef, useMemo } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -22,9 +22,6 @@ function RelationLogoCard({
   onDelete?: () => void;
 }) {
   const [broken, setBroken] = useState(false);
-  useEffect(() => {
-    setBroken(false);
-  }, [logo.displaySrc]);
   return (
     <div className="flex w-[8.75rem] flex-col gap-1">
       <div className="relative flex h-16 w-full items-center justify-center overflow-hidden rounded-md border border-border bg-muted/25">
@@ -357,7 +354,7 @@ export default function CompetitionRelationsEditor({
                   <div className="flex flex-wrap gap-3">
                     {cooperatorLogos.map((logo) => (
                       <RelationLogoCard
-                        key={logo.logoUrl}
+                        key={logo.displaySrc}
                         logo={logo}
                         canDelete={canEdit}
                         onDelete={() => void handleLogoDelete("cooperator", logo.logoUrl)}
@@ -448,7 +445,7 @@ export default function CompetitionRelationsEditor({
                   <div className="flex flex-wrap gap-3">
                     {grantLogos.map((logo) => (
                       <RelationLogoCard
-                        key={logo.logoUrl}
+                        key={logo.displaySrc}
                         logo={logo}
                         canDelete={canEdit}
                         onDelete={() => void handleLogoDelete("grant", logo.logoUrl)}
@@ -534,7 +531,7 @@ export default function CompetitionRelationsEditor({
                 {cooperatorLogos.length > 0 ? (
                   <div className="mt-2 flex flex-wrap gap-3">
                     {cooperatorLogos.map((logo) => (
-                      <RelationLogoCard key={logo.logoUrl} logo={logo} canDelete={false} />
+                      <RelationLogoCard key={logo.displaySrc} logo={logo} canDelete={false} />
                     ))}
                   </div>
                 ) : null}
@@ -559,7 +556,7 @@ export default function CompetitionRelationsEditor({
                 {grantLogos.length > 0 ? (
                   <div className="mt-2 flex flex-wrap gap-3">
                     {grantLogos.map((logo) => (
-                      <RelationLogoCard key={logo.logoUrl} logo={logo} canDelete={false} />
+                      <RelationLogoCard key={logo.displaySrc} logo={logo} canDelete={false} />
                     ))}
                   </div>
                 ) : null}
