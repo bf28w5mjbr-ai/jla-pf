@@ -17,7 +17,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  isPlayerRegistrationKind,
   isValidJlaMemberNumber,
   normalizeJlaMemberNumber,
 } from "@/lib/jlaMemberNumber";
@@ -52,16 +51,15 @@ export default function QualificationRegisterButton({
     setJlaMemberNumber(normalizeJlaMemberNumber(defaultJlaMemberNumber ?? ""));
   }, [defaultJlaMemberNumber]);
 
-  const requiresJlaMemberNumber =
-    isPlayerRegistrationKind(item.kind) || isPlayerRegistrationKind(item.name);
-
   const submitRegistration = async () => {
     if (isRegistering) return;
 
     const certNumber = normalizeJlaMemberNumber(jlaMemberNumber);
 
-    if (requiresJlaMemberNumber && !isValidJlaMemberNumber(certNumber)) {
-      toast.error("JLA番号は5000から始まる9桁で入力してください");
+    if (!isValidJlaMemberNumber(certNumber)) {
+      toast.error(
+        "JLAメンバーIDは500から始まる半角9桁の数字で入力してください"
+      );
       return;
     }
 
@@ -72,7 +70,7 @@ export default function QualificationRegisterButton({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           kind: item.kind,
-          certNumber: requiresJlaMemberNumber ? certNumber : undefined,
+          certNumber,
         }),
       });
 
@@ -94,14 +92,6 @@ export default function QualificationRegisterButton({
     }
   };
 
-  if (!requiresJlaMemberNumber) {
-    return (
-      <Button size="sm" onClick={submitRegistration} disabled={isRegistering}>
-        {isRegistering ? "登録中..." : "登録申請"}
-      </Button>
-    );
-  }
-
   return (
     <Dialog
       open={dialogOpen}
@@ -119,14 +109,15 @@ export default function QualificationRegisterButton({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>選手登録を申請</DialogTitle>
+          <DialogTitle>資格の登録申請</DialogTitle>
           <DialogDescription>
-            選手登録の申請時に JLA番号を入力してください。番号は協会の審査時に確認されます。
+            「{item.name ?? item.kind}」の申請にあたり、日本ライフセービング協会が発行した
+            JLAメンバーIDを入力してください。審査時に照合されます。
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-2">
-          <Label htmlFor="jlaMemberNumber">JLA番号</Label>
+          <Label htmlFor="jlaMemberNumber">JLAメンバーID</Label>
           <Input
             id="jlaMemberNumber"
             value={jlaMemberNumber}
@@ -135,10 +126,12 @@ export default function QualificationRegisterButton({
             }
             numericInput="integer"
             maxLength={9}
-            placeholder="500012345"
+            placeholder="500123456"
+            inputMode="numeric"
+            autoComplete="off"
           />
           <p className="text-xs text-muted-foreground">
-            5000から始まる9桁で入力してください。
+            500から始まる半角9桁の数字で入力してください。
           </p>
         </div>
 

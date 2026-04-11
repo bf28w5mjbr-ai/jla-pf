@@ -1,10 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-
-import { Button } from "@/components/ui/button";
+import QualificationRegisterButton from "./QualificationRegisterButton";
 
 interface RegisterableQualification {
   id: string;
@@ -17,38 +13,13 @@ interface RegisterableQualification {
 
 interface QualificationRegisterListProps {
   items: RegisterableQualification[];
+  defaultJlaMemberNumber?: string | null;
 }
 
-export default function QualificationRegisterList({ items }: QualificationRegisterListProps) {
-  const router = useRouter();
-  const [registeringId, setRegisteringId] = useState<string | null>(null);
-
-  const handleRegister = async (item: RegisterableQualification) => {
-    if (registeringId) return;
-
-    setRegisteringId(item.id);
-    try {
-      const res = await fetch("/api/qualifications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: item.kind }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "資格登録に失敗しました");
-      }
-
-      toast.success("資格登録を申請しました");
-      router.refresh();
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : "資格登録に失敗しました";
-      toast.error(msg);
-    } finally {
-      setRegisteringId(null);
-    }
-  };
-
+export default function QualificationRegisterList({
+  items,
+  defaultJlaMemberNumber,
+}: QualificationRegisterListProps) {
   return (
     <div className="grid gap-3">
       {items.map((item) => (
@@ -69,13 +40,10 @@ export default function QualificationRegisterList({ items }: QualificationRegist
                 : "有効期限なし"}
             </p>
           </div>
-          <Button
-            size="sm"
-            onClick={() => handleRegister(item)}
-            disabled={registeringId === item.id}
-          >
-            {registeringId === item.id ? "登録中..." : "登録"}
-          </Button>
+          <QualificationRegisterButton
+            item={item}
+            defaultJlaMemberNumber={defaultJlaMemberNumber}
+          />
         </div>
       ))}
     </div>

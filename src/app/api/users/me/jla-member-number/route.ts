@@ -33,7 +33,7 @@ export async function PUT(req: NextRequest) {
 
     if (!isValidJlaMemberNumber(normalized)) {
       return NextResponse.json(
-        { error: "JLAメンバーIDは5000から始まる9桁の数字で入力してください" },
+        { error: "JLAメンバーIDは500から始まる9桁の半角数字で入力してください" },
         { status: 400 }
       );
     }

@@ -28,7 +28,7 @@ export default function JlaMemberNumberEditor({ initialValue }: JlaMemberNumberE
     if (saving) return;
     const normalized = normalizeJlaMemberNumber(value);
     if (!isValidJlaMemberNumber(normalized)) {
-      toast.error("5000から始まる9桁の数字で入力してください");
+      toast.error("500から始まる半角9桁の数字で入力してください");
       return;
     }
 
@@ -63,7 +63,7 @@ export default function JlaMemberNumberEditor({ initialValue }: JlaMemberNumberE
           <CardTitle className="text-lg">JLAメンバーID</CardTitle>
         </div>
         <CardDescription>
-          日本ライフセービング協会の会員番号（9桁・5000から始まる）を登録します。選手登録の申請時にも使用されます。
+          日本ライフセービング協会が発行するメンバーID（半角9桁・500から始まる）を登録します。資格申請でも使用されます。
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:p-6">
@@ -75,11 +75,13 @@ export default function JlaMemberNumberEditor({ initialValue }: JlaMemberNumberE
             onChange={(e) => setValue(normalizeJlaMemberNumber(e.target.value))}
             numericInput="integer"
             maxLength={9}
-            placeholder="500012345"
+            placeholder="500123456"
             autoComplete="off"
             className="max-w-xs font-mono"
           />
-          <p className="text-xs text-muted-foreground">半角数字9桁。変更した場合は保存ボタンを押してください。</p>
+          <p className="text-xs text-muted-foreground">
+            500から始まる半角9桁。変更した場合は保存ボタンを押してください。
+          </p>
         </div>
         <Button type="button" onClick={submit} disabled={saving} className="shrink-0 sm:mb-0.5">
           {saving ? "保存中…" : "保存"}

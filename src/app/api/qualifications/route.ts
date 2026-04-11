@@ -243,20 +243,17 @@ export async function POST(req: NextRequest) {
 
     const certNumber = data.certNumber;
 
-    if (
-      !isProvisionalLink &&
-      (isPlayerRegistrationKind(requestedTemplate.kind) || isPlayerRegistrationKind(requestedTemplate.name))
-    ) {
+    if (!isProvisionalLink) {
       if (!certNumber) {
         return NextResponse.json(
-          { error: "選手登録の申請にはJLA番号の入力が必要です" },
+          { error: "資格申請にはJLAメンバーIDの入力が必要です" },
           { status: 400 }
         );
       }
 
       if (!JLA_MEMBER_NUMBER_REGEX.test(certNumber)) {
         return NextResponse.json(
-          { error: "JLA番号は5000から始まる9桁で入力してください" },
+          { error: "JLAメンバーIDは500から始まる9桁の半角数字で入力してください" },
           { status: 400 }
         );
       }
@@ -271,7 +268,7 @@ export async function POST(req: NextRequest) {
 
       if (existingUser) {
         return NextResponse.json(
-          { error: "このJLA番号は既に別の会員に紐づいています" },
+          { error: "このJLAメンバーIDは既に別の会員に紐づいています" },
           { status: 400 }
         );
       }
@@ -288,12 +285,9 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      if (
-        existingQualificationWithNumber &&
-        isPlayerRegistrationKind(existingQualificationWithNumber.kind)
-      ) {
+      if (existingQualificationWithNumber) {
         return NextResponse.json(
-          { error: "このJLA番号は既に申請または登録済みです" },
+          { error: "このJLAメンバーIDは既に別の会員の申請で使用されています" },
           { status: 400 }
         );
       }

@@ -1,6 +1,7 @@
 import { normalizeIntegerNumericInput } from "@/lib/numericInput";
 
-export const JLA_MEMBER_NUMBER_REGEX = /^5000\d{5}$/;
+/** JLA 発行メンバーID: 半角9桁・先頭3桁は 500 */
+export const JLA_MEMBER_NUMBER_REGEX = /^500\d{6}$/;
 
 export function normalizeJlaMemberNumber(value: string) {
   return normalizeIntegerNumericInput(value);
