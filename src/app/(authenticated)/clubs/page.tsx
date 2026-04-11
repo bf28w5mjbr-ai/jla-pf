@@ -1,7 +1,7 @@
 import { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import ClubSearchList from "@/components/ClubSearchList";
 
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function ClubsPage() {
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const sess = token ? await verifySession(token) : null;
+  const sess = await verifySessionCached(token);
   if (!sess?.userId) redirect("/login");
 
   const user = await prisma.user.findUnique({

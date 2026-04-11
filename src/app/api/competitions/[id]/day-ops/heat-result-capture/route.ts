@@ -1,7 +1,6 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import type { ResultRound } from "@prisma/client";
-import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { assertDayOpsRecorderWriteAccess } from "@/lib/dayOpsAccess";
 
@@ -10,12 +9,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const { id: competitionId } = await context.params;
-    const token = request.cookies.get("session")?.value;
-    const session = token ? await verifySession(token) : null;
-    if (!session?.userId) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
-    }
-    await assertDayOpsRecorderWriteAccess(competitionId, session.userId);
+    await assertDayOpsRecorderWriteAccess(competitionId, request);
 
     const url = new URL(request.url);
     const eventId = url.searchParams.get("eventId")?.trim() ?? "";
@@ -78,6 +72,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
   } catch (error) {
     if (error instanceof Error && error.message === "DAY_OPS_FORBIDDEN") {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
+    }
+    if (error instanceof Error && error.message === "DAY_OPS_UNAUTHORIZED") {
+      return NextResponse.json(
+        { error: "ログインするか、大会の当日運用暗号をスタートリスト画面で入力してください" },
+        { status: 401 }
+      );
     }
     return jsonInternalError500(
       "GET api/competitions/[id]/day-ops/heat-result-capture/route.ts",

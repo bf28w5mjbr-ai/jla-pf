@@ -4,6 +4,9 @@ import { verifySession } from "@/lib/auth";
 import { absoluteAppUrl, appRoutes } from "@/lib/appRoutes";
 import { prisma } from "@/server/db";
 import { createPaymentCheckout } from "@/lib/stripe";
+import { applicationFeeAmountYen } from "@/lib/platformFee";
+import { connectRequirementSkipped, paidEntryCheckoutBlockReason } from "@/lib/organizerBilling";
+import { refreshOrganizationStripeConnectFlags } from "@/lib/organizerStripeConnect";
 import { buildTeamEntryPaymentOwnerId, parseTeamEntryPaymentMetadata } from "@/lib/teamEntryPayments";
 import { isClubAdminRole } from "@/lib/roleScopes";
 
@@ -124,6 +127,23 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ message: "現在この請求は決済できません" }, { status: 400 });
     }
 
+    await refreshOrganizationStripeConnectFlags(competition.organizationId);
+    const orgBilling = await prisma.organization.findUnique({
+      where: { id: competition.organizationId },
+      select: {
+        onboardingFeeStatus: true,
+        organizerSubscriptionStatus: true,
+        stripeConnectAccountId: true,
+        stripeConnectChargesEnabled: true,
+      },
+    });
+    const paidBlock = orgBilling
+      ? paidEntryCheckoutBlockReason(orgBilling)
+      : "主催団体の決済設定を確認できませんでした。";
+    if (paidBlock) {
+      return NextResponse.json({ message: paidBlock }, { status: 403 });
+    }
+
     const payer = await prisma.user.findUnique({
       where: { id: session.userId },
       select: { email: true },
@@ -133,12 +153,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const entryHubPath = appRoutes.clubs.competition.team(clubId, competitionId, {
       tab: "entry",
     });
+    const skipConnect = connectRequirementSkipped();
     const checkoutSession = await createPaymentCheckout({
       organizationId: competition.organizationId,
       userId: session.userId,
       amount: payment.amount,
       description: `チームエントリー費: ${competition.name} / ${membership.club.name}`,
       customerEmail: payer?.email ?? null,
+      destinationConnectAccountId: skipConnect ? null : orgBilling?.stripeConnectAccountId ?? null,
+      applicationFeeAmountYen: skipConnect ? null : applicationFeeAmountYen(payment.amount),
       successUrl: `${absoluteAppUrl(origin, entryHubPath)}&payment=success&session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${absoluteAppUrl(origin, entryHubPath)}&payment=cancel`,
       metadata: {

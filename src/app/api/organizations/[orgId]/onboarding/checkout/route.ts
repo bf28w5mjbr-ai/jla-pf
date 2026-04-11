@@ -1,35 +1,31 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
-import { NextRequest, NextResponse } from 'next/server';
-import { verifySession } from '../../../../../../lib/auth';
-import { prisma } from '../../../../../../server/db';
-import { requireOrgAdmin } from '../../../../../../lib/accessControl';
-import { createPaymentCheckout } from '../../../../../../lib/stripe';
+import { NextRequest, NextResponse } from "next/server";
+import { verifySession } from "@/lib/auth";
+import { prisma } from "@/server/db";
+import { requireOrgAdmin } from "@/lib/accessControl";
+import { createOrganizerSubscriptionCheckout, organizerYearlySubscriptionAmountYen } from "@/lib/stripe";
 import {
   assertOnboardingCheckoutCooldown,
   getClientIpFromRequest,
   isStripeCheckoutClientIpBlocked,
   STRIPE_CHECKOUT_CLIENT_FAILURE_MESSAGE,
-} from '../../../../../../lib/stripeCheckoutGuards';
+} from "@/lib/stripeCheckoutGuards";
+import { hasOrganizerPlatformSubscription } from "@/lib/organizerBilling";
 
-const DEFAULT_ONBOARDING_FEE = 10000;
-
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ orgId: string }> }
-) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ orgId: string }> }) {
   try {
     const { orgId: organizationId } = await params;
-    const token = req.cookies.get('session')?.value;
+    const token = req.cookies.get("session")?.value;
     const session = token ? await verifySession(token) : null;
 
     if (!session?.userId) {
-      return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
+      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
     }
 
     try {
       await requireOrgAdmin(organizationId, session.userId);
     } catch {
-      return NextResponse.json({ error: '権限がありません' }, { status: 403 });
+      return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }
 
     const organization = await prisma.organization.findUnique({
@@ -39,15 +35,17 @@ export async function POST(
         name: true,
         status: true,
         onboardingFeeStatus: true,
+        organizerSubscriptionStatus: true,
+        stripeCustomerId: true,
       },
     });
 
     if (!organization) {
-      return NextResponse.json({ error: '団体が見つかりません' }, { status: 404 });
+      return NextResponse.json({ error: "団体が見つかりません" }, { status: 404 });
     }
 
-    if (organization.onboardingFeeStatus === 'PAID') {
-      return NextResponse.json({ error: '登録料は支払い済みです' }, { status: 400 });
+    if (hasOrganizerPlatformSubscription(organization)) {
+      return NextResponse.json({ error: "利用料の登録は既に完了しています" }, { status: 400 });
     }
 
     const clientIp = getClientIpFromRequest(req);
@@ -61,9 +59,9 @@ export async function POST(
     const existingForCooldown = await prisma.payment.findUnique({
       where: {
         ownerType_ownerId_type: {
-          ownerType: 'ORGANIZATION',
+          ownerType: "ORGANIZATION",
           ownerId: organizationId,
-          type: 'ORG_ONBOARDING_FEE',
+          type: "ORG_PLATFORM_SUBSCRIPTION",
         },
       },
       select: { stripeCheckoutSessionId: true, updatedAt: true },
@@ -77,44 +75,44 @@ export async function POST(
       );
     }
 
-    const amount = DEFAULT_ONBOARDING_FEE;
+    const amount = organizerYearlySubscriptionAmountYen();
 
     const payment = await prisma.payment.upsert({
       where: {
         ownerType_ownerId_type: {
-          ownerType: 'ORGANIZATION',
+          ownerType: "ORGANIZATION",
           ownerId: organizationId,
-          type: 'ORG_ONBOARDING_FEE',
+          type: "ORG_PLATFORM_SUBSCRIPTION",
         },
       },
       create: {
-        ownerType: 'ORGANIZATION',
+        ownerType: "ORGANIZATION",
         ownerId: organizationId,
-        type: 'ORG_ONBOARDING_FEE',
+        type: "ORG_PLATFORM_SUBSCRIPTION",
         userId: session.userId,
-        status: 'PENDING',
+        status: "PENDING",
         amount,
         metadata: {
-          type: 'ORG_ONBOARDING_FEE',
-          ownerType: 'ORGANIZATION',
+          type: "ORG_PLATFORM_SUBSCRIPTION",
+          ownerType: "ORGANIZATION",
           ownerId: organizationId,
           userId: session.userId,
         },
       },
       update: {
-        status: 'PENDING',
+        status: "PENDING",
         amount,
         metadata: {
-          type: 'ORG_ONBOARDING_FEE',
-          ownerType: 'ORGANIZATION',
+          type: "ORG_PLATFORM_SUBSCRIPTION",
+          ownerType: "ORGANIZATION",
           ownerId: organizationId,
           userId: session.userId,
         },
       },
     });
 
-    if (payment.status === 'SUCCEEDED') {
-      return NextResponse.json({ error: '登録料は支払い済みです' }, { status: 400 });
+    if (payment.status === "SUCCEEDED") {
+      return NextResponse.json({ error: "利用料の登録は既に完了しています" }, { status: 400 });
     }
 
     const payer = await prisma.user.findUnique({
@@ -125,24 +123,23 @@ export async function POST(
     const origin = new URL(req.url).origin;
     let checkoutSession;
     try {
-      checkoutSession = await createPaymentCheckout({
+      checkoutSession = await createOrganizerSubscriptionCheckout({
         organizationId,
         userId: session.userId,
-        amount,
-        description: `団体登録料: ${organization.name}`,
         customerEmail: payer?.email ?? null,
+        stripeCustomerId: organization.stripeCustomerId,
         successUrl: `${origin}/organizations/${organizationId}?payment=success&session_id={CHECKOUT_SESSION_ID}`,
         cancelUrl: `${origin}/organizations/${organizationId}?payment=cancel`,
         metadata: {
-          type: 'ORG_ONBOARDING_FEE',
-          ownerType: 'ORGANIZATION',
+          type: "ORG_PLATFORM_SUBSCRIPTION",
+          ownerType: "ORGANIZATION",
           ownerId: organizationId,
           userId: session.userId,
           paymentId: payment.id,
         },
       });
     } catch (stripeErr) {
-      console.error('Stripe checkout.sessions.create (onboarding) failed', stripeErr);
+      console.error("Stripe checkout.sessions.create (organizer subscription) failed", stripeErr);
       return NextResponse.json(
         { error: STRIPE_CHECKOUT_CLIENT_FAILURE_MESSAGE },
         { status: 502 }

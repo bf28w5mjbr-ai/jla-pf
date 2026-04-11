@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { appRoutes } from "@/lib/appRoutes";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import CreateClubForm from "@/components/CreateClubForm";
 
 export const metadata: Metadata = {
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function CreateClubPage() {
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const sess = token ? await verifySession(token) : null;
+  const sess = await verifySessionCached(token);
   if (!sess?.userId) redirect("/login");
 
   return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -33,15 +33,24 @@ interface RegisterableQualification {
 
 interface QualificationRegisterButtonProps {
   item: RegisterableQualification;
+  /** 保有資格ページなどで登録済みの JLA メンバーIDをダイアログに初期表示 */
+  defaultJlaMemberNumber?: string | null;
 }
 
 export default function QualificationRegisterButton({
   item,
+  defaultJlaMemberNumber,
 }: QualificationRegisterButtonProps) {
   const router = useRouter();
   const [isRegistering, setIsRegistering] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [jlaMemberNumber, setJlaMemberNumber] = useState("");
+  const [jlaMemberNumber, setJlaMemberNumber] = useState(
+    () => normalizeJlaMemberNumber(defaultJlaMemberNumber ?? "")
+  );
+
+  useEffect(() => {
+    setJlaMemberNumber(normalizeJlaMemberNumber(defaultJlaMemberNumber ?? ""));
+  }, [defaultJlaMemberNumber]);
 
   const requiresJlaMemberNumber =
     isPlayerRegistrationKind(item.kind) || isPlayerRegistrationKind(item.name);
@@ -74,7 +83,7 @@ export default function QualificationRegisterButton({
 
       toast.success("資格登録を申請しました");
       setDialogOpen(false);
-      setJlaMemberNumber("");
+      setJlaMemberNumber(normalizeJlaMemberNumber(defaultJlaMemberNumber ?? ""));
       router.refresh();
     } catch (error) {
       toast.error(
@@ -99,7 +108,7 @@ export default function QualificationRegisterButton({
       onOpenChange={(open) => {
         setDialogOpen(open);
         if (!open && !isRegistering) {
-          setJlaMemberNumber("");
+          setJlaMemberNumber(normalizeJlaMemberNumber(defaultJlaMemberNumber ?? ""));
         }
       }}
     >

@@ -2,9 +2,12 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect, notFound } from "next/navigation";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { stripe } from "@/lib/stripe";
+import { organizerYearlySubscriptionAmountYen, stripe } from "@/lib/stripe";
+import { finalizeOrganizerSubscriptionCheckoutSession } from "@/lib/organizerSubscriptionStripe";
+import { hasOrganizerPlatformSubscription } from "@/lib/organizerBilling";
+import { refreshOrganizationStripeConnectFlags } from "@/lib/organizerStripeConnect";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -13,6 +16,7 @@ import OrganizationLogoManager from "@/components/OrganizationLogoManager";
 import CompetitionListItem from "@/components/CompetitionListItem";
 import OrganizationBusinessPanelTabContent from "@/components/admin/OrganizationBusinessPanelTabContent";
 import OrganizationOnboardingPaymentBanner from "@/components/OrganizationOnboardingPaymentBanner";
+import OrganizationStripeConnectPanel from "@/components/OrganizationStripeConnectPanel";
 import {
   ArrowLeft,
   Calendar,
@@ -34,8 +38,6 @@ import { cn } from "@/lib/utils";
 import OrganizationDetailTabsClient from "@/components/OrganizationDetailTabsClient";
 
 export const dynamic = "force-dynamic";
-const ORG_ONBOARDING_FEE = 10000;
-
 async function reconcileOnboardingPayment(
   organizationId: string,
   checkoutSessionId?: string
@@ -44,7 +46,7 @@ async function reconcileOnboardingPayment(
     where: {
       ownerType: "ORGANIZATION",
       ownerId: organizationId,
-      type: "ORG_ONBOARDING_FEE",
+      type: { in: ["ORG_ONBOARDING_FEE", "ORG_PLATFORM_SUBSCRIPTION"] },
       ...(checkoutSessionId
         ? { stripeCheckoutSessionId: checkoutSessionId }
         : { stripeCheckoutSessionId: { not: null } }),
@@ -62,6 +64,26 @@ async function reconcileOnboardingPayment(
     checkoutSession.status === "complete";
 
   if (!isPaid) return;
+
+  if (checkoutSession.mode === "subscription") {
+    await finalizeOrganizerSubscriptionCheckoutSession(checkoutSession);
+    const paymentIntentId =
+      typeof checkoutSession.payment_intent === "string"
+        ? checkoutSession.payment_intent
+        : checkoutSession.payment_intent?.id;
+    await prisma.payment.updateMany({
+      where: {
+        id: payment.id,
+        status: { not: "SUCCEEDED" },
+      },
+      data: {
+        status: "SUCCEEDED",
+        paidAt: new Date(),
+        stripePaymentIntentId: paymentIntentId ?? undefined,
+      },
+    });
+    return;
+  }
 
   await prisma.$transaction([
     prisma.payment.updateMany({
@@ -114,14 +136,16 @@ export default async function OrganizationDetailPage({
     payment?: string;
     session_id?: string;
     tab?: string;
+    stripe_connect?: string;
   }>;
 }) {
   const { id } = await params;
-  const { payment, session_id: sessionId, tab: tabParam } = await searchParams;
+  const { payment, session_id: sessionId, tab: tabParam, stripe_connect: stripeConnect } =
+    await searchParams;
   const activeTab = parseOrganizationDetailTab(tabParam);
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const session = token ? await verifySession(token) : null;
+  const session = await verifySessionCached(token);
 
   if (!session?.userId) {
     redirect("/login");
@@ -132,6 +156,14 @@ export default async function OrganizationDetailPage({
       await reconcileOnboardingPayment(id, sessionId);
     } catch (error) {
       console.error("Reconcile onboarding payment failed:", error);
+    }
+  }
+
+  if (stripeConnect === "return" || stripeConnect === "refresh") {
+    try {
+      await refreshOrganizationStripeConnectFlags(id);
+    } catch (error) {
+      console.error("Refresh Stripe Connect flags failed:", error);
     }
   }
 
@@ -191,7 +223,13 @@ export default async function OrganizationDetailPage({
   const needsOnboardingPayment =
     isOrgAdmin &&
     organization.status === "PENDING" &&
-    organization.onboardingFeeStatus !== "PAID";
+    !hasOrganizerPlatformSubscription(organization);
+  const organizerYearlyAmount = organizerYearlySubscriptionAmountYen();
+  const showStripeConnectSetup =
+    isOrgAdmin &&
+    process.env.STRIPE_CONNECT_SKIP_REQUIREMENT !== "true" &&
+    hasOrganizerPlatformSubscription(organization) &&
+    (!organization.stripeConnectAccountId || !organization.stripeConnectChargesEnabled);
   const statusLabelMap = {
     PENDING: "仮登録",
     APPROVED: "有効",
@@ -241,7 +279,13 @@ export default async function OrganizationDetailPage({
       {needsOnboardingPayment && (
         <OrganizationOnboardingPaymentBanner
           organizationId={organization.id}
-          amount={ORG_ONBOARDING_FEE}
+          amount={organizerYearlyAmount}
+        />
+      )}
+      {showStripeConnectSetup && (
+        <OrganizationStripeConnectPanel
+          organizationId={organization.id}
+          chargesEnabled={organization.stripeConnectChargesEnabled === true}
         />
       )}
 

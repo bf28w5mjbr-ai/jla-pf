@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { redirect, notFound } from "next/navigation";
-import { verifySession } from "@/lib/auth";
+import { notFound } from "next/navigation";
+import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -35,6 +35,8 @@ import { formatCompactJaDateRange } from "@/lib/datetimeLocal";
 import { buildParticipationEventRows } from "@/lib/competitionPublicParticipationEvents";
 import { ensureStartListSnapshotIfEligible } from "@/lib/startListSnapshot";
 import { parseTechnicalOfficialTiers } from "@/lib/technicalOfficialRules";
+import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
+import DayOpsUnlockBanner from "@/components/DayOpsUnlockBanner";
 
 export const dynamic = "force-dynamic";
 
@@ -65,11 +67,8 @@ export default async function CompetitionDetailPage({
   const { tab } = await searchParams;
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const session = token ? await verifySession(token) : null;
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
+  const session = await verifySessionCached(token);
+  const sessionUserId = session?.userId ?? null;
 
   const competition = await prisma.competition.findUnique({
     where: { id },
@@ -77,7 +76,7 @@ export default async function CompetitionDetailPage({
       organization: {
         include: {
           admins: {
-            where: { userId: session.userId },
+            where: { userId: sessionUserId ?? "clinvalidnosessionuser0000" },
           },
         },
       },
@@ -102,13 +101,8 @@ export default async function CompetitionDetailPage({
         orderBy: { displayOrder: "asc" },
       },
       officialApplications: {
-        where: { userId: session.userId },
+        where: { userId: sessionUserId ?? "clinvalidnosessionuser0000" },
         select: { status: true, positionName: true, message: true },
-        take: 1,
-      },
-      officialAttendances: {
-        where: { userId: session.userId },
-        select: { id: true },
         take: 1,
       },
     },
@@ -118,13 +112,17 @@ export default async function CompetitionDetailPage({
     notFound();
   }
 
-  const myOfficialApplication = competition.officialApplications[0] ?? null;
+  const dayOpsMeta = await prisma.competition.findUnique({
+    where: { id },
+    select: { dayOpsAccessSecretHash: true },
+  });
+  const dayOpsUnlockConfigured = Boolean(dayOpsMeta?.dayOpsAccessSecretHash);
+  const hasDayOpsUnlock = await verifyDayOpsUnlockFromCookies(id);
 
   const isOrgAdmin = hasOrgAdminAccess(competition.organization.admins);
   const canEditStartListSplit = canManageCompetitionStartListSettings({
     orgAdminsForCurrentUser: competition.organization.admins,
-    officialApplicationStatus: myOfficialApplication?.status ?? null,
-    hasOfficialAttendance: competition.officialAttendances.length > 0,
+    hasDayOpsUnlock,
   });
 
   // 公開されていない大会は、管理者以外は表示しない
@@ -132,11 +130,13 @@ export default async function CompetitionDetailPage({
     notFound();
   }
 
-  const teamEntryMemberships = await prisma.membership.findMany({
-    where: { userId: session.userId, status: "APPROVED" },
-    include: { club: { select: { id: true, name: true } } },
-    orderBy: { club: { name: "asc" } },
-  });
+  const teamEntryMemberships = sessionUserId
+    ? await prisma.membership.findMany({
+        where: { userId: sessionUserId, status: "APPROVED" },
+        include: { club: { select: { id: true, name: true } } },
+        orderBy: { club: { name: "asc" } },
+      })
+    : [];
   const firstAdminClubForTeamEntry = teamEntryMemberships.find((m) =>
     isClubAdminRole(m.role)
   )?.club;
@@ -327,6 +327,9 @@ export default async function CompetitionDetailPage({
   const activeTab =
     requestedTab === "overview" || requestedTab === "start-list" ? requestedTab : "overview";
 
+  const withLoginRedirect = (path: string) =>
+    sessionUserId ? path : `/login?redirect=${encodeURIComponent(path)}`;
+
   if (activeTab === "start-list") {
     try {
       await ensureStartListSnapshotIfEligible(id);
@@ -470,7 +473,7 @@ export default async function CompetitionDetailPage({
                           size="sm"
                           className="h-10 w-full justify-center gap-1.5 font-semibold shadow-sm"
                         >
-                          <Link href={appRoutes.competitions.entry(competition.id)}>
+                          <Link href={withLoginRedirect(appRoutes.competitions.entry(competition.id))}>
                             エントリー
                             <ChevronRight className="h-3.5 w-3.5 opacity-70" />
                           </Link>
@@ -484,13 +487,13 @@ export default async function CompetitionDetailPage({
                           className="h-10 w-full justify-center gap-1.5 border-primary/20 bg-background/80 font-medium shadow-sm hover:bg-muted/50"
                         >
                           <Link
-                            href={
+                            href={withLoginRedirect(
                               firstAdminClubForTeamEntry
                                 ? appRoutes.clubs.competition.team(firstAdminClubForTeamEntry.id, competition.id, {
                                     tab: "entry",
                                   })
                                 : appRoutes.competitions.legacyTeamEntry(competition.id)
-                            }
+                            )}
                           >
                             チームエントリー
                             <ChevronRight className="h-3.5 w-3.5 opacity-60" />
@@ -504,7 +507,11 @@ export default async function CompetitionDetailPage({
                           variant="outline"
                           className="h-10 w-full justify-center gap-1.5 border-primary/25 bg-background/80 font-medium shadow-sm hover:bg-muted/50"
                         >
-                          <Link href={appRoutes.competitions.officialEntry(competition.id)}>
+                          <Link
+                            href={withLoginRedirect(
+                              appRoutes.competitions.officialEntry(competition.id)
+                            )}
+                          >
                             オフィシャルエントリー
                             <ChevronRight className="h-3.5 w-3.5 opacity-60" />
                           </Link>
@@ -696,7 +703,12 @@ export default async function CompetitionDetailPage({
           </div>
         </TabsContent>
 
-        <TabsContent value="start-list" className="mt-2 space-y-1">
+        <TabsContent value="start-list" className="mt-2 space-y-3">
+          <DayOpsUnlockBanner
+            competitionId={competition.id}
+            passphraseConfigured={dayOpsUnlockConfigured}
+            alreadyUnlocked={hasDayOpsUnlock}
+          />
           <CompetitionStartListPanel
             canEditStartListSplit={canEditStartListSplit}
             canEditEventSchedule={canEditStartListSplit}

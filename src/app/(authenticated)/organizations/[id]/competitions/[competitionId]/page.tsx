@@ -14,7 +14,7 @@ import {
   Settings2,
   UserCog,
 } from "lucide-react";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -50,6 +50,7 @@ import OfficialApplicationsCsvExportButton, {
 import OfficialAttendancesCsvExportButton, {
   type OfficialAttendancesCsvRow,
 } from "@/components/OfficialAttendancesCsvExportButton";
+import CompetitionDayOpsPassphraseEditor from "@/components/CompetitionDayOpsPassphraseEditor";
 
 type EntrySettingsEditorProps = ComponentProps<typeof CompetitionEntrySettingsEditor>;
 
@@ -83,7 +84,7 @@ export default async function CompetitionDetailPage({
   const activeTab = parseCompetitionManagementTab(tabParam);
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const session = token ? await verifySession(token) : null;
+  const session = await verifySessionCached(token);
 
   if (!session?.userId) {
     redirect("/login");
@@ -199,6 +200,8 @@ export default async function CompetitionDetailPage({
         return "border-border bg-muted text-muted-foreground";
     }
   };
+
+  const dayOpsUnlockConfigured = Boolean(competition.dayOpsAccessSecretHash);
 
   const allowMultipleEventEntries = competition.allowMultipleEventEntries ?? true;
   const maxEventEntriesPerPerson =
@@ -547,7 +550,7 @@ export default async function CompetitionDetailPage({
             <CardHeader className="space-y-2 border-b border-border/70 bg-muted/20 px-4 py-3 sm:px-5">
               <CardTitle className="text-base">オフィシャル管理</CardTitle>
               <p className="text-xs text-muted-foreground">
-                募集設定、テクニカルオフィシャル要件、当日出席管理をこのタブで行います。
+                募集設定、テクニカルオフィシャル要件、当日出席の記録、当日運用アクセス暗号をこのタブで行います。
               </p>
             </CardHeader>
             <CardContent className="space-y-3 p-3 sm:p-4">
@@ -601,6 +604,13 @@ export default async function CompetitionDetailPage({
 
           {showOfficialRecruitment ? (
             <section className="space-y-4">
+              <CompetitionDayOpsPassphraseEditor
+                organizationId={organizationId}
+                competitionId={competitionId}
+                canEdit={canEdit}
+                initiallyConfigured={dayOpsUnlockConfigured}
+              />
+
               <section className="space-y-3 rounded-xl border border-border/70 bg-background p-3 sm:p-4">
                 <div className="space-y-1">
                   <h2 className="text-sm font-semibold text-foreground">
@@ -662,7 +672,7 @@ export default async function CompetitionDetailPage({
                 <div>
                   <h2 className="text-sm font-semibold text-foreground">2. 当日出席確認</h2>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    当日の出席記録を登録・更新し、出席情報を管理します。
+                    当日の出席記録を登録・更新し、出席人数の集計・CSV 出力に利用します（当日運用の操作権限とは連動しません）。
                   </p>
                 </div>
                 <OfficialAttendanceSection

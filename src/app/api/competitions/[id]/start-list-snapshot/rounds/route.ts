@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
+import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
 import {
@@ -69,11 +70,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const token = request.cookies.get("session")?.value;
     const session = token ? await verifySession(token) : null;
-    if (!session?.userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const sessionUserId = session?.userId ?? null;
 
     const { id: competitionId } = await context.params;
+    const hasDayOpsUnlock = await verifyDayOpsUnlockFromRequest(request, competitionId);
+    if (!sessionUserId && !hasDayOpsUnlock) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
       return NextResponse.json(zodFlattenJsonBody(parsed.error), { status: 400 });
@@ -89,20 +92,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
         organization: {
           select: {
             admins: {
-              where: { userId: session.userId },
+              where: { userId: sessionUserId ?? "clinvalidnosessionuser0000" },
               select: { role: true },
             },
           },
-        },
-        officialApplications: {
-          where: { userId: session.userId },
-          select: { status: true },
-          take: 1,
-        },
-        officialAttendances: {
-          where: { userId: session.userId },
-          select: { id: true },
-          take: 1,
         },
         events: {
           where: { id: payload.eventId },
@@ -122,8 +115,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (
       !canManageCompetitionStartListSettings({
         orgAdminsForCurrentUser: competition.organization.admins,
-        officialApplicationStatus: competition.officialApplications[0]?.status ?? null,
-        hasOfficialAttendance: competition.officialAttendances.length > 0,
+        hasDayOpsUnlock,
       })
     ) {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
@@ -143,7 +135,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     await createStartListSnapshotIfNeeded({
       competitionId,
-      createdByUserId: session.userId,
+      createdByUserId: sessionUserId ?? undefined,
       skipPaymentStabilityCheck: true,
       skipEntryDeadlineGate: true,
     });

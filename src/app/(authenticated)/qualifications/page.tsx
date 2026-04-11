@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { ArrowLeft, ListChecks } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { parseQualificationTemplateMeta } from "@/lib/qualificationTemplateRules";
 import { prisma } from "@/server/db";
 import QualificationsSelectionClient from "./QualificationsSelectionClient";
@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 export default async function QualificationsSelectPage() {
   const jar = await cookies();
   const token = jar.get("session")?.value ?? null;
-  const sess = token ? await verifySession(token) : null;
+  const sess = await verifySessionCached(token);
   if (!sess?.userId) redirect("/login");
 
   const [rawTemplates, linkedQualifications] = await Promise.all([

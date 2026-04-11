@@ -2,7 +2,6 @@ import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import type { Prisma, ResultRound } from "@prisma/client";
-import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { assertDayOpsAdminWriteAccess } from "@/lib/dayOpsAccess";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
@@ -67,7 +66,7 @@ async function upsertCalled(
     competitionId: string;
     eventId: string;
     round: ResultRound;
-    actorUserId: string;
+    actorUserId: string | null;
     participantType: "INDIVIDUAL" | "TEAM";
     competitionEntryId: string | null;
     teamEntryId: string | null;
@@ -143,12 +142,8 @@ async function upsertCalled(
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const { id: competitionId } = await context.params;
-    const token = request.cookies.get("session")?.value;
-    const session = token ? await verifySession(token) : null;
-    if (!session?.userId) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
-    }
-    await assertDayOpsAdminWriteAccess(competitionId, session.userId);
+    const ctx = await assertDayOpsAdminWriteAccess(competitionId, request);
+    const operatorUserId = ctx.operatorUserId;
 
     const parsed = completeSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
@@ -233,7 +228,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         competitionId,
         eventId,
         round,
-        actorUserId: session.userId,
+        actorUserId: operatorUserId,
         participantType: target.participantType,
         competitionEntryId: target.competitionEntryId,
         teamEntryId: target.teamEntryId,
@@ -248,9 +243,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     await logAuditAction({
       action: "COMPETITION_HEAT_MARSHAL_COMPLETE",
-      actorType: "USER",
-      actorKey: `user:${session.userId}`,
-      actorUserId: session.userId,
+      actorType: operatorUserId ? "USER" : "SYSTEM",
+      actorKey: operatorUserId ? `user:${operatorUserId}` : "dayops:unlock",
+      actorUserId: operatorUserId ?? undefined,
       targetType: "CompetitionParticipantStatus",
       targetId: upsertResult!.id,
       targetKey: `competition:${competitionId}`,
@@ -284,6 +279,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
     if (error instanceof Error && error.message === "DAY_OPS_FORBIDDEN") {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
+    }
+    if (error instanceof Error && error.message === "DAY_OPS_UNAUTHORIZED") {
+      return NextResponse.json(
+        { error: "ログインするか、大会の当日運用暗号をスタートリスト画面で入力してください" },
+        { status: 401 }
+      );
     }
     if (error instanceof Error && error.message === "PARTICIPANT_STATUS_TERMINAL") {
       return NextResponse.json(

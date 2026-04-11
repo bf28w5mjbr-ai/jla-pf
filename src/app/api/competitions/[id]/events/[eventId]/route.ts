@@ -13,6 +13,7 @@ import {
 } from "@/lib/competitionPublishedEditRules";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
+import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 import { assertEventScheduleWithinCompetitionRange } from "@/lib/eventScheduleWithinCompetition";
 import { syncStartListSettingsRoundTabsForEvent } from "@/lib/startListRoundCountSync";
 
@@ -102,9 +103,11 @@ export async function PATCH(
 
     const token = request.cookies.get("session")?.value;
     const session = token ? await verifySession(token) : null;
+    const sessionUserId = session?.userId ?? null;
+    const hasDayOpsUnlock = await verifyDayOpsUnlockFromRequest(request, competitionId);
 
-    if (!session?.userId) {
-      return NextResponse.json({ message: "認証が必要です" }, { status: 401 });
+    if (!sessionUserId && !hasDayOpsUnlock) {
+      return NextResponse.json({ message: "認証または当日運用アクセスが必要です" }, { status: 401 });
     }
 
     const event = await prisma.event.findUnique({
@@ -115,19 +118,9 @@ export async function PATCH(
             organization: {
               include: {
                 admins: {
-                  where: { userId: session.userId },
+                  where: { userId: sessionUserId ?? "clinvalidnosessionuser0000" },
                 },
               },
-            },
-            officialApplications: {
-              where: { userId: session.userId },
-              select: { status: true },
-              take: 1,
-            },
-            officialAttendances: {
-              where: { userId: session.userId },
-              select: { id: true },
-              take: 1,
             },
           },
         },
@@ -139,14 +132,11 @@ export async function PATCH(
     }
 
     const isAdmin = hasOrgAdminAccess(event.competition.organization.admins);
-    const isApprovedOfficial =
-      event.competition.officialApplications[0]?.status === "APPROVED";
 
     if (
       !canManageCompetitionStartListSettings({
         orgAdminsForCurrentUser: event.competition.organization.admins,
-        officialApplicationStatus: event.competition.officialApplications[0]?.status ?? null,
-        hasOfficialAttendance: event.competition.officialAttendances.length > 0,
+        hasDayOpsUnlock,
       })
     ) {
       return NextResponse.json({ message: "権限がありません" }, { status: 403 });
@@ -310,11 +300,11 @@ export async function PATCH(
           { status: 400 }
         );
       }
-      if (!isAdmin && !(isApprovedOfficial && onlyStartListRoundCount)) {
+      if (!isAdmin && !(hasDayOpsUnlock && onlyStartListRoundCount)) {
         return NextResponse.json(
           {
             message:
-              "スタートリストのラウンド数は主催者管理者、または承認済みオフィシャルが単独項目でのみ更新できます",
+              "スタートリストのラウンド数は主催者管理者、または当日運用アクセス済みの端末が単独項目でのみ更新できます",
           },
           { status: 403 }
         );

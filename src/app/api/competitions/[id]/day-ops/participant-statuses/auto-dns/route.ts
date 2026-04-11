@@ -2,7 +2,6 @@ import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import type { ResultRound } from "@prisma/client";
-import { verifySession } from "@/lib/auth";
 import { assertDayOpsAdminWriteAccess } from "@/lib/dayOpsAccess";
 import { prisma } from "@/server/db";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
@@ -54,14 +53,9 @@ function shouldApplyAutoDsq(existingStatus: string | undefined | null, mode: Aut
 
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
-    const token = request.cookies.get("session")?.value;
-    const session = token ? await verifySession(token) : null;
-    if (!session?.userId) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
-    }
-
     const { id: competitionId } = await context.params;
-    await assertDayOpsAdminWriteAccess(competitionId, session.userId);
+    const ctx = await assertDayOpsAdminWriteAccess(competitionId, request);
+    const operatorUserId = ctx.operatorUserId;
 
     const parsed = autoDsqSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
@@ -200,7 +194,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
               data: {
                 status: terminalStatus,
                 reason: updateReason,
-                updatedByUserId: session.userId,
+                updatedByUserId: operatorUserId,
                 updatedAt: now,
               },
             });
@@ -217,7 +211,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 status: terminalStatus,
                 reason: updateReason,
                 calledAt: null,
-                updatedByUserId: session.userId,
+                updatedByUserId: operatorUserId,
               },
             });
           }
@@ -274,7 +268,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
               data: {
                 status: terminalStatus,
                 reason: updateReason,
-                updatedByUserId: session.userId,
+                updatedByUserId: operatorUserId,
                 updatedAt: now,
               },
             })
@@ -287,9 +281,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     await logAuditAction({
       action: "COMPETITION_PARTICIPANT_STATUS_AUTO_DSQ",
-      actorType: "USER",
-      actorKey: `user:${session.userId}`,
-      actorUserId: session.userId,
+      actorType: operatorUserId ? "USER" : "SYSTEM",
+      actorKey: operatorUserId ? `user:${operatorUserId}` : "dayops:unlock",
+      actorUserId: operatorUserId ?? undefined,
       targetType: "Competition",
       targetId: competitionId,
       targetKey: `competition:${competitionId}`,
@@ -310,6 +304,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({ updatedCount });
   } catch (error) {
+    if (error instanceof Error && error.message === "DAY_OPS_FORBIDDEN") {
+      return NextResponse.json({ error: "権限がありません" }, { status: 403 });
+    }
+    if (error instanceof Error && error.message === "DAY_OPS_UNAUTHORIZED") {
+      return NextResponse.json(
+        { error: "ログインするか、大会の当日運用暗号をスタートリスト画面で入力してください" },
+        { status: 401 }
+      );
+    }
     return jsonInternalError500("POST api/competitions/[id]/day-ops/participant-statuses/auto-dns/route.ts", error);
   }
 }

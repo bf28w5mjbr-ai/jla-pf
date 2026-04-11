@@ -1,4 +1,4 @@
-# JLA PF 開発引き継ぎ（現行版）
+# Bluvium 開発引き継ぎ（現行版）
 
 最終更新: 2026-03-24
 
@@ -6,7 +6,7 @@
 
 ## 1. プロジェクト概要
 
-- 名称: JLA PF（Japan Lifesaving Association Platform）
+- 名称: Bluvium
 - 目的: 会員/所属/資格/大会/エントリー/決済を一気通貫で扱う
 - フロント・バック: Next.js App Router 構成
 

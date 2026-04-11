@@ -1,6 +1,6 @@
-# JLA PF
+# Bluvium
 
-JLA PF（Japan Lifesaving Association Platform）は、会員・所属・資格・大会エントリー・決済を一気通貫で扱う Next.js アプリケーションです。
+Bluvium は、会員・所属・資格・大会エントリー・決済を一気通貫で扱う Next.js アプリケーションです。
 
 ## 技術スタック
 

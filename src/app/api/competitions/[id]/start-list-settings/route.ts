@@ -18,6 +18,7 @@ import {
 import { prisma } from "@/server/db";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
+import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 import { syncAllEventStartListRoundCountsFromSettings } from "@/lib/startListRoundCountSync";
 
 export async function PUT(
@@ -28,9 +29,10 @@ export async function PUT(
     const { id: competitionId } = await context.params;
     const token = request.cookies.get("session")?.value;
     const session = token ? await verifySession(token) : null;
-
-    if (!session?.userId) {
-      return NextResponse.json({ message: "認証が必要です" }, { status: 401 });
+    const sessionUserId = session?.userId ?? null;
+    const hasDayOpsUnlock = await verifyDayOpsUnlockFromRequest(request, competitionId);
+    if (!sessionUserId && !hasDayOpsUnlock) {
+      return NextResponse.json({ message: "認証または当日運用アクセスが必要です" }, { status: 401 });
     }
 
     const competition = await prisma.competition.findUnique({
@@ -39,23 +41,13 @@ export async function PUT(
         organization: {
           include: {
             admins: {
-              where: { userId: session.userId },
+              where: { userId: sessionUserId ?? "clinvalidnosessionuser0000" },
             },
           },
         },
         events: {
           select: { id: true, type: true, preliminaryHeatLaneCount: true },
           orderBy: { displayOrder: "asc" },
-        },
-        officialApplications: {
-          where: { userId: session.userId },
-          select: { status: true },
-          take: 1,
-        },
-        officialAttendances: {
-          where: { userId: session.userId },
-          select: { id: true },
-          take: 1,
         },
       },
     });
@@ -67,8 +59,7 @@ export async function PUT(
     if (
       !canManageCompetitionStartListSettings({
         orgAdminsForCurrentUser: competition.organization.admins,
-        officialApplicationStatus: competition.officialApplications[0]?.status ?? null,
-        hasOfficialAttendance: competition.officialAttendances.length > 0,
+        hasDayOpsUnlock,
       })
     ) {
       return NextResponse.json({ message: "権限がありません" }, { status: 403 });

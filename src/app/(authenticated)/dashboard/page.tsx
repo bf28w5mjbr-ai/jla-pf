@@ -15,7 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import { appRoutes } from "@/lib/appRoutes";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -48,101 +48,101 @@ function calcAge(dateOfBirth: Date): number {
 export default async function DashboardPage() {
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const sess = token ? await verifySession(token) : null;
+  const sess = await verifySessionCached(token);
   if (!sess?.userId) redirect("/login");
 
   const userId = sess.userId;
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      id: true,
-      email: true,
-      passwordHash: true,
-      familyName: true,
-      givenName: true,
-      familyNameKana: true,
-      givenNameKana: true,
-      phoneNumber: true,
-      role: true,
-      dateOfBirth: true,
-      sex: true,
-      postalCode: true,
-      prefecture: true,
-      city: true,
-      addressLine1: true,
-      addressLine2: true,
-      jlaMemberNumber: true,
-      nfcTagId: true,
-      profilePhotoUrl: true,
-      createdAt: true,
-      _count: { select: { passkeyCredentials: true } },
-      memberships: {
-        include: {
-          club: true,
+  const [user, entries, officialAttendances] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        passwordHash: true,
+        familyName: true,
+        givenName: true,
+        familyNameKana: true,
+        givenNameKana: true,
+        phoneNumber: true,
+        role: true,
+        dateOfBirth: true,
+        sex: true,
+        postalCode: true,
+        prefecture: true,
+        city: true,
+        addressLine1: true,
+        addressLine2: true,
+        jlaMemberNumber: true,
+        nfcTagId: true,
+        profilePhotoUrl: true,
+        createdAt: true,
+        _count: { select: { passkeyCredentials: true } },
+        memberships: {
+          include: {
+            club: true,
+          },
+          orderBy: { createdAt: "desc" },
         },
-        orderBy: { createdAt: "desc" },
+        qualifications: {
+          orderBy: { createdAt: "desc" },
+        },
       },
-      qualifications: {
-        orderBy: { createdAt: "desc" },
+    }),
+    prisma.competitionEntry.findMany({
+      where: { userId },
+      include: {
+        competition: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            startDate: true,
+          },
+        },
+        checkoutSessions: {
+          orderBy: { createdAt: "desc" },
+          take: 5,
+        },
+        items: {
+          select: {
+            eventId: true,
+          },
+        },
+        participantStatuses: {
+          where: {
+            participantType: "INDIVIDUAL",
+          },
+          select: {
+            eventId: true,
+            status: true,
+            reason: true,
+          },
+        },
       },
-    },
-  });
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
+    prisma.competitionOfficialAttendance.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        attendanceDate: true,
+        method: true,
+        competition: {
+          select: {
+            id: true,
+            name: true,
+            competitionType: true,
+          },
+        },
+      },
+      orderBy: [{ attendanceDate: "desc" }, { createdAt: "desc" }],
+      take: 100,
+    }),
+  ]);
 
   if (!user) redirect("/login");
-
-  const entries = await prisma.competitionEntry.findMany({
-    where: { userId },
-    include: {
-      competition: {
-        select: {
-          id: true,
-          name: true,
-          status: true,
-          startDate: true,
-        },
-      },
-      checkoutSessions: {
-        orderBy: { createdAt: "desc" },
-        take: 5,
-      },
-      items: {
-        select: {
-          eventId: true,
-        },
-      },
-      participantStatuses: {
-        where: {
-          participantType: "INDIVIDUAL",
-        },
-        select: {
-          eventId: true,
-          status: true,
-          reason: true,
-        },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 5,
-  });
-
-  const officialAttendances = await prisma.competitionOfficialAttendance.findMany({
-    where: { userId },
-    select: {
-      id: true,
-      attendanceDate: true,
-      method: true,
-      competition: {
-        select: {
-          id: true,
-          name: true,
-          competitionType: true,
-        },
-      },
-    },
-    orderBy: [{ attendanceDate: "desc" }, { createdAt: "desc" }],
-    take: 100,
-  });
 
   const officialAttendanceWeightedDays = officialAttendances.reduce((sum, row) => {
     if (row.competition.competitionType === "A") return sum + 1;

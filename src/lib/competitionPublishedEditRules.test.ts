@@ -56,6 +56,7 @@ function createCompetition(overrides: Partial<Competition> = {}): Competition {
     status: "DRAFT",
     isPublished: false,
     publishedAt: null,
+    dayOpsAccessSecretHash: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,

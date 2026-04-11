@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { isPfOrAccAdmin, verifySession } from '@/lib/auth';
+import { isPfOrAccAdmin, verifySessionCached } from '@/lib/auth';
 import { prisma } from '@/server/db';
 import { Card } from '@/components/ui/card';
 import QualificationApprovalTable from '@/components/admin/QualificationApprovalTable';
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 export default async function AdminQualificationsPage() {
   const jar = await cookies();
   const token = jar.get('session')?.value ?? null;
-  const sess = token ? await verifySession(token) : null;
+  const sess = await verifySessionCached(token);
 
   if (!sess?.userId) {
     redirect('/login');

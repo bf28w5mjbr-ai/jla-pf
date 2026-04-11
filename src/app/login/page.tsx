@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { Metadata } from "next";
 import LoginForm from "./LoginForm";
+import { AuthShellBrandedFallback } from "@/components/auth/AuthShell";
 
 export const metadata: Metadata = {
   title: "ログイン | Bluvium",
@@ -8,11 +9,7 @@ export const metadata: Metadata = {
 };
 
 function LoginFallback() {
-  return (
-    <div className="flex min-h-[40vh] flex-col items-center justify-center px-4 text-sm text-muted-foreground">
-      読み込み中…
-    </div>
-  );
+  return <AuthShellBrandedFallback />;
 }
 
 export default function LoginPage() {

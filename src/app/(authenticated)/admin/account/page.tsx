@@ -3,7 +3,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ArrowLeft, ChevronRight, Landmark, LayoutDashboard, ShieldAlert } from "lucide-react";
-import { isPfOrAccAdmin, verifySession } from "@/lib/auth";
+import { isPfOrAccAdmin, verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { findManyPendingCsvExportRequestsForPfAdmin } from "@/lib/competitionEntryCsvExport";
 import type { PendingCsvExportRequestRow } from "@/components/admin/EntryCsvExportRequestsAdminPanel";
@@ -31,7 +31,7 @@ export default async function AccountAdminPage({
 
   const jar = await cookies();
   const token = jar.get("session")?.value ?? null;
-  const sess = token ? await verifySession(token) : null;
+  const sess = await verifySessionCached(token);
 
   if (!sess?.userId) {
     redirect("/login");

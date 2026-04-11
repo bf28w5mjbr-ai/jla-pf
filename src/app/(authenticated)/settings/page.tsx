@@ -13,7 +13,7 @@ import {
   Smartphone,
   UserRound,
 } from "lucide-react";
-import { verifySession } from "@/lib/auth";
+import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -75,7 +75,7 @@ function SettingsNavRow({
 export default async function SettingsPage() {
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const sess = token ? await verifySession(token) : null;
+  const sess = await verifySessionCached(token);
   if (!sess?.userId) redirect("/login");
 
   const user = await prisma.user.findUnique({
