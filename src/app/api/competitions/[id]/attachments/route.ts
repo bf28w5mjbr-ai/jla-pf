@@ -1,16 +1,14 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { randomUUID } from "node:crypto";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { canUseSupabaseStorage, uploadPublicAsset } from "@/lib/supabase/storage";
-import {
-  sanitizeUploadBasename,
-  validateCompetitionAttachmentBuffer,
-} from "@/lib/uploadValidation";
+import { validateCompetitionAttachmentBuffer } from "@/lib/uploadValidation";
 
 export async function POST(
   request: NextRequest,
@@ -75,8 +73,8 @@ export async function POST(
 
     const uploadDir = path.join(process.cwd(), "public", "uploads", "competitions");
     const timestamp = Date.now();
-    const base = sanitizeUploadBasename(file.name);
-    const fileName = `${id}-${timestamp}-${base}.${validated.value.ext}`;
+    const ext = validated.value.ext.replace(/[^a-z0-9]/gi, "").slice(0, 8) || "bin";
+    const fileName = `${id}-${timestamp}-${randomUUID()}.${ext}`;
     const filePath = path.join(uploadDir, fileName);
     let fileUrl = `/uploads/competitions/${fileName}`;
     if (canUseSupabaseStorage()) {

@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sanitizeSupabaseObjectKey } from "@/lib/supabase/storageKey";
 
 function getStorageBucket(): string | null {
   return process.env.SUPABASE_STORAGE_BUCKET ?? null;
@@ -18,8 +19,10 @@ export async function uploadPublicAsset(params: {
     throw new Error("SUPABASE_STORAGE_BUCKET is not configured");
   }
 
+  const objectKey = sanitizeSupabaseObjectKey(params.objectKey);
+
   const supabase = createAdminClient();
-  const { error } = await supabase.storage.from(bucket).upload(params.objectKey, params.body, {
+  const { error } = await supabase.storage.from(bucket).upload(objectKey, params.body, {
     contentType: params.contentType,
     cacheControl: "3600",
     upsert: true,
@@ -28,7 +31,7 @@ export async function uploadPublicAsset(params: {
     throw new Error(`Supabase storage upload failed: ${error.message}`);
   }
 
-  const { data } = supabase.storage.from(bucket).getPublicUrl(params.objectKey);
+  const { data } = supabase.storage.from(bucket).getPublicUrl(objectKey);
   if (!data.publicUrl) {
     throw new Error("Supabase storage public URL の取得に失敗しました");
   }

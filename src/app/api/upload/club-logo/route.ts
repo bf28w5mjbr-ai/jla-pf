@@ -1,15 +1,13 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { requireClubAdmin } from "@/lib/accessControl";
 import { canUseSupabaseStorage, uploadPublicAsset } from "@/lib/supabase/storage";
-import {
-  sanitizeUploadBasename,
-  validateRasterImageBuffer,
-} from "@/lib/uploadValidation";
+import { validateRasterImageBuffer } from "@/lib/uploadValidation";
 
 export async function POST(req: NextRequest) {
   try {
@@ -56,8 +54,8 @@ export async function POST(req: NextRequest) {
     await mkdir(uploadDir, { recursive: true });
 
     const timestamp = Date.now();
-    const base = sanitizeUploadBasename(file.name);
-    const filename = `${timestamp}-${base}.${validated.value.ext}`;
+    const ext = validated.value.ext.replace(/[^a-z0-9]/gi, "").slice(0, 8) || "bin";
+    const filename = `${timestamp}-${randomUUID()}.${ext}`;
     const filepath = path.join(uploadDir, filename);
     let logoUrl = `/uploads/clubs/${filename}`;
     if (canUseSupabaseStorage()) {

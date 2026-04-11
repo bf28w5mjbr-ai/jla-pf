@@ -1,13 +1,14 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { randomUUID } from "node:crypto";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { canUseSupabaseStorage, uploadPublicAsset } from "@/lib/supabase/storage";
-import { sanitizeUploadBasename, validateRasterImageBuffer } from "@/lib/uploadValidation";
+import { validateRasterImageBuffer } from "@/lib/uploadValidation";
 
 const MAX_GALLERY_PHOTOS = 60;
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -76,8 +77,8 @@ export async function POST(
     await mkdir(uploadDir, { recursive: true });
 
     const timestamp = Date.now();
-    const base = sanitizeUploadBasename(file.name);
-    const fileName = `${id}-gallery-${timestamp}-${base}.${validated.value.ext}`;
+    const ext = validated.value.ext.replace(/[^a-z0-9]/gi, "").slice(0, 8) || "bin";
+    const fileName = `${id}-gallery-${timestamp}-${randomUUID()}.${ext}`;
     const filePath = path.join(uploadDir, fileName);
     let imageUrl = `/uploads/competitions/${fileName}`;
     if (canUseSupabaseStorage()) {
