@@ -590,14 +590,14 @@ export default async function CompetitionEntryPage({
     ? [...new Set(existingEntry.items.map((item) => item.eventId))]
     : [];
   const withdrawnForEntryEventIds = new Set(
-    existingEntry?.participantStatuses
+    (existingEntry?.participantStatuses ?? [])
       .filter(
         (row) =>
           row.status === "DNS" &&
           typeof row.reason === "string" &&
           row.reason.includes("棄権")
       )
-      .map((row) => row.eventId) ?? []
+      .map((row) => row.eventId)
   );
   const fullyWithdrawnFromEntry =
     entryEventIds.length > 0 && entryEventIds.every((id) => withdrawnForEntryEventIds.has(id));
