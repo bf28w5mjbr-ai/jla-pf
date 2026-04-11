@@ -34,6 +34,8 @@ type TeamEvent = {
   name: string;
   sex: "MALE" | "FEMALE" | "OTHER";
   category: "POOL" | "OCEAN";
+  /** 同一クラブがこの種目に出せるチーム数の上限（未設定は制限なし） */
+  maxTeamEntriesPerClub?: number | null;
 };
 
 type ExistingTeamEntry = {
@@ -368,6 +370,11 @@ export default function CompetitionTeamEntryManager({
       <div className="space-y-4">
         {events.map((event) => {
           const eventEntries = entriesForScope.filter((entry) => entry.eventId === event.id);
+          const cap =
+            typeof event.maxTeamEntriesPerClub === "number" && event.maxTeamEntriesPerClub >= 1
+              ? event.maxTeamEntriesPerClub
+              : null;
+          const atCap = cap != null && eventEntries.length >= cap;
           return (
             <div
               key={event.id}
@@ -394,7 +401,23 @@ export default function CompetitionTeamEntryManager({
                     </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    登録チーム <span className="tabular-nums font-medium text-foreground">{eventEntries.length}</span> 件
+                    登録チーム{" "}
+                    <span className="tabular-nums font-medium text-foreground">
+                      {eventEntries.length}
+                    </span>
+                    件
+                    {cap != null ? (
+                      <>
+                        {" "}
+                        <span className="text-muted-foreground/80">／</span> 同一クラブ上限{" "}
+                        <span className="tabular-nums font-medium text-foreground">{cap}</span> 組
+                        {atCap ? (
+                          <span className="ml-1 font-medium text-amber-800 dark:text-amber-200">
+                            （上限）
+                          </span>
+                        ) : null}
+                      </>
+                    ) : null}
                   </p>
                 </div>
                 <Button
@@ -403,7 +426,7 @@ export default function CompetitionTeamEntryManager({
                   size="sm"
                   className="shrink-0 gap-1"
                   onClick={() => addTeam(event.id)}
-                  disabled={!entryWindowOpen}
+                  disabled={!entryWindowOpen || atCap}
                 >
                   <Plus className="h-4 w-4" />
                   チームを追加

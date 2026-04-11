@@ -473,6 +473,7 @@ export default async function ClubCompetitionTeamHubPage({
                 name: event.name,
                 sex: event.sex,
                 category: event.category,
+                maxTeamEntriesPerClub: event.maxTeamEntriesPerClub ?? null,
               }))}
               initialEntriesByClub={initialEntriesByClub}
               teamEntryFeePerTeam={teamEntryFeePerTeam}
