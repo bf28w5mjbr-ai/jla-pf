@@ -84,14 +84,21 @@ const nextConfig: NextConfig = {
     ],
   },
   images: {
-    remotePatterns: supabaseHostname
-      ? [
-          {
-            protocol: "https",
-            hostname: supabaseHostname,
-          },
-        ]
-      : [],
+    remotePatterns: [
+      ...(supabaseHostname
+        ? [
+            {
+              protocol: "https" as const,
+              hostname: supabaseHostname,
+            },
+          ]
+        : []),
+      /** Storage 公開 URLは *.supabase.co。ビルド時に NEXT_PUBLIC_SUPABASE_URL が無くても画像最適化を許可 */
+      {
+        protocol: "https" as const,
+        hostname: "*.supabase.co",
+      },
+    ],
   },
   async headers() {
     return [

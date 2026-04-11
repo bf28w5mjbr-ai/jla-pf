@@ -9,7 +9,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Edit, Save, X, Trash2, Plus } from "lucide-react";
-import Image from "next/image";
 
 interface Logo {
   name: string;
@@ -237,12 +236,12 @@ export default function CompetitionRelationsEditor({
                   <div className="flex flex-wrap gap-3">
                     {cooperatorsLogos.map((logo, index) => (
                       <div key={index} className="group">
-                        <div className="relative w-32 h-16 rounded overflow-hidden">
-                          <Image
+                        <div className="flex h-16 w-32 items-center justify-center overflow-hidden rounded border border-border bg-muted/30">
+                          <img
                             src={logo.logoUrl}
                             alt={logo.name}
-                            fill
-                            className="object-contain p-1"
+                            className="max-h-full max-w-full object-contain p-1"
+                            loading="lazy"
                           />
                         </div>
                         <p className="text-xs mt-1 w-32 truncate text-center">{logo.name}</p>
@@ -333,12 +332,12 @@ export default function CompetitionRelationsEditor({
                   <div className="flex flex-wrap gap-3">
                     {grantsLogos.map((logo, index) => (
                       <div key={index} className="group">
-                        <div className="relative w-32 h-16 rounded overflow-hidden">
-                          <Image
+                        <div className="flex h-16 w-32 items-center justify-center overflow-hidden rounded border border-border bg-muted/30">
+                          <img
                             src={logo.logoUrl}
                             alt={logo.name}
-                            fill
-                            className="object-contain p-1"
+                            className="max-h-full max-w-full object-contain p-1"
+                            loading="lazy"
                           />
                         </div>
                         <p className="text-xs mt-1 w-32 truncate text-center">{logo.name}</p>
@@ -428,12 +427,12 @@ export default function CompetitionRelationsEditor({
                   <div className="mt-1 flex flex-wrap gap-2">
                     {cooperatorsLogos.map((logo, index) => (
                       <div key={index}>
-                        <div className="relative w-32 h-16 rounded overflow-hidden">
-                          <Image
+                        <div className="flex h-16 w-32 items-center justify-center overflow-hidden rounded border border-border bg-muted/30">
+                          <img
                             src={logo.logoUrl}
                             alt={logo.name}
-                            fill
-                            className="object-contain p-1"
+                            className="max-h-full max-w-full object-contain p-1"
+                            loading="lazy"
                           />
                         </div>
                         <p className="text-xs mt-1 w-32 truncate text-center">{logo.name}</p>
@@ -463,12 +462,12 @@ export default function CompetitionRelationsEditor({
                   <div className="mt-1 flex flex-wrap gap-2">
                     {grantsLogos.map((logo, index) => (
                       <div key={index}>
-                        <div className="relative w-32 h-16 rounded overflow-hidden">
-                          <Image
+                        <div className="flex h-16 w-32 items-center justify-center overflow-hidden rounded border border-border bg-muted/30">
+                          <img
                             src={logo.logoUrl}
                             alt={logo.name}
-                            fill
-                            className="object-contain p-1"
+                            className="max-h-full max-w-full object-contain p-1"
+                            loading="lazy"
                           />
                         </div>
                         <p className="text-xs mt-1 w-32 truncate text-center">{logo.name}</p>
