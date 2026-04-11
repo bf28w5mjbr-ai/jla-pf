@@ -1,7 +1,6 @@
 /**
  * 大会種目の DB 保存用名称。
- * 年齢カテゴリに属する場合は「種目名（年齢カテゴリ名称＋タブ内種目名）」の形にする。
- * ここでは UI で入力されるタブ内の種目名を「種目名」と「タブ内種目名」の両方に用いる。
+ * 年齢カテゴリに属する場合は「年齢カテゴリ名称」と「タブ内種目名」をそのまま連結した1本の文字列にする。
  */
 export function buildStoredCompetitionEventName(input: {
   tabInnerName: string;
@@ -15,14 +14,16 @@ export function buildStoredCompetitionEventName(input: {
   if (!catId || !catName) {
     return inner;
   }
-  return `${inner}（${catName}＋${inner}）`;
+  return `${catName}${inner}`;
 }
 
 const FULLWIDTH_PLUS = "＋";
 
 /**
  * DB の種目名からタブ内の種目名（buildStoredCompetitionEventName に渡す inner）を得る。
- * 既に canonical（inner（カテゴリ名＋inner））なら inner を返す。それ以外は trim した全体を inner とみなす。
+ * - 旧形式: inner（カテゴリ名＋inner）なら inner
+ * - 新形式: カテゴリ名が先頭に付いた連結なら、その直後を inner
+ * - 上記以外は trim した全体を inner とみなす
  */
 export function extractTabInnerCompetitionEventName(
   storedName: string,
@@ -31,13 +32,21 @@ export function extractTabInnerCompetitionEventName(
   const name = storedName.trim();
   const cat = (ageCategoryName ?? "").trim();
   if (!cat) return name;
+
   const marker = `（${cat}${FULLWIDTH_PLUS}`;
   const i = name.indexOf(marker);
-  if (i <= 0) return name;
-  const prefix = name.slice(0, i);
-  const after = name.slice(i + marker.length);
-  if (!after.endsWith("）")) return name;
-  const middle = after.slice(0, -1);
-  if (middle === prefix) return prefix;
+  if (i > 0) {
+    const prefix = name.slice(0, i);
+    const after = name.slice(i + marker.length);
+    if (after.endsWith("）")) {
+      const middle = after.slice(0, -1);
+      if (middle === prefix) return prefix;
+    }
+  }
+
+  if (name.startsWith(cat) && name.length > cat.length) {
+    return name.slice(cat.length);
+  }
+
   return name;
 }

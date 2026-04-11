@@ -1,5 +1,6 @@
 /**
  * ageCategoryId 付きの Event.name を、buildStoredCompetitionEventName と同じ形式に揃える（既存データのバックフィル）。
+ * 保存形式: 年齢カテゴリ名＋タブ内種目名（連結）。旧形式 inner（カテゴリ＋inner）も extract で正規化できる。
  * 男女ペアなど同一 sibling グループは updateMany で一度に更新する。
  *
  * Usage:
