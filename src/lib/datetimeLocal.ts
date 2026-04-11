@@ -12,6 +12,18 @@ export function formatDateForDatetimeLocalInput(d: Date): string {
   return `${y}-${m}-${day}T${h}:${min}`;
 }
 
+/**
+ * `datetime-local` の値（`YYYY-MM-DDTHH:mm`、オフセットなし）を、実行環境のローカルタイムゾーンとして解釈し UTC の ISO 8601 に直す。
+ * ブラウザから API へ送るときに使う。オフセットなし文字列をサーバーで `new Date` するとホスト TZ（例: UTC）で解釈され、画面の日時と DB がずれる。
+ */
+export function datetimeLocalInputValueToUtcIsoString(localValue: string): string | null {
+  const v = localValue.trim();
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
 /** 公開画面向けの短い日付（例: 2025/4/12） */
 export function formatCompactJaDate(d: Date): string {
   return new Date(d).toLocaleDateString("ja-JP", {

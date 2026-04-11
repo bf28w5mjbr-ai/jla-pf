@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
-import { formatDateForDatetimeLocalInput } from "@/lib/datetimeLocal";
+import {
+  datetimeLocalInputValueToUtcIsoString,
+  formatDateForDatetimeLocalInput,
+} from "@/lib/datetimeLocal";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -986,7 +989,13 @@ export default function EntrySettingsEditor({
       toast.error("エントリー期間を入力してください");
       return;
     }
-    if (new Date(entryStartDate) > new Date(entryEndDate)) {
+    const entryStartUtcIso = datetimeLocalInputValueToUtcIsoString(entryStartDate);
+    const entryEndUtcIso = datetimeLocalInputValueToUtcIsoString(entryEndDate);
+    if (!entryStartUtcIso || !entryEndUtcIso) {
+      toast.error("エントリー期間の日時形式が正しくありません");
+      return;
+    }
+    if (new Date(entryStartUtcIso) > new Date(entryEndUtcIso)) {
       toast.error("エントリー終了日時はエントリー開始日時より後にしてください");
       return;
     }
@@ -995,8 +1004,8 @@ export default function EntrySettingsEditor({
       isPeriodShortening(
         initialData.entryStartDate,
         initialData.entryEndDate,
-        new Date(entryStartDate),
-        new Date(entryEndDate)
+        new Date(entryStartUtcIso),
+        new Date(entryEndUtcIso)
       )
     ) {
       toast.error(PUBLISHED_ENTRY_PERIOD_SHORTEN_FORBIDDEN_MESSAGE);
@@ -1005,8 +1014,8 @@ export default function EntrySettingsEditor({
     const announce = buildEntryPeriodExtensionAnnouncement(
       initialData.entryStartDate,
       initialData.entryEndDate,
-      entryStartDate,
-      entryEndDate,
+      entryStartUtcIso,
+      entryEndUtcIso,
       requiresParticipantNotice
     );
     setIsUpdating(true);
@@ -1016,8 +1025,8 @@ export default function EntrySettingsEditor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           withOptionalAnnounce(announce, {
-            entryStartDate,
-            entryEndDate,
+            entryStartDate: entryStartUtcIso,
+            entryEndDate: entryEndUtcIso,
           })
         ),
       });
