@@ -98,8 +98,8 @@ stripe listen --forward-to localhost:3000/api/webhooks/stripe
 
 ### A. API 全体障害
 
-- [ ] `GET /api/_health/live` の応答確認（プロセス生存）
-- [ ] `GET /api/_health/ready` の応答確認（依存関係 ready）
+- [ ] `GET /api/health/live` の応答確認（プロセス生存）
+- [ ] `GET /api/health/ready` の応答確認（依存関係 ready）
 - [ ] 直近デプロイ有無を確認
 - [ ] ロールバック判断（影響範囲、復旧見込み、代替導線）
 
