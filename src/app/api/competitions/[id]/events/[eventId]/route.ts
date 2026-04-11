@@ -17,6 +17,22 @@ import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 import { assertEventScheduleWithinCompetitionRange } from "@/lib/eventScheduleWithinCompetition";
 import { syncStartListSettingsRoundTabsForEvent } from "@/lib/startListRoundCountSync";
 
+function parseEligibleBirthDateInput(value: unknown): Date | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "string") {
+    throw new Error("invalid");
+  }
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!m) throw new Error("invalid");
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) {
+    throw new Error("invalid");
+  }
+  return new Date(Date.UTC(y, mo - 1, d));
+}
+
 export async function DELETE(
   request: NextRequest,
   context: { params: Promise<{ id: string; eventId: string }> }
@@ -156,6 +172,21 @@ export async function PATCH(
       "startListRoundCount"
     );
     const rawKeys = Object.keys(raw);
+    const hasEligibleBirthFrom = Object.prototype.hasOwnProperty.call(
+      raw,
+      "eligibleBirthDateFrom"
+    );
+    const hasEligibleBirthTo = Object.prototype.hasOwnProperty.call(raw, "eligibleBirthDateTo");
+    if (hasEligibleBirthFrom !== hasEligibleBirthTo) {
+      return NextResponse.json(
+        {
+          message:
+            "参加可能な生年月日を更新する場合は、eligibleBirthDateFrom と eligibleBirthDateTo の両方を送信してください（未設定は null）。",
+        },
+        { status: 400 }
+      );
+    }
+    const hasBirthDatePair = hasEligibleBirthFrom && hasEligibleBirthTo;
     const onlyStartListRoundCount =
       rawKeys.length === 1 && rawKeys[0] === "startListRoundCount";
 
@@ -290,12 +321,14 @@ export async function PATCH(
         hasSchedulePatch ||
         raw.sexOption !== undefined ||
         raw.minAge !== undefined ||
-        raw.maxAge !== undefined
+        raw.maxAge !== undefined ||
+        hasEligibleBirthFrom ||
+        hasEligibleBirthTo
       ) {
         return NextResponse.json(
           {
             message:
-              "スタートリストのラウンド数は、レーン・日程・性別・年齢の変更と同時に送れません。保存を分けてください。",
+              "スタートリストのラウンド数は、レーン・日程・性別・年齢・生年月日範囲の変更と同時に送れません。保存を分けてください。",
           },
           { status: 400 }
         );
@@ -366,12 +399,14 @@ export async function PATCH(
         Object.prototype.hasOwnProperty.call(raw, "scheduledEndAt") ||
         raw.sexOption !== undefined ||
         raw.minAge !== undefined ||
-        raw.maxAge !== undefined
+        raw.maxAge !== undefined ||
+        hasEligibleBirthFrom ||
+        hasEligibleBirthTo
       ) {
         return NextResponse.json(
           {
             message:
-              "1レースあたりの最大レーン数の更新は日程・性別・年齢の変更と同時に行えません。保存を分けてください。",
+              "1レースあたりの最大レーン数の更新は日程・性別・年齢・生年月日範囲の変更と同時に行えません。保存を分けてください。",
           },
           { status: 400 }
         );
@@ -442,12 +477,14 @@ export async function PATCH(
       if (
         raw.minAge !== undefined ||
         raw.maxAge !== undefined ||
-        raw.sexOption !== undefined
+        raw.sexOption !== undefined ||
+        hasEligibleBirthFrom ||
+        hasEligibleBirthTo
       ) {
         return NextResponse.json(
           {
             message:
-              "日程の更新は性別・年齢の変更と同時に行えません。保存を分けてください。",
+              "日程の更新は性別・年齢・生年月日範囲の変更と同時に行えません。保存を分けてください。",
           },
           { status: 400 }
         );
@@ -522,6 +559,75 @@ export async function PATCH(
       });
     }
 
+    if (hasBirthDatePair) {
+      if (rawKeys.length !== 2) {
+        return NextResponse.json(
+          {
+            message:
+              "参加可能な生年月日の範囲を更新するときは、eligibleBirthDateFrom / eligibleBirthDateTo のみを送信してください。",
+          },
+          { status: 400 }
+        );
+      }
+      if (!isAdmin) {
+        return NextResponse.json({ message: "権限がありません" }, { status: 403 });
+      }
+      const mutationStateBirth = await loadCompetitionMutationState(competitionId);
+      try {
+        assertEventAgePatchAllowed(mutationStateBirth);
+      } catch (e) {
+        if (e instanceof CompetitionEditForbiddenError) {
+          return NextResponse.json({ message: e.message }, { status: 400 });
+        }
+        throw e;
+      }
+
+      let fromD: Date | null;
+      let toD: Date | null;
+      try {
+        fromD = parseEligibleBirthDateInput(raw.eligibleBirthDateFrom);
+        toD = parseEligibleBirthDateInput(raw.eligibleBirthDateTo);
+      } catch {
+        return NextResponse.json(
+          {
+            message:
+              "参加可能な生年月日は YYYY-MM-DD 形式で指定してください（解除する場合は null）。",
+          },
+          { status: 400 }
+        );
+      }
+
+      if (fromD && toD && fromD.getTime() > toD.getTime()) {
+        return NextResponse.json(
+          { message: "生年月日の開始は終了以前の日付にしてください。" },
+          { status: 400 }
+        );
+      }
+
+      const clearLegacyAge = Boolean(fromD || toD);
+
+      await prisma.event.updateMany({
+        where: { competitionId, name: event.name },
+        data: {
+          eligibleBirthDateFrom: fromD,
+          eligibleBirthDateTo: toD,
+          ...(clearLegacyAge ? { minAge: null, maxAge: null } : {}),
+        },
+      });
+
+      const updatedEventsBirth = await prisma.event.findMany({
+        where: { competitionId },
+        orderBy: { displayOrder: "asc" },
+      });
+
+      return NextResponse.json({
+        message: clearLegacyAge
+          ? "種目の参加可能な生年月日の範囲を更新しました（従来の歳数指定は解除されました）。"
+          : "種目の参加可能な生年月日の範囲を更新しました。",
+        events: updatedEventsBirth,
+      });
+    }
+
     const body = raw as {
       minAge?: unknown;
       maxAge?: unknown;
@@ -543,9 +649,14 @@ export async function PATCH(
         return NextResponse.json({ message: "性別指定が不正です" }, { status: 400 });
       }
 
-      if (minAge !== undefined || maxAge !== undefined) {
+      if (
+        minAge !== undefined ||
+        maxAge !== undefined ||
+        hasEligibleBirthFrom ||
+        hasEligibleBirthTo
+      ) {
         return NextResponse.json(
-          { message: "性別区分と年齢条件は同時に更新できません" },
+          { message: "性別区分と年齢条件・生年月日範囲は同時に更新できません" },
           { status: 400 }
         );
       }
@@ -671,6 +782,8 @@ export async function PATCH(
               displayOrder: baseDisplayOrder + index,
               minAge: event.minAge,
               maxAge: event.maxAge,
+              eligibleBirthDateFrom: event.eligibleBirthDateFrom,
+              eligibleBirthDateTo: event.eligibleBirthDateTo,
               scheduledStartAt: event.scheduledStartAt,
               scheduledEndAt: event.scheduledEndAt,
               preliminaryHeatLaneCount: event.preliminaryHeatLaneCount,
@@ -710,58 +823,64 @@ export async function PATCH(
       });
     }
 
-    if (!isAdmin) {
-      return NextResponse.json({ message: "権限がありません" }, { status: 403 });
-    }
-
-    const mutationState = await loadCompetitionMutationState(competitionId);
-    try {
-      assertEventAgePatchAllowed(mutationState);
-    } catch (e) {
-      if (e instanceof CompetitionEditForbiddenError) {
-        return NextResponse.json({ message: e.message }, { status: 400 });
+    if (raw.minAge !== undefined || raw.maxAge !== undefined) {
+      if (!isAdmin) {
+        return NextResponse.json({ message: "権限がありません" }, { status: 403 });
       }
-      throw e;
+
+      const mutationState = await loadCompetitionMutationState(competitionId);
+      try {
+        assertEventAgePatchAllowed(mutationState);
+      } catch (e) {
+        if (e instanceof CompetitionEditForbiddenError) {
+          return NextResponse.json({ message: e.message }, { status: 400 });
+        }
+        throw e;
+      }
+
+      if (minAge !== null && minAge !== undefined && (typeof minAge !== "number" || minAge < 0)) {
+        return NextResponse.json({ message: "最小年齢が不正です" }, { status: 400 });
+      }
+
+      if (maxAge !== null && maxAge !== undefined && (typeof maxAge !== "number" || maxAge < 0)) {
+        return NextResponse.json({ message: "最大年齢が不正です" }, { status: 400 });
+      }
+
+      if (
+        minAge !== null &&
+        minAge !== undefined &&
+        maxAge !== null &&
+        maxAge !== undefined &&
+        minAge > maxAge
+      ) {
+        return NextResponse.json({ message: "最小年齢は最大年齢以下にしてください" }, { status: 400 });
+      }
+
+      await prisma.event.updateMany({
+        where: {
+          competitionId,
+          name: event.name,
+        },
+        data: {
+          minAge: minAge === undefined ? undefined : minAge,
+          maxAge: maxAge === undefined ? undefined : maxAge,
+          eligibleBirthDateFrom: null,
+          eligibleBirthDateTo: null,
+        },
+      });
+
+      const updatedEvents = await prisma.event.findMany({
+        where: { competitionId },
+        orderBy: { displayOrder: "asc" },
+      });
+
+      return NextResponse.json({
+        message: "種目の年齢条件を更新しました（生年月日の範囲指定は解除されました）。",
+        events: updatedEvents,
+      });
     }
 
-    if (minAge !== null && minAge !== undefined && (typeof minAge !== "number" || minAge < 0)) {
-      return NextResponse.json({ message: "最小年齢が不正です" }, { status: 400 });
-    }
-
-    if (maxAge !== null && maxAge !== undefined && (typeof maxAge !== "number" || maxAge < 0)) {
-      return NextResponse.json({ message: "最大年齢が不正です" }, { status: 400 });
-    }
-
-    if (
-      minAge !== null &&
-      minAge !== undefined &&
-      maxAge !== null &&
-      maxAge !== undefined &&
-      minAge > maxAge
-    ) {
-      return NextResponse.json({ message: "最小年齢は最大年齢以下にしてください" }, { status: 400 });
-    }
-
-    await prisma.event.updateMany({
-      where: {
-        competitionId,
-        name: event.name,
-      },
-      data: {
-        minAge: minAge === undefined ? undefined : minAge,
-        maxAge: maxAge === undefined ? undefined : maxAge,
-      },
-    });
-
-    const updatedEvents = await prisma.event.findMany({
-      where: { competitionId },
-      orderBy: { displayOrder: "asc" },
-    });
-
-    return NextResponse.json({
-      message: "種目の年齢条件を更新しました",
-      events: updatedEvents,
-    });
+    return NextResponse.json({ message: "更新対象のフィールドがありません" }, { status: 400 });
   } catch (error) {
     return jsonInternalError500("PATCH api/competitions/[id]/events/[eventId]/route.ts", error);
   }

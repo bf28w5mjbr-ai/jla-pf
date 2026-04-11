@@ -1557,8 +1557,12 @@ model Event {
   category          EventCategory @default(POOL) // 競技カテゴリ（プール/オーシャン）
   requiresEntryTime Boolean       @default(true) // エントリータイム入力必須
   displayOrder      Int           @default(0) // 表示順序
-  minAge            Int? // 種目の最小年齢
-  maxAge            Int? // 種目の最大年齢
+  minAge            Int? // 種目の最小年齢（満年齢・eligible が未設定のときのみ使用）
+  maxAge            Int? // 種目の最大年齢（満年齢・eligible が未設定のときのみ使用）
+  /// 参加可能な生年月日の下限（この日に生まれた人を含む。日本暦日で解釈）
+  eligibleBirthDateFrom DateTime? @db.Date
+  /// 参加可能な生年月日の上限（この日に生まれた人を含む）
+  eligibleBirthDateTo   DateTime? @db.Date
   /// 種目の想定開始日時（進行・表示用）
   scheduledStartAt  DateTime?
   /// 種目の想定終了日時（任意）

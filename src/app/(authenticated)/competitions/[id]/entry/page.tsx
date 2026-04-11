@@ -26,6 +26,7 @@ import { buildEntryCompletionReceipt } from "@/lib/entryCompletionReceipt";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
 import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
+import { meetsEventAgeOrBirthRule } from "@/lib/eventBirthDateEligibility";
 
 type CompetitionEntryFormProps = ComponentProps<typeof CompetitionEntryForm>;
 
@@ -308,9 +309,14 @@ export default async function CompetitionEntryPage({
       return false;
     }
 
-    if (userAge !== null) {
-      if (typeof event.minAge === "number" && userAge < event.minAge) return false;
-      if (typeof event.maxAge === "number" && userAge > event.maxAge) return false;
+    if (
+      !meetsEventAgeOrBirthRule({
+        userDateOfBirth: user?.dateOfBirth ? new Date(user.dateOfBirth) : null,
+        userEligibilityAgeYears: userAge,
+        event,
+      })
+    ) {
+      return false;
     }
 
     return true;

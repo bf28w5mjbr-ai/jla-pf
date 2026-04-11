@@ -118,6 +118,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
             displayOrder: ev.displayOrder,
             minAge: ev.minAge,
             maxAge: ev.maxAge,
+            eligibleBirthDateFrom: ev.eligibleBirthDateFrom,
+            eligibleBirthDateTo: ev.eligibleBirthDateTo,
             scheduledStartAt: ev.scheduledStartAt,
             scheduledEndAt: ev.scheduledEndAt,
             preliminaryHeatLaneCount: ev.preliminaryHeatLaneCount,

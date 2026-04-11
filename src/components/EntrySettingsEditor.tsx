@@ -79,6 +79,17 @@ function eventSettingsCardDomId(eventId: string) {
   return `ev-settings-${eventId}`;
 }
 
+/** DB の日付を date 入力用 YYYY-MM-DD に（@db.Date は UTC 暦日として解釈） */
+function toEligibleBirthDateInput(d: Date | string | null | undefined): string {
+  if (d == null) return "";
+  const x = typeof d === "string" ? new Date(d) : d;
+  if (Number.isNaN(x.getTime())) return "";
+  const y = x.getUTCFullYear();
+  const m = String(x.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(x.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 type Event = {
   id: string;
   name: string;
@@ -89,6 +100,8 @@ type Event = {
   displayOrder: number;
   minAge?: number | null;
   maxAge?: number | null;
+  eligibleBirthDateFrom?: Date | string | null;
+  eligibleBirthDateTo?: Date | string | null;
   /** 1レースあたりの最大レーン数（全ラウンド共通・プール／オーシャン） */
   preliminaryHeatLaneCount?: number | null;
   /** スタートリストのラウンド数（全ラウンドのタブ数） */
@@ -285,20 +298,20 @@ export default function EntrySettingsEditor({
   
   // 種目管理
   const [events, setEvents] = useState<Event[]>(initialEvents);
-  const [eventAgeRanges, setEventAgeRanges] = useState<Record<string, { minAge: string; maxAge: string }>>(
-    () => {
-      const map: Record<string, { minAge: string; maxAge: string }> = {};
-      initialEvents.forEach((event) => {
-        if (!map[event.name]) {
-          map[event.name] = {
-            minAge: typeof event.minAge === "number" ? event.minAge.toString() : "",
-            maxAge: typeof event.maxAge === "number" ? event.maxAge.toString() : "",
-          };
-        }
-      });
-      return map;
-    }
-  );
+  const [eventBirthDateRanges, setEventBirthDateRanges] = useState<
+    Record<string, { from: string; to: string }>
+  >(() => {
+    const map: Record<string, { from: string; to: string }> = {};
+    initialEvents.forEach((event) => {
+      if (!map[event.name]) {
+        map[event.name] = {
+          from: toEligibleBirthDateInput(event.eligibleBirthDateFrom),
+          to: toEligibleBirthDateInput(event.eligibleBirthDateTo),
+        };
+      }
+    });
+    return map;
+  });
   const [eventTableBulkSaveStatus, setEventTableBulkSaveStatus] = useState<Record<string, Date>>({});
   const buildPreliminaryLanesMap = (evts: Event[]) => {
     const map: Record<string, string> = {};
@@ -348,11 +361,11 @@ export default function EntrySettingsEditor({
     return next;
   };
 
-  const mergeEventAgeRangesFromSync = (
-    prev: Record<string, { minAge: string; maxAge: string }>,
+  const mergeEventBirthDateRangesFromSync = (
+    prev: Record<string, { from: string; to: string }>,
     updatedEvents: Event[]
   ) => {
-    const next: Record<string, { minAge: string; maxAge: string }> = {};
+    const next: Record<string, { from: string; to: string }> = {};
     updatedEvents.forEach((event) => {
       if (next[event.name]) return;
       const kept = prev[event.name];
@@ -360,8 +373,8 @@ export default function EntrySettingsEditor({
         next[event.name] = { ...kept };
       } else {
         next[event.name] = {
-          minAge: typeof event.minAge === "number" ? event.minAge.toString() : "",
-          maxAge: typeof event.maxAge === "number" ? event.maxAge.toString() : "",
+          from: toEligibleBirthDateInput(event.eligibleBirthDateFrom),
+          to: toEligibleBirthDateInput(event.eligibleBirthDateTo),
         };
       }
     });
@@ -415,23 +428,23 @@ export default function EntrySettingsEditor({
   const syncEvents = (updatedEvents: Event[], options?: SyncEventsOptions) => {
     setEvents(updatedEvents);
     if (options?.resetEventTableForm) {
-      const updatedMap: Record<string, { minAge: string; maxAge: string }> = {};
+      const updatedMap: Record<string, { from: string; to: string }> = {};
       updatedEvents.forEach((event) => {
         if (!updatedMap[event.name]) {
           updatedMap[event.name] = {
-            minAge: typeof event.minAge === "number" ? event.minAge.toString() : "",
-            maxAge: typeof event.maxAge === "number" ? event.maxAge.toString() : "",
+            from: toEligibleBirthDateInput(event.eligibleBirthDateFrom),
+            to: toEligibleBirthDateInput(event.eligibleBirthDateTo),
           };
         }
       });
-      setEventAgeRanges(updatedMap);
+      setEventBirthDateRanges(updatedMap);
       setEventPreliminaryLanes(buildPreliminaryLanesMap(updatedEvents));
       setEventStartListRoundCounts(buildStartListRoundCountsMap(updatedEvents));
       setEventTeamRelayPositions(buildTeamRelayPositionsMap(updatedEvents));
       return;
     }
 
-    setEventAgeRanges((prev) => mergeEventAgeRangesFromSync(prev, updatedEvents));
+    setEventBirthDateRanges((prev) => mergeEventBirthDateRangesFromSync(prev, updatedEvents));
     setEventPreliminaryLanes((prev) => mergePreliminaryLanesFromSync(prev, updatedEvents));
     setEventStartListRoundCounts((prev) => mergeStartListRoundCountsFromSync(prev, updatedEvents));
     setEventTeamRelayPositions((prev) => mergeTeamRelayPositionsFromSync(prev, updatedEvents));
@@ -1341,21 +1354,28 @@ export default function EntrySettingsEditor({
       return { ok: false, reason: "empty" };
     }
 
+    const isoDateRe = /^\d{4}-\d{2}-\d{2}$/;
     for (const event of ageTargets) {
-      const range = eventAgeRanges[event.name] || { minAge: "", maxAge: "" };
-      const minAgeValue = range.minAge.trim() === "" ? null : Number(range.minAge);
-      const maxAgeValue = range.maxAge.trim() === "" ? null : Number(range.maxAge);
-
-      if (minAgeValue !== null && (Number.isNaN(minAgeValue) || minAgeValue < 0)) {
-        return { ok: false, message: "種目の最小年齢は0以上の数値で入力してください" };
+      const range = eventBirthDateRanges[event.name] || { from: "", to: "" };
+      const from = range.from.trim();
+      const to = range.to.trim();
+      if (from && !isoDateRe.test(from)) {
+        return {
+          ok: false,
+          message: `「${event.name}」の参加可能な生年月日（開始）は YYYY-MM-DD で入力してください`,
+        };
       }
-
-      if (maxAgeValue !== null && (Number.isNaN(maxAgeValue) || maxAgeValue < 0)) {
-        return { ok: false, message: "種目の最大年齢は0以上の数値で入力してください" };
+      if (to && !isoDateRe.test(to)) {
+        return {
+          ok: false,
+          message: `「${event.name}」の参加可能な生年月日（終了）は YYYY-MM-DD で入力してください`,
+        };
       }
-
-      if (minAgeValue !== null && maxAgeValue !== null && minAgeValue > maxAgeValue) {
-        return { ok: false, message: "種目の最小年齢は最大年齢以下にしてください" };
+      if (from && to && from > to) {
+        return {
+          ok: false,
+          message: `「${event.name}」の生年月日の開始は終了以前の日付にしてください`,
+        };
       }
     }
 
@@ -1440,10 +1460,13 @@ export default function EntrySettingsEditor({
 
     const ageOk = await Promise.all(
       ageTargets.map((event) => {
-        const range = eventAgeRanges[event.name] || { minAge: "", maxAge: "" };
-        const minAgeValue = range.minAge.trim() === "" ? null : Number(range.minAge);
-        const maxAgeValue = range.maxAge.trim() === "" ? null : Number(range.maxAge);
-        return patchEvent(event.id, { minAge: minAgeValue, maxAge: maxAgeValue });
+        const range = eventBirthDateRanges[event.name] || { from: "", to: "" };
+        const fromTrim = range.from.trim();
+        const toTrim = range.to.trim();
+        return patchEvent(event.id, {
+          eligibleBirthDateFrom: fromTrim === "" ? null : fromTrim,
+          eligibleBirthDateTo: toTrim === "" ? null : toTrim,
+        });
       })
     );
     errorCount += ageOk.filter((ok) => !ok).length;
@@ -1829,47 +1852,43 @@ export default function EntrySettingsEditor({
             <div className="space-y-2">
               <div>
                 <p className="mb-1 text-[10px] text-muted-foreground">
-                  年齢（歳・4/2始まり年度の翌年4/1時点の満年齢・空欄は大会の年齢設定に従う）
+                  参加可能な生年月日（この日〜この日に生まれた人。両端の日を含みます。空欄の片方／両方は制限なし。未入力のときは大会の年齢設定のみが適用されます）
                 </p>
                 <label className="inline-flex flex-wrap items-center gap-1 text-[11px]">
                   <Input
-                    numericInput="integer"
-                    min={0}
-                    placeholder="最小"
-                    aria-label={`${event.name} 最小年齢`}
-                    value={eventAgeRanges[event.name]?.minAge ?? ""}
+                    type="date"
+                    aria-label={`${event.name} 参加可能な生年月日の開始`}
+                    value={eventBirthDateRanges[event.name]?.from ?? ""}
                     onChange={(e) => {
                       clearEventTableBulkSaveStatus(sectionKey);
-                      setEventAgeRanges((prev) => ({
+                      setEventBirthDateRanges((prev) => ({
                         ...prev,
                         [event.name]: {
-                          minAge: e.target.value,
-                          maxAge: prev[event.name]?.maxAge ?? "",
+                          from: e.target.value,
+                          to: prev[event.name]?.to ?? "",
                         },
                       }));
                     }}
                     disabled={!canEdit}
-                    className="h-8 w-14 px-1.5 text-xs"
+                    className="h-8 w-[9.5rem] px-1.5 text-xs"
                   />
                   <span className="text-muted-foreground">〜</span>
                   <Input
-                    numericInput="integer"
-                    min={0}
-                    placeholder="最大"
-                    aria-label={`${event.name} 最大年齢`}
-                    value={eventAgeRanges[event.name]?.maxAge ?? ""}
+                    type="date"
+                    aria-label={`${event.name} 参加可能な生年月日の終了`}
+                    value={eventBirthDateRanges[event.name]?.to ?? ""}
                     onChange={(e) => {
                       clearEventTableBulkSaveStatus(sectionKey);
-                      setEventAgeRanges((prev) => ({
+                      setEventBirthDateRanges((prev) => ({
                         ...prev,
                         [event.name]: {
-                          minAge: prev[event.name]?.minAge ?? "",
-                          maxAge: e.target.value,
+                          from: prev[event.name]?.from ?? "",
+                          to: e.target.value,
                         },
                       }));
                     }}
                     disabled={!canEdit}
-                    className="h-8 w-14 px-1.5 text-xs"
+                    className="h-8 w-[9.5rem] px-1.5 text-xs"
                   />
                 </label>
               </div>
@@ -2059,7 +2078,7 @@ export default function EntrySettingsEditor({
         <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
           <CardTitle className="text-base font-semibold">年齢・所属クラブ</CardTitle>
           <CardDescription className="text-xs">
-            大会全体の年齢範囲と、エントリー時のクラブ所属の要否です。年齢条件は4月2日始まりの年度に属する開催開始日について、その年度の末日（翌年4月1日・日本時間）時点の満年齢で判定します。
+            大会全体の年齢範囲と、エントリー時のクラブ所属の要否です。年齢条件は4月2日始まりの年度に属する開催開始日について、その年度の末日（翌年4月1日・日本時間）時点の満年齢で判定します。入力する数値は下限・上限とも「以上」「以下」で境界の歳を含み、「○歳未満」のような表記ではありません。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 px-4 py-3">
@@ -2070,15 +2089,27 @@ export default function EntrySettingsEditor({
                 {requireClubMembership ? "所属クラブ必須" : "所属クラブ任意"}
               </span>
               <span className="rounded-full border border-gray-200 bg-white px-3 py-1 dark:border-gray-700 dark:bg-gray-950">
-                年齢: {competitionMinAge || "下限なし"}〜{competitionMaxAge || "上限なし"}
+                年齢:{" "}
+                {competitionMinAge.trim()
+                  ? `${competitionMinAge.trim()}歳以上（含む）`
+                  : "下限なし"}
+                〜
+                {competitionMaxAge.trim()
+                  ? `${competitionMaxAge.trim()}歳以下（含む）`
+                  : "上限なし"}
               </span>
             </div>
           </div>
 
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            入力する数値は「その歳以上」「その歳以下」で、<span className="font-medium text-foreground">境界の年齢は含みます</span>
+            （「○歳未満」のような上限表現ではありません）。
+          </p>
+
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
               <Label htmlFor="competitionMinAge" className="text-xs">
-                最小年齢（任意）
+                最小年齢（任意・以上）
               </Label>
               <Input
                 id="competitionMinAge"
@@ -2088,12 +2119,15 @@ export default function EntrySettingsEditor({
                 onChange={(e) => setCompetitionMinAge(e.target.value)}
                 placeholder="例: 18"
                 disabled={!canEdit}
+                aria-describedby="competitionMinAge-hint"
               />
-              <p className="text-xs text-gray-500 mt-1">空欄の場合は下限なし</p>
+              <p id="competitionMinAge-hint" className="mt-1 text-xs text-gray-500">
+                満年齢が入力値<span className="font-medium text-foreground">以上</span>なら参加可（その歳を含む）。空欄は下限なし。
+              </p>
             </div>
             <div>
               <Label htmlFor="competitionMaxAge" className="text-xs">
-                最大年齢（任意）
+                最大年齢（任意・以下）
               </Label>
               <Input
                 id="competitionMaxAge"
@@ -2103,8 +2137,11 @@ export default function EntrySettingsEditor({
                 onChange={(e) => setCompetitionMaxAge(e.target.value)}
                 placeholder="例: 35"
                 disabled={!canEdit}
+                aria-describedby="competitionMaxAge-hint"
               />
-              <p className="text-xs text-gray-500 mt-1">空欄の場合は上限なし</p>
+              <p id="competitionMaxAge-hint" className="mt-1 text-xs text-gray-500">
+                満年齢が入力値<span className="font-medium text-foreground">以下</span>なら参加可（その歳を含む）。空欄は上限なし。
+              </p>
             </div>
           </div>
 
@@ -2327,7 +2364,9 @@ export default function EntrySettingsEditor({
             <ul className="mt-2 list-inside list-disc space-y-1 pl-0.5 pt-1 leading-relaxed">
               <li>最大レーン: 1レースあたりのレーン数で、全ラウンド共通（1〜32、空欄は未設定）</li>
               <li>ラウンド数: スタートリストのタブ数（初回レースを含む全ラウンド・1〜32）</li>
-              <li>年齢: 種目ごとに大会全体の年齢条件を上書きできます（空欄は大会設定に従う）</li>
+              <li>
+                種目ごとの参加可能な生年月日: 大会全体の年齢に加え、種目ごとに「この日〜この日に生まれた人」（両端含む）を指定できます。空欄は大会の年齢設定に従います。
+              </li>
             </ul>
           </details>
         </CardHeader>

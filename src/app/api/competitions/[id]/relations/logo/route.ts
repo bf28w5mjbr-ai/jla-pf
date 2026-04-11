@@ -13,6 +13,9 @@ import {
 } from "@/lib/supabase/storage";
 import { validateRasterImageBuffer } from "@/lib/uploadValidation";
 
+/** file-type / fs 利用のため Node ランタイムを明示 */
+export const runtime = "nodejs";
+
 type RelationLogo = { name: string; logoUrl: string };
 
 function asRelationLogoArray(value: unknown): RelationLogo[] {
@@ -66,13 +69,16 @@ export async function POST(
     }
 
     const formData = await request.formData();
-    const file = formData.get("file") as File;
-    const type = formData.get("type") as string; // "cooperator" or "grant"
-    const name = formData.get("name") as string;
+    const fileEntry = formData.get("file");
+    const typeRaw = formData.get("type");
+    const nameRaw = formData.get("name");
+    const type = typeof typeRaw === "string" ? typeRaw : "";
+    const name = typeof nameRaw === "string" ? nameRaw.trim() : "";
 
-    if (!file) {
+    if (!(fileEntry instanceof File)) {
       return NextResponse.json({ error: "ファイルが必要です" }, { status: 400 });
     }
+    const file = fileEntry;
 
     if (!type || (type !== "cooperator" && type !== "grant")) {
       return NextResponse.json({ error: "無効なタイプです" }, { status: 400 });
@@ -98,21 +104,39 @@ export async function POST(
 
     const fileName = `${id}-${type}-${Date.now()}.${validated.value.ext}`;
     const uploadDir = join(process.cwd(), "public", "uploads", "competitions");
-    
-    // ディレクトリがなければ作成
-    const { mkdir } = await import("fs/promises");
-    await mkdir(uploadDir, { recursive: true });
-
     const filePath = join(uploadDir, fileName);
-    let logoUrl = `/uploads/competitions/${fileName}`;
+    const relativeLogoUrl = `/uploads/competitions/${fileName}`;
+
+    let logoUrl: string;
     if (canUseSupabaseStorage()) {
-      logoUrl = await uploadPublicAsset({
-        objectKey: `competitions/${fileName}`,
-        body: buffer,
-        contentType: validated.value.mime,
-      });
+      try {
+        logoUrl = await uploadPublicAsset({
+          objectKey: `competitions/${fileName}`,
+          body: buffer,
+          contentType: validated.value.mime,
+        });
+      } catch (e) {
+        const msg =
+          e instanceof Error
+            ? e.message
+            : "ストレージへのアップロードに失敗しました。Supabase Storage の設定とバケット権限を確認してください。";
+        return NextResponse.json({ error: msg }, { status: 502 });
+      }
     } else {
-      await writeFile(filePath, buffer);
+      const { mkdir } = await import("fs/promises");
+      try {
+        await mkdir(uploadDir, { recursive: true });
+        await writeFile(filePath, buffer);
+      } catch {
+        return NextResponse.json(
+          {
+            error:
+              "ファイルの保存に失敗しました。本番・サーバレス環境では Supabase Storage（SUPABASE_SERVICE_ROLE_KEY と SUPABASE_STORAGE_BUCKET）の設定が必要です。",
+          },
+          { status: 503 }
+        );
+      }
+      logoUrl = relativeLogoUrl;
     }
 
     // 既存のロゴデータを取得

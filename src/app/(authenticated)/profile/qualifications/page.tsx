@@ -107,8 +107,8 @@ export default async function ProfileQualificationsPage() {
       kind: "選手登録",
       name: "選手登録",
       description: "全選手が登録可能な基本資格",
-      requiresExpiry: false,
-      validityMonths: null,
+      requiresExpiry: true,
+      validityMonths: 12,
     };
 
   const blsWsTemplate =

@@ -23,6 +23,17 @@ const instructorEvaluation = ["written exam", "practical exam", "interview"];
 
 const certifications = [
   {
+    name: "選手登録",
+    domain: "PlayerRegistration",
+    level: "Registration",
+    minAge: null,
+    prerequisites: [],
+    prerequisiteExpression: "",
+    next: [],
+    requiresExpiry: true,
+    validityMonths: 12,
+  },
+  {
     name: "BLS",
     domain: "Foundation",
     level: "Base",
@@ -368,6 +379,7 @@ const certifications = [
 ];
 
 const categoryMeta = {
+  PlayerRegistration: "大会参加・選手登録（全選手が申請可能）",
   Foundation: "基礎資格（全領域の前提）",
   Surf: "サーフ領域",
   Pool: "プール領域",
@@ -384,7 +396,7 @@ function buildDescription(cert) {
   const lines = [
     `Domain: ${cert.domain}`,
     `Level: ${cert.level}`,
-    `MinAge: ${cert.minAge}`,
+    `MinAge: ${cert.minAge ?? "N/A"}`,
     `Prerequisites: ${cert.prerequisiteExpression || "None"}`,
     `Next: ${cert.next.length > 0 ? cert.next.join(", ") : "None"}`,
   ];

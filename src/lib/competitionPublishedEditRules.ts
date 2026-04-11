@@ -267,7 +267,7 @@ export function assertEventAgePatchAllowed(state: CompetitionMutationState): voi
   if (!state.isPublished) return;
   if (state.hasEstablishedEntry) {
     throw new CompetitionEditForbiddenError(
-      "エントリー成立後は種目の年齢条件を変更できません。"
+      "エントリー成立後は種目の年齢条件・参加可能な生年月日の範囲を変更できません。"
     );
   }
 }

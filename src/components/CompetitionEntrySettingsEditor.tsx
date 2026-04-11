@@ -164,11 +164,11 @@ export default function CompetitionEntrySettingsEditor({
     const max = initialData.maxAge;
     const ageLabel =
       min != null && max != null
-        ? `${min}歳〜${max}歳`
+        ? `${min}歳以上（含）〜${max}歳以下（含）`
         : min != null
-          ? `${min}歳以上`
+          ? `${min}歳以上（その歳を含む）`
           : max != null
-            ? `${max}歳以下`
+            ? `${max}歳以下（その歳を含む）`
             : "年齢制限なし";
     return (
       <p className="text-sm font-medium leading-snug">

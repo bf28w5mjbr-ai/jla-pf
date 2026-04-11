@@ -19,6 +19,7 @@ import { refreshStartListSnapshotAfterEligibleEntryChange } from "@/lib/startLis
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { calculateCompetitionEntryFee, type CompetitionEntryFeeConfig } from "@/lib/entryFee";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
+import { meetsEventAgeOrBirthRule } from "@/lib/eventBirthDateEligibility";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -315,13 +316,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
       if (!isMixedEvent && userSex !== "OTHER" && event.sex !== userSex) {
         throw new Error("性別条件を満たしていません");
       }
-      if (userAge !== null) {
-        if (typeof event.minAge === "number" && userAge < event.minAge) {
-          throw new Error("年齢条件を満たしていません");
-        }
-        if (typeof event.maxAge === "number" && userAge > event.maxAge) {
-          throw new Error("年齢条件を満たしていません");
-        }
+      if (
+        !meetsEventAgeOrBirthRule({
+          userDateOfBirth: user?.dateOfBirth ? new Date(user.dateOfBirth) : null,
+          userEligibilityAgeYears: userAge,
+          event,
+        })
+      ) {
+        throw new Error("年齢条件を満たしていません");
       }
       if (event.requiresEntryTime && (!item.entryTime || !item.entryTime.trim())) {
         throw new Error("エントリータイムが必要です");
@@ -346,13 +348,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
       if (!isMixedEvent && userSex !== "OTHER" && event.sex !== userSex) {
         throw new Error("性別条件を満たしていません");
       }
-      if (userAge !== null) {
-        if (typeof event.minAge === "number" && userAge < event.minAge) {
-          throw new Error("年齢条件を満たしていません");
-        }
-        if (typeof event.maxAge === "number" && userAge > event.maxAge) {
-          throw new Error("年齢条件を満たしていません");
-        }
+      if (
+        !meetsEventAgeOrBirthRule({
+          userDateOfBirth: user?.dateOfBirth ? new Date(user.dateOfBirth) : null,
+          userEligibilityAgeYears: userAge,
+          event,
+        })
+      ) {
+        throw new Error("年齢条件を満たしていません");
       }
       if (!item.teamName || typeof item.teamName !== "string" || !item.teamName.trim()) {
         throw new Error("チーム名を入力してください");
