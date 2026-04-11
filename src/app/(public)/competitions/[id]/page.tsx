@@ -39,6 +39,7 @@ import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
 import DayOpsUnlockBanner from "@/components/DayOpsUnlockBanner";
 import {
   CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP,
+  parseAgeCategoryFeeTiers,
   parseAgeFeeTiers,
   parseAgeQualificationTiers,
   requiredQualificationsMentionCertifiedLifesaver,
@@ -93,6 +94,10 @@ export default async function CompetitionDetailPage({
       galleryPhotos: {
         orderBy: { createdAt: "asc" },
         select: { id: true, imageUrl: true, fileName: true },
+      },
+      ageCategories: {
+        orderBy: { displayOrder: "asc" },
+        select: { id: true, name: true },
       },
       events: {
         select: {
@@ -194,6 +199,33 @@ export default async function CompetitionDetailPage({
 
     if (typeof entryFee !== "object") {
       return <p className="text-sm font-medium">未設定</p>;
+    }
+
+    const feeCatTiers = parseAgeCategoryFeeTiers(entryFee);
+    if (feeCatTiers?.length && competition.ageCategories?.length) {
+      const nameById = new Map(competition.ageCategories.map((c) => [c.id, c.name]));
+      return (
+        <div className="space-y-1">
+          <p className="text-[11px] font-medium text-muted-foreground">年齢カテゴリ別（生年月日の区分）</p>
+          {feeCatTiers.map((t, i) => (
+            <p key={i} className="text-sm font-medium leading-snug">
+              {nameById.get(t.ageCategoryId) ?? "区分"}
+              {hasIndividualEvents ? (
+                <>
+                  {" "}
+                  · 個人 ¥{formatCurrency(t.individualEntryFee)}
+                </>
+              ) : null}
+              {hasTeamEvents ? (
+                <>
+                  {" "}
+                  · チーム（1）¥{formatCurrency(t.teamEntryFeePerTeam)}
+                </>
+              ) : null}
+            </p>
+          ))}
+        </div>
+      );
     }
 
     const feeTiers = parseAgeFeeTiers(entryFee);

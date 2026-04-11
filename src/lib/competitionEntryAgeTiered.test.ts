@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isQualificationRelaxedMulti,
   isQualificationTighteningMulti,
+  parseAgeCategoryFeeTiers,
   parseAgeFeeTiers,
   pickTierForAge,
   resolveEntryFeeUnits,
@@ -39,6 +40,50 @@ describe("competitionEntryAgeTiered", () => {
     const ok = resolveEntryFeeUnits(fee, 40);
     expect(ok.ageTierMissing).toBe(false);
     expect(ok.individualUnit).toBe(1);
+  });
+
+  it("resolveEntryFeeUnits resolves age category tiers by birth date", () => {
+    const from = new Date(Date.UTC(2010, 0, 1));
+    const to = new Date(Date.UTC(2015, 11, 31));
+    const fee = {
+      ageCategoryFeeTiers: [
+        { ageCategoryId: "c-jr", individualEntryFee: 1000, teamEntryFeePerTeam: 2000 },
+        { ageCategoryId: "c-sr", individualEntryFee: 3000, teamEntryFeePerTeam: 4000 },
+      ],
+    };
+    expect(parseAgeCategoryFeeTiers(fee)).not.toBeNull();
+    const dob = new Date(Date.UTC(2012, 5, 15));
+    const cats = [
+      { id: "c-sr", displayOrder: 2, eligibleBirthDateFrom: from, eligibleBirthDateTo: to },
+      { id: "c-jr", displayOrder: 1, eligibleBirthDateFrom: from, eligibleBirthDateTo: to },
+    ];
+    const r = resolveEntryFeeUnits(fee, 99, {
+      userDateOfBirth: dob,
+      competitionAgeCategories: cats,
+    });
+    expect(r.ageTierMissing).toBe(false);
+    expect(r.individualUnit).toBe(1000);
+    expect(r.teamUnit).toBe(2000);
+  });
+
+  it("resolveEntryFeeUnits category tiers need date of birth", () => {
+    const fee = {
+      ageCategoryFeeTiers: [
+        { ageCategoryId: "c1", individualEntryFee: 1, teamEntryFeePerTeam: 2 },
+      ],
+    };
+    const r = resolveEntryFeeUnits(fee, 40, {
+      userDateOfBirth: null,
+      competitionAgeCategories: [
+        {
+          id: "c1",
+          displayOrder: 0,
+          eligibleBirthDateFrom: new Date(Date.UTC(2000, 0, 1)),
+          eligibleBirthDateTo: new Date(Date.UTC(2030, 0, 1)),
+        },
+      ],
+    });
+    expect(r.ageTierMissing).toBe(true);
   });
 
   it("detects qualification tightening across ages", () => {

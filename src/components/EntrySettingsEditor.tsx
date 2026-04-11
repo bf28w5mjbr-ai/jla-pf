@@ -34,6 +34,7 @@ import {
 import {
   buildQualificationRelaxAnnouncementFromConfigs,
   CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP,
+  parseAgeCategoryFeeTiers,
   parseAgeFeeTiers,
   parseAgeQualificationTiers,
   type AgeFeeTier,
@@ -132,6 +133,21 @@ export type CompetitionAgeCategoryDraft = {
   eligibleBirthDateFrom: Date | string | null;
   eligibleBirthDateTo: Date | string | null;
 };
+
+function buildCategoryFeeDraft(
+  categories: CompetitionAgeCategoryDraft[],
+  tiers: ReturnType<typeof parseAgeCategoryFeeTiers>
+): Record<string, { individual: string; team: string }> {
+  const map: Record<string, { individual: string; team: string }> = {};
+  for (const c of categories) {
+    const t = tiers?.find((x) => x.ageCategoryId === c.id);
+    map[c.id] = {
+      individual: String(t?.individualEntryFee ?? 0),
+      team: String(t?.teamEntryFeePerTeam ?? 0),
+    };
+  }
+  return map;
+}
 
 function teamRelayStateKey(
   category: "POOL" | "OCEAN",
@@ -418,9 +434,12 @@ export default function EntrySettingsEditor({
   const mkTierRowId = () => `age-tier-${tierIdRef.current++}`;
 
   const initialParsedFeeTiers = parseAgeFeeTiers(initialData.entryFee as unknown);
-  const [feePricingMode, setFeePricingMode] = useState<"flat" | "byAge">(
-    initialParsedFeeTiers ? "byAge" : "flat"
-  );
+  const initialParsedCategoryFeeTiers = parseAgeCategoryFeeTiers(initialData.entryFee as unknown);
+  const [feePricingMode, setFeePricingMode] = useState<"flat" | "byAge" | "byAgeCategory">(() => {
+    if (initialParsedCategoryFeeTiers?.length) return "byAgeCategory";
+    if (initialParsedFeeTiers) return "byAge";
+    return "flat";
+  });
   const [ageFeeFormRows, setAgeFeeFormRows] = useState<
     { id: string; minAge: string; maxAge: string; individual: string; team: string }[]
   >(() => {
@@ -447,6 +466,10 @@ export default function EntrySettingsEditor({
       },
     ];
   });
+
+  const [categoryFeeDraft, setCategoryFeeDraft] = useState<
+    Record<string, { individual: string; team: string }>
+  >(() => buildCategoryFeeDraft(initialAgeCategories, initialParsedCategoryFeeTiers));
 
   const initialParsedQualTiers = parseAgeQualificationTiers(initialData.requiredQualifications);
   const [qualPricingMode, setQualPricingMode] = useState<"flat" | "byAge">(
@@ -1384,7 +1407,39 @@ export default function EntrySettingsEditor({
 
     let payload: Record<string, unknown>;
 
-    if (feePricingMode === "byAge") {
+    if (feePricingMode === "byAgeCategory") {
+      if (ageCategories.length === 0) {
+        toast.error("年齢カテゴリを「カテゴリ管理」で作成してから、カテゴリ別の参加費を設定してください");
+        return;
+      }
+      const tiers: {
+        ageCategoryId: string;
+        individualEntryFee: number;
+        teamEntryFeePerTeam: number;
+      }[] = [];
+      for (const cat of ageCategories) {
+        const row = categoryFeeDraft[cat.id] ?? { individual: "0", team: "0" };
+        const individualEntryFee = parseFloat(row.individual);
+        const teamEntryFeePerTeam = parseFloat(row.team);
+        if (
+          hasIndividualEvents &&
+          (!Number.isFinite(individualEntryFee) || individualEntryFee < 0)
+        ) {
+          toast.error("各カテゴリの個人エントリー料金を正しく入力してください");
+          return;
+        }
+        if (hasTeamEvents && (!Number.isFinite(teamEntryFeePerTeam) || teamEntryFeePerTeam < 0)) {
+          toast.error("各カテゴリのチーム1組あたり料金を正しく入力してください");
+          return;
+        }
+        tiers.push({
+          ageCategoryId: cat.id,
+          individualEntryFee: hasIndividualEvents ? individualEntryFee : 0,
+          teamEntryFeePerTeam: hasTeamEvents ? teamEntryFeePerTeam : 0,
+        });
+      }
+      payload = { pricingMode: "byAgeCategory", ageCategoryFeeTiers: tiers };
+    } else if (feePricingMode === "byAge") {
       const tiers: AgeFeeTier[] = [];
       for (const row of ageFeeFormRows) {
         const minAge = parseInt(row.minAge, 10);
@@ -1456,9 +1511,18 @@ export default function EntrySettingsEditor({
         body: JSON.stringify(payload),
       });
 
+      const feeBody = (await response.json().catch(() => ({}))) as {
+        message?: string;
+        entryFee?: unknown;
+      };
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "エントリー費用設定の更新に失敗しました");
+        throw new Error(feeBody.message || "エントリー費用設定の更新に失敗しました");
+      }
+
+      if (feeBody.entryFee != null && feePricingMode === "byAgeCategory") {
+        setCategoryFeeDraft(
+          buildCategoryFeeDraft(ageCategories, parseAgeCategoryFeeTiers(feeBody.entryFee))
+        );
       }
 
       toast.success("エントリー費用設定を更新しました");
@@ -3874,12 +3938,45 @@ export default function EntrySettingsEditor({
                 onChange={() => setFeePricingMode("byAge")}
                 disabled={!canEdit}
               />
-              年齢帯別
+              年齢帯別（満年齢）
+            </label>
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="radio"
+                className="h-3.5 w-3.5"
+                checked={feePricingMode === "byAgeCategory"}
+                onChange={() => {
+                  setFeePricingMode("byAgeCategory");
+                  setCategoryFeeDraft(
+                    buildCategoryFeeDraft(
+                      ageCategories,
+                      parseAgeCategoryFeeTiers(initialData.entryFee as unknown)
+                    )
+                  );
+                }}
+                disabled={!canEdit || ageCategories.length === 0}
+              />
+              年齢カテゴリ別
             </label>
           </div>
-          <p className="text-xs text-muted-foreground">
-            年齢は大会開催日基準の満年齢です。大会に参加年齢の上下限がある場合、その範囲をすべての帯で覆う必要があります。
-          </p>
+          {feePricingMode === "byAge" ? (
+            <p className="text-xs text-muted-foreground">
+              年齢は大会開催日基準の満年齢です。大会に参加年齢の上下限がある場合、その範囲をすべての帯で覆う必要があります。
+            </p>
+          ) : feePricingMode === "byAgeCategory" ? (
+            <p className="text-xs text-muted-foreground">
+              「カテゴリ管理」で定義した区分ごとに料金を設定します。各カテゴリに生年月日の範囲が必要です。エントリー時は登録者の生年月日が属する区分の単価が使われます（複数に該当する場合は表示順が先の区分）。
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              すべての参加者に同じ単価を適用します。
+            </p>
+          )}
+          {ageCategories.length === 0 ? (
+            <p className="text-xs text-amber-800 dark:text-amber-200/90">
+              年齢カテゴリ別の参加費を使うには、先に種目設定の「カテゴリ管理」で年齢カテゴリを作成してください。
+            </p>
+          ) : null}
 
           {feePricingMode === "byAge" ? (
             <div className="space-y-3">
@@ -3996,6 +4093,64 @@ export default function EntrySettingsEditor({
                 </Button>
               ) : null}
             </div>
+          ) : feePricingMode === "byAgeCategory" ? (
+            <div className="space-y-3">
+              {ageCategories.map((cat) => {
+                const row = categoryFeeDraft[cat.id] ?? { individual: "0", team: "0" };
+                return (
+                  <div
+                    key={cat.id}
+                    className="grid gap-2 rounded-lg border border-border/80 bg-muted/15 p-3 sm:grid-cols-2 lg:grid-cols-4"
+                  >
+                    <div className="space-y-1 sm:col-span-2 lg:col-span-4">
+                      <Label className="text-[10px] text-muted-foreground">区分</Label>
+                      <p className="text-sm font-medium leading-tight">{cat.name}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {formatAgeCategoryRangeSubtitle(cat)}
+                      </p>
+                    </div>
+                    {hasIndividualEvents ? (
+                      <div className="space-y-1">
+                        <Label className="text-[10px]">個人（円）</Label>
+                        <Input
+                          numericInput="integer"
+                          min={0}
+                          className="h-8 text-xs"
+                          value={row.individual}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setCategoryFeeDraft((prev) => ({
+                              ...prev,
+                              [cat.id]: { ...(prev[cat.id] ?? row), individual: v },
+                            }));
+                          }}
+                          disabled={!canEdit}
+                        />
+                      </div>
+                    ) : null}
+                    {hasTeamEvents ? (
+                      <div className="space-y-1">
+                        <Label className="text-[10px]">チーム1組（円）</Label>
+                        <Input
+                          numericInput="integer"
+                          min={0}
+                          className="h-8 text-xs"
+                          value={row.team}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setCategoryFeeDraft((prev) => ({
+                              ...prev,
+                              [cat.id]: { ...(prev[cat.id] ?? row), team: v },
+                            }));
+                          }}
+                          disabled={!canEdit}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <>
               <div className="space-y-2">
@@ -4044,7 +4199,9 @@ export default function EntrySettingsEditor({
 
           <div className="rounded-md border border-border/80 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
             <p>個人種目: 種目数に関係なく選手ごとに一律課金</p>
-            <p>チーム種目: 1種目1チームごとにクラブへ課金（年齢帯別の場合は登録者の満年齢で単価を決定）</p>
+            <p>
+              チーム種目: 1種目1チームごとにクラブへ課金（年齢帯別は登録者の満年齢、年齢カテゴリ別は生年月日が属する区分の単価）
+            </p>
             <p>複数種目割増とチーム種目のみ特別料金は使用しません。</p>
           </div>
 

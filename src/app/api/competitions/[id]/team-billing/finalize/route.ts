@@ -25,6 +25,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const competition = await prisma.competition.findUnique({
       where: { id: competitionId },
       include: {
+        ageCategories: {
+          orderBy: { displayOrder: "asc" },
+          select: {
+            id: true,
+            displayOrder: true,
+            eligibleBirthDateFrom: true,
+            eligibleBirthDateTo: true,
+          },
+        },
         organization: {
           include: {
             admins: {
@@ -94,7 +103,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
             new Date(competition.startDate)
           )
         : null;
-      const defaultTeamUnit = resolveEntryFeeUnits(competition.entryFee, userAge).teamUnit;
+      const userDob = feeUser?.dateOfBirth ? new Date(feeUser.dateOfBirth) : null;
+      const defaultTeamUnit = resolveEntryFeeUnits(competition.entryFee, userAge, {
+        userDateOfBirth: userDob,
+        competitionAgeCategories: competition.ageCategories,
+      }).teamUnit;
 
       for (const targetClubId of targetClubIds) {
         const teamCount = teamCounts.get(targetClubId) ?? 0;

@@ -23,6 +23,7 @@ import { meetsEventAgeOrBirthRule } from "@/lib/eventBirthDateEligibility";
 import {
   isTieredEntryFee,
   isTieredRequiredQualifications,
+  parseAgeCategoryFeeTiers,
   resolveEntryFeeUnits,
   resolveRequiredQualificationsForAge,
 } from "@/lib/competitionEntryAgeTiered";
@@ -113,6 +114,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
       where: { id: competitionId },
       include: {
         events: true,
+        ageCategories: {
+          orderBy: { displayOrder: "asc" },
+          select: {
+            id: true,
+            displayOrder: true,
+            eligibleBirthDateFrom: true,
+            eligibleBirthDateTo: true,
+          },
+        },
         organization: {
           include: {
             admins: {
@@ -385,20 +395,26 @@ export async function POST(request: NextRequest, context: RouteContext) {
       };
     });
 
-    const feeUnits = resolveEntryFeeUnits(
-      competition.entryFee,
-      userAge
-    );
+    const userDob = user?.dateOfBirth ? new Date(user.dateOfBirth) : null;
+    const feeUnits = resolveEntryFeeUnits(competition.entryFee, userAge, {
+      userDateOfBirth: userDob,
+      competitionAgeCategories: competition.ageCategories,
+    });
     if (
       feeUnits.ageTierMissing &&
       isTieredEntryFee(competition.entryFee) &&
       entryItemsData.length + teamEntriesData.length > 0
     ) {
+      const isCat = parseAgeCategoryFeeTiers(competition.entryFee) !== null;
       return NextResponse.json(
         {
-          message: user?.dateOfBirth
-            ? "参加費の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
-            : "この大会は年齢帯別の参加費です。プロフィールに生年月日を登録してください。",
+          message: isCat
+            ? user?.dateOfBirth
+              ? "参加費の年齢カテゴリに、あなたの生年月日が該当する区分がありません。主催者へお問い合わせください。"
+              : "この大会は年齢カテゴリ別の参加費です。プロフィールに生年月日を登録してください。"
+            : user?.dateOfBirth
+              ? "参加費の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
+              : "この大会は年齢帯別の参加費です。プロフィールに生年月日を登録してください。",
         },
         { status: 400 }
       );
@@ -410,7 +426,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
         individualCount: entryItemsData.length,
         teamCount: teamEntriesData.length,
       },
-      { userAgeYearsAtCompetitionStart: userAge }
+      {
+        userAgeYearsAtCompetitionStart: userAge,
+        userDateOfBirth: userDob,
+        competitionAgeCategories: competition.ageCategories,
+      }
     );
 
     if (totalFee > 0 && (!clubId || typeof clubId !== "string")) {

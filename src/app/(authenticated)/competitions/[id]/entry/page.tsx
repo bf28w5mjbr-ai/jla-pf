@@ -30,6 +30,7 @@ import { meetsEventAgeOrBirthRule } from "@/lib/eventBirthDateEligibility";
 import {
   isTieredEntryFee,
   isTieredRequiredQualifications,
+  parseAgeCategoryFeeTiers,
   parseAgeFeeTiers,
   resolveEntryFeeUnits,
   resolveRequiredQualificationsForAge,
@@ -80,6 +81,16 @@ export default async function CompetitionEntryPage({
           admins: {
             where: { userId: session.userId },
           },
+        },
+      },
+      ageCategories: {
+        orderBy: { displayOrder: "asc" },
+        select: {
+          id: true,
+          name: true,
+          displayOrder: true,
+          eligibleBirthDateFrom: true,
+          eligibleBirthDateTo: true,
         },
       },
       events: {
@@ -182,6 +193,35 @@ export default async function CompetitionEntryPage({
 
     if (typeof entryFee !== "object") {
       return <p className="text-xs font-medium">未設定</p>;
+    }
+
+    const catTiers = parseAgeCategoryFeeTiers(entryFee);
+    if (catTiers?.length && competition.ageCategories?.length) {
+      const nameById = new Map(competition.ageCategories.map((c) => [c.id, c.name]));
+      return (
+        <div className="space-y-1">
+          <p className="text-[10px] font-medium text-muted-foreground">
+            年齢カテゴリ別（生年月日の区分）
+          </p>
+          {catTiers.map((t, i) => (
+            <p key={i} className="text-xs font-medium leading-snug">
+              {nameById.get(t.ageCategoryId) ?? "区分"}
+              {hasIndividualEvents ? (
+                <>
+                  {" "}
+                  · 個人 ¥{formatCurrency(t.individualEntryFee)}
+                </>
+              ) : null}
+              {hasTeamEvents ? (
+                <>
+                  {" "}
+                  · チーム（1）¥{formatCurrency(t.teamEntryFeePerTeam)}
+                </>
+              ) : null}
+            </p>
+          ))}
+        </div>
+      );
     }
 
     const tiers = parseAgeFeeTiers(entryFee);
@@ -327,7 +367,11 @@ export default async function CompetitionEntryPage({
           userQualifications.some((q) => matchesQualification(q, req))
         ));
 
-  const feeResolution = resolveEntryFeeUnits(competition.entryFee, userAge);
+  const userDob = user?.dateOfBirth ? new Date(user.dateOfBirth) : null;
+  const feeResolution = resolveEntryFeeUnits(competition.entryFee, userAge, {
+    userDateOfBirth: userDob,
+    competitionAgeCategories: competition.ageCategories,
+  });
   const meetsFeeAgeTier =
     !isTieredEntryFee(competition.entryFee) || !feeResolution.ageTierMissing;
 
@@ -729,6 +773,18 @@ export default async function CompetitionEntryPage({
         entryWindowOpen={isEntryWindowOpen}
         entryFee={competition.entryFee as unknown as CompetitionEntryFormProps["entryFee"]}
         userAgeYearsAtCompetitionStart={userAge}
+        userDateOfBirthISO={user?.dateOfBirth ? new Date(user.dateOfBirth).toISOString() : null}
+        feeAgeCategories={competition.ageCategories.map((c) => ({
+          id: c.id,
+          name: c.name,
+          displayOrder: c.displayOrder,
+          eligibleBirthDateFrom: c.eligibleBirthDateFrom
+            ? new Date(c.eligibleBirthDateFrom).toISOString()
+            : null,
+          eligibleBirthDateTo: c.eligibleBirthDateTo
+            ? new Date(c.eligibleBirthDateTo).toISOString()
+            : null,
+        }))}
         entryFeeSummary={renderEntryFee(competition.entryFee)}
         allowMultipleEventEntries={allowMultipleEventEntries}
         maxEventEntriesPerPerson={maxEventEntriesPerPerson}

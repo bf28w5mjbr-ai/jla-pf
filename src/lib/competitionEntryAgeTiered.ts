@@ -1,5 +1,10 @@
 /** 大会エントリーの参加費・必須資格を年齢帯別に扱う（JSON 保存形式の解釈と検証） */
 
+import {
+  eventUsesBirthDateRange,
+  isUserDobInEventBirthDateRange,
+} from "@/lib/eventBirthDateEligibility";
+
 export const ALLOWED_ENTRY_REQUIRED_QUALIFICATIONS = [
   "選手登録",
   "BLS・WS",
@@ -12,6 +17,25 @@ export type AgeFeeTier = {
   maxAge: number | null;
   individualEntryFee: number;
   teamEntryFeePerTeam: number;
+};
+
+/** 大会の CompetitionAgeCategory.id ごとの参加費（JSON: ageCategoryFeeTiers） */
+export type AgeCategoryFeeTier = {
+  ageCategoryId: string;
+  individualEntryFee: number;
+  teamEntryFeePerTeam: number;
+};
+
+export type CompetitionAgeCategoryForEntryFee = {
+  id: string;
+  eligibleBirthDateFrom: Date | null;
+  eligibleBirthDateTo: Date | null;
+  displayOrder: number;
+};
+
+export type ResolveEntryFeeContext = {
+  userDateOfBirth?: Date | null;
+  competitionAgeCategories?: ReadonlyArray<CompetitionAgeCategoryForEntryFee> | null;
 };
 
 export type AgeQualificationTier = {
@@ -67,8 +91,51 @@ export function parseAgeFeeTiers(entryFee: unknown): AgeFeeTier[] | null {
   return out.length > 0 ? sortAgeTiers(out) : null;
 }
 
+export function parseAgeCategoryFeeTiers(entryFee: unknown): AgeCategoryFeeTier[] | null {
+  if (!entryFee || typeof entryFee !== "object" || Array.isArray(entryFee)) return null;
+  const o = entryFee as Record<string, unknown>;
+  const raw = o.ageCategoryFeeTiers;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  return normalizeAgeCategoryFeeTiersInput(raw);
+}
+
+/** PUT リクエスト body の配列から正規化（DB 照合は呼び出し側） */
+export function normalizeAgeCategoryFeeTiersInput(items: unknown[]): AgeCategoryFeeTier[] | null {
+  const out: AgeCategoryFeeTier[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const t = item as Record<string, unknown>;
+    const ageCategoryId = typeof t.ageCategoryId === "string" ? t.ageCategoryId.trim() : "";
+    const individualEntryFee =
+      typeof t.individualEntryFee === "number" ? t.individualEntryFee : NaN;
+    const teamEntryFeePerTeam =
+      typeof t.teamEntryFeePerTeam === "number" ? t.teamEntryFeePerTeam : NaN;
+    if (!ageCategoryId) continue;
+    if (!Number.isFinite(individualEntryFee) || individualEntryFee < 0) continue;
+    if (!Number.isFinite(teamEntryFeePerTeam) || teamEntryFeePerTeam < 0) continue;
+    out.push({ ageCategoryId, individualEntryFee, teamEntryFeePerTeam });
+  }
+  return out.length > 0 ? out : null;
+}
+
+/**
+ * 生年月日が属する最初の年齢カテゴリ（displayOrder 昇順）。範囲未設定のカテゴリは照合に使わない。
+ */
+export function pickAgeCategoryIdForBirthDate(
+  categories: ReadonlyArray<CompetitionAgeCategoryForEntryFee>,
+  userDateOfBirth: Date
+): string | null {
+  const usable = categories
+    .filter((c) => eventUsesBirthDateRange(c))
+    .filter((c) =>
+      isUserDobInEventBirthDateRange(userDateOfBirth, c.eligibleBirthDateFrom, c.eligibleBirthDateTo)
+    )
+    .sort((a, b) => a.displayOrder - b.displayOrder);
+  return usable[0]?.id ?? null;
+}
+
 export function isTieredEntryFee(entryFee: unknown): boolean {
-  return parseAgeFeeTiers(entryFee) !== null;
+  return parseAgeFeeTiers(entryFee) !== null || parseAgeCategoryFeeTiers(entryFee) !== null;
 }
 
 export function flattenFlatEntryFeeUnits(entryFee: unknown): {
@@ -83,7 +150,7 @@ export function flattenFlatEntryFeeUnits(entryFee: unknown): {
   if (typeof entryFee !== "object" || Array.isArray(entryFee)) {
     return { individual: 0, team: 0 };
   }
-  if (parseAgeFeeTiers(entryFee)) {
+  if (parseAgeFeeTiers(entryFee) || parseAgeCategoryFeeTiers(entryFee)) {
     return { individual: 0, team: 0 };
   }
   const o = entryFee as Record<string, unknown>;
@@ -99,14 +166,38 @@ export function flattenFlatEntryFeeUnits(entryFee: unknown): {
 
 export function resolveEntryFeeUnits(
   entryFee: unknown,
-  userAgeYearsAtCompetitionStart: number | null
+  userAgeYearsAtCompetitionStart: number | null,
+  context?: ResolveEntryFeeContext
 ): {
   individualUnit: number;
   teamUnit: number;
   tiered: boolean;
-  /** 年齢帯別だが生年月日不明、またはどの帯にも当てはまらない */
+  /** 年齢帯別／カテゴリ別で解決できない（生年月日なし・該当なしなど） */
   ageTierMissing: boolean;
 } {
+  const catTiers = parseAgeCategoryFeeTiers(entryFee);
+  if (catTiers) {
+    const dob = context?.userDateOfBirth ?? null;
+    const cats = context?.competitionAgeCategories ?? null;
+    if (!dob || !cats?.length) {
+      return { individualUnit: 0, teamUnit: 0, tiered: true, ageTierMissing: true };
+    }
+    const categoryId = pickAgeCategoryIdForBirthDate(cats, dob);
+    if (!categoryId) {
+      return { individualUnit: 0, teamUnit: 0, tiered: true, ageTierMissing: true };
+    }
+    const row = catTiers.find((t) => t.ageCategoryId === categoryId);
+    if (!row) {
+      return { individualUnit: 0, teamUnit: 0, tiered: true, ageTierMissing: true };
+    }
+    return {
+      individualUnit: row.individualEntryFee,
+      teamUnit: row.teamEntryFeePerTeam,
+      tiered: true,
+      ageTierMissing: false,
+    };
+  }
+
   const tiers = parseAgeFeeTiers(entryFee);
   if (tiers) {
     if (userAgeYearsAtCompetitionStart === null) {
@@ -320,6 +411,16 @@ export function entryFeeReadinessOk(
   hasIndividualEvents: boolean,
   hasTeamEvents: boolean
 ): boolean {
+  const catTiers = parseAgeCategoryFeeTiers(entryFee);
+  if (catTiers) {
+    const indOk =
+      !hasIndividualEvents ||
+      catTiers.every((t) => Number.isFinite(t.individualEntryFee) && t.individualEntryFee >= 0);
+    const teamOk =
+      !hasTeamEvents || catTiers.every((t) => Number.isFinite(t.teamEntryFeePerTeam) && t.teamEntryFeePerTeam >= 0);
+    return indOk && teamOk && catTiers.length > 0;
+  }
+
   const tiers = parseAgeFeeTiers(entryFee);
   if (tiers) {
     const indOk =

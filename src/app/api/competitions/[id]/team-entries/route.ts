@@ -5,7 +5,11 @@ import { prisma } from "@/server/db";
 import { isClubAdminRole } from "@/lib/roleScopes";
 import { buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
-import { isTieredEntryFee, resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
+import {
+  isTieredEntryFee,
+  parseAgeCategoryFeeTiers,
+  resolveEntryFeeUnits,
+} from "@/lib/competitionEntryAgeTiered";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -55,6 +59,15 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       where: { id: competitionId },
       include: {
         events: true,
+        ageCategories: {
+          orderBy: { displayOrder: "asc" },
+          select: {
+            id: true,
+            displayOrder: true,
+            eligibleBirthDateFrom: true,
+            eligibleBirthDateTo: true,
+          },
+        },
       },
     });
 
@@ -110,17 +123,26 @@ export async function PUT(request: NextRequest, context: RouteContext) {
           new Date(competition.startDate)
         )
       : null;
-    const feeUnits = resolveEntryFeeUnits(competition.entryFee, userAge);
+    const userDob = feeUser?.dateOfBirth ? new Date(feeUser.dateOfBirth) : null;
+    const feeUnits = resolveEntryFeeUnits(competition.entryFee, userAge, {
+      userDateOfBirth: userDob,
+      competitionAgeCategories: competition.ageCategories,
+    });
     if (
       feeUnits.ageTierMissing &&
       isTieredEntryFee(competition.entryFee) &&
       normalizedTeams.length > 0
     ) {
+      const isCat = parseAgeCategoryFeeTiers(competition.entryFee) !== null;
       return NextResponse.json(
         {
-          message: feeUser?.dateOfBirth
-            ? "参加費の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
-            : "この大会は年齢帯別の参加費です。プロフィールに生年月日を登録してください。",
+          message: isCat
+            ? feeUser?.dateOfBirth
+              ? "参加費の年齢カテゴリに、あなたの生年月日が該当する区分がありません。主催者へお問い合わせください。"
+              : "この大会は年齢カテゴリ別の参加費です。プロフィールに生年月日を登録してください。"
+            : feeUser?.dateOfBirth
+              ? "参加費の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
+              : "この大会は年齢帯別の参加費です。プロフィールに生年月日を登録してください。",
         },
         { status: 400 }
       );

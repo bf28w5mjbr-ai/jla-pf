@@ -15,6 +15,7 @@ import { formatAdminWallClockSameAsDatetimeLocal } from "@/lib/datetimeLocal";
 import { cn } from "@/lib/utils";
 import { User, UsersRound } from "lucide-react";
 import {
+  parseAgeCategoryFeeTiers,
   parseAgeFeeTiers,
   parseAgeQualificationTiers,
   unionRequiredQualifications,
@@ -120,6 +121,23 @@ export default function CompetitionEntrySettingsEditor({
   ) => {
     if (!entryFee) {
       return <p className="font-medium">未設定</p>;
+    }
+
+    const catTiers = parseAgeCategoryFeeTiers(entryFee as unknown);
+    if (catTiers?.length && initialAgeCategories?.length) {
+      const nameById = new Map(initialAgeCategories.map((c) => [c.id, c.name]));
+      return (
+        <div className="space-y-1 text-sm">
+          <p className="text-[10px] font-medium text-muted-foreground">年齢カテゴリ別</p>
+          {catTiers.map((t, i) => (
+            <p key={i} className="font-medium leading-snug">
+              {nameById.get(t.ageCategoryId) ?? "区分"}
+              {hasIndividualEvents ? <> · 個人 ¥{formatCurrency(t.individualEntryFee)}</> : null}
+              {hasTeamEvents ? <> · チーム ¥{formatCurrency(t.teamEntryFeePerTeam)}</> : null}
+            </p>
+          ))}
+        </div>
+      );
     }
 
     const tiers = parseAgeFeeTiers(entryFee as unknown);

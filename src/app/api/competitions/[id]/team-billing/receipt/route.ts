@@ -88,6 +88,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
           name: true,
           startDate: true,
           entryFee: true,
+          ageCategories: {
+            orderBy: { displayOrder: "asc" },
+            select: {
+              id: true,
+              displayOrder: true,
+              eligibleBirthDateFrom: true,
+              eligibleBirthDateTo: true,
+            },
+          },
           organization: {
             select: {
               name: true,
@@ -147,7 +156,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
           new Date(competition.startDate)
         )
       : null;
-    const teamUnit = resolveEntryFeeUnits(competition.entryFee, payerAge).teamUnit;
+    const payerDob = payerForAge?.dateOfBirth ? new Date(payerForAge.dateOfBirth) : null;
+    const teamUnit = resolveEntryFeeUnits(competition.entryFee, payerAge, {
+      userDateOfBirth: payerDob,
+      competitionAgeCategories: competition.ageCategories,
+    }).teamUnit;
     const totalFeeFromPricing = teamCount * teamUnit;
     const totalFee =
       typeof payment?.amount === "number" && payment.amount >= 0

@@ -1,4 +1,7 @@
-import { resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
+import {
+  type CompetitionAgeCategoryForEntryFee,
+  resolveEntryFeeUnits,
+} from "@/lib/competitionEntryAgeTiered";
 
 export type CompetitionEntryFeeConfig = {
   individualEntryFee?: number;
@@ -11,6 +14,12 @@ export type CompetitionEntryFeeConfig = {
     individualEntryFee: number;
     teamEntryFeePerTeam: number;
   }>;
+  /** 年齢カテゴリ（生年月日範囲）別 */
+  ageCategoryFeeTiers?: Array<{
+    ageCategoryId: string;
+    individualEntryFee: number;
+    teamEntryFeePerTeam: number;
+  }>;
 };
 
 export function calculateCompetitionEntryFee(
@@ -19,7 +28,11 @@ export function calculateCompetitionEntryFee(
     individualCount: number;
     teamCount: number;
   },
-  options?: { userAgeYearsAtCompetitionStart?: number | null }
+  options?: {
+    userAgeYearsAtCompetitionStart?: number | null;
+    userDateOfBirth?: Date | null;
+    competitionAgeCategories?: ReadonlyArray<CompetitionAgeCategoryForEntryFee> | null;
+  }
 ): number {
   const individualCount = Math.max(0, counts.individualCount);
   const teamCount = Math.max(0, counts.teamCount);
@@ -30,7 +43,11 @@ export function calculateCompetitionEntryFee(
 
   const { individualUnit, teamUnit, ageTierMissing } = resolveEntryFeeUnits(
     entryFee,
-    options?.userAgeYearsAtCompetitionStart ?? null
+    options?.userAgeYearsAtCompetitionStart ?? null,
+    {
+      userDateOfBirth: options?.userDateOfBirth ?? null,
+      competitionAgeCategories: options?.competitionAgeCategories ?? null,
+    }
   );
   if (ageTierMissing) return 0;
 

@@ -171,6 +171,16 @@ type CompetitionEntryFormProps = {
   entryPledge?: { markdown: string; initialAccepted: boolean } | null;
   /** 大会開催日基準の満年齢。年齢帯別参加費の概算に使用 */
   userAgeYearsAtCompetitionStart?: number | null;
+  /** 年齢カテゴリ別参加費の解決用（ISO 文字列） */
+  userDateOfBirthISO?: string | null;
+  /** 大会の年齢カテゴリ（参加費解決用） */
+  feeAgeCategories?: Array<{
+    id: string;
+    name: string;
+    displayOrder: number;
+    eligibleBirthDateFrom: string | null;
+    eligibleBirthDateTo: string | null;
+  }>;
 };
 
 export default function CompetitionEntryForm({
@@ -195,6 +205,8 @@ export default function CompetitionEntryForm({
   initialEntry,
   entryPledge = null,
   userAgeYearsAtCompetitionStart = null,
+  userDateOfBirthISO = null,
+  feeAgeCategories,
 }: CompetitionEntryFormProps) {
   const router = useRouter();
   const [showEstablishedEdit, setShowEstablishedEdit] = useState(false);
@@ -245,11 +257,30 @@ export default function CompetitionEntryForm({
   const selectedTeamEvents = selectedEvents.filter((event) => event.type === "TEAM");
   const selectedIndividualEvents = selectedEvents.filter((event) => event.type === "INDIVIDUAL");
   const selectedCount = selectedEvents.length;
+
+  const feeResolveAgeCategories = useMemo(() => {
+    if (!feeAgeCategories?.length) return null;
+    return feeAgeCategories.map((c) => ({
+      id: c.id,
+      displayOrder: c.displayOrder,
+      eligibleBirthDateFrom: c.eligibleBirthDateFrom ? new Date(c.eligibleBirthDateFrom) : null,
+      eligibleBirthDateTo: c.eligibleBirthDateTo ? new Date(c.eligibleBirthDateTo) : null,
+    }));
+  }, [feeAgeCategories]);
+
+  const userDobForFee = useMemo(
+    () => (userDateOfBirthISO ? new Date(userDateOfBirthISO) : null),
+    [userDateOfBirthISO]
+  );
+
   const estimatedFee = useMemo(() => {
     const individualCount = selectedIndividualEvents.length;
     const teamCount = selectedTeamEvents.length;
     if (individualCount + teamCount === 0) return 0;
-    const r = resolveEntryFeeUnits(entryFee, userAgeYearsAtCompetitionStart ?? null);
+    const r = resolveEntryFeeUnits(entryFee, userAgeYearsAtCompetitionStart ?? null, {
+      userDateOfBirth: userDobForFee,
+      competitionAgeCategories: feeResolveAgeCategories,
+    });
     if (r.ageTierMissing && isTieredEntryFee(entryFee)) {
       return null;
     }
@@ -259,13 +290,19 @@ export default function CompetitionEntryForm({
         individualCount,
         teamCount,
       },
-      { userAgeYearsAtCompetitionStart: userAgeYearsAtCompetitionStart ?? null }
+      {
+        userAgeYearsAtCompetitionStart: userAgeYearsAtCompetitionStart ?? null,
+        userDateOfBirth: userDobForFee,
+        competitionAgeCategories: feeResolveAgeCategories,
+      }
     );
   }, [
     entryFee,
+    feeResolveAgeCategories,
     selectedIndividualEvents.length,
     selectedTeamEvents.length,
     userAgeYearsAtCompetitionStart,
+    userDobForFee,
   ]);
   const effectiveMaxSelectable = !allowMultipleEventEntries
     ? 1
