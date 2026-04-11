@@ -8,6 +8,7 @@ import {
   isQualificationExpired,
   normalizeQualificationKind,
 } from "@/lib/qualificationTemplateRules";
+import { OFFICIAL_RECRUITMENT_REQUIRED_LIFESAVING_KINDS } from "@/lib/technicalOfficialRules";
 
 export async function POST(
   req: NextRequest,
@@ -127,7 +128,7 @@ export async function POST(
     }
 
     if (competition.officialQualificationFilterEnabled) {
-      const requiredKinds = ["BLS", "WaterSafety"];
+      const requiredKinds = [...OFFICIAL_RECRUITMENT_REQUIRED_LIFESAVING_KINDS];
       const refereeKinds = ["RefereeC", "RefereeB", "RefereeA", "RefereeS"];
       const allKinds = [...requiredKinds, ...refereeKinds];
 

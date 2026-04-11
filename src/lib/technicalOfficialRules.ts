@@ -4,6 +4,9 @@ import {
   normalizeQualificationKind,
 } from "@/lib/qualificationTemplateRules";
 
+/** オフィシャル応募フィルタで「ライフセービング系」として必須とする資格種別（審判資格とは別） */
+export const OFFICIAL_RECRUITMENT_REQUIRED_LIFESAVING_KINDS = ["BLS"] as const;
+
 export type TechnicalOfficialTier = { minEntries: number; requiredCount: number };
 
 export function parseTechnicalOfficialTiers(raw: unknown): TechnicalOfficialTier[] {
@@ -58,7 +61,7 @@ export function hasRequiredOfficialQualifications(
     expiryDate: Date | null;
   }>
 ): boolean {
-  const requiredKinds = ["BLS", "WaterSafety"];
+  const requiredKinds = [...OFFICIAL_RECRUITMENT_REQUIRED_LIFESAVING_KINDS];
   const refereeKinds = ["RefereeC", "RefereeB", "RefereeA", "RefereeS"];
 
   const approvedValidKindSet = new Set(

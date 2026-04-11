@@ -34,7 +34,6 @@ export function OfficialSettingsEditor({
     templates.map((t) => [t.kind, t.name && t.name.trim().length > 0 ? t.name : t.kind])
   );
   const blsName = templateNameByKind.get("BLS") ?? "BLS";
-  const waterSafetyName = templateNameByKind.get("WaterSafety") ?? "ウォーターセーフティ";
   const refereeNames = ["RefereeC", "RefereeB", "RefereeA", "RefereeS"].map(
     (kind) => templateNameByKind.get(kind) ?? kind
   );
@@ -121,8 +120,9 @@ export function OfficialSettingsEditor({
             </p>
             <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
               <li>
-                必須資格: <span className="font-medium text-foreground">{blsName}</span> /{" "}
-                <span className="font-medium text-foreground">{waterSafetyName}</span>
+                必須資格（ライフセービング系）:{" "}
+                <span className="font-medium text-foreground">{blsName}</span>
+                <span className="text-muted-foreground">（ウォーターセーフティは不要）</span>
               </li>
               <li>
                 審判資格: <span className="font-medium text-foreground">{refereeNames.join(" / ")}</span>
