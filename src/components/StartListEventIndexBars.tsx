@@ -46,8 +46,28 @@ type Props = {
 const sexLabel = (sex: string) =>
   sex === "MALE" ? "男子" : sex === "FEMALE" ? "女子" : "その他";
 
+/** 男子→女子→その他（同一種目名の行順を固定） */
+function sexSortKey(sex: string): number {
+  if (sex === "MALE") return 0;
+  if (sex === "FEMALE") return 1;
+  return 2;
+}
+
+/**
+ * displayOrder 主軸のまま、同順位・同名の男女行の順序を固定し、種目名は日本語の数値順に揃える。
+ *（DB が displayOrder のみだと兄弟種目の順がブラウザごとにぶれることがある）
+ */
+function compareStartListEvents(a: StartListEventBarItem, b: StartListEventBarItem): number {
+  if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
+  const nc = a.name.localeCompare(b.name, "ja", { numeric: true, sensitivity: "base" });
+  if (nc !== 0) return nc;
+  const sx = sexSortKey(a.sex) - sexSortKey(b.sex);
+  if (sx !== 0) return sx;
+  return a.id.localeCompare(b.id);
+}
+
 function sortEvents(list: StartListEventBarItem[]) {
-  return [...list].sort((a, b) => a.displayOrder - b.displayOrder || a.name.localeCompare(b.name));
+  return [...list].sort(compareStartListEvents);
 }
 
 /** サーバー由来の一覧・開始時刻が変わったときだけ同期するためのキー（{@link sortEvents} 済み配列用・二重ソート回避） */
@@ -85,7 +105,7 @@ function sortByStartTimeOrder(
     const da = effectiveStartMsForSort(a, drafts);
     const db = effectiveStartMsForSort(b, drafts);
     if (da !== db) return da - db;
-    return a.displayOrder - b.displayOrder || a.name.localeCompare(b.name);
+    return compareStartListEvents(a, b);
   });
 }
 

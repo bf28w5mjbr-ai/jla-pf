@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useMemo, useEffect } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
@@ -9,29 +10,33 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Edit, Save, X, Trash2, Plus, ImageIcon } from "lucide-react";
-import { normalizeRelationLogos, type RelationLogo } from "@/lib/relationLogos";
+import { relationLogosWithDisplaySrc, type RelationLogoView } from "@/lib/relationLogos";
 
 function RelationLogoCard({
   logo,
   canDelete,
   onDelete,
 }: {
-  logo: RelationLogo;
+  logo: RelationLogoView;
   canDelete: boolean;
   onDelete?: () => void;
 }) {
   const [broken, setBroken] = useState(false);
+  useEffect(() => {
+    setBroken(false);
+  }, [logo.displaySrc]);
   return (
     <div className="flex w-[8.75rem] flex-col gap-1">
       <div className="relative flex h-16 w-full items-center justify-center overflow-hidden rounded-md border border-border bg-muted/25">
         {!broken ? (
-          // ネイティブ img: SVG・各種ラスタの互換性が高い（Next/Image の SVG 制約を避ける）
-          <img
-            src={logo.logoUrl}
+          <Image
+            src={logo.displaySrc}
             alt={logo.name}
-            className="max-h-full max-w-full object-contain p-1.5"
+            fill
+            className="object-contain p-1.5"
+            sizes="140px"
             loading="lazy"
-            decoding="async"
+            unoptimized
             onError={() => setBroken(true)}
           />
         ) : (
@@ -64,10 +69,11 @@ interface CompetitionRelationsEditorProps {
   competitionId: string;
   sponsors?: string | null;
   cooperators?: string | null;
-  cooperatorsLogos?: RelationLogo[] | null;
+  /** Prisma Json または { name, logoUrl }[]（`relationLogosWithDisplaySrc` 済みでも可） */
+  cooperatorsLogos?: unknown;
   supporters?: string | null;
   grants?: string | null;
-  grantsLogos?: RelationLogo[] | null;
+  grantsLogos?: unknown;
   canEdit: boolean;
 }
 
@@ -83,10 +89,13 @@ export default function CompetitionRelationsEditor({
 }: CompetitionRelationsEditorProps) {
   const router = useRouter();
   const normalizedCooperatorLogos = useMemo(
-    () => normalizeRelationLogos(cooperatorsLogos),
+    () => relationLogosWithDisplaySrc(cooperatorsLogos ?? null),
     [cooperatorsLogos],
   );
-  const normalizedGrantLogos = useMemo(() => normalizeRelationLogos(grantsLogos), [grantsLogos]);
+  const normalizedGrantLogos = useMemo(
+    () => relationLogosWithDisplaySrc(grantsLogos ?? null),
+    [grantsLogos],
+  );
 
   const cooperatorsLogosKey = useMemo(
     () => JSON.stringify(cooperatorsLogos ?? null),
@@ -94,8 +103,10 @@ export default function CompetitionRelationsEditor({
   );
   const grantsLogosKey = useMemo(() => JSON.stringify(grantsLogos ?? null), [grantsLogos]);
 
-  const [cooperatorLogosOverride, setCooperatorLogosOverride] = useState<RelationLogo[] | null>(null);
-  const [grantLogosOverride, setGrantLogosOverride] = useState<RelationLogo[] | null>(null);
+  const [cooperatorLogosOverride, setCooperatorLogosOverride] = useState<RelationLogoView[] | null>(
+    null,
+  );
+  const [grantLogosOverride, setGrantLogosOverride] = useState<RelationLogoView[] | null>(null);
 
   useEffect(() => {
     setCooperatorLogosOverride(null);
@@ -205,28 +216,24 @@ export default function CompetitionRelationsEditor({
       };
       if (type === "cooperator") {
         if (Array.isArray(data.logos)) {
-          setCooperatorLogosOverride(normalizeRelationLogos(data.logos));
+          setCooperatorLogosOverride(relationLogosWithDisplaySrc(data.logos));
         } else if (typeof data.logoUrl === "string") {
           const url = data.logoUrl;
           const nm =
             typeof data.name === "string" && data.name.trim() ? data.name.trim() : displayName;
-          setCooperatorLogosOverride((prev) => [
-            ...(prev ?? normalizedCooperatorLogos),
-            { name: nm, logoUrl: url },
-          ]);
+          const added = relationLogosWithDisplaySrc([{ name: nm, logoUrl: url }]);
+          setCooperatorLogosOverride((prev) => [...(prev ?? normalizedCooperatorLogos), ...added]);
         }
         setCooperatorName("");
       } else {
         if (Array.isArray(data.logos)) {
-          setGrantLogosOverride(normalizeRelationLogos(data.logos));
+          setGrantLogosOverride(relationLogosWithDisplaySrc(data.logos));
         } else if (typeof data.logoUrl === "string") {
           const url = data.logoUrl;
           const nm =
             typeof data.name === "string" && data.name.trim() ? data.name.trim() : displayName;
-          setGrantLogosOverride((prev) => [
-            ...(prev ?? normalizedGrantLogos),
-            { name: nm, logoUrl: url },
-          ]);
+          const added = relationLogosWithDisplaySrc([{ name: nm, logoUrl: url }]);
+          setGrantLogosOverride((prev) => [...(prev ?? normalizedGrantLogos), ...added]);
         }
         setGrantName("");
       }

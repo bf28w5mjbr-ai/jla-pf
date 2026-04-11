@@ -1,5 +1,8 @@
 export type RelationLogo = { name: string; logoUrl: string };
 
+/** 表示用 src（推定 URL 含む）。削除 API 等は常に `logoUrl`（DB 保存値）を使う */
+export type RelationLogoView = RelationLogo & { displaySrc: string };
+
 function pickTrimmedString(record: Record<string, unknown>, keys: string[]): string | null {
   for (const key of keys) {
     const v = record[key];
@@ -61,4 +64,95 @@ export function normalizeRelationLogos(value: unknown): RelationLogo[] {
     out.push({ name: name || "ロゴ", logoUrl });
   }
   return out;
+}
+
+/** 保存値の揺れ（前後空白・二重エンコード・先頭スラ抜け）を吸収（削除キー整合のため一箇所で正規化） */
+export function normalizeStoredRelationLogoUrl(logoUrl: string): string {
+  let t = logoUrl.trim();
+  if (!t) return t;
+  if (t.startsWith("//")) t = `https:${t}`;
+  if ((t.startsWith("http%3A") || t.startsWith("https%3A")) && t.includes("%")) {
+    try {
+      t = decodeURIComponent(t);
+    } catch {
+      /* keep */
+    }
+  }
+  if (!t.startsWith("/") && t.startsWith("uploads/competitions/")) {
+    t = `/${t}`;
+  }
+  return t;
+}
+
+function getSupabaseProjectUrlForRelationLogos(): string | null {
+  const pub = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  if (pub) return pub.replace(/\/$/, "");
+  if (typeof window === "undefined") {
+    const srv = process.env.SUPABASE_URL?.trim();
+    if (srv) return srv.replace(/\/$/, "");
+  }
+  return null;
+}
+
+function getStorageBucketForRelationLogos(): string | null {
+  const pub = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET?.trim();
+  if (pub) return pub;
+  if (typeof window === "undefined") {
+    return process.env.SUPABASE_STORAGE_BUCKET?.trim() || null;
+  }
+  return null;
+}
+
+/**
+ * 相対パス `/uploads/competitions/<file>` を Supabase の公開 URL に変換できるときだけ推定する。
+ * DB が相対のまま・実体が Storage にあるケース（本番サーバレス等）で表示を直す。
+ * ローカル専用ファイルのみのときは RELATION_LOGOS_INFER_SUPABASE=0 で無効化。
+ */
+function shouldInferSupabasePublicUrlForRelativeUploads(): boolean {
+  if (process.env.RELATION_LOGOS_INFER_SUPABASE === "0") return false;
+  if (process.env.RELATION_LOGOS_INFER_SUPABASE === "1") return true;
+  return Boolean(getSupabaseProjectUrlForRelationLogos() && getStorageBucketForRelationLogos());
+}
+
+function inferSupabasePublicUrlFromRelativeCompetitionLogoPath(logoUrl: string): string | null {
+  if (!shouldInferSupabasePublicUrlForRelativeUploads()) return null;
+  const base = getSupabaseProjectUrlForRelationLogos();
+  const bucket = getStorageBucketForRelationLogos();
+  if (!base || !bucket) return null;
+  if (!logoUrl.startsWith("/uploads/competitions/")) return null;
+  const fileName = logoUrl.slice("/uploads/competitions/".length);
+  if (!fileName || fileName.includes("..") || fileName.includes("/") || fileName.includes("\\")) {
+    return null;
+  }
+  return `${base}/storage/v1/object/public/${bucket}/competitions/${fileName}`;
+}
+
+function isPrehydratedRelationLogoViews(value: unknown): value is RelationLogoView[] {
+  if (!Array.isArray(value) || value.length === 0) return false;
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) return false;
+    const o = item as Record<string, unknown>;
+    if (typeof o.logoUrl !== "string" || typeof o.displaySrc !== "string") return false;
+  }
+  return true;
+}
+
+/**
+ * 正規化 + 表示用 `displaySrc`（相対アップロードパスを Storage 公開 URL に推定できる場合）。
+ * サーバーで一度付与した `displaySrc` 付き配列はそのまま通す（クライアント再計算で相対に戻さない）。
+ */
+export function relationLogosWithDisplaySrc(value: unknown): RelationLogoView[] {
+  if (isPrehydratedRelationLogoViews(value)) {
+    return value;
+  }
+  const rows = normalizeRelationLogos(value);
+  return rows.map((row) => {
+    const logoUrl = normalizeStoredRelationLogoUrl(row.logoUrl);
+    const inferred = inferSupabasePublicUrlFromRelativeCompetitionLogoPath(logoUrl);
+    return {
+      name: row.name,
+      logoUrl,
+      displaySrc: inferred ?? logoUrl,
+    };
+  });
 }

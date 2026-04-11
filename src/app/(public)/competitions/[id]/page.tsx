@@ -38,6 +38,7 @@ import {
   buildParticipationEventSections,
   isUnassignedParticipationAgeBlock,
 } from "@/lib/competitionPublicParticipationEvents";
+import { relationLogosWithDisplaySrc } from "@/lib/relationLogos";
 import { ensureStartListSnapshotIfEligible } from "@/lib/startListSnapshot";
 import { parseTechnicalOfficialTiers } from "@/lib/technicalOfficialRules";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
@@ -126,7 +127,7 @@ export default async function CompetitionDetailPage({
             select: { id: true, name: true, displayOrder: true },
           },
         },
-        orderBy: { displayOrder: "asc" },
+        orderBy: [{ displayOrder: "asc" }, { sex: "asc" }, { id: "asc" }],
       },
       officialApplications: {
         where: { userId: sessionUserId ?? "clinvalidnosessionuser0000" },
@@ -824,14 +825,10 @@ export default async function CompetitionDetailPage({
           competitionId={competition.id}
           sponsors={competition.sponsors}
           cooperators={competition.cooperators}
-          cooperatorsLogos={
-            competition.cooperatorsLogos as unknown as { name: string; logoUrl: string }[] | null
-          }
+          cooperatorsLogos={relationLogosWithDisplaySrc(competition.cooperatorsLogos)}
           supporters={competition.supporters}
           grants={competition.grants}
-          grantsLogos={
-            competition.grantsLogos as unknown as { name: string; logoUrl: string }[] | null
-          }
+          grantsLogos={relationLogosWithDisplaySrc(competition.grantsLogos)}
           canEdit={false}
         />
 

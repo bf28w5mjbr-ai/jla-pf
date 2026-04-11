@@ -15,7 +15,7 @@ import {
   COMPETITION_RELATION_LOGO_MAX_BYTES,
   validateAndNormalizeCompetitionRelationLogoBuffer,
 } from "@/lib/uploadValidation";
-import { normalizeRelationLogos } from "@/lib/relationLogos";
+import { normalizeRelationLogos, relationLogosWithDisplaySrc } from "@/lib/relationLogos";
 
 /** file-type / fs 利用のため Node ランタイムを明示 */
 export const runtime = "nodejs";
@@ -64,7 +64,7 @@ export async function POST(
     const typeRaw = formData.get("type");
     const nameRaw = formData.get("name");
     const type = typeof typeRaw === "string" ? typeRaw : "";
-    const name = typeof nameRaw === "string" ? nameRaw.trim() : "";
+    const nameTrimmed = typeof nameRaw === "string" ? nameRaw.trim() : "";
 
     if (!(fileEntry instanceof File)) {
       return NextResponse.json({ error: "ファイルが必要です" }, { status: 400 });
@@ -75,8 +75,13 @@ export async function POST(
       return NextResponse.json({ error: "無効なタイプです" }, { status: 400 });
     }
 
-    if (!name) {
-      return NextResponse.json({ error: "名前が必要です" }, { status: 400 });
+    const displayName =
+      nameTrimmed ||
+      file.name
+        .replace(/\.[^/.]+$/u, "")
+        .trim();
+    if (!displayName) {
+      return NextResponse.json({ error: "名前が必要です（表示名を入力するか、拡張子付きのファイル名にしてください）" }, { status: 400 });
     }
 
     if (file.size > COMPETITION_RELATION_LOGO_MAX_BYTES) {
@@ -139,7 +144,7 @@ export async function POST(
     );
 
     // 新しいロゴを追加
-    const updatedLogos = [...currentLogos, { name, logoUrl }];
+    const updatedLogos = [...currentLogos, { name: displayName, logoUrl }];
 
     // データベースを更新
     await prisma.competition.update({
@@ -152,8 +157,8 @@ export async function POST(
     return NextResponse.json({
       message: "ロゴをアップロードしました",
       logoUrl,
-      name,
-      logos: updatedLogos,
+      name: displayName,
+      logos: relationLogosWithDisplaySrc(updatedLogos),
     });
   } catch (error) {
     return jsonInternalError500("POST api/competitions/[id]/relations/logo/route.ts", error);
