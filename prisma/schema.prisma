@@ -8,6 +8,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 // ========== CORE MODELS ==========
@@ -124,6 +125,7 @@ model User {
   // 複合ユニーク制約: 同姓同名でも生年月日で区別
   @@unique([normalizedFamilyName, normalizedGivenName, dateOfBirth])
   @@index([dateOfBirth, normalizedFamilyName, normalizedGivenName])
+  @@index([nfcTagId])
 }
 
 model PublicApiKey {
@@ -329,6 +331,8 @@ model Club {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt(sort: Desc)])
 }
 
 model Organization {
@@ -362,6 +366,15 @@ model Organization {
   // 登録料（オンボーディング）
   onboardingFeeStatus  OnboardingFeeStatus @default(NOT_PAID)
   onboardingFeePaidAt  DateTime?
+
+  /// Stripe Connect（エントリー代の送金先）
+  stripeConnectAccountId        String?
+  stripeConnectChargesEnabled   Boolean @default(false)
+  /// PF 年額課金用 Stripe Customer（プラットフォーム側）
+  stripeCustomerId              String?
+  organizerSubscriptionId       String?
+  organizerSubscriptionStatus   OrganizerSubscriptionStatus @default(NONE)
+  organizerSubscriptionCurrentPeriodEnd DateTime?
 
   // ステータス
   status OrgStatus @default(PENDING)
@@ -418,6 +431,7 @@ model OrgAdmin {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, organizationId])
+  @@index([organizationId])
 }
 
 model Membership {
@@ -436,6 +450,8 @@ model Membership {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, clubId])
+  @@index([clubId, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
 }
 
 model Qualification {
@@ -453,6 +469,10 @@ model Qualification {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Asc)])
+  @@index([status, expiryDate])
 }
 
 model RegistrationSession {
@@ -934,6 +954,9 @@ model EntryItem {
   event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
+
+  @@index([entryId])
+  @@index([eventId])
 }
 
 model TeamEntry {
@@ -1249,6 +1272,9 @@ model Competition {
   entryPledgeText        String? @db.Text
   entryPledgeLockNoOffer Boolean @default(false)
 
+  /// 当日運用（マーシャル・リザルト等）用アクセス暗号の bcrypt ハッシュ。未設定時は主催管理者のみ
+  dayOpsAccessSecretHash String?
+
   // クラブ種別制限
   allowedClubTypes ClubType[] // エントリー可能なクラブ種別（空配列 = 全種別可）
 
@@ -1307,6 +1333,7 @@ model Competition {
 
   @@index([organizationId, startDate])
   @@index([status, isPublished])
+  @@index([entryEndDate])
 }
 
 /// 大会主催者からPFへ行う「大会種別（1種/2種）」申請
@@ -1706,6 +1733,15 @@ enum OnboardingFeeStatus {
   PAID
 }
 
+/// 主催団体のプラットフォーム利用料（Stripe Subscription）
+enum OrganizerSubscriptionStatus {
+  NONE
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+}
+
 enum OrgAdminRole {
   ADMIN // 管理者
   MEMBER // メンバー
@@ -1754,6 +1790,8 @@ enum OfficialAttendanceMethod {
 
 enum PaymentType {
   ORG_ONBOARDING_FEE
+  /// 主催団体の年額利用料（Stripe Checkout subscription）
+  ORG_PLATFORM_SUBSCRIPTION
   CLUB_ANNUAL_FEE
   COMPETITION_ENTRY_FEE
 }
