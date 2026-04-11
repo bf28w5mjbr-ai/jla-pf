@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -27,6 +28,7 @@ export default function EntryWithdrawRequestButton({
   disabled = false,
   className,
 }: Props) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -53,7 +55,7 @@ export default function EntryWithdrawRequestButton({
       }
 
       toast.success(data.message || "棄権申請を受け付けました");
-      window.location.reload();
+      router.refresh();
     } catch (error) {
       console.error("Entry withdraw request error:", error);
       toast.error(error instanceof Error ? error.message : "棄権申請に失敗しました");
