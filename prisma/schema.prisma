@@ -1312,6 +1312,7 @@ model Competition {
   attachments   CompetitionAttachment[]
   galleryPhotos CompetitionGalleryPhoto[]
   events        Event[] // 大会種目
+  ageCategories CompetitionAgeCategory[]
   entries       CompetitionEntry[]
   entryCheckoutSessions EntryCheckoutSession[]
   teamEntries   TeamEntry[]
@@ -1548,9 +1549,26 @@ model CompetitionGalleryPhoto {
   @@index([competitionId, createdAt])
 }
 
+/// 種目の年齢カテゴリ（生年月日の許容範囲）。種目は任意で1カテゴリに紐づけ、紐づいた場合は範囲が種目に同期される
+model CompetitionAgeCategory {
+  id             String   @id @default(cuid())
+  competitionId  String
+  name           String
+  displayOrder   Int      @default(0)
+  eligibleBirthDateFrom DateTime? @db.Date
+  eligibleBirthDateTo   DateTime? @db.Date
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  events      Event[]
+
+  @@index([competitionId, displayOrder])
+}
+
 model Event {
   id                String        @id @default(cuid())
   competitionId     String
+  /// 年齢カテゴリに連動する場合。手動で生年月日範囲を変えると解除される
+  ageCategoryId     String?
   name              String // 種目名（例: "100m障害物"）
   sex               Sex // 性別（MALE: 男子, FEMALE: 女子）
   type              EventType     @default(INDIVIDUAL) // 種目タイプ（個人/チーム）
@@ -1581,6 +1599,7 @@ model Event {
   teamRelayPositionNames   Json?
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  ageCategory CompetitionAgeCategory? @relation(fields: [ageCategoryId], references: [id], onDelete: Restrict)
   entryItems  EntryItem[]
   teamEntries TeamEntry[]
   officialResults OfficialResult[]
@@ -1592,6 +1611,7 @@ model Event {
   updatedAt DateTime @updatedAt
 
   @@index([competitionId, displayOrder])
+  @@index([ageCategoryId])
 }
 
 /// 当日運用: ラウンド・ヒート単位の召集締切（スタートリストスナップショットの heatIndex と対応）

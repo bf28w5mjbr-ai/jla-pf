@@ -334,3 +334,15 @@ export function entryFeeReadinessOk(
   const teamOk = !hasTeamEvents || (Number.isFinite(team) && !Number.isNaN(team) && team >= 0);
   return individualOk && teamOk;
 }
+
+/** 参加資格で「認定ライフセーバー」を選んだときの共通注釈（管理画面・マイページ・公開ページ） */
+export const CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP =
+  "「認定ライフセーバー」は、ウォーターセーフティ・BLS・選手登録に相当する条件（本アプリでは「BLS・WS」や選手登録の指定に含めます）の代替ではなく、それらとは別に必要とする上位資格を指します。";
+
+export function requiredQualificationsMentionCertifiedLifesaver(raw: unknown): boolean {
+  const tiered = parseAgeQualificationTiers(raw);
+  if (tiered?.length) {
+    return tiered.some((t) => t.requiredQualifications.includes("認定ライフセーバー"));
+  }
+  return unionRequiredQualifications(raw).includes("認定ライフセーバー");
+}

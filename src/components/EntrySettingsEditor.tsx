@@ -28,6 +28,7 @@ import {
 } from "@/lib/autoEntryChangeAnnouncement";
 import {
   buildQualificationRelaxAnnouncementFromConfigs,
+  CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP,
   parseAgeFeeTiers,
   parseAgeQualificationTiers,
   type AgeFeeTier,
@@ -2403,7 +2404,10 @@ export default function EntrySettingsEditor({
       <Card className="overflow-hidden">
         <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
           <CardTitle className="text-base font-semibold">出場に必要な資格</CardTitle>
-          <CardDescription className="text-xs">未選択の場合は資格不要です。</CardDescription>
+          <CardDescription className="space-y-1 text-xs">
+            <span className="block">未選択の場合は資格不要です。</span>
+            <span className="block text-muted-foreground">{CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP}</span>
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 px-4 py-3">
           <div className="space-y-3">

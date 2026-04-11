@@ -16,22 +16,8 @@ import { canManageCompetitionStartListSettings } from "@/lib/competitionStartLis
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 import { assertEventScheduleWithinCompetitionRange } from "@/lib/eventScheduleWithinCompetition";
 import { syncStartListSettingsRoundTabsForEvent } from "@/lib/startListRoundCountSync";
-
-function parseEligibleBirthDateInput(value: unknown): Date | null {
-  if (value === null || value === undefined || value === "") return null;
-  if (typeof value !== "string") {
-    throw new Error("invalid");
-  }
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
-  if (!m) throw new Error("invalid");
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) {
-    throw new Error("invalid");
-  }
-  return new Date(Date.UTC(y, mo - 1, d));
-}
+import { parseEligibleBirthDateInput } from "@/lib/eligibleBirthDateInput";
+import { eventBirthFieldsFromAgeCategory } from "@/lib/competitionAgeCategorySync";
 
 export async function DELETE(
   request: NextRequest,
@@ -172,6 +158,77 @@ export async function PATCH(
       "startListRoundCount"
     );
     const rawKeys = Object.keys(raw);
+
+    const onlyAgeCategoryId =
+      rawKeys.length === 1 && Object.prototype.hasOwnProperty.call(raw, "ageCategoryId");
+    if (onlyAgeCategoryId) {
+      if (!isAdmin) {
+        return NextResponse.json({ message: "権限がありません" }, { status: 403 });
+      }
+      const v = raw.ageCategoryId;
+      if (v !== null && (typeof v !== "string" || !String(v).trim())) {
+        return NextResponse.json(
+          { message: "ageCategoryId は文字列 ID または null にしてください" },
+          { status: 400 }
+        );
+      }
+      const categoryId = v === null || v === "" ? null : String(v).trim();
+
+      const mutationStateLink = await loadCompetitionMutationState(competitionId);
+      try {
+        assertEventAgePatchAllowed(mutationStateLink);
+      } catch (e) {
+        if (e instanceof CompetitionEditForbiddenError) {
+          return NextResponse.json({ message: e.message }, { status: 400 });
+        }
+        throw e;
+      }
+
+      if (categoryId) {
+        const cat = await prisma.competitionAgeCategory.findFirst({
+          where: { id: categoryId, competitionId },
+        });
+        if (!cat) {
+          return NextResponse.json({ message: "年齢カテゴリが見つかりません" }, { status: 404 });
+        }
+        const birth = eventBirthFieldsFromAgeCategory(cat);
+        await prisma.event.updateMany({
+          where: {
+            competitionId,
+            name: event.name,
+            type: event.type,
+            category: event.category,
+          },
+          data: {
+            ageCategoryId: categoryId,
+            ...birth,
+          },
+        });
+      } else {
+        await prisma.event.updateMany({
+          where: {
+            competitionId,
+            name: event.name,
+            type: event.type,
+            category: event.category,
+          },
+          data: { ageCategoryId: null },
+        });
+      }
+
+      const updatedEventsLink = await prisma.event.findMany({
+        where: { competitionId },
+        orderBy: { displayOrder: "asc" },
+      });
+
+      return NextResponse.json({
+        message: categoryId
+          ? "種目を年齢カテゴリに連動しました（参加可能な生年月日がカテゴリに合わせて更新されました）。"
+          : "種目の年齢カテゴリ連動を解除しました。",
+        events: updatedEventsLink,
+      });
+    }
+
     const hasEligibleBirthFrom = Object.prototype.hasOwnProperty.call(
       raw,
       "eligibleBirthDateFrom"
@@ -611,6 +668,7 @@ export async function PATCH(
         data: {
           eligibleBirthDateFrom: fromD,
           eligibleBirthDateTo: toD,
+          ageCategoryId: null,
           ...(clearLegacyAge ? { minAge: null, maxAge: null } : {}),
         },
       });

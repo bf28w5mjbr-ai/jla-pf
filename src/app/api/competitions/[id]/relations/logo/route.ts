@@ -12,22 +12,10 @@ import {
   uploadPublicAsset,
 } from "@/lib/supabase/storage";
 import { validateRasterImageBuffer } from "@/lib/uploadValidation";
+import { normalizeRelationLogos } from "@/lib/relationLogos";
 
 /** file-type / fs 利用のため Node ランタイムを明示 */
 export const runtime = "nodejs";
-
-type RelationLogo = { name: string; logoUrl: string };
-
-function asRelationLogoArray(value: unknown): RelationLogo[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter(
-    (row): row is RelationLogo =>
-      typeof row === "object" &&
-      row !== null &&
-      "logoUrl" in row &&
-      typeof (row as RelationLogo).logoUrl === "string"
-  );
-}
 
 export async function POST(
   request: NextRequest,
@@ -141,8 +129,8 @@ export async function POST(
 
     // 既存のロゴデータを取得
     const field = type === "cooperator" ? "cooperatorsLogos" : "grantsLogos";
-    const currentLogos = asRelationLogoArray(
-      type === "cooperator" ? competition.cooperatorsLogos : competition.grantsLogos
+    const currentLogos = normalizeRelationLogos(
+      type === "cooperator" ? competition.cooperatorsLogos : competition.grantsLogos,
     );
 
     // 新しいロゴを追加
@@ -218,8 +206,8 @@ export async function DELETE(
 
     // 既存のロゴデータを取得
     const field = type === "cooperator" ? "cooperatorsLogos" : "grantsLogos";
-    const currentLogos = asRelationLogoArray(
-      type === "cooperator" ? competition.cooperatorsLogos : competition.grantsLogos
+    const currentLogos = normalizeRelationLogos(
+      type === "cooperator" ? competition.cooperatorsLogos : competition.grantsLogos,
     );
 
     // ロゴを削除

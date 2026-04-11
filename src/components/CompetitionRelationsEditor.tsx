@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Edit, Save, X, Trash2, Plus } from "lucide-react";
+import { normalizeRelationLogos } from "@/lib/relationLogos";
 
 interface Logo {
   name: string;
@@ -37,6 +38,11 @@ export default function CompetitionRelationsEditor({
   canEdit,
 }: CompetitionRelationsEditorProps) {
   const router = useRouter();
+  const cooperatorLogos = useMemo(
+    () => normalizeRelationLogos(cooperatorsLogos),
+    [cooperatorsLogos],
+  );
+  const grantLogos = useMemo(() => normalizeRelationLogos(grantsLogos), [grantsLogos]);
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [uploadingCooperator, setUploadingCooperator] = useState(false);
@@ -174,9 +180,13 @@ export default function CompetitionRelationsEditor({
     }
   };
 
-  const hasAnyData = sponsors || cooperators || supporters || grants || 
-    (cooperatorsLogos && cooperatorsLogos.length > 0) || 
-    (grantsLogos && grantsLogos.length > 0);
+  const hasAnyData =
+    sponsors ||
+    cooperators ||
+    supporters ||
+    grants ||
+    cooperatorLogos.length > 0 ||
+    grantLogos.length > 0;
 
   if (!isEditing && !hasAnyData && !canEdit) {
     return null;
@@ -232,9 +242,9 @@ export default function CompetitionRelationsEditor({
               <div className="mt-2 space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">協賛ロゴ</p>
                 
-                {cooperatorsLogos && cooperatorsLogos.length > 0 && (
+                {cooperatorLogos.length > 0 && (
                   <div className="flex flex-wrap gap-3">
-                    {cooperatorsLogos.map((logo, index) => (
+                    {cooperatorLogos.map((logo, index) => (
                       <div key={index} className="group">
                         <div className="flex h-16 w-32 items-center justify-center overflow-hidden rounded border border-border bg-muted/30">
                           <img
@@ -242,6 +252,7 @@ export default function CompetitionRelationsEditor({
                             alt={logo.name}
                             className="max-h-full max-w-full object-contain p-1"
                             loading="lazy"
+                            referrerPolicy="no-referrer"
                           />
                         </div>
                         <p className="text-xs mt-1 w-32 truncate text-center">{logo.name}</p>
@@ -328,9 +339,9 @@ export default function CompetitionRelationsEditor({
               <div className="mt-2 space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">助成ロゴ</p>
                 
-                {grantsLogos && grantsLogos.length > 0 && (
+                {grantLogos.length > 0 && (
                   <div className="flex flex-wrap gap-3">
-                    {grantsLogos.map((logo, index) => (
+                    {grantLogos.map((logo, index) => (
                       <div key={index} className="group">
                         <div className="flex h-16 w-32 items-center justify-center overflow-hidden rounded border border-border bg-muted/30">
                           <img
@@ -338,6 +349,7 @@ export default function CompetitionRelationsEditor({
                             alt={logo.name}
                             className="max-h-full max-w-full object-contain p-1"
                             loading="lazy"
+                            referrerPolicy="no-referrer"
                           />
                         </div>
                         <p className="text-xs mt-1 w-32 truncate text-center">{logo.name}</p>
@@ -415,7 +427,7 @@ export default function CompetitionRelationsEditor({
               </div>
             )}
 
-            {(cooperators || (cooperatorsLogos && cooperatorsLogos.length > 0)) && (
+            {(cooperators || cooperatorLogos.length > 0) && (
               <div>
                 <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   協賛
@@ -423,9 +435,9 @@ export default function CompetitionRelationsEditor({
                 {cooperators && (
                   <div className="mb-2 whitespace-pre-wrap text-sm text-foreground">{cooperators}</div>
                 )}
-                {cooperatorsLogos && cooperatorsLogos.length > 0 && (
+                {cooperatorLogos.length > 0 && (
                   <div className="mt-1 flex flex-wrap gap-2">
-                    {cooperatorsLogos.map((logo, index) => (
+                    {cooperatorLogos.map((logo, index) => (
                       <div key={index}>
                         <div className="flex h-16 w-32 items-center justify-center overflow-hidden rounded border border-border bg-muted/30">
                           <img
@@ -433,6 +445,7 @@ export default function CompetitionRelationsEditor({
                             alt={logo.name}
                             className="max-h-full max-w-full object-contain p-1"
                             loading="lazy"
+                            referrerPolicy="no-referrer"
                           />
                         </div>
                         <p className="text-xs mt-1 w-32 truncate text-center">{logo.name}</p>
@@ -452,15 +465,15 @@ export default function CompetitionRelationsEditor({
               </div>
             )}
 
-            {(grants || (grantsLogos && grantsLogos.length > 0)) && (
+            {(grants || grantLogos.length > 0) && (
               <div>
                 <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   助成
                 </h3>
                 {grants && <div className="mb-2 whitespace-pre-wrap text-sm text-foreground">{grants}</div>}
-                {grantsLogos && grantsLogos.length > 0 && (
+                {grantLogos.length > 0 && (
                   <div className="mt-1 flex flex-wrap gap-2">
-                    {grantsLogos.map((logo, index) => (
+                    {grantLogos.map((logo, index) => (
                       <div key={index}>
                         <div className="flex h-16 w-32 items-center justify-center overflow-hidden rounded border border-border bg-muted/30">
                           <img
@@ -468,6 +481,7 @@ export default function CompetitionRelationsEditor({
                             alt={logo.name}
                             className="max-h-full max-w-full object-contain p-1"
                             loading="lazy"
+                            referrerPolicy="no-referrer"
                           />
                         </div>
                         <p className="text-xs mt-1 w-32 truncate text-center">{logo.name}</p>

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { cn } from "@/lib/utils";
+import { CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP } from "@/lib/competitionEntryAgeTiered";
 import QualificationRegisterButton from "./QualificationRegisterButton";
 import JlaMemberNumberEditor from "./JlaMemberNumberEditor";
 
@@ -221,8 +222,11 @@ export default async function ProfileQualificationsPage() {
             <ClipboardList className="h-5 w-5 text-primary" strokeWidth={1.75} aria-hidden />
             <CardTitle className="text-lg">登録資格</CardTitle>
           </div>
-          <CardDescription>
-            選手登録・BLS・WS・認定ライフセーバーの状況を確認できます。JLAメンバーIDは上の欄で登録すると、選手登録の申請時に自動で反映されます。
+          <CardDescription className="space-y-1">
+            <span className="block">
+              選手登録・BLS・WS・認定ライフセーバーの状況を確認できます。JLAメンバーIDは上の欄で登録すると、選手登録の申請時に自動で反映されます。
+            </span>
+            <span className="block text-muted-foreground">{CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP}</span>
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 p-5 sm:p-6">

@@ -38,8 +38,10 @@ import { parseTechnicalOfficialTiers } from "@/lib/technicalOfficialRules";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
 import DayOpsUnlockBanner from "@/components/DayOpsUnlockBanner";
 import {
+  CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP,
   parseAgeFeeTiers,
   parseAgeQualificationTiers,
+  requiredQualificationsMentionCertifiedLifesaver,
   unionRequiredQualifications,
 } from "@/lib/competitionEntryAgeTiered";
 
@@ -660,6 +662,11 @@ export default async function CompetitionDetailPage({
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium text-muted-foreground">参加資格</p>
                     <div className="mt-1">{renderRequiredQualifications(competition.requiredQualifications)}</div>
+                    {requiredQualificationsMentionCertifiedLifesaver(competition.requiredQualifications) ? (
+                      <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground">
+                        {CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
 

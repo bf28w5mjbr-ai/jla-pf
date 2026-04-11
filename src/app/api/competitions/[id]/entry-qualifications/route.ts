@@ -148,7 +148,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
       if (hasInvalid) {
         return NextResponse.json(
-          { message: "必要資格は選手登録・BLS・WS・認定ライフセーバーのみ設定できます" },
+          { message: "必要資格は「選手登録」「BLS・WS」「認定ライフセーバー」のみ設定できます" },
           { status: 400 }
         );
       }
