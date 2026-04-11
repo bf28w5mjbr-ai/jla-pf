@@ -17,3 +17,27 @@ export function buildStoredCompetitionEventName(input: {
   }
   return `${inner}（${catName}＋${inner}）`;
 }
+
+const FULLWIDTH_PLUS = "＋";
+
+/**
+ * DB の種目名からタブ内の種目名（buildStoredCompetitionEventName に渡す inner）を得る。
+ * 既に canonical（inner（カテゴリ名＋inner））なら inner を返す。それ以外は trim した全体を inner とみなす。
+ */
+export function extractTabInnerCompetitionEventName(
+  storedName: string,
+  ageCategoryName: string | null | undefined
+): string {
+  const name = storedName.trim();
+  const cat = (ageCategoryName ?? "").trim();
+  if (!cat) return name;
+  const marker = `（${cat}${FULLWIDTH_PLUS}`;
+  const i = name.indexOf(marker);
+  if (i <= 0) return name;
+  const prefix = name.slice(0, i);
+  const after = name.slice(i + marker.length);
+  if (!after.endsWith("）")) return name;
+  const middle = after.slice(0, -1);
+  if (middle === prefix) return prefix;
+  return name;
+}
