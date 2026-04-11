@@ -35,11 +35,16 @@ function invalid(message: string): { ok: false; message: string } {
 
 /**
  * アップロード元ファイル名から安全なベース名（拡張子除く）を得る。
+ * Supabase Storage 等のオブジェクトキーは非 ASCII を拒否することがあるため、
+ * 英数字と `._-` のみ残す（画面上の表示名は別途 `File.name` 等を使う）。
  */
 export function sanitizeUploadBasename(originalName: string, maxLen = 100): string {
   const withoutExt = originalName.replace(/\.[^./\\]+$/i, "");
-  const cleaned = withoutExt.replace(/[^\w\u3000-\u30ff\u3040-\u309f\u4e00-\u9faf.-]/g, "_");
-  const trimmed = cleaned.replace(/_+/g, "_").replace(/^_|_$/g, "");
+  const cleaned = withoutExt.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const trimmed = cleaned
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "")
+    .replace(/^\.+|\.+$/g, "");
   return (trimmed || "file").slice(0, maxLen);
 }
 

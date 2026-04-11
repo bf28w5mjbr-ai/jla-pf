@@ -16,7 +16,8 @@ const ONE_PX_PNG = Buffer.from(
 describe("sanitizeUploadBasename", () => {
   it("strips extension and unsafe chars", () => {
     expect(sanitizeUploadBasename("foo/bar.exe")).toBe("foo_bar");
-    expect(sanitizeUploadBasename("資料.pdf")).toBe("資料");
+    expect(sanitizeUploadBasename("資料.pdf")).toBe("file");
+    expect(sanitizeUploadBasename("report-2024_最終.pdf")).toBe("report-2024");
   });
 });
 
