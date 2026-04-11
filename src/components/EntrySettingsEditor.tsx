@@ -1884,9 +1884,6 @@ export default function EntrySettingsEditor({
 
     const isoDateRe = /^\d{4}-\d{2}-\d{2}$/;
     for (const event of ageTargets) {
-      if (event.ageCategoryId) {
-        continue;
-      }
       const range = eventBirthDateRanges[birthRangeFormKey(event)] || { from: "", to: "" };
       const from = range.from.trim();
       const to = range.to.trim();
@@ -1991,12 +1988,19 @@ export default function EntrySettingsEditor({
 
     const ageOk = await Promise.all(
       ageTargets.map((event) => {
-        if (event.ageCategoryId) {
-          return Promise.resolve(true);
-        }
         const range = eventBirthDateRanges[birthRangeFormKey(event)] || { from: "", to: "" };
         const fromTrim = range.from.trim();
         const toTrim = range.to.trim();
+        if (event.ageCategoryId) {
+          const cat = ageCategories.find((c) => c.id === event.ageCategoryId);
+          if (cat) {
+            const catFrom = toEligibleBirthDateInput(cat.eligibleBirthDateFrom);
+            const catTo = toEligibleBirthDateInput(cat.eligibleBirthDateTo);
+            if (fromTrim === catFrom && toTrim === catTo) {
+              return Promise.resolve(true);
+            }
+          }
+        }
         return patchEvent(event.id, {
           eligibleBirthDateFrom: fromTrim === "" ? null : fromTrim,
           eligibleBirthDateTo: toTrim === "" ? null : toTrim,
@@ -2515,7 +2519,7 @@ export default function EntrySettingsEditor({
 
           {linked ? (
             <p className="text-[10px] text-muted-foreground">
-              年齢カテゴリに紐づいているため、下の生年月日はカテゴリの範囲に従います（読み取り専用）。範囲の変更は「カテゴリ管理」タブでカテゴリを保存してください。
+              年齢カテゴリ連動中です。下の日付はカテゴリの範囲を表示しています。種目ごとに変えて保存すると連動は解除され、その範囲が使われます。日付を変えずに保存すれば連動のままです。カテゴリ全体の変更は「カテゴリ管理」タブから行ってください。
             </p>
           ) : null}
 
@@ -2535,7 +2539,7 @@ export default function EntrySettingsEditor({
               <div>
                 <p className="mb-1 text-[10px] text-muted-foreground">
                   参加可能な生年月日（この日〜この日に生まれた人。両端の日を含みます。空欄の片方／両方は制限なし。未入力のときは大会の年齢設定のみが適用されます
-                  {linked ? "・カテゴリ連動中はカテゴリ側の範囲が優先されます" : ""}）
+                  {linked ? "・連動中はカテゴリの範囲を表示しています（種目ごとに編集可）" : ""}）
                 </p>
                 <label className="inline-flex flex-wrap items-center gap-1 text-[11px]">
                   <Input
@@ -2553,7 +2557,7 @@ export default function EntrySettingsEditor({
                         },
                       }));
                     }}
-                    disabled={!canEdit || linked}
+                    disabled={!canEdit}
                     className="h-8 w-[9.5rem] px-1.5 text-xs"
                   />
                   <span className="text-muted-foreground">〜</span>
@@ -2572,7 +2576,7 @@ export default function EntrySettingsEditor({
                         },
                       }));
                     }}
-                    disabled={!canEdit || linked}
+                    disabled={!canEdit}
                     className="h-8 w-[9.5rem] px-1.5 text-xs"
                   />
                 </label>
