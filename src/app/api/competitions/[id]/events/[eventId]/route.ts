@@ -217,6 +217,79 @@ export async function PATCH(
       });
     }
 
+    const onlyName =
+      rawKeys.length === 1 && Object.prototype.hasOwnProperty.call(raw, "name");
+    if (onlyName) {
+      if (!isAdmin) {
+        return NextResponse.json({ message: "権限がありません" }, { status: 403 });
+      }
+      if (typeof raw.name !== "string") {
+        return NextResponse.json({ message: "種目名は文字列で指定してください" }, { status: 400 });
+      }
+      const nextName = raw.name.trim();
+      if (!nextName) {
+        return NextResponse.json({ message: "種目名を入力してください" }, { status: 400 });
+      }
+      if (nextName.length > 256) {
+        return NextResponse.json(
+          { message: "種目名は256文字以内にしてください" },
+          { status: 400 }
+        );
+      }
+      if (nextName === event.name) {
+        const updatedEventsSame = await prisma.event.findMany({
+          where: { competitionId },
+          orderBy: { displayOrder: "asc" },
+        });
+        return NextResponse.json({
+          message: "種目名は変更されていません",
+          events: updatedEventsSame,
+        });
+      }
+
+      const siblingRows = await prisma.event.findMany({
+        where: eventSiblingGroupWhere(competitionId, event),
+        select: { id: true },
+      });
+      const siblingIdSet = new Set(siblingRows.map((r) => r.id));
+
+      const conflict = await prisma.event.findFirst({
+        where: {
+          competitionId,
+          name: nextName,
+          type: event.type,
+          category: event.category,
+          ageCategoryId: event.ageCategoryId,
+          id: { notIn: [...siblingIdSet] },
+        },
+        select: { id: true },
+      });
+      if (conflict) {
+        return NextResponse.json(
+          {
+            message:
+              "同じ区分（プール／オーシャン）・個人／団体・年齢カテゴリの組み合わせに、すでにその種目名があります。別の名前にしてください。",
+          },
+          { status: 400 }
+        );
+      }
+
+      await prisma.event.updateMany({
+        where: eventSiblingGroupWhere(competitionId, event),
+        data: { name: nextName },
+      });
+
+      const updatedEventsName = await prisma.event.findMany({
+        where: { competitionId },
+        orderBy: { displayOrder: "asc" },
+      });
+
+      return NextResponse.json({
+        message: "種目名を更新しました",
+        events: updatedEventsName,
+      });
+    }
+
     const hasEligibleBirthFrom = Object.prototype.hasOwnProperty.call(
       raw,
       "eligibleBirthDateFrom"

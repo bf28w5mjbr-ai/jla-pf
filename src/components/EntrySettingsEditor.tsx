@@ -216,6 +216,52 @@ type EntrySettingsEditorProps = {
   onEventsChange?: (events: Event[]) => void;
 };
 
+/** 種目カード内の種目名編集（男女行の代表1行につき1つ） */
+function EventNameField({
+  event,
+  saving,
+  onSave,
+}: {
+  event: Event;
+  saving: boolean;
+  onSave: (ev: Event, draft: string) => void | Promise<void>;
+}) {
+  const [value, setValue] = useState(event.name);
+
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-end sm:gap-2">
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <Label htmlFor={`ev-name-${event.id}`} className="text-[10px] text-muted-foreground">
+          種目名
+        </Label>
+        <Input
+          id={`ev-name-${event.id}`}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          disabled={saving}
+          className="h-9 text-sm font-semibold"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void onSave(event, value);
+            }
+          }}
+        />
+      </div>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        className="h-9 shrink-0 text-xs"
+        disabled={saving || value.trim() === event.name.trim() || value.trim().length === 0}
+        onClick={() => void onSave(event, value)}
+      >
+        {saving ? "保存中…" : "名前を保存"}
+      </Button>
+    </div>
+  );
+}
+
 function withOptionalAnnounce(
   message: string | undefined,
   payload: Record<string, unknown>
@@ -658,6 +704,86 @@ export default function EntrySettingsEditor({
     onEventsChange?.(updatedEvents);
   };
 
+  const applyEventsAfterNameChange = (
+    prevName: string,
+    anchorBefore: Event,
+    updatedEvents: Event[]
+  ) => {
+    const renamed = updatedEvents.find((e) => e.id === anchorBefore.id);
+    const newName = renamed?.name ?? prevName;
+    const oldBirthKey = birthRangeFormKey({ ...anchorBefore, name: prevName });
+    const newBirthKey = birthRangeFormKey(renamed ?? { ...anchorBefore, name: newName });
+
+    setEvents(updatedEvents);
+
+    setEventBirthDateRanges((prev) => {
+      const merged = mergeEventBirthDateRangesFromSync(prev, updatedEvents);
+      if (oldBirthKey !== newBirthKey && prev[oldBirthKey]) {
+        merged[newBirthKey] = { ...merged[newBirthKey], ...prev[oldBirthKey] };
+        delete merged[oldBirthKey];
+      }
+      return merged;
+    });
+
+    const fromRelay = teamRelayStateKey(anchorBefore.category, prevName, anchorBefore.ageCategoryId);
+    const toRelay = teamRelayStateKey(
+      anchorBefore.category,
+      newName,
+      renamed?.ageCategoryId ?? anchorBefore.ageCategoryId
+    );
+
+    setEventTeamRelayPositions((prev) => {
+      const migrated = { ...prev };
+      if (fromRelay !== toRelay && migrated[fromRelay]) {
+        migrated[toRelay] = migrated[fromRelay];
+        delete migrated[fromRelay];
+      }
+      return mergeTeamRelayPositionsFromSync(migrated, updatedEvents);
+    });
+
+    setEventPreliminaryLanes((prev) => mergePreliminaryLanesFromSync(prev, updatedEvents));
+    setEventStartListRoundCounts((prev) => mergeStartListRoundCountsFromSync(prev, updatedEvents));
+    onEventsChange?.(updatedEvents);
+  };
+
+  const handleSaveEventName = async (event: Event, rawValue: string) => {
+    const next = rawValue.trim();
+    if (!next) {
+      toast.error("種目名を入力してください");
+      return;
+    }
+    if (next === event.name.trim()) {
+      toast.info("種目名に変更はありません");
+      return;
+    }
+    setRenamingEventId(event.id);
+    try {
+      const response = await fetch(`/api/competitions/${competitionId}/events/${event.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: next }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(
+          typeof err.message === "string" ? err.message : "種目名の更新に失敗しました"
+        );
+      }
+      const data = (await response.json()) as { events?: Event[] };
+      const list = data.events;
+      if (!Array.isArray(list)) {
+        throw new Error("種目一覧の取得に失敗しました");
+      }
+      applyEventsAfterNameChange(event.name, event, list as Event[]);
+      toast.success("種目名を更新しました");
+    } catch (e) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : "種目名の更新に失敗しました");
+    } finally {
+      setRenamingEventId(null);
+    }
+  };
+
   const clearEventTableBulkSaveStatus = (key: string) => {
     setEventTableBulkSaveStatus((prev) => {
       if (!prev[key]) return prev;
@@ -680,6 +806,7 @@ export default function EntrySettingsEditor({
   const [oceanIndividualError, setOceanIndividualError] = useState<string | null>(null);
   const [oceanTeamError, setOceanTeamError] = useState<string | null>(null);
   const [updatingEventSexOptions, setUpdatingEventSexOptions] = useState<Record<string, boolean>>({});
+  const [renamingEventId, setRenamingEventId] = useState<string | null>(null);
 
   // デフォルト種目追加のローディング状態
   const [isAddingDefaultEvents, setIsAddingDefaultEvents] = useState<string | null>(null);
@@ -2275,10 +2402,21 @@ export default function EntrySettingsEditor({
         )}
       >
         <div className="min-w-0 flex-1 space-y-3">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <div className="text-sm font-semibold leading-tight text-foreground">
-              {event.name}
-              {genderLabel}
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              {canEdit ? (
+                <EventNameField
+                  key={`event-name-${event.id}:${event.name}`}
+                  event={event}
+                  saving={renamingEventId === event.id}
+                  onSave={handleSaveEventName}
+                />
+              ) : (
+                <div className="text-sm font-semibold leading-tight text-foreground">
+                  {event.name}
+                  {genderLabel}
+                </div>
+              )}
             </div>
             {canEdit ? (
               <Button
@@ -2286,7 +2424,7 @@ export default function EntrySettingsEditor({
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 shrink-0 text-destructive hover:text-destructive sm:order-last"
-                disabled={isUpdatingSexOption}
+                disabled={isUpdatingSexOption || renamingEventId === event.id}
                 onClick={() => handleDeleteEvent(event.id, event.name)}
                 aria-label={`${event.name} を削除`}
               >
@@ -2305,7 +2443,7 @@ export default function EntrySettingsEditor({
                 (next) => {
                   void handleUpdateEventSexOption(event, next);
                 },
-                isUpdatingSexOption,
+                isUpdatingSexOption || renamingEventId === event.id,
                 true
               )}
             </div>
