@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useMemo, useEffect } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
@@ -11,10 +10,6 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Edit, Save, X, Trash2, Plus, ImageIcon } from "lucide-react";
 import { normalizeRelationLogos, type RelationLogo } from "@/lib/relationLogos";
-
-function isAbsoluteHttpUrl(url: string) {
-  return url.startsWith("http://") || url.startsWith("https://");
-}
 
 function RelationLogoCard({
   logo,
@@ -30,13 +25,13 @@ function RelationLogoCard({
     <div className="flex w-[8.75rem] flex-col gap-1">
       <div className="relative flex h-16 w-full items-center justify-center overflow-hidden rounded-md border border-border bg-muted/25">
         {!broken ? (
-          <Image
+          // ネイティブ img: SVG・各種ラスタの互換性が高い（Next/Image の SVG 制約を避ける）
+          <img
             src={logo.logoUrl}
             alt={logo.name}
-            fill
-            className="object-contain p-1.5"
-            sizes="140px"
-            unoptimized={isAbsoluteHttpUrl(logo.logoUrl)}
+            className="max-h-full max-w-full object-contain p-1.5"
+            loading="lazy"
+            decoding="async"
             onError={() => setBroken(true)}
           />
         ) : (
@@ -170,8 +165,9 @@ export default function CompetitionRelationsEditor({
     // 名前が空の場合、ファイル名（拡張子なし）を使用
     const displayName = name.trim() || file.name.replace(/\.[^/.]+$/, "");
 
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("ファイルサイズは5MB以下にしてください");
+    /** API の COMPETITION_RELATION_LOGO_MAX_BYTES と同じ */
+    if (file.size > 12 * 1024 * 1024) {
+      toast.error("ファイルサイズは12MB以下にしてください");
       return;
     }
 
@@ -347,7 +343,7 @@ export default function CompetitionRelationsEditor({
                 <div className="space-y-0.5">
                   <p className="text-xs font-medium text-foreground">協賛ロゴ画像</p>
                   <p className="text-[11px] leading-relaxed text-muted-foreground">
-                    ロゴの下に出る「表示名」を入力してから「画像を選ぶ」を押してください。空欄のときはファイル名（拡張子なし）を使います。PNG / JPEG / WebP など、5MB まで。
+                    ロゴの下に出る「表示名」を入力してから「画像を選ぶ」を押してください。空欄のときはファイル名（拡張子なし）を使います。JPEG・PNG・GIF・WebP・AVIF・BMP・SVG、および iPhone の HEIC や TIFF など（サーバーで WebP に変換して保存）に対応しています。1 ファイルあたり最大 12MB まで。
                   </p>
                 </div>
                 {cooperatorLogos.length > 0 ? (
@@ -381,7 +377,7 @@ export default function CompetitionRelationsEditor({
                     <input
                       ref={cooperatorFileRef}
                       type="file"
-                      accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
+                      accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/bmp,image/svg+xml,image/tiff,image/heic,image/heif,.heic,.heif"
                       className="hidden"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
@@ -438,7 +434,7 @@ export default function CompetitionRelationsEditor({
                 <div className="space-y-0.5">
                   <p className="text-xs font-medium text-foreground">助成ロゴ画像</p>
                   <p className="text-[11px] leading-relaxed text-muted-foreground">
-                    表示名を入力してから「画像を選ぶ」を押してください。空欄のときはファイル名（拡張子なし）を使います。PNG / JPEG / WebP など、5MB まで。
+                    表示名を入力してから「画像を選ぶ」を押してください。空欄のときはファイル名（拡張子なし）を使います。JPEG・PNG・GIF・WebP・AVIF・BMP・SVG、および HEIC / TIFF など（サーバーで WebP に変換）に対応。最大 12MB まで。
                   </p>
                 </div>
                 {grantLogos.length > 0 ? (
@@ -472,7 +468,7 @@ export default function CompetitionRelationsEditor({
                     <input
                       ref={grantFileRef}
                       type="file"
-                      accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
+                      accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/bmp,image/svg+xml,image/tiff,image/heic,image/heif,.heic,.heif"
                       className="hidden"
                       onChange={(e) => {
                         const file = e.target.files?.[0];

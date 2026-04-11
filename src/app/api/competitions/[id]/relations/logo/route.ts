@@ -11,7 +11,10 @@ import {
   deletePublicAssetByUrl,
   uploadPublicAsset,
 } from "@/lib/supabase/storage";
-import { validateRasterImageBuffer } from "@/lib/uploadValidation";
+import {
+  COMPETITION_RELATION_LOGO_MAX_BYTES,
+  validateAndNormalizeCompetitionRelationLogoBuffer,
+} from "@/lib/uploadValidation";
 import { normalizeRelationLogos } from "@/lib/relationLogos";
 
 /** file-type / fs 利用のため Node ランタイムを明示 */
@@ -76,20 +79,22 @@ export async function POST(
       return NextResponse.json({ error: "名前が必要です" }, { status: 400 });
     }
 
-    // ファイルサイズチェック（5MB）
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > COMPETITION_RELATION_LOGO_MAX_BYTES) {
       return NextResponse.json(
-        { error: "ファイルサイズは5MB以下にしてください" },
+        {
+          error: `ファイルサイズは ${Math.floor(COMPETITION_RELATION_LOGO_MAX_BYTES / (1024 * 1024))}MB 以下にしてください`,
+        },
         { status: 400 }
       );
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const validated = await validateRasterImageBuffer(buffer);
+    const validated = await validateAndNormalizeCompetitionRelationLogoBuffer(buffer);
     if (!validated.ok) {
       return NextResponse.json({ error: validated.message }, { status: 400 });
     }
 
+    const outBuffer = validated.value.buffer;
     const fileName = `${id}-${type}-${Date.now()}.${validated.value.ext}`;
     const uploadDir = join(process.cwd(), "public", "uploads", "competitions");
     const filePath = join(uploadDir, fileName);
@@ -100,7 +105,7 @@ export async function POST(
       try {
         logoUrl = await uploadPublicAsset({
           objectKey: `competitions/${fileName}`,
-          body: buffer,
+          body: outBuffer,
           contentType: validated.value.mime,
         });
       } catch (e) {
@@ -114,7 +119,7 @@ export async function POST(
       const { mkdir } = await import("fs/promises");
       try {
         await mkdir(uploadDir, { recursive: true });
-        await writeFile(filePath, buffer);
+        await writeFile(filePath, outBuffer);
       } catch {
         return NextResponse.json(
           {

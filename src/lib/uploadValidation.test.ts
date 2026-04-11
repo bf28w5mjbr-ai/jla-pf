@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import sharp from "sharp";
 import {
   sanitizeUploadBasename,
+  validateAndNormalizeCompetitionRelationLogoBuffer,
   validateCompetitionAttachmentBuffer,
   validateOrganizationLogoBuffer,
   validateRasterImageBuffer,
@@ -66,6 +68,48 @@ describe("validateOrganizationLogoBuffer", () => {
       expect(r.value.mime).toBe("image/svg+xml");
       expect(r.value.ext).toBe("svg");
     }
+  });
+});
+
+describe("validateAndNormalizeCompetitionRelationLogoBuffer", () => {
+  it("accepts png like validateRaster", async () => {
+    const r = await validateAndNormalizeCompetitionRelationLogoBuffer(ONE_PX_PNG);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.mime).toBe("image/png");
+      expect(r.value.buffer.equals(ONE_PX_PNG)).toBe(true);
+    }
+  });
+
+  it("passes through jpeg from sharp", async () => {
+    const jpeg = await sharp(ONE_PX_PNG).jpeg({ quality: 90 }).toBuffer();
+    const r = await validateAndNormalizeCompetitionRelationLogoBuffer(jpeg);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.mime).toBe("image/jpeg");
+      expect(r.value.buffer.equals(jpeg)).toBe(true);
+    }
+  });
+
+  it("converts tiff to webp", async () => {
+    const tiff = await sharp({
+      create: { width: 2, height: 2, channels: 3, background: { r: 10, g: 200, b: 10 } },
+    })
+      .tiff()
+      .toBuffer();
+    const r = await validateAndNormalizeCompetitionRelationLogoBuffer(tiff);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.mime).toBe("image/webp");
+      expect(r.value.ext).toBe("webp");
+      const check = await import("file-type").then((m) => m.fileTypeFromBuffer(r.value.buffer));
+      expect(check?.mime).toBe("image/webp");
+    }
+  });
+
+  it("rejects garbage", async () => {
+    const r = await validateAndNormalizeCompetitionRelationLogoBuffer(Buffer.from("not an image"));
+    expect(r.ok).toBe(false);
   });
 });
 
