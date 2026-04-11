@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import { formatDateForDatetimeLocalInput } from "@/lib/datetimeLocal";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
@@ -12,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Bold, Coins, Eye, Info, Plus, Trash2 } from "lucide-react";
+import { Bold, Coins, Eye, Info, Loader2, Plus, Trash2 } from "lucide-react";
 import {
   competitionEventCategoryScopeLabel,
   resolveCompetitionEventCategoryScope,
@@ -116,6 +117,16 @@ type Event = {
   teamRelayPositionCount?: number | null;
   /** チーム種目: ポジション名（JSON 配列） */
   teamRelayPositionNames?: unknown;
+  /** 年齢カテゴリに連動する場合（手動の生年月日一括保存で解除される） */
+  ageCategoryId?: string | null;
+};
+
+export type CompetitionAgeCategoryDraft = {
+  id: string;
+  name: string;
+  displayOrder: number;
+  eligibleBirthDateFrom: Date | string | null;
+  eligibleBirthDateTo: Date | string | null;
 };
 
 function teamRelayStateKey(category: "POOL" | "OCEAN", eventName: string) {
@@ -189,6 +200,7 @@ type EntrySettingsEditorProps = {
     entryPledgeLockNoOffer?: boolean | null;
   };
   initialEvents?: Event[];
+  initialAgeCategories?: CompetitionAgeCategoryDraft[];
   canEdit: boolean;
   /** 保存成功後に親へ通知（エントリー設定の一覧へ戻す等） */
   onSuccessfulSectionSave?: () => void;
@@ -210,6 +222,7 @@ export default function EntrySettingsEditor({
   isPublished = false,
   initialData,
   initialEvents = [],
+  initialAgeCategories = [],
   canEdit,
   onSuccessfulSectionSave,
 }: EntrySettingsEditorProps) {
@@ -385,6 +398,52 @@ export default function EntrySettingsEditor({
     });
     return map;
   });
+
+  const initialAgeCategoriesFingerprint = useMemo(
+    () =>
+      (initialAgeCategories ?? [])
+        .map(
+          (c) =>
+            `${c.id}\t${c.name}\t${toEligibleBirthDateInput(c.eligibleBirthDateFrom)}\t${toEligibleBirthDateInput(c.eligibleBirthDateTo)}`
+        )
+        .join("\n"),
+    [initialAgeCategories]
+  );
+
+  const [eventsSubTab, setEventsSubTab] = useState<"list" | "ageCategories">("list");
+  const [ageCategories, setAgeCategories] = useState<CompetitionAgeCategoryDraft[]>(
+    () => initialAgeCategories ?? []
+  );
+
+  useEffect(() => {
+    setAgeCategories(initialAgeCategories ?? []);
+  }, [initialAgeCategoriesFingerprint]);
+
+  type CatDraft = { name: string; from: string; to: string };
+  const [catDrafts, setCatDrafts] = useState<Record<string, CatDraft>>({});
+  useEffect(() => {
+    setCatDrafts(
+      Object.fromEntries(
+        ageCategories.map((c) => [
+          c.id,
+          {
+            name: c.name,
+            from: toEligibleBirthDateInput(c.eligibleBirthDateFrom),
+            to: toEligibleBirthDateInput(c.eligibleBirthDateTo),
+          },
+        ])
+      )
+    );
+  }, [ageCategories]);
+
+  const [newCatName, setNewCatName] = useState("");
+  const [newCatFrom, setNewCatFrom] = useState("");
+  const [newCatTo, setNewCatTo] = useState("");
+  const [ageCatBusy, setAgeCatBusy] = useState<string | null>(null);
+  const [updatingEventAgeCategoryForGroup, setUpdatingEventAgeCategoryForGroup] = useState<
+    Record<string, boolean>
+  >({});
+
   const [eventTableBulkSaveStatus, setEventTableBulkSaveStatus] = useState<Record<string, Date>>({});
   const buildPreliminaryLanesMap = (evts: Event[]) => {
     const map: Record<string, string> = {};
@@ -1508,6 +1567,35 @@ export default function EntrySettingsEditor({
     return { ageTargets, rowTargets, sectionKey: `${category}-${type}` as const };
   };
 
+  const isAgeCategoryLinkedGroup = (
+    name: string,
+    type: "INDIVIDUAL" | "TEAM",
+    category: "POOL" | "OCEAN"
+  ) => {
+    const sib = events.filter(
+      (e) => e.name === name && e.type === type && e.category === category
+    );
+    if (sib.length === 0) return false;
+    const ids = new Set(sib.map((e) => e.ageCategoryId ?? null));
+    if (ids.size !== 1) return false;
+    return [...ids][0] != null;
+  };
+
+  const groupAgeCategorySelectValue = (
+    name: string,
+    type: "INDIVIDUAL" | "TEAM",
+    category: "POOL" | "OCEAN"
+  ): "" | "mixed" | string => {
+    const sib = events.filter(
+      (e) => e.name === name && e.type === type && e.category === category
+    );
+    if (sib.length === 0) return "";
+    const ids = new Set(sib.map((e) => e.ageCategoryId ?? null));
+    if (ids.size > 1) return "mixed";
+    const only = [...ids][0];
+    return only ?? "";
+  };
+
   type EventTableValidate =
     | { ok: true }
     | { ok: false; reason: "empty" }
@@ -1524,6 +1612,9 @@ export default function EntrySettingsEditor({
 
     const isoDateRe = /^\d{4}-\d{2}-\d{2}$/;
     for (const event of ageTargets) {
+      if (isAgeCategoryLinkedGroup(event.name, event.type, event.category)) {
+        continue;
+      }
       const range = eventBirthDateRanges[event.name] || { from: "", to: "" };
       const from = range.from.trim();
       const to = range.to.trim();
@@ -1628,6 +1719,9 @@ export default function EntrySettingsEditor({
 
     const ageOk = await Promise.all(
       ageTargets.map((event) => {
+        if (isAgeCategoryLinkedGroup(event.name, event.type, event.category)) {
+          return Promise.resolve(true);
+        }
         const range = eventBirthDateRanges[event.name] || { from: "", to: "" };
         const fromTrim = range.from.trim();
         const toTrim = range.to.trim();
@@ -1822,6 +1916,173 @@ export default function EntrySettingsEditor({
     }
   };
 
+  const ageCategoryGroupBusyKey = (
+    name: string,
+    type: "INDIVIDUAL" | "TEAM",
+    category: "POOL" | "OCEAN"
+  ) => `${category}-${type}-${name}`;
+
+  const handleAssignAgeCategoryToGroup = async (
+    representativeEvent: Event,
+    nextValue: string
+  ) => {
+    const categoryId = nextValue === "" ? null : nextValue;
+    const key = ageCategoryGroupBusyKey(
+      representativeEvent.name,
+      representativeEvent.type,
+      representativeEvent.category
+    );
+    setUpdatingEventAgeCategoryForGroup((prev) => ({ ...prev, [key]: true }));
+    try {
+      const response = await fetch(
+        `/api/competitions/${competitionId}/events/${representativeEvent.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ageCategoryId: categoryId }),
+        }
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          typeof body.message === "string" ? body.message : "年齢カテゴリの更新に失敗しました"
+        );
+      }
+      const nextEvents = body.events as Event[] | undefined;
+      if (Array.isArray(nextEvents)) {
+        syncEvents(nextEvents, { resetEventTableForm: true });
+      }
+      toast.success(
+        categoryId
+          ? "種目を年齢カテゴリに連動しました（生年月日が更新されました）。"
+          : "年齢カテゴリ連動を解除しました。"
+      );
+      router.refresh();
+    } catch (e) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : "年齢カテゴリの更新に失敗しました");
+    } finally {
+      setUpdatingEventAgeCategoryForGroup((prev) => {
+        const copy = { ...prev };
+        delete copy[key];
+        return copy;
+      });
+    }
+  };
+
+  const handleSaveAgeCategoryRow = async (categoryRowId: string) => {
+    const d = catDrafts[categoryRowId];
+    if (!d) return;
+    const nameTrim = d.name.trim();
+    if (!nameTrim) {
+      toast.error("カテゴリ名を入力してください");
+      return;
+    }
+    const fromTrim = d.from.trim();
+    const toTrim = d.to.trim();
+    if ((fromTrim === "") !== (toTrim === "")) {
+      toast.error("生年月日の範囲は、開始・終了を両方入力するか、両方空にしてください");
+      return;
+    }
+    setAgeCatBusy(categoryRowId);
+    try {
+      const response = await fetch(
+        `/api/competitions/${competitionId}/age-categories/${categoryRowId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: nameTrim,
+            eligibleBirthDateFrom: fromTrim === "" ? null : fromTrim,
+            eligibleBirthDateTo: toTrim === "" ? null : toTrim,
+          }),
+        }
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(typeof body.message === "string" ? body.message : "保存に失敗しました");
+      }
+      if (Array.isArray(body.ageCategories)) {
+        setAgeCategories(body.ageCategories as CompetitionAgeCategoryDraft[]);
+      }
+      await refreshEventsFromServer();
+      toast.success("年齢カテゴリを保存しました（連動中の種目へ反映済み）");
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "保存に失敗しました");
+    } finally {
+      setAgeCatBusy(null);
+    }
+  };
+
+  const handleAddAgeCategory = async () => {
+    const nameTrim = newCatName.trim();
+    if (!nameTrim) {
+      toast.error("カテゴリ名を入力してください");
+      return;
+    }
+    const fromTrim = newCatFrom.trim();
+    const toTrim = newCatTo.trim();
+    if ((fromTrim === "") !== (toTrim === "")) {
+      toast.error("生年月日の範囲は、開始・終了を両方入力するか、両方空にしてください");
+      return;
+    }
+    setAgeCatBusy("__new__");
+    try {
+      const payload: Record<string, unknown> = { name: nameTrim };
+      if (fromTrim !== "" && toTrim !== "") {
+        payload.eligibleBirthDateFrom = fromTrim;
+        payload.eligibleBirthDateTo = toTrim;
+      }
+      const response = await fetch(`/api/competitions/${competitionId}/age-categories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(typeof body.message === "string" ? body.message : "追加に失敗しました");
+      }
+      if (Array.isArray(body.ageCategories)) {
+        setAgeCategories(body.ageCategories as CompetitionAgeCategoryDraft[]);
+      }
+      setNewCatName("");
+      setNewCatFrom("");
+      setNewCatTo("");
+      toast.success("年齢カテゴリを追加しました");
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "追加に失敗しました");
+    } finally {
+      setAgeCatBusy(null);
+    }
+  };
+
+  const handleDeleteAgeCategory = async (categoryRowId: string, label: string) => {
+    if (!confirm(`年齢カテゴリ「${label}」を削除しますか？`)) return;
+    setAgeCatBusy(categoryRowId);
+    try {
+      const response = await fetch(
+        `/api/competitions/${competitionId}/age-categories/${categoryRowId}`,
+        { method: "DELETE" }
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(typeof body.message === "string" ? body.message : "削除に失敗しました");
+      }
+      if (Array.isArray(body.ageCategories)) {
+        setAgeCategories(body.ageCategories as CompetitionAgeCategoryDraft[]);
+      }
+      await refreshEventsFromServer();
+      toast.success("年齢カテゴリを削除しました");
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "削除に失敗しました");
+    } finally {
+      setAgeCatBusy(null);
+    }
+  };
+
   const handleDeleteEvent = async (eventId: string, eventName: string) => {
     if (!confirm(`「${eventName}」を削除しますか？\n男子・女子をまとめて削除します。`)) {
       return;
@@ -1953,6 +2214,10 @@ export default function EntrySettingsEditor({
     const isUpdatingSexOption = !!updatingEventSexOptions[makeEventSexOptionKey(event)];
     const siblings = eventSiblingsFor(event.name, type, category);
     const relayKey = teamRelayStateKey(category, event.name);
+    const linked = isAgeCategoryLinkedGroup(event.name, type, category);
+    const catSel = groupAgeCategorySelectValue(event.name, type, category);
+    const grpBusy =
+      updatingEventAgeCategoryForGroup[ageCategoryGroupBusyKey(event.name, type, category)];
 
     const surface =
       tone === "pool"
@@ -2005,6 +2270,46 @@ export default function EntrySettingsEditor({
             </div>
           ) : null}
 
+          {canEdit ? (
+            <div className="space-y-1.5 rounded-md border border-border/50 bg-background/30 px-2.5 py-2">
+              <p className="text-[10px] font-medium text-muted-foreground">年齢カテゴリ（即時保存）</p>
+              <div className="flex max-w-md items-center gap-2">
+                <select
+                  className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring/70 disabled:cursor-not-allowed disabled:opacity-50"
+                  value={catSel === "mixed" ? "" : catSel}
+                  disabled={grpBusy}
+                  aria-busy={grpBusy}
+                  onChange={(e) => {
+                    void handleAssignAgeCategoryToGroup(event, e.target.value);
+                  }}
+                >
+                  <option value="">なし（下の日付を種目表の保存で手入力）</option>
+                  {ageCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                {grpBusy ? (
+                  <Loader2
+                    className="h-4 w-4 shrink-0 animate-spin text-muted-foreground"
+                    aria-hidden
+                  />
+                ) : null}
+              </div>
+              {catSel === "mixed" ? (
+                <p className="text-[10px] text-amber-800 dark:text-amber-200">
+                  男女行で異なるカテゴリが付いています。いずれかに揃えるか、一度「なし」にしてください。
+                </p>
+              ) : null}
+              {linked ? (
+                <p className="text-[10px] text-muted-foreground">
+                  カテゴリ連動中のため、下の生年月日は読み取り専用です。範囲の変更は「年齢カテゴリ」タブから行ってください。
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           <div
             className="space-y-2.5 rounded-md border border-border/50 bg-background/40 px-2.5 py-2.5"
             role="group"
@@ -2020,7 +2325,8 @@ export default function EntrySettingsEditor({
             <div className="space-y-2">
               <div>
                 <p className="mb-1 text-[10px] text-muted-foreground">
-                  参加可能な生年月日（この日〜この日に生まれた人。両端の日を含みます。空欄の片方／両方は制限なし。未入力のときは大会の年齢設定のみが適用されます）
+                  参加可能な生年月日（この日〜この日に生まれた人。両端の日を含みます。空欄の片方／両方は制限なし。未入力のときは大会の年齢設定のみが適用されます
+                  {linked ? "・カテゴリ連動中はカテゴリ側の範囲が優先されます" : ""}）
                 </p>
                 <label className="inline-flex flex-wrap items-center gap-1 text-[11px]">
                   <Input
@@ -2037,7 +2343,7 @@ export default function EntrySettingsEditor({
                         },
                       }));
                     }}
-                    disabled={!canEdit}
+                    disabled={!canEdit || linked}
                     className="h-8 w-[9.5rem] px-1.5 text-xs"
                   />
                   <span className="text-muted-foreground">〜</span>
@@ -2055,7 +2361,7 @@ export default function EntrySettingsEditor({
                         },
                       }));
                     }}
-                    disabled={!canEdit}
+                    disabled={!canEdit || linked}
                     className="h-8 w-[9.5rem] px-1.5 text-xs"
                   />
                 </label>
