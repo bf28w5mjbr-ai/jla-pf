@@ -2,16 +2,30 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import Link from "next/link";
+import { startAuthentication } from "@simplewebauthn/browser";
+import { Eye, EyeOff } from "lucide-react";
+import { fieldHintClass } from "@/lib/explanation";
+import { AuthPanel, AuthShell } from "@/components/auth/AuthShell";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { appendRedirectQuery, safePostLoginPath } from "@/lib/postLoginRedirect";
 
 export default function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectAfterLogin = safePostLoginPath(searchParams.get("redirect"));
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [supportsPasskey, setSupportsPasskey] = useState(true);
 
   const emailInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
@@ -22,6 +36,11 @@ export default function LoginForm() {
       errorRef.current?.focus();
     }
   }, [error]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setSupportsPasskey(!!window.PublicKeyCredential);
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -39,7 +58,7 @@ export default function LoginForm() {
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({} as any));
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
         const msg = data?.error ?? "ログインに失敗しました";
         setError(msg);
         toast.error("ログイン失敗", { description: msg });
@@ -52,8 +71,8 @@ export default function LoginForm() {
       }
 
       toast.success("ログイン成功");
-      router.replace("/dashboard");
-    } catch (err: any) {
+      router.replace(redirectAfterLogin ?? "/dashboard");
+    } catch {
       const msg = "ネットワークエラーが発生しました";
       setError(msg);
       toast.error("接続エラー", { description: msg });
@@ -63,61 +82,166 @@ export default function LoginForm() {
     }
   }
 
+  async function onPasskeyLogin() {
+    if (!supportsPasskey) {
+      toast.error("この端末はパスキーに対応していません");
+      return;
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      const msg = "パスキーでログインするにはメールアドレスを入力してください";
+      setError(msg);
+      toast.error("入力が必要です", { description: msg });
+      emailInputRef.current?.focus();
+      return;
+    }
+
+    setPasskeyLoading(true);
+    setError(null);
+
+    try {
+      const optionsRes = await fetch("/api/passkeys/authentication/options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normalizedEmail }),
+      });
+
+      const options = await optionsRes.json();
+
+      if (!optionsRes.ok) {
+        const msg = options?.error ?? "パスキー認証を開始できませんでした";
+        setError(msg);
+        toast.error("パスキー認証失敗", { description: msg });
+        return;
+      }
+
+      const assertion = await startAuthentication(options);
+
+      const verifyRes = await fetch("/api/passkeys/authentication/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential: assertion }),
+      });
+
+      const verifyData = await verifyRes.json();
+
+      if (!verifyRes.ok) {
+        const msg = verifyData?.error ?? "パスキー認証に失敗しました";
+        setError(msg);
+        toast.error("パスキー認証失敗", { description: msg });
+        return;
+      }
+
+      toast.success("パスキーでログインしました");
+      router.replace(redirectAfterLogin ?? "/dashboard");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "パスキー認証に失敗しました";
+      setError(msg);
+      toast.error("パスキー認証失敗", { description: msg });
+    } finally {
+      setPasskeyLoading(false);
+    }
+  }
+
   return (
-    <main className="mx-auto max-w-sm p-6">
-      <h1 className="text-2xl font-bold mb-6">ログイン</h1>
+    <AuthShell
+      maxWidth="md"
+      title="ログイン"
+      subtitle="メールアドレスとパスワード、またはパスキー・SMSでログインできます。パスキーは同じメールアドレスを入力してから実行してください。"
+      subtitleDensity="balanced"
+    >
+      <AuthPanel>
+        {error && (
+          <p
+            ref={errorRef}
+            role="alert"
+            aria-live="assertive"
+            tabIndex={-1}
+            className="mb-4 rounded-lg border border-red-200/80 bg-red-50 px-3 py-2.5 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200"
+          >
+            {error}
+          </p>
+        )}
 
-      {error && (
-        <p
-          ref={errorRef}
-          role="alert"
-          aria-live="assertive"
-          tabIndex={-1}
-          className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-        >
-          {error}
-        </p>
-      )}
+        <form onSubmit={onSubmit} className="space-y-4" aria-busy={submitting}>
+          <div className="space-y-1.5">
+            <Label htmlFor="login-email">メールアドレス</Label>
+            <Input
+              ref={emailInputRef}
+              id="login-email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              aria-invalid={!!error}
+            />
+          </div>
 
-      <form onSubmit={onSubmit} className="space-y-4" aria-busy={submitting}>
-        <label className="block">
-          <span className="text-sm">メールアドレス</span>
-          <input
-            ref={emailInputRef}
-            type="email"
-            inputMode="email"
-            className="mt-1 w-full rounded border px-3 py-2"
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            aria-invalid={!!error}
-          />
-        </label>
+          <div className="space-y-1.5">
+            <Label htmlFor="login-password">パスワード</Label>
+            <div className="relative">
+              <Input
+                ref={passwordInputRef}
+                id="login-password"
+                type={showPassword ? "text" : "password"}
+                className="pr-10"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                aria-invalid={!!error}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label={showPassword ? "パスワードを隠す" : "パスワードを表示"}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <p className={fieldHintClass("guided")}>
+              パスワードを忘れた場合は、下の「SMS認証でログイン」から登録済みの携帯番号でログインできます。
+            </p>
+          </div>
 
-        <label className="block">
-          <span className="text-sm">パスワード</span>
-          <input
-            ref={passwordInputRef}
-            type="password"
-            className="mt-1 w-full rounded border px-3 py-2"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            aria-invalid={!!error}
-          />
-        </label>
+          <Button type="submit" className="w-full" disabled={submitting} aria-disabled={submitting}>
+            {submitting ? "ログイン中..." : "ログイン"}
+          </Button>
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full rounded bg-black px-4 py-2 text-white disabled:opacity-60"
-          aria-disabled={submitting}
-        >
-          {submitting ? "ログイン中..." : "ログイン"}
-        </button>
-      </form>
-    </main>
+          <div className="space-y-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onPasskeyLogin}
+              disabled={passkeyLoading || !supportsPasskey}
+              className="w-full"
+            >
+              {passkeyLoading ? "パスキー認証中..." : "パスキーでログイン"}
+            </Button>
+
+            <Button variant="outline" className="w-full" asChild>
+              <Link href={appendRedirectQuery("/login/sms", redirectAfterLogin)}>SMS認証でログイン</Link>
+            </Button>
+          </div>
+
+          {!supportsPasskey && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+              この端末はパスキーに対応していません。SMSをご利用ください。
+            </p>
+          )}
+
+          <p className="text-center text-sm text-muted-foreground">
+            アカウントをお持ちでない方は{" "}
+            <Button variant="link" className="h-auto p-0 align-baseline font-medium text-foreground" asChild>
+              <Link href={appendRedirectQuery("/register", redirectAfterLogin)}>新規登録</Link>
+            </Button>
+          </p>
+        </form>
+      </AuthPanel>
+    </AuthShell>
   );
 }

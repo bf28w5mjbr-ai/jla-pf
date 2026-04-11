@@ -13,9 +13,11 @@ jobs:
         uses: actions/stale@v6
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-          dry-run: false
           days-before-stale: 60
           days-before-close: 7
-          exempt-labels: |
+          exempt-issue-labels: |
+            pinned
+            security
+          exempt-pr-labels: |
             pinned
             security

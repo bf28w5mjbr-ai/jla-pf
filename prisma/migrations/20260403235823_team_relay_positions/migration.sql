@@ -1,0 +1,8 @@
+-- RenameIndex
+ALTER INDEX "CompetitionHeatMarshalState_competitionId_eventId_round_heatInd" RENAME TO "CompetitionHeatMarshalState_competitionId_eventId_round_hea_key";
+
+-- RenameIndex
+ALTER INDEX "CompetitionParticipantStatus_competitionId_eventId_marshalRound" RENAME TO "CompetitionParticipantStatus_competitionId_eventId_marshalR_idx";
+
+-- RenameIndex
+ALTER INDEX "CompetitionParticipantStatus_competitionId_eventId_participantT" RENAME TO "CompetitionParticipantStatus_competitionId_eventId_particip_key";

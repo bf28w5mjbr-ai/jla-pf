@@ -12,6 +12,11 @@ RUN npm install -g pnpm && pnpm install --frozen-lockfile
 # Copy source code
 COPY . .
 
+# next build は NODE_ENV=production 相当で auth モジュールが読み込まれ、AUTH_SECRET（32文字以上）が必須。
+# イメージ内のデフォルトはビルド通過用のダミー。本番は docker run / compose で AUTH_SECRET を必ず上書きすること。
+ARG AUTH_SECRET=ci-build-placeholder-secret-min-32-chars-xx
+ENV AUTH_SECRET=$AUTH_SECRET
+
 # Build application
 RUN pnpm build
 

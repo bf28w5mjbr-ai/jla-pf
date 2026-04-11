@@ -1,137 +1,67 @@
-# JLA PF 実装状況レポート
+# JLA PF 実装状況（現行）
 
-## Sprint 1 完了状況
+最終更新: 2026-03-24
 
-### ✅ 完了（100%）
+このドキュメントは、現行コードベースに合わせた実装状況の要約です。  
+一次情報は `src/app/api/**/route.ts`、`src/lib/**`、`prisma/schema.prisma` を参照してください。
 
-#### 1. Prisma Schema
-- すべてのコアモデル実装済み
-- Enum定義完備
-- リレーション設定完了
+## 現在地
 
-#### 2. 認証システム
-- 自前認証実装
-- Cookie ベースセッション
-- セキュリティ強化（汎用エラーメッセージ）
+- コア機能（認証、所属、資格、大会、エントリー、管理UI）は実装済み
+- Stripe Webhook（`/api/webhooks/stripe`）は実装済み
+- モバイル（Capacitor iOS/Android）の土台は導入済み
+- 主要ドキュメント群（API/運用/トラブルシュート）は整備済み
 
-#### 3. 決済システム
-- Stripe Connect 統合
-- Webhook実装（4パターン）
-  - ENTRY（大会エントリー）
-  - ORG_ANNUAL（年会費）
-  - COMPETITION_HOST（主催料）
-  - CART（カート一括決済）
-- application_fee 10% 固定
-- Refund対応
+## 実装済み（要点）
 
-#### 4. 財務管理
-- CompetitionWalletLedger実装
-- 収益計算（applyRevenueDelta）
-- 冪等性保証（ensureNotProcessed）
+### ドメイン・基盤
 
-#### 5. 監査
-- AuditLog実装
-- すべての重要操作を記録
+- Prisma スキーマとマイグレーション管理
+- 監査ログ基盤（`src/lib/auditLog.ts`）
+- RBAC/スコープガード（`src/lib/accessControl.ts`）
 
-## 次のマイルストーン
+### 決済
 
-### Phase 2: API & UI 実装
+- Stripe Checkout セッション作成
+- Webhook 受信、署名検証、冪等処理（`StripeEvent`）
+- `checkout.session.completed` / `payment_intent.*` / `charge.refunded` などの状態同期
 
-優先度順：
+### 大会運用
 
-1. **大会管理API**
-   - POST /api/competitions（作成）
-   - GET /api/competitions（一覧）
-   - GET /api/competitions/[id]（詳細）
+- 大会公開/更新
+- 個人・チームエントリー
+- 結果関連 API / 画面
+- 当日運用系 API（day-ops 系）
 
-2. **エントリーAPI**
-   - POST /api/entries（エントリー作成）
-   - POST /api/checkout/entry（決済開始）
-   - GET /api/entries（自分のエントリー一覧）
+### 管理・運用
 
-3. **所属・資格API**
-   - POST /api/memberships/apply（申請）
-   - POST /api/memberships/approve（承認）
-   - POST /api/qualifications/request（資格申請）
-   - POST /api/qualifications/approve（承認）
+- 協会/クラブ申請承認系 API
+- 通知系 API（管理者テスト送信含む）
+- 画像アップロード API（プロフィール/クラブロゴ）
 
-4. **UI実装**
-   - 大会一覧ページ
-   - 大会詳細・エントリーフォーム
-   - 管理画面（承認キュー）
+## 進行中・未完了
 
-## アーキテクチャ決定記録（ADR）
+- Stripe Connect による収益分配の本実装
+- 返金時の業務フロー（運用ルール含む）最終化
+- E2E テストの主要フロー拡張（現状はスモークの導入段階）
+- ドキュメントの継続的同期（新規 API 追加時）
 
-### ADR-001: 決済は Stripe Connect destination charge
-**理由**: PFは金を保持せず、団体へ直接入金する仕組みが必要
+## テスト状況
 
-### ADR-002: 状態管理は全て status enum
-**理由**: 明示的な状態遷移と監査可能性を保証
+- Unit: Vitest ベースで一部実装済み
+- E2E: `tests/e2e/health.e2e.test.ts` を導入済み
+- 実行コマンド:
+  - `pnpm test`
+  - `pnpm test:e2e`（`E2E_BASE_URL` を指定）
 
-### ADR-003: 金額は JPY / Int のみ
-**理由**: 小数点誤差を排除、監査の正確性を担保
+## 運用上の注意
 
-### ADR-004: すべての mutation で AuditLog 記録
-**理由**: トレーサビリティと説明責任の確保
+- `pnpm dev` の `.next/dev/lock` エラーは多重起動時に発生するため、既存 dev プロセスを停止してから再起動する
+- 機密ファイル（`google-services.json` / `GoogleService-Info.plist`）はリポジトリ外管理
+- 権限仕様は `docs/PERMISSIONS_CURRENT.md` を正とし、旧資料は参考扱い
 
-### ADR-005: 現地運用は対象外
-**理由**: MVPスコープの明確化、SLA外を宣言
+## 次アクション（優先）
 
-## 技術的負債
-
-### 現時点での負債なし
-- セキュリティ改善完了
-- 型安全性向上完了
-- 依存関係更新完了
-
-## パフォーマンス指標
-
-- ビルド時間: ~30秒
-- TypeScript コンパイル: エラーなし
-- Lighthouse スコア: 未測定（UI実装後）
-- バンドルサイズ: 5MB以下（閾値設定済み）
-
-## セキュリティ態勢
-
-- ✅ CodeQL スキャン有効
-- ✅ Dependabot 有効
-- ✅ TruffleHog（秘密スキャン）
-- ✅ Trivy（コンテナスキャン）
-- ✅ Snyk（依存関係スキャン）
-- ✅ 汎用エラーメッセージ実装
-
-## CI/CD パイプライン
-
-### 自動実行
-- Typecheck
-- Lint
-- Build
-- Security Scan
-- Dependency Update
-
-### リリースプロセス
-- Conventional Commits
-- Semantic Release（自動バージョニング）
-- Docker Build → ghcr.io
-
-## 今後の課題
-
-1. **テストカバレッジ向上**
-   - ユニットテスト: 0% → 目標 80%
-   - E2Eテスト: 未実装 → 主要フロー実装
-
-2. **ドキュメント整備**
-   - API仕様書（OpenAPI）
-   - 運用マニュアル
-
-3. **パフォーマンス最適化**
-   - DB インデックス最適化
-   - N+1 クエリ対策
-
-4. **国際化（i18n）**
-   - 英語対応（将来）
-
----
-
-**レポート日**: 2026年1月15日  
-**ステータス**: Sprint 1 完了、Sprint 2 準備中
+1. Stripe Connect と収益分配仕様を確定し実装
+2. 認証/エントリー/決済/管理の E2E シナリオ拡張
+3. API 追加ごとに `docs/API_SPEC.md` を同期更新

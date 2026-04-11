@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Next: start with log",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm dev:logged",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Next: tail log",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm dev:log:tail",
+      "cwd": "${workspaceFolder}"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Next: dev + tail log",
+      "configurations": [
+        "Next: start with log",
+        "Next: tail log"
+      ],
+      "stopAll": true
+    }
+  ]
+}
