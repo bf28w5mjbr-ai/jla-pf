@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { stripe } from "@/lib/stripe";
 import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/env";
+import { getSmsAuthPublicFlags } from "@/lib/smsHoldPolicy";
 
 export async function GET(request: NextRequest) {
   const deepCheck = request.nextUrl.searchParams.get("deep") === "1";
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
         error: "required_env_missing",
         required,
         integrations,
+        ...getSmsAuthPublicFlags(),
       },
       { status: 503 }
     );
@@ -60,13 +62,21 @@ export async function GET(request: NextRequest) {
         required,
         integrations,
         deep,
+        ...getSmsAuthPublicFlags(),
       },
       { status: ok ? 200 : 503 }
     );
   } catch (error) {
     console.error("Health check failed:", error);
     return NextResponse.json(
-      { ok: false, mode: "ready", error: "database_connection_failed", required, integrations },
+      {
+        ok: false,
+        mode: "ready",
+        error: "database_connection_failed",
+        required,
+        integrations,
+        ...getSmsAuthPublicFlags(),
+      },
       { status: 503 }
     );
   }

@@ -8,11 +8,22 @@ const STEPS: { step: RegistrationStep; label: string }[] = [
   { step: 3, label: "パスキー" },
 ];
 
-export function RegistrationStepper({ currentStep }: { currentStep: RegistrationStep }) {
+export function RegistrationStepper({
+  currentStep,
+  step2Label,
+}: {
+  currentStep: RegistrationStep;
+  /** 未指定時は「SMS認証」 */
+  step2Label?: string;
+}) {
+  const steps = STEPS.map((s) =>
+    s.step === 2 && step2Label ? { ...s, label: step2Label } : s
+  );
+
   return (
     <nav aria-label="登録の進捗" className="mb-8 w-full sm:mb-10">
       <div className="mx-auto flex w-full max-w-xl items-start justify-center">
-        {STEPS.map(({ step, label }, index) => {
+        {steps.map(({ step, label }, index) => {
           const done = currentStep > step;
           const active = currentStep === step;
           return (
@@ -38,7 +49,7 @@ export function RegistrationStepper({ currentStep }: { currentStep: Registration
                   {label}
                 </span>
               </div>
-              {index < STEPS.length - 1 && (
+              {index < steps.length - 1 && (
                 <div
                   className={`mt-5 h-0.5 min-w-[12px] flex-1 rounded-full ${
                     currentStep > step ? "bg-primary" : "bg-muted"

@@ -15,6 +15,8 @@ import {
   getResendCooldown
 } from "@/lib/otp";
 import { sendOTPviaSMS } from "@/lib/sns";
+import { smsLoginStartAllowed } from "@/lib/smsHoldPolicy";
+import { isSupabaseSmsOtpChannelActive } from "@/lib/smsOtpSupabase";
 import { ensureSupabasePhoneUser, sendSmsOtpViaSupabase } from "@/lib/supabase/otp";
 import { getTrustedClientIp, isLoginIpBlocklisted } from "@/lib/clientIp";
 import {
@@ -32,12 +34,21 @@ const StartLoginSchema = z.object({
 });
 
 const RESEND_COOLDOWN = 60; // 60秒
-const USE_SUPABASE_SMS_OTP = process.env.USE_SUPABASE_SMS_OTP === "true";
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const data = StartLoginSchema.parse(body);
+
+    if (!smsLoginStartAllowed()) {
+      return NextResponse.json(
+        {
+          error:
+            "現在、SMSによるログインは一時的にご利用いただけません。メールアドレスとパスワード、またはパスキーでログインしてください。",
+          code: "SMS_HELD",
+        },
+        { status: 503 }
+      );
+    }
 
     const ip = getTrustedClientIp(req);
     if (isLoginIpBlocklisted(ip)) {
@@ -151,8 +162,8 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 7. SMS送信（フラグON時はSupabase OTPへ切替）
-    if (USE_SUPABASE_SMS_OTP) {
+    // 7. SMS送信（フラグON時はSupabase OTPへ切替。SKIP_SMS 時はアプリ内 OTP のみ）
+    if (isSupabaseSmsOtpChannelActive()) {
       await ensureSupabasePhoneUser(phoneE164);
       await sendSmsOtpViaSupabase(phoneE164);
     } else {

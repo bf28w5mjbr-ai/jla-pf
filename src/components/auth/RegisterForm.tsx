@@ -187,8 +187,18 @@ function RegisterFormInner() {
         return;
       }
 
-      toast.success("認証コードを送信しました。SMSを確認してください。");
-      const otpBase = `/register/sms/otp?sessionId=${data.sessionId}&phone=${encodeURIComponent(formData.phoneNumber)}`;
+      const viaEmail = data.otpDelivery === "email";
+      toast.success(
+        viaEmail
+          ? `認証コードをメールで送信しました${
+              typeof data.otpDeliveryHint === "string"
+                ? `（${data.otpDeliveryHint}）`
+                : ""
+            }`
+          : "認証コードを送信しました。SMSを確認してください。"
+      );
+      const deliveryQ = viaEmail ? "&delivery=email" : "";
+      const otpBase = `/register/sms/otp?sessionId=${data.sessionId}&phone=${encodeURIComponent(formData.phoneNumber)}${deliveryQ}`;
       router.push(appendRedirectQuery(otpBase, redirectAfterRegister));
     } catch (err) {
       console.error("Register error:", err);
@@ -203,7 +213,7 @@ function RegisterFormInner() {
       <div className="mb-6 border-b border-border pb-6">
         <h2 className="text-lg font-semibold tracking-tight text-foreground">必須情報の入力</h2>
         <p className={pageLeadClass("balanced")}>
-          SMSで電話番号を確認したうえでアカウントを作成します。パスキーは任意です。JLA番号は選手登録の申請時に入力します。
+          登録メールまたはSMSで届く認証コードにより本人確認を行い、アカウントを作成します。パスキーは任意です。JLA番号は選手登録の申請時に入力します。
         </p>
       </div>
       <form onSubmit={handleSubmit} className="space-y-8">
@@ -512,7 +522,7 @@ function RegisterFormInner() {
 
         <div className="space-y-4 border-t border-border pt-6">
           <Button type="submit" className="h-11 w-full rounded-lg text-base font-semibold" disabled={loading}>
-            {loading ? "送信中..." : "認証コードを送信（SMS）"}
+            {loading ? "送信中..." : "認証コードを送信"}
           </Button>
 
           <p className="text-center text-sm text-muted-foreground">

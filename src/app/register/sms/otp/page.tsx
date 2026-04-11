@@ -11,7 +11,7 @@ import Link from "next/link";
 import { clearRegistrationFormDraft } from "@/lib/registrationFormDraft";
 import { appendRedirectQuery, safePostLoginPath } from "@/lib/postLoginRedirect";
 import { AuthShell, AuthPanel, AuthShellBrandedFallback } from "@/components/auth/AuthShell";
-import { Smartphone } from "lucide-react";
+import { Mail, Smartphone } from "lucide-react";
 
 function OTPVerifyContent() {
   const router = useRouter();
@@ -19,6 +19,7 @@ function OTPVerifyContent() {
   const sessionId = searchParams.get("sessionId");
   const phone = searchParams.get("phone");
   const redirectAfterRegister = safePostLoginPath(searchParams.get("redirect"));
+  const isEmailFlow = searchParams.get("delivery") === "email";
 
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
@@ -68,7 +69,11 @@ function OTPVerifyContent() {
         return;
       }
 
-      toast.success("電話番号を確認しました。パスキー設定へ進みます。");
+      toast.success(
+        isEmailFlow
+          ? "メールで本人確認ができました。パスキー設定へ進みます。"
+          : "電話番号を確認しました。パスキー設定へ進みます。"
+      );
       clearRegistrationFormDraft();
       const next = data.next || "/register/passkey";
       if (redirectAfterRegister) {
@@ -115,8 +120,19 @@ function OTPVerifyContent() {
         return;
       }
 
-      toast.success("認証コードを再送信しました");
+      const viaEmail = data.otpDelivery === "email";
+      toast.success(
+        viaEmail
+          ? `認証コードをメールで再送信しました${
+              typeof data.otpDeliveryHint === "string" ? `（${data.otpDeliveryHint}）` : ""
+            }`
+          : "認証コードを再送信しました"
+      );
       setCooldown(60);
+      if (viaEmail) {
+        const base = `/register/sms/otp?sessionId=${sessionId}&phone=${encodeURIComponent(phone || "")}&delivery=email`;
+        router.replace(appendRedirectQuery(base, redirectAfterRegister));
+      }
     } catch (err) {
       console.error("Resend error:", err);
       toast.error("再送信に失敗しました");
@@ -129,19 +145,43 @@ function OTPVerifyContent() {
     <AuthShell
       maxWidth="md"
       title="新規登録"
-      subtitle="SMSで届いた6桁のコードを入力して、電話番号を確認してください。"
+      subtitle={
+        isEmailFlow
+          ? "登録メールに届いた6桁のコードを入力して、本人確認を完了してください。"
+          : "SMSで届いた6桁のコードを入力して、電話番号を確認してください。"
+      }
       subtitleDensity="guided"
     >
-      <RegistrationStepper currentStep={2} />
+      <RegistrationStepper
+        currentStep={2}
+        step2Label={isEmailFlow ? "メール認証" : undefined}
+      />
       <AuthPanel>
         <div className="mb-6 flex flex-col items-center text-center sm:mb-8">
           <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-700">
-            <Smartphone className="h-6 w-6" aria-hidden />
+            {isEmailFlow ? (
+              <Mail className="h-6 w-6" aria-hidden />
+            ) : (
+              <Smartphone className="h-6 w-6" aria-hidden />
+            )}
           </div>
-          <h2 className="text-lg font-semibold tracking-tight text-gray-900">電話番号認証</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-gray-900">
+            {isEmailFlow ? "メール認証" : "電話番号認証"}
+          </h2>
           <p className="mt-2 text-sm leading-relaxed text-gray-600">
-            <span className="font-medium text-gray-800">{phone || "ご登録の携帯番号"}</span>
-            に送信したコードを入力してください。
+            {isEmailFlow ? (
+              <>
+                登録時のメールアドレスに送信したコードを入力してください。
+                <span className="mt-1 block text-xs text-gray-500">
+                  電話番号はSMS再開後にプロフィールから確認・更新できます。
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="font-medium text-gray-800">{phone || "ご登録の携帯番号"}</span>
+                に送信したコードを入力してください。
+              </>
+            )}
           </p>
         </div>
 
@@ -197,12 +237,16 @@ function OTPVerifyContent() {
                   : "コードを再送信"}
             </Button>
             <p className="text-center text-xs leading-relaxed text-gray-500">
-              届かない場合は迷惑メール設定や電波状況をご確認ください。
+              {isEmailFlow
+                ? "届かない場合は迷惑メールフォルダやドメイン受信設定をご確認ください。"
+                : "届かない場合は迷惑メール設定や電波状況をご確認ください。"}
             </p>
           </div>
 
           <Button variant="ghost" className="w-full text-gray-600" asChild>
-            <Link href="/register">入力画面に戻る</Link>
+            <Link href={appendRedirectQuery("/register", redirectAfterRegister)}>
+              入力画面に戻る
+            </Link>
           </Button>
         </form>
       </AuthPanel>

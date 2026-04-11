@@ -29,13 +29,15 @@ import {
   canResend,
   getResendCooldown,
 } from "@/lib/otp";
-import { sendOTPviaSMS, sendOTPviaSMS_Mock } from "@/lib/sns";
-import { ensureSupabasePhoneUser, sendSmsOtpViaSupabase } from "@/lib/supabase/otp";
+import { maskEmailForHint } from "@/lib/email/maskEmail";
+import {
+  sendRegistrationOtpDelivery,
+  sendRegistrationOtpResendDelivery,
+  type RegistrationOtpDeliveryStored,
+} from "@/lib/registration/sendRegistrationOtp";
 
 const MAX_HOURLY_SENDS = 5;
 const RESEND_COOLDOWN = 60;
-const USE_SUPABASE_SMS_OTP = process.env.USE_SUPABASE_SMS_OTP === "true";
-
 const InitialRegistrationSchema = z.object({
   phoneNumber: z.string().min(10),
   familyName: z.string().min(1),
@@ -155,6 +157,37 @@ export async function POST(req: NextRequest) {
       const otp = generateOTP();
       const otpHash = await hashOTP(otp);
 
+      let delivery: RegistrationOtpDeliveryStored;
+      try {
+        delivery = await sendRegistrationOtpResendDelivery({
+          phoneE164,
+          otp,
+          emailForOtp: existingSession.email ?? null,
+          priorDelivery: existingSession.registrationOtpDelivery,
+        });
+      } catch (sendErr) {
+        if (sendErr instanceof Error) {
+          if (sendErr.message === "RESEND_API_KEY_REQUIRED") {
+            return NextResponse.json(
+              {
+                error:
+                  "メールで登録認証を行うには環境変数 RESEND_API_KEY の設定が必要です。管理者にご連絡ください。",
+              },
+              { status: 503 }
+            );
+          }
+          if (sendErr.message.startsWith("Resend が失敗しました")) {
+            return NextResponse.json(
+              {
+                error: "認証コードメールの送信に失敗しました。しばらくしてから再度お試しください。",
+              },
+              { status: 503 }
+            );
+          }
+        }
+        throw sendErr;
+      }
+
       const updatedSession = await prisma.registrationSession.update({
         where: { id: existingSession.id },
         data: {
@@ -168,22 +201,24 @@ export async function POST(req: NextRequest) {
               ? getHourlyResetTime()
               : existingSession.hourlyResetAt,
           expiresAt: getSessionExpiry(),
+          registrationOtpDelivery: delivery,
         },
       });
 
-      if (USE_SUPABASE_SMS_OTP) {
-        await ensureSupabasePhoneUser(phoneE164);
-        await sendSmsOtpViaSupabase(phoneE164);
-      } else if (process.env.NODE_ENV === "development" && process.env.SKIP_SMS === "true") {
-        await sendOTPviaSMS_Mock(phoneE164, otp);
-      } else {
-        await sendOTPviaSMS(phoneE164, otp);
-      }
+      const otpDelivery = delivery === "EMAIL" ? "email" : "sms";
 
       return NextResponse.json({
         sessionId: updatedSession.id,
-        message: "認証コードを再送信しました",
+        message:
+          delivery === "EMAIL"
+            ? "認証コードをメールで再送信しました"
+            : "認証コードを再送信しました",
         resent: true,
+        otpDelivery,
+        ...(delivery === "EMAIL" &&
+          existingSession.email && {
+            otpDeliveryHint: maskEmailForHint(existingSession.email),
+          }),
       });
     }
 
@@ -241,6 +276,42 @@ export async function POST(req: NextRequest) {
     const bcrypt = await import("bcrypt");
     const passwordHash = await bcrypt.hash(data.password, 10);
 
+    let delivery: RegistrationOtpDeliveryStored;
+    try {
+      delivery = await sendRegistrationOtpDelivery({
+        phoneE164,
+        otp,
+        emailForOtp: normalizedEmail,
+      });
+    } catch (sendErr) {
+      if (sendErr instanceof Error) {
+        if (sendErr.message === "RESEND_API_KEY_REQUIRED") {
+          return NextResponse.json(
+            {
+              error:
+                "メールで登録認証を行うには環境変数 RESEND_API_KEY（任意で REGISTRATION_EMAIL_FROM）の設定が必要です。",
+            },
+            { status: 503 }
+          );
+        }
+        if (sendErr.message.startsWith("Resend が失敗しました")) {
+          return NextResponse.json(
+            {
+              error: "認証コードメールの送信に失敗しました。しばらくしてから再度お試しください。",
+            },
+            { status: 503 }
+          );
+        }
+        if (sendErr.message.includes("REGISTRATION_EMAIL_OTP requires")) {
+          return NextResponse.json(
+            { error: "登録用メールアドレスが必要です。" },
+            { status: 400 }
+          );
+        }
+      }
+      throw sendErr;
+    }
+
     const session = await prisma.registrationSession.create({
       data: {
         phoneNumber: phoneE164,
@@ -266,21 +337,22 @@ export async function POST(req: NextRequest) {
         otpExpiresAt: getOTPExpiry(),
         hourlyResetAt: getHourlyResetTime(),
         expiresAt: getSessionExpiry(),
+        registrationOtpDelivery: delivery,
       },
     });
 
-    if (USE_SUPABASE_SMS_OTP) {
-      await ensureSupabasePhoneUser(phoneE164);
-      await sendSmsOtpViaSupabase(phoneE164);
-    } else if (process.env.NODE_ENV === "development" && process.env.SKIP_SMS === "true") {
-      await sendOTPviaSMS_Mock(phoneE164, otp);
-    } else {
-      await sendOTPviaSMS(phoneE164, otp);
-    }
+    const otpDelivery = delivery === "EMAIL" ? "email" : "sms";
 
     return NextResponse.json({
       sessionId: session.id,
-      message: "認証コードを送信しました",
+      message:
+        delivery === "EMAIL"
+          ? "認証コードを登録メールアドレス宛に送信しました"
+          : "認証コードを送信しました",
+      otpDelivery,
+      ...(delivery === "EMAIL" && {
+        otpDeliveryHint: maskEmailForHint(normalizedEmail),
+      }),
     });
   } catch (error) {
     if (
@@ -304,6 +376,15 @@ export async function POST(req: NextRequest) {
     if (error instanceof Error && error.message.toLowerCase().includes("unsupported phone provider")) {
       return NextResponse.json(
         { error: "SupabaseのSMSプロバイダ設定が未完了です。管理者にお問い合わせください。" },
+        { status: 503 }
+      );
+    }
+    if (error instanceof Error && error.message === "RESEND_API_KEY が未設定です") {
+      return NextResponse.json(
+        {
+          error:
+            "メールで登録認証を行うには環境変数 RESEND_API_KEY の設定が必要です。管理者にご連絡ください。",
+        },
         { status: 503 }
       );
     }

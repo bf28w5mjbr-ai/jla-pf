@@ -9,6 +9,7 @@ import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { hashOTP } from "@/lib/otp";
 import { sendOTPviaSMS } from "@/lib/sns";
+import { isSmsOutboundHeld } from "@/lib/smsHoldPolicy";
 import { normalizePhone } from "@/lib/normalize-kana";
 import { toE164 } from "@/lib/phone";
 import { findUserByPhoneCandidates } from "@/lib/user-uniqueness";
@@ -33,6 +34,16 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => ({}));
     const data = PhoneChangeStartSchema.parse(body);
+
+    if (isSmsOutboundHeld()) {
+      return NextResponse.json(
+        {
+          error:
+            "SMS送信を保留しているため、電話番号の変更は完了できません。SMSが再開されてから再度お試しください。",
+        },
+        { status: 503 }
+      );
+    }
 
     // 電話番号の重複チェック
     const existingUser = await findUserByPhoneCandidates([

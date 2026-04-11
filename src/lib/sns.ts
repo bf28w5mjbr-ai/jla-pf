@@ -4,6 +4,22 @@
 
 import { SNSClient, PublishCommand, PublishCommandInput } from '@aws-sdk/client-sns';
 
+/** 空なら Sender ID 属性を付けない（日本向け SMS では未設定の方が届きやすいことが多い） */
+function snsSmsSenderIdAttribute():
+  | Pick<NonNullable<PublishCommandInput['MessageAttributes']>, 'AWS.SNS.SMS.SenderID'>
+  | undefined {
+  const raw =
+    process.env.AWS_SNS_SMS_SENDER_ID ?? process.env.SNS_SMS_SENDER_ID ?? "";
+  const id = raw.trim();
+  if (!id) return undefined;
+  return {
+    'AWS.SNS.SMS.SenderID': {
+      DataType: 'String',
+      StringValue: id.slice(0, 11),
+    },
+  };
+}
+
 // AWS SNS Clientの初期化
 const snsClient = new SNSClient({
   region: process.env.AWS_REGION || 'ap-northeast-1', // 東京リージョン
@@ -32,6 +48,7 @@ export async function sendOTPviaSMS(phoneNumber: string, otp: string): Promise<v
 
   const message = `Bluvium 認証コード: ${otp}\n\n有効期限は5分です。\nこのコードを第三者に教えないでください。`;
 
+  const senderId = snsSmsSenderIdAttribute();
   const params: PublishCommandInput = {
     Message: message,
     PhoneNumber: phoneNumber,
@@ -40,10 +57,7 @@ export async function sendOTPviaSMS(phoneNumber: string, otp: string): Promise<v
         DataType: 'String',
         StringValue: 'Transactional', // トランザクショナルSMS（高優先度）
       },
-      'AWS.SNS.SMS.SenderID': {
-        DataType: 'String',
-        StringValue: 'BLUVIUM', // 送信者ID（日本では表示されない場合あり）
-      },
+      ...senderId,
     },
   };
 
@@ -70,6 +84,7 @@ export async function sendSecurityNoticeSms(
     return;
   }
 
+  const senderId = snsSmsSenderIdAttribute();
   const params: PublishCommandInput = {
     Message: message.slice(0, 1400),
     PhoneNumber: phoneNumber,
@@ -78,10 +93,7 @@ export async function sendSecurityNoticeSms(
         DataType: 'String',
         StringValue: 'Transactional',
       },
-      'AWS.SNS.SMS.SenderID': {
-        DataType: 'String',
-        StringValue: 'BLUVIUM',
-      },
+      ...senderId,
     },
   };
 

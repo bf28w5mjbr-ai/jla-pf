@@ -26,6 +26,7 @@ export default function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
   const [supportsPasskey, setSupportsPasskey] = useState(true);
+  const [smsLoginAvailable, setSmsLoginAvailable] = useState<boolean | null>(null);
 
   const emailInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
@@ -40,6 +41,19 @@ export default function LoginForm() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     setSupportsPasskey(!!window.PublicKeyCredential);
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/health")
+      .then(async (r) => {
+        const j = (await r.json()) as { smsLoginAvailable?: boolean };
+        if (typeof j.smsLoginAvailable === "boolean") {
+          setSmsLoginAvailable(j.smsLoginAvailable);
+        } else {
+          setSmsLoginAvailable(true);
+        }
+      })
+      .catch(() => setSmsLoginAvailable(true));
   }, []);
 
   async function onSubmit(e: React.FormEvent) {
@@ -148,7 +162,11 @@ export default function LoginForm() {
     <AuthShell
       maxWidth="md"
       title="ログイン"
-      subtitle="メールアドレスとパスワード、またはパスキー・SMSでログインできます。パスキーは同じメールアドレスを入力してから実行してください。"
+      subtitle={
+        smsLoginAvailable === false
+          ? "メールアドレスとパスワード、またはパスキーでログインできます。パスキーは同じメールアドレスを入力してから実行してください。"
+          : "メールアドレスとパスワード、またはパスキー・SMSでログインできます。パスキーは同じメールアドレスを入力してから実行してください。"
+      }
       subtitleDensity="balanced"
     >
       <AuthPanel>
@@ -204,7 +222,9 @@ export default function LoginForm() {
               </button>
             </div>
             <p className={fieldHintClass("guided")}>
-              パスワードを忘れた場合は、下の「SMS認証でログイン」から登録済みの携帯番号でログインできます。
+              {smsLoginAvailable === false
+                ? "パスワードを忘れた場合はアカウント回復手段の整備までサポート窓口へお問い合わせください。"
+                : "パスワードを忘れた場合は、下の「SMS認証でログイン」から登録済みの携帯番号でログインできます。"}
             </p>
           </div>
 
@@ -223,14 +243,20 @@ export default function LoginForm() {
               {passkeyLoading ? "パスキー認証中..." : "パスキーでログイン"}
             </Button>
 
-            <Button variant="outline" className="w-full" asChild>
-              <Link href={appendRedirectQuery("/login/sms", redirectAfterLogin)}>SMS認証でログイン</Link>
-            </Button>
+            {smsLoginAvailable !== false && (
+              <Button variant="outline" className="w-full" asChild>
+                <Link href={appendRedirectQuery("/login/sms", redirectAfterLogin)}>
+                  SMS認証でログイン
+                </Link>
+              </Button>
+            )}
           </div>
 
           {!supportsPasskey && (
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-              この端末はパスキーに対応していません。SMSをご利用ください。
+              {smsLoginAvailable === false
+                ? "この端末はパスキーに対応していません。メールアドレスとパスワードでログインしてください。"
+                : "この端末はパスキーに対応していません。SMSをご利用ください。"}
             </p>
           )}
 

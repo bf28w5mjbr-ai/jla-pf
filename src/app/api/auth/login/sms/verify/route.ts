@@ -8,6 +8,7 @@ import { prisma } from "@/server/db";
 import { verifyOTP, isOTPValid } from "@/lib/otp";
 import { signSession } from "@/lib/auth";
 import { cookies } from "next/headers";
+import { isSupabaseSmsOtpChannelActive } from "@/lib/smsOtpSupabase";
 import { verifySmsOtpViaSupabase } from "@/lib/supabase/otp";
 import { onAuthLoginSuccess } from "@/lib/authLoginSuccess";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
@@ -19,8 +20,6 @@ const VerifyLoginSchema = z.object({
 });
 
 const MAX_OTP_ATTEMPTS = 5;
-const USE_SUPABASE_SMS_OTP = process.env.USE_SUPABASE_SMS_OTP === "true";
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -59,7 +58,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. OTP検証
-    const isValid = USE_SUPABASE_SMS_OTP
+    const isValid = isSupabaseSmsOtpChannelActive()
       ? await verifySmsOtpViaSupabase(loginSession.phoneNumber, data.otp)
       : await verifyOTP(data.otp, loginSession.otpHash);
 

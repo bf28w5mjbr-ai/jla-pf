@@ -7,6 +7,7 @@ import { z } from "zod";
 import { prisma } from "@/server/db";
 import { verifyOTP, isOTPValid } from "@/lib/otp";
 import { normalizeKana } from "@/lib/normalize-kana";
+import { isSupabaseSmsOtpChannelActive } from "@/lib/smsOtpSupabase";
 import { verifySmsOtpViaSupabase } from "@/lib/supabase/otp";
 import {
   findUserByNormalizedNameAndDob,
@@ -22,8 +23,6 @@ const VerifyOTPSchema = z.object({
 });
 
 const MAX_OTP_ATTEMPTS = 5;
-const USE_SUPABASE_SMS_OTP = process.env.USE_SUPABASE_SMS_OTP === "true";
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -66,7 +65,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const valid = USE_SUPABASE_SMS_OTP
+    const valid = isSupabaseSmsOtpChannelActive()
       ? await verifySmsOtpViaSupabase(session.phoneNumber, data.otp)
       : await verifyOTP(data.otp, session.otpHash);
 
@@ -128,10 +127,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const verifiedPhoneBySms = session.registrationOtpDelivery !== "EMAIL";
+
     const user = await prisma.user.create({
       data: {
         email: session.email || `${session.phoneNumber.replace("+", "")}@temp.jla.local`,
-        emailVerified: false,
+        emailVerified: !verifiedPhoneBySms,
         passwordHash: session.password || null,
         familyName: session.familyName,
         givenName: session.givenName,
@@ -142,8 +143,8 @@ export async function POST(req: NextRequest) {
         dateOfBirth: session.dateOfBirth,
         sex: session.sex,
         phoneNumber: session.phoneNumber,
-        phoneVerified: true,
-        phoneVerifiedAt: new Date(),
+        phoneVerified: verifiedPhoneBySms,
+        phoneVerifiedAt: verifiedPhoneBySms ? new Date() : null,
         postalCode: session.postalCode,
         prefecture: session.prefecture,
         city: session.city,

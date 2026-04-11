@@ -65,6 +65,7 @@ export default async function DashboardPage() {
         familyNameKana: true,
         givenNameKana: true,
         phoneNumber: true,
+        phoneVerified: true,
         role: true,
         dateOfBirth: true,
         sex: true,
@@ -227,6 +228,18 @@ export default async function DashboardPage() {
       </header>
 
       <ClubAdminTechnicalOfficialBanner userId={userId} />
+
+      {!user.phoneVerified && (
+        <div
+          role="status"
+          className="rounded-lg border border-amber-200/90 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/35 dark:text-amber-100"
+        >
+          <p className="font-medium">携帯電話番号のSMS確認が未完了です</p>
+          <p className="mt-1 text-xs leading-relaxed opacity-90">
+            メールでの仮登録が完了しています。SMSが再開されたあと、設定の電話番号からSMS確認付きの変更フローで完了できます。
+          </p>
+        </div>
+      )}
 
       {/* プロフィール */}
       <Card padding="none" className="overflow-hidden border-border/90 shadow-sm">

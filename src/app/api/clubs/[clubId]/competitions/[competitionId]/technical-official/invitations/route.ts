@@ -22,6 +22,7 @@ import {
 } from "@/lib/technicalOfficialRules";
 import { buildTechnicalOfficialInviteSmsMessage } from "@/lib/technicalOfficialSms";
 import { sendSecurityNoticeSms } from "@/lib/sns";
+import { isSmsOutboundHeld } from "@/lib/smsHoldPolicy";
 
 type PostBody = {
   memberUserId?: string;
@@ -60,6 +61,16 @@ export async function POST(
       return NextResponse.json(
         { error: "メンバー指定またはSMSのどちらか一方を指定してください" },
         { status: 400 }
+      );
+    }
+
+    if (smsPhone && !memberUserId && isSmsOutboundHeld()) {
+      return NextResponse.json(
+        {
+          error:
+            "SMS送信を保留しているため、携帯番号へのSMS招待は利用できません。メンバー指定の招待をご利用ください。",
+        },
+        { status: 503 }
       );
     }
 

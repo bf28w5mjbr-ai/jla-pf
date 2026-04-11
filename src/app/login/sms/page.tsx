@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,36 @@ function SMSLoginContent() {
   const [loading, setLoading] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [smsHeld, setSmsHeld] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/health")
+      .then(async (r) => {
+        const j = (await r.json()) as { smsLoginAvailable?: boolean };
+        setSmsHeld(j.smsLoginAvailable === false);
+      })
+      .catch(() => setSmsHeld(false));
+  }, []);
+
+  if (smsHeld) {
+    return (
+      <AuthShell
+        maxWidth="md"
+        title="SMS認証ログイン"
+        subtitle="現在、この方法でのログインはご利用いただけません。"
+        subtitleDensity="balanced"
+      >
+        <AuthPanel>
+          <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
+            SMS送信を保留しているため、携帯番号への認証コード送信ができません。メールアドレスとパスワード、またはパスキーでログインしてください。
+          </p>
+          <Button className="w-full" asChild>
+            <Link href={appendRedirectQuery("/login", redirectAfterLogin)}>ログイン画面へ</Link>
+          </Button>
+        </AuthPanel>
+      </AuthShell>
+    );
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

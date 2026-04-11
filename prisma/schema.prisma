@@ -503,6 +503,8 @@ model RegistrationSession {
   otpHash      String // bcryptハッシュ
   otpAttempts  Int      @default(0) // 失敗回数
   otpExpiresAt DateTime // OTP有効期限（5分）
+  /// SMS / メールのどちらで OTP を届けたか（EMAIL 時は登録完了時に電話未検証扱い）
+  registrationOtpDelivery String?
 
   // 再送制限
   lastSentAt    DateTime @default(now())

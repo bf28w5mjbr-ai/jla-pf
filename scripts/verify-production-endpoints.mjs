@@ -89,7 +89,7 @@ async function main() {
 
   console.log(`
 --- 手動で確認すること（このスクリプトでは不可） ---
-  [ ] SMS: Vercel で SKIP_SMS を入れていないこと。登録 or SMSログインで実機に OTP が届くこと。
+  [ ] SMS: 運用方針に応じて SKIP_SMS を入れないこと、または SKIP_SMS + REGISTRATION_EMAIL_OTP + RESEND_API_KEY で登録メール OTP を確認すること。SMSログインは SKIP_SMS 時に無効。
   [ ] Stripe: Dashboard の Webhook が ${base}/api/webhooks/stripe であること。テスト決済でイベントが届くこと。
   [ ] Passkey: ${base} で登録・ログインできること（WEBAUTHN_RP_ID / ORIGIN がこのホストと一致）。
   [ ] Firebase: 実機プッシュが届くこと。
