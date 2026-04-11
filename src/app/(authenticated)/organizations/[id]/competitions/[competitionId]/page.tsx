@@ -40,7 +40,6 @@ import { formatCompactJaDateRange } from "@/lib/datetimeLocal";
 import {
   parseCompetitionManagementTab,
 } from "@/lib/competitionManagementTab";
-import { getPublicAppUrl } from "@/lib/appBaseUrl";
 import CopyAbsoluteUrlButton from "@/components/public/CopyAbsoluteUrlButton";
 import { listTechnicalOfficialShortagesForCompetition } from "@/lib/technicalOfficialQueries";
 import CompetitionManagementTabsClient from "@/components/admin/CompetitionManagementTabsClient";
@@ -293,8 +292,6 @@ export default async function CompetitionDetailPage({
   ).length;
   const officialAttendanceCount = competition.officialAttendances.length;
 
-  const publicCompetitionPageUrl = `${getPublicAppUrl().replace(/\/$/, "")}/competitions/${competitionId}`;
-
   return (
     <div className="app-page mx-auto w-full min-w-0 max-w-6xl space-y-5 px-4 py-6 sm:space-y-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
       <header className="space-y-4 border-b border-border/80 pb-6 sm:pb-7">
@@ -371,7 +368,10 @@ export default async function CompetitionDetailPage({
                   公開ページ
                 </Link>
               </Button>
-              <CopyAbsoluteUrlButton url={publicCompetitionPageUrl} label="公開URLをコピー" />
+              <CopyAbsoluteUrlButton
+                path={`/competitions/${competitionId}`}
+                label="公開ページのリンクをコピー"
+              />
               <Button variant="outline" size="sm" className="gap-1.5" asChild>
                 <Link
                   href={`/competitions/${competitionId}/start-list`}
