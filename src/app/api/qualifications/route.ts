@@ -10,7 +10,7 @@ import { z } from "zod";
 import { Prisma, QualificationStatus } from "@prisma/client";
 import {
   isPlayerRegistrationKind,
-  JLA_MEMBER_NUMBER_REGEX,
+  isValidJlaMemberNumber,
   normalizeJlaMemberNumber,
 } from "@/lib/jlaMemberNumber";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
@@ -161,6 +161,7 @@ export async function POST(req: NextRequest) {
     const userForValidation = await prisma.user.findUnique({
       where: { id: sess.userId },
       select: {
+        jlaMemberNumber: true,
         dateOfBirth: true,
         qualifications: {
           where: { status: "APPROVED" },
@@ -176,6 +177,43 @@ export async function POST(req: NextRequest) {
     });
     if (!userForValidation) {
       return NextResponse.json({ error: "ユーザーが見つかりません" }, { status: 404 });
+    }
+
+    const fromBody = data.certNumber;
+    const fromProfile = userForValidation.jlaMemberNumber?.trim()
+      ? normalizeJlaMemberNumber(userForValidation.jlaMemberNumber)
+      : "";
+
+    let effectiveCert: string;
+    if (fromProfile && isValidJlaMemberNumber(fromProfile)) {
+      if (fromBody && fromBody !== fromProfile) {
+        return NextResponse.json(
+          {
+            error:
+              "アカウントに登録されたJLAメンバーIDと異なる値が送られました。プロフィールの「保有資格」でメンバーIDを確認してください。",
+          },
+          { status: 400 }
+        );
+      }
+      effectiveCert = fromProfile;
+    } else {
+      if (!fromBody) {
+        return NextResponse.json(
+          {
+            error:
+              "資格申請にはJLAメンバーIDが必要です。マイアカウントの「保有資格」でメンバーIDを登録するか、申請時に入力してください。",
+          },
+          { status: 400 }
+        );
+      }
+      effectiveCert = fromBody;
+    }
+
+    if (!isValidJlaMemberNumber(effectiveCert)) {
+      return NextResponse.json(
+        { error: "JLAメンバーIDは500から始まる9桁の半角数字で入力してください" },
+        { status: 400 }
+      );
     }
 
     if (!isProvisionalLink && typeof templateMeta.minAge === "number") {
@@ -241,26 +279,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const certNumber = data.certNumber;
-
-    // 暫定紐付け（provisionalLink）も含め、すべての資格申請で JLA メンバーID を必須にする
-    if (!certNumber) {
-      return NextResponse.json(
-        { error: "資格申請にはJLAメンバーIDの入力が必要です" },
-        { status: 400 }
-      );
-    }
-
-    if (!JLA_MEMBER_NUMBER_REGEX.test(certNumber)) {
-      return NextResponse.json(
-        { error: "JLAメンバーIDは500から始まる9桁の半角数字で入力してください" },
-        { status: 400 }
-      );
-    }
-
     const existingUser = await prisma.user.findFirst({
       where: {
-        jlaMemberNumber: certNumber,
+        jlaMemberNumber: effectiveCert,
         NOT: { id: sess.userId },
       },
       select: { id: true },
@@ -275,7 +296,7 @@ export async function POST(req: NextRequest) {
 
     const existingQualificationWithNumber = await prisma.qualification.findFirst({
       where: {
-        certNumber,
+        certNumber: effectiveCert,
         status: { in: ["PENDING", "APPROVED"] },
         NOT: { userId: sess.userId },
       },
@@ -364,35 +385,44 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 資格申請作成
-    const qualification = await prisma.qualification.create({
-      data: {
-        userId: sess.userId,
-        kind: requestedKind,
-        certNumber: certNumber,
-        issueDate: data.issueDate ? new Date(data.issueDate) : null,
-        expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
-        status: 'PENDING',
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            givenName: true,
-            familyName: true,
+    // 資格申請作成 + アカウント（User）への JLA メンバーIDの紐付け
+    const qualification = await prisma.$transaction(async (tx) => {
+      const created = await tx.qualification.create({
+        data: {
+          userId: sess.userId,
+          kind: requestedKind,
+          certNumber: effectiveCert,
+          issueDate: data.issueDate ? new Date(data.issueDate) : null,
+          expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
+          status: "PENDING",
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              givenName: true,
+              familyName: true,
+            },
           },
         },
-      },
+      });
+
+      await tx.user.update({
+        where: { id: sess.userId },
+        data: { jlaMemberNumber: effectiveCert },
+      });
+
+      return created;
     });
 
     // AuditLog 記録
     await prisma.auditLog.create({
       data: {
         actorUserId: sess.userId,
-        action: 'QUALIFICATION_APPLY',
+        action: "QUALIFICATION_APPLY",
         target: `qualification:${qualification.id}`,
-        meta: { kind: requestedKind, certNumber, provisionalLink: isProvisionalLink },
+        meta: { kind: requestedKind, certNumber: effectiveCert, provisionalLink: isProvisionalLink },
       },
     });
 

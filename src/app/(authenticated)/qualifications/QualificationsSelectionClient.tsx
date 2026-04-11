@@ -92,6 +92,23 @@ export default function QualificationsSelectionClient({
   useEffect(() => {
     setJlaMemberNumber(normalizeJlaMemberNumber(initialJlaMemberNumber ?? ""));
   }, [initialJlaMemberNumber]);
+
+  /** 紐付け済みになった種目は選択から外す（申請後の refresh で選択だけ残るとダイアログが開けない／0件表示になるのを防ぐ） */
+  useEffect(() => {
+    const linked = new Set(linkedKinds.map((k) => normalizeQualificationKind(k)));
+    setSelected((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const k of prev) {
+        if (linked.has(normalizeQualificationKind(k))) {
+          next.delete(k);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [linkedKinds]);
+
   const linkedNormalized = useMemo(
     () => new Set(linkedKinds.map((k) => normalizeQualificationKind(k))),
     [linkedKinds]
@@ -185,13 +202,24 @@ export default function QualificationsSelectionClient({
   };
 
   const openApplyDialog = () => {
-    if (selectedCount === 0 || submitting) return;
+    if (submitting) return;
+    if (selectedAvailableCount === 0) {
+      toast.error(
+        selectedCount > 0
+          ? "申請できる資格が選択されていません。紐付け済みの資格だけが選ばれている可能性があります。"
+          : "資格を1件以上選択してください。"
+      );
+      return;
+    }
     setJlaMemberNumber(normalizeJlaMemberNumber(initialJlaMemberNumber ?? ""));
-    setApplyDialogOpen(true);
+    // 同一クリックが「外側押下」と解釈されてダイアログが即閉じるのを避ける（Radix Dialog + ボタン起動の定番対策）
+    window.setTimeout(() => {
+      setApplyDialogOpen(true);
+    }, 0);
   };
 
   const confirmApplyFromDialog = async () => {
-    if (selectedCount === 0 || submitting) return;
+    if (selectedAvailableCount === 0 || submitting) return;
     const cert = normalizeJlaMemberNumber(jlaMemberNumber);
     if (!isValidJlaMemberNumber(cert)) {
       toast.error("JLAメンバーIDは500から始まる半角9桁の数字で入力してください");
@@ -199,7 +227,13 @@ export default function QualificationsSelectionClient({
     }
     setSubmitting(true);
     try {
-      const targets = [...selected];
+      const targets = [...selected].filter(
+        (kind) => !linkedNormalized.has(normalizeQualificationKind(kind))
+      );
+      if (targets.length === 0) {
+        toast.error("申請対象の資格がありません。");
+        return;
+      }
       const results = await Promise.allSettled(
         targets.map(async (kind) => {
           const res = await fetch("/api/qualifications", {
@@ -390,7 +424,11 @@ export default function QualificationsSelectionClient({
 
       <div className="sticky bottom-2 z-20 rounded-xl border border-border/80 bg-background/95 p-3 shadow-sm backdrop-blur">
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button type="button" onClick={openApplyDialog} disabled={selectedCount === 0 || submitting}>
+          <Button
+            type="button"
+            onClick={openApplyDialog}
+            disabled={selectedAvailableCount === 0 || submitting}
+          >
             <Link2 className="mr-1 h-4 w-4" />
             {submitting
               ? "暫定紐付け中..."
