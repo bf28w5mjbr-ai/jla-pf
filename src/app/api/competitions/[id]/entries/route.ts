@@ -16,6 +16,7 @@ import { refreshOrganizationStripeConnectFlags } from "@/lib/organizerStripeConn
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
 import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
 import { refreshStartListSnapshotAfterEligibleEntryChange } from "@/lib/startListSnapshot";
+import { clearIndividualWithdrawalParticipantStatusesForEvents } from "@/lib/entryWithdrawalReinstatement";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { calculateCompetitionEntryFee, type CompetitionEntryFeeConfig } from "@/lib/entryFee";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
@@ -519,6 +520,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
           entryId: entry.id,
           data: entrySnapshot,
         },
+      });
+
+      await clearIndividualWithdrawalParticipantStatusesForEvents(tx, {
+        competitionId,
+        competitionEntryId: entry.id,
+        individualEventIds: entryItemsData.map((row) => row.eventId),
+        updatedByUserId: session.userId,
       });
 
       if (hasTeamEntriesField) {

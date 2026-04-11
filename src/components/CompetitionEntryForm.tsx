@@ -887,6 +887,12 @@ export default function CompetitionEntryForm({
               </div>
             ) : null}
 
+            {editingEstablishedEntry && entryWithdrawAppliedCount > 0 ? (
+              <div className="rounded-lg border border-border/80 bg-muted/30 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+                棄権した種目を再度エントリーするには、種目にチェックを入れたうえで「更新」してください。出場待ち（スタートリスト）へ戻ります。
+              </div>
+            ) : null}
+
             {lockEntryContentUntilPaid && !entryCancelled ? (
               <div className="flex gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-800 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200">
                 <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
