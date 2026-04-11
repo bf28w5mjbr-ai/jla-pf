@@ -553,6 +553,26 @@ export async function POST(request: NextRequest, context: RouteContext) {
           });
         }
 
+        if (teamEntriesData.length > 0 && clubId) {
+          const incomingByEvent = new Map<string, number>();
+          for (const t of teamEntriesData) {
+            incomingByEvent.set(t.eventId, (incomingByEvent.get(t.eventId) ?? 0) + 1);
+          }
+          for (const [eventId, incoming] of incomingByEvent) {
+            const ev = eventMap.get(eventId);
+            const cap = ev?.maxTeamEntriesPerClub ?? null;
+            if (cap == null) continue;
+            const remaining = await tx.teamEntry.count({
+              where: { competitionId, clubId, eventId },
+            });
+            if (remaining + incoming > cap) {
+              throw new Error(
+                `「${ev?.name ?? "チーム種目"}」では同一クラブあたり最大${cap}組までです。既存のチームエントリーと合わせて上限を超えます。`
+              );
+            }
+          }
+        }
+
         if (teamEntriesData.length > 0) {
           for (const teamEntry of teamEntriesData) {
             const created = await tx.teamEntry.create({

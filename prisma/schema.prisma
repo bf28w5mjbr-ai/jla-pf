@@ -1597,6 +1597,8 @@ model Event {
   teamRelayPositionCount   Int?
   /// チーム種目のみ: ポジション名（先頭が第1ポジション）。JSON 文字列配列
   teamRelayPositionNames   Json?
+  /// チーム種目のみ: 同一クラブがこの種目（性別行）に出せるチーム数の上限。null は制限なし
+  maxTeamEntriesPerClub    Int?
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
   ageCategory CompetitionAgeCategory? @relation(fields: [ageCategoryId], references: [id], onDelete: Restrict)

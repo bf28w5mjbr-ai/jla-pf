@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -51,16 +51,22 @@ export default function QualificationRegisterButton({
     setJlaMemberNumber(normalizeJlaMemberNumber(defaultJlaMemberNumber ?? ""));
   }, [defaultJlaMemberNumber]);
 
+  const hasProfileCert = useMemo(
+    () => isValidJlaMemberNumber(normalizeJlaMemberNumber(defaultJlaMemberNumber ?? "")),
+    [defaultJlaMemberNumber]
+  );
+
   const submitRegistration = async () => {
     if (isRegistering) return;
 
-    const certNumber = normalizeJlaMemberNumber(jlaMemberNumber);
-
-    if (!isValidJlaMemberNumber(certNumber)) {
-      toast.error(
-        "JLAメンバーIDは500から始まる半角9桁の数字で入力してください"
-      );
-      return;
+    if (!hasProfileCert) {
+      const certNumber = normalizeJlaMemberNumber(jlaMemberNumber);
+      if (!isValidJlaMemberNumber(certNumber)) {
+        toast.error(
+          "JLAメンバーIDは500から始まる半角9桁の数字で入力してください"
+        );
+        return;
+      }
     }
 
     setIsRegistering(true);
@@ -68,10 +74,14 @@ export default function QualificationRegisterButton({
       const res = await fetch("/api/qualifications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          kind: item.kind,
-          certNumber,
-        }),
+        body: JSON.stringify(
+          hasProfileCert
+            ? { kind: item.kind }
+            : {
+                kind: item.kind,
+                certNumber: normalizeJlaMemberNumber(jlaMemberNumber),
+              }
+        ),
       });
 
       const data = await res.json();
@@ -111,28 +121,44 @@ export default function QualificationRegisterButton({
         <DialogHeader>
           <DialogTitle>資格の登録申請</DialogTitle>
           <DialogDescription>
-            「{item.name ?? item.kind}」の申請にあたり、日本ライフセービング協会が発行した
-            JLAメンバーIDを入力してください。審査時に照合されます。
+            {hasProfileCert ? (
+              <>
+                「{item.name ?? item.kind}」を、アカウントに登録済みのJLAメンバーIDで申請します。メンバーIDは資格ごとではなくアカウントに1つだけ紐づきます。
+              </>
+            ) : (
+              <>
+                「{item.name ?? item.kind}」の申請にあたり、日本ライフセービング協会が発行した
+                JLAメンバーIDを入力してください。入力後はアカウントに保存され、以降の申請でも同じIDが使われます。
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-2">
-          <Label htmlFor="jlaMemberNumber">JLAメンバーID</Label>
-          <Input
-            id="jlaMemberNumber"
-            value={jlaMemberNumber}
-            onChange={(event) =>
-              setJlaMemberNumber(normalizeJlaMemberNumber(event.target.value))
-            }
-            numericInput="integer"
-            maxLength={9}
-            placeholder="500123456"
-            inputMode="numeric"
-            autoComplete="off"
-          />
-          <p className="text-xs text-muted-foreground">
-            500から始まる半角9桁の数字で入力してください。
-          </p>
+          {hasProfileCert ? (
+            <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              登録済みのJLAメンバーIDを使用します。変更は上の「JLAメンバーID」欄から行えます。
+            </p>
+          ) : (
+            <>
+              <Label htmlFor="jlaMemberNumber">JLAメンバーID</Label>
+              <Input
+                id="jlaMemberNumber"
+                value={jlaMemberNumber}
+                onChange={(event) =>
+                  setJlaMemberNumber(normalizeJlaMemberNumber(event.target.value))
+                }
+                numericInput="integer"
+                maxLength={9}
+                placeholder="500123456"
+                inputMode="numeric"
+                autoComplete="off"
+              />
+              <p className="text-xs text-muted-foreground">
+                500から始まる半角9桁の数字で入力してください。
+              </p>
+            </>
+          )}
         </div>
 
         <DialogFooter>

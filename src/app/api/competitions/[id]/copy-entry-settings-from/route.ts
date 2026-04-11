@@ -152,6 +152,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
               ev.teamRelayPositionNames == null
                 ? undefined
                 : (ev.teamRelayPositionNames as Prisma.InputJsonValue),
+            maxTeamEntriesPerClub: ev.maxTeamEntriesPerClub ?? null,
           },
         });
       }

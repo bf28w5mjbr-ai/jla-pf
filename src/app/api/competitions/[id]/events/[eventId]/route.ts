@@ -316,13 +316,21 @@ export async function PATCH(
       raw,
       "teamRelayPositionNames"
     );
-    if (hasTeamRelayPositionCountKey || hasTeamRelayPositionNamesKey) {
-      const disallowedKey = rawKeys.some(
-        (k) => k !== "teamRelayPositionCount" && k !== "teamRelayPositionNames"
-      );
+    const hasMaxTeamEntriesPerClubKey = Object.prototype.hasOwnProperty.call(
+      raw,
+      "maxTeamEntriesPerClub"
+    );
+    const teamSettingsAllowed = new Set([
+      "teamRelayPositionCount",
+      "teamRelayPositionNames",
+      "maxTeamEntriesPerClub",
+    ]);
+    const hasTeamSettingsPatch = rawKeys.some((k) => teamSettingsAllowed.has(k));
+    if (hasTeamSettingsPatch) {
+      const disallowedKey = rawKeys.some((k) => !teamSettingsAllowed.has(k));
       if (disallowedKey) {
         return NextResponse.json(
-          { message: "チームのポジション設定は他の項目と同時に更新できません" },
+          { message: "チーム種目の設定は他の項目と同時に更新できません" },
           { status: 400 }
         );
       }
@@ -331,7 +339,7 @@ export async function PATCH(
       }
       if (event.type !== "TEAM") {
         return NextResponse.json(
-          { message: "チーム種目以外ではポジション設定を保存できません" },
+          { message: "チーム種目以外ではチーム用の設定を保存できません" },
           { status: 400 }
         );
       }
@@ -345,79 +353,153 @@ export async function PATCH(
           .filter(Boolean);
       };
 
-      let nextCount: number | null;
-      if (hasTeamRelayPositionCountKey) {
-        const v = raw.teamRelayPositionCount;
+      const touchingRelay =
+        hasTeamRelayPositionCountKey || hasTeamRelayPositionNamesKey;
+
+      let nextCount: number | null | undefined;
+      let nextNames: string[] | undefined;
+      if (touchingRelay) {
+        if (hasTeamRelayPositionCountKey) {
+          const v = raw.teamRelayPositionCount;
+          if (v === null || v === "") {
+            nextCount = null;
+          } else if (typeof v === "number" && Number.isInteger(v)) {
+            nextCount = v;
+          } else if (typeof v === "string" && /^\d+$/.test(v.trim())) {
+            nextCount = parseInt(v.trim(), 10);
+          } else {
+            return NextResponse.json(
+              { message: "ポジション数は1〜32の整数、または未設定（空）にしてください" },
+              { status: 400 }
+            );
+          }
+          if (nextCount !== null && (nextCount < 1 || nextCount > 32)) {
+            return NextResponse.json(
+              { message: "ポジション数は1〜32の範囲で指定してください" },
+              { status: 400 }
+            );
+          }
+        } else {
+          nextCount = event.teamRelayPositionCount ?? null;
+        }
+
+        if (hasTeamRelayPositionNamesKey) {
+          const v = raw.teamRelayPositionNames;
+          if (v === null) {
+            nextNames = [];
+          } else if (Array.isArray(v)) {
+            nextNames = v
+              .filter((x): x is string => typeof x === "string")
+              .map((s) => s.trim())
+              .filter(Boolean);
+          } else {
+            return NextResponse.json(
+              { message: "ポジション名は文字列の配列で指定してください" },
+              { status: 400 }
+            );
+          }
+        } else {
+          nextNames = parseStoredNames(event.teamRelayPositionNames);
+        }
+
+        if (nextCount === null) {
+          if (nextNames.length > 0) {
+            return NextResponse.json(
+              { message: "ポジション数を指定しない場合はポジション名も空にしてください" },
+              { status: 400 }
+            );
+          }
+        } else if (nextNames.length !== nextCount) {
+          return NextResponse.json(
+            {
+              message: `ポジション名は${nextCount}件（ポジション数と同じ行数）にしてください`,
+            },
+            { status: 400 }
+          );
+        }
+      }
+
+      let nextMaxTeamEntriesPerClub: number | null | undefined = undefined;
+      if (hasMaxTeamEntriesPerClubKey) {
+        const v = raw.maxTeamEntriesPerClub;
         if (v === null || v === "") {
-          nextCount = null;
+          nextMaxTeamEntriesPerClub = null;
         } else if (typeof v === "number" && Number.isInteger(v)) {
-          nextCount = v;
+          nextMaxTeamEntriesPerClub = v;
         } else if (typeof v === "string" && /^\d+$/.test(v.trim())) {
-          nextCount = parseInt(v.trim(), 10);
+          nextMaxTeamEntriesPerClub = parseInt(v.trim(), 10);
         } else {
           return NextResponse.json(
-            { message: "ポジション数は1〜32の整数、または未設定（空）にしてください" },
+            {
+              message:
+                "同一クラブあたりのチーム上限は1〜999の整数、または未設定（空・null）にしてください",
+            },
             { status: 400 }
           );
         }
-        if (nextCount !== null && (nextCount < 1 || nextCount > 32)) {
+        if (
+          nextMaxTeamEntriesPerClub !== null &&
+          (nextMaxTeamEntriesPerClub < 1 || nextMaxTeamEntriesPerClub > 999)
+        ) {
           return NextResponse.json(
-            { message: "ポジション数は1〜32の範囲で指定してください" },
+            {
+              message: "同一クラブあたりのチーム上限は1〜999の範囲で指定してください",
+            },
             { status: 400 }
           );
         }
-      } else {
-        nextCount = event.teamRelayPositionCount ?? null;
+
+        if (nextMaxTeamEntriesPerClub !== null) {
+          const siblingRows = await prisma.event.findMany({
+            where: {
+              ...eventSiblingGroupWhere(competitionId, event),
+              type: "TEAM",
+            },
+            select: { id: true },
+          });
+          for (const row of siblingRows) {
+            const grouped = await prisma.teamEntry.groupBy({
+              by: ["clubId"],
+              where: { competitionId, eventId: row.id },
+              _count: { _all: true },
+            });
+            const worst = grouped.reduce((m, g) => Math.max(m, g._count._all), 0);
+            if (worst > nextMaxTeamEntriesPerClub) {
+              return NextResponse.json(
+                {
+                  message: `同一クラブあたりの上限を${nextMaxTeamEntriesPerClub}組にすると、すでにそれを超えてエントリーしているクラブがあります（最大${worst}組）。先にエントリーを調整してください。`,
+                },
+                { status: 400 }
+              );
+            }
+          }
+        }
       }
 
-      let nextNames: string[];
-      if (hasTeamRelayPositionNamesKey) {
-        const v = raw.teamRelayPositionNames;
-        if (v === null) {
-          nextNames = [];
-        } else if (Array.isArray(v)) {
-          nextNames = v
-            .filter((x): x is string => typeof x === "string")
-            .map((s) => s.trim())
-            .filter(Boolean);
-        } else {
-          return NextResponse.json(
-            { message: "ポジション名は文字列の配列で指定してください" },
-            { status: 400 }
-          );
-        }
-      } else {
-        nextNames = parseStoredNames(event.teamRelayPositionNames);
+      const data: Prisma.EventUpdateManyMutationInput = {};
+      if (touchingRelay && nextCount !== undefined && nextNames !== undefined) {
+        const namesValue: Prisma.NullableJsonNullValueInput | Prisma.InputJsonValue =
+          nextCount === null ? Prisma.JsonNull : nextNames;
+        data.teamRelayPositionCount = nextCount;
+        data.teamRelayPositionNames = namesValue;
+      }
+      if (nextMaxTeamEntriesPerClub !== undefined) {
+        data.maxTeamEntriesPerClub = nextMaxTeamEntriesPerClub;
       }
 
-      if (nextCount === null) {
-        if (nextNames.length > 0) {
-          return NextResponse.json(
-            { message: "ポジション数を指定しない場合はポジション名も空にしてください" },
-            { status: 400 }
-          );
-        }
-      } else if (nextNames.length !== nextCount) {
+      if (Object.keys(data).length === 0) {
         return NextResponse.json(
-          {
-            message: `ポジション名は${nextCount}件（ポジション数と同じ行数）にしてください`,
-          },
+          { message: "更新するチーム種目の設定がありません" },
           { status: 400 }
         );
       }
-
-      const namesValue: Prisma.NullableJsonNullValueInput | Prisma.InputJsonValue =
-        nextCount === null ? Prisma.JsonNull : nextNames;
 
       await prisma.event.updateMany({
         where: {
           ...eventSiblingGroupWhere(competitionId, event),
           type: "TEAM",
         },
-        data: {
-          teamRelayPositionCount: nextCount,
-          teamRelayPositionNames: namesValue,
-        },
+        data,
       });
 
       const updatedEvents = await prisma.event.findMany({
@@ -425,8 +507,15 @@ export async function PATCH(
         orderBy: { displayOrder: "asc" },
       });
 
+      const message =
+        touchingRelay && nextMaxTeamEntriesPerClub !== undefined
+          ? "チーム種目のポジションと同一クラブあたりのチーム上限を更新しました"
+          : touchingRelay
+            ? "チーム種目のポジション設定を更新しました"
+            : "チーム種目の同一クラブあたりのチーム上限を更新しました";
+
       return NextResponse.json({
-        message: "チーム種目のポジション設定を更新しました",
+        message,
         events: updatedEvents,
       });
     }
@@ -903,6 +992,7 @@ export async function PATCH(
               startListRoundCount: event.startListRoundCount,
               teamRelayPositionCount: event.teamRelayPositionCount,
               teamRelayPositionNames: event.teamRelayPositionNames ?? undefined,
+              maxTeamEntriesPerClub: event.maxTeamEntriesPerClub ?? null,
             },
           });
         }

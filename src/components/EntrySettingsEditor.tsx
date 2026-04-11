@@ -122,6 +122,8 @@ type Event = {
   teamRelayPositionCount?: number | null;
   /** チーム種目: ポジション名（JSON 配列） */
   teamRelayPositionNames?: unknown;
+  /** チーム種目: 同一クラブあたりのチーム数上限（null は制限なし） */
+  maxTeamEntriesPerClub?: number | null;
   /** 年齢カテゴリに連動する場合（手動の生年月日一括保存で解除される） */
   ageCategoryId?: string | null;
 };
@@ -167,7 +169,10 @@ function parseTeamRelayNamesFromEvent(e: Event): string[] {
 }
 
 function buildTeamRelayPositionsMap(evts: Event[]) {
-  const map: Record<string, { count: string; namesText: string }> = {};
+  const map: Record<
+    string,
+    { count: string; namesText: string; maxTeamEntriesPerClub: string }
+  > = {};
   for (const e of evts) {
     if (e.type !== "TEAM") continue;
     const k = teamRelayStateKey(e.category, e.name, e.ageCategoryId);
@@ -176,7 +181,15 @@ function buildTeamRelayPositionsMap(evts: Event[]) {
       typeof e.teamRelayPositionCount === "number" && e.teamRelayPositionCount >= 1
         ? String(e.teamRelayPositionCount)
         : "";
-    map[k] = { count, namesText: parseTeamRelayNamesFromEvent(e).join("\n") };
+    const maxCap =
+      typeof e.maxTeamEntriesPerClub === "number" && e.maxTeamEntriesPerClub >= 1
+        ? String(e.maxTeamEntriesPerClub)
+        : "";
+    map[k] = {
+      count,
+      namesText: parseTeamRelayNamesFromEvent(e).join("\n"),
+      maxTeamEntriesPerClub: maxCap,
+    };
   }
   return map;
 }
@@ -655,7 +668,10 @@ export default function EntrySettingsEditor({
   };
 
   const mergeTeamRelayPositionsFromSync = (
-    prev: Record<string, { count: string; namesText: string }>,
+    prev: Record<
+      string,
+      { count: string; namesText: string; maxTeamEntriesPerClub?: string }
+    >,
     updatedEvents: Event[]
   ) => {
     const next = buildTeamRelayPositionsMap(updatedEvents);
@@ -664,7 +680,16 @@ export default function EntrySettingsEditor({
         (e) =>
           e.type === "TEAM" && teamRelayStateKey(e.category, e.name, e.ageCategoryId) === key
       );
-      if (stillThere) next[key] = prev[key] as { count: string; namesText: string };
+      if (stillThere) {
+        const p = prev[key];
+        next[key] = {
+          ...next[key],
+          count: p.count,
+          namesText: p.namesText,
+          maxTeamEntriesPerClub:
+            p.maxTeamEntriesPerClub ?? next[key].maxTeamEntriesPerClub,
+        };
+      }
     }
     return next;
   };
@@ -690,7 +715,10 @@ export default function EntrySettingsEditor({
     Record<string, string>
   >(() => buildStartListRoundCountsMap(initialEvents));
   const [eventTeamRelayPositions, setEventTeamRelayPositions] = useState<
-    Record<string, { count: string; namesText: string }>
+    Record<
+      string,
+      { count: string; namesText: string; maxTeamEntriesPerClub: string }
+    >
   >(() => buildTeamRelayPositionsMap(initialEvents));
   const [bulkUpdatingEventSection, setBulkUpdatingEventSection] = useState<string | null>(null);
   const [bulkSavingAllEventTables, setBulkSavingAllEventTables] = useState(false);
@@ -1936,7 +1964,21 @@ export default function EntrySettingsEditor({
     if (type === "TEAM") {
       for (const event of ageTargets) {
         const k = teamRelayStateKey(category, event.name, event.ageCategoryId);
-        const st = eventTeamRelayPositions[k] ?? { count: "", namesText: "" };
+        const st = eventTeamRelayPositions[k] ?? {
+          count: "",
+          namesText: "",
+          maxTeamEntriesPerClub: "",
+        };
+        const maxRaw = (st.maxTeamEntriesPerClub ?? "").trim();
+        if (maxRaw !== "") {
+          const nMax = Number(maxRaw);
+          if (!Number.isInteger(nMax) || nMax < 1 || nMax > 999) {
+            return {
+              ok: false,
+              message: `「${event.name}」の同一クラブあたりチーム上限は1〜999の整数、または空欄（制限なし）にしてください`,
+            };
+          }
+        }
         const countRaw = st.count.trim();
         const lines = st.namesText
           .split(/\r?\n/)
@@ -2041,20 +2083,28 @@ export default function EntrySettingsEditor({
       const teamOk = await Promise.all(
         ageTargets.map((event) => {
           const k = teamRelayStateKey(category, event.name, event.ageCategoryId);
-          const st = eventTeamRelayPositions[k] ?? { count: "", namesText: "" };
+          const st = eventTeamRelayPositions[k] ?? {
+            count: "",
+            namesText: "",
+            maxTeamEntriesPerClub: "",
+          };
           const countRaw = st.count.trim();
           const lines = st.namesText
             .split(/\r?\n/)
             .map((l) => l.trim())
             .filter(Boolean);
-          const body =
+          const maxTrim = (st.maxTeamEntriesPerClub ?? "").trim();
+          const relayBody =
             countRaw === "" && lines.length === 0
-              ? { teamRelayPositionCount: null, teamRelayPositionNames: [] }
+              ? { teamRelayPositionCount: null, teamRelayPositionNames: [] as string[] }
               : {
                   teamRelayPositionCount: Number(countRaw),
                   teamRelayPositionNames: lines,
                 };
-          return patchEvent(event.id, body);
+          return patchEvent(event.id, {
+            ...relayBody,
+            maxTeamEntriesPerClub: maxTrim === "" ? null : Number(maxTrim),
+          });
         })
       );
       errorCount += teamOk.filter((ok) => !ok).length;
@@ -2104,7 +2154,7 @@ export default function EntrySettingsEditor({
       if (errorCount === 0) {
         toast.success(
           type === "TEAM"
-            ? `${categoryLabel}${typeLabel}の種目表（年齢・最大レーン・ラウンド数・チームポジション）を保存しました`
+            ? `${categoryLabel}${typeLabel}の種目表（年齢・最大レーン・ラウンド数・チームポジション・クラブあたりチーム上限）を保存しました`
             : `${categoryLabel}${typeLabel}の種目表（年齢・最大レーン・ラウンド数）を保存しました`
         );
         setEventTableBulkSaveStatus((prev) => ({
@@ -2664,6 +2714,8 @@ export default function EntrySettingsEditor({
                             [relayKey]: {
                               count: e.target.value,
                               namesText: prev[relayKey]?.namesText ?? "",
+                              maxTeamEntriesPerClub:
+                                prev[relayKey]?.maxTeamEntriesPerClub ?? "",
                             },
                           }));
                         }}
@@ -2686,12 +2738,40 @@ export default function EntrySettingsEditor({
                             [relayKey]: {
                               count: prev[relayKey]?.count ?? "",
                               namesText: e.target.value,
+                              maxTeamEntriesPerClub:
+                                prev[relayKey]?.maxTeamEntriesPerClub ?? "",
                             },
                           }));
                         }}
                         disabled={!canEdit}
                       />
                     </div>
+                  </div>
+                  <div className="mt-2.5">
+                    <p className="mb-1 text-[10px] text-muted-foreground">
+                      同一クラブあたりのチーム上限（この種目・男女共通・空欄は制限なし）
+                    </p>
+                    <Input
+                      numericInput="integer"
+                      min={1}
+                      max={999}
+                      placeholder="例: 2"
+                      title="1〜999、空欄で制限なし"
+                      className="h-8 w-full max-w-[12rem] px-1.5 text-xs tabular-nums"
+                      value={eventTeamRelayPositions[relayKey]?.maxTeamEntriesPerClub ?? ""}
+                      onChange={(e) => {
+                        clearEventTableBulkSaveStatus(sectionKey);
+                        setEventTeamRelayPositions((prev) => ({
+                          ...prev,
+                          [relayKey]: {
+                            count: prev[relayKey]?.count ?? "",
+                            namesText: prev[relayKey]?.namesText ?? "",
+                            maxTeamEntriesPerClub: e.target.value,
+                          },
+                        }));
+                      }}
+                      disabled={!canEdit}
+                    />
                   </div>
                 </div>
               ) : null}

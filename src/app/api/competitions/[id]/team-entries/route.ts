@@ -113,6 +113,26 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       );
     }
 
+    const incomingTeamCountByEvent = new Map<string, number>();
+    for (const team of normalizedTeams) {
+      incomingTeamCountByEvent.set(
+        team.eventId,
+        (incomingTeamCountByEvent.get(team.eventId) ?? 0) + 1
+      );
+    }
+    for (const [eventId, count] of incomingTeamCountByEvent) {
+      const ev = eventMap.get(eventId);
+      const cap = ev?.maxTeamEntriesPerClub ?? null;
+      if (cap != null && count > cap) {
+        return NextResponse.json(
+          {
+            message: `「${ev?.name ?? "種目"}」は同一クラブあたりチームエントリーは最大${cap}組までです。`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     const feeUser = await prisma.user.findUnique({
       where: { id: session.userId },
       select: { dateOfBirth: true },

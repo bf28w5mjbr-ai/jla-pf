@@ -224,7 +224,7 @@ export default async function ProfileQualificationsPage() {
           </div>
           <CardDescription className="space-y-1">
             <span className="block">
-              選手登録・BLS・WS・認定ライフセーバーの状況を確認できます。JLAメンバーIDは上の欄で登録すると、選手登録の申請時に自動で反映されます。
+              選手登録・BLS・WS・認定ライフセーバーの状況を確認できます。JLAメンバーIDはアカウントに1つだけ登録し、各資格の申請ではそのIDを使います（上の欄で登録済みなら申請ダイアログでの再入力は不要です）。
             </span>
             <span className="block text-muted-foreground">{CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP}</span>
           </CardDescription>

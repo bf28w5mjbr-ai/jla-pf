@@ -22,6 +22,8 @@ import {
   Users,
 } from "lucide-react";
 import CompetitionRelationsEditor from "@/components/CompetitionRelationsEditor";
+import CompetitionAnnouncementsManager from "@/components/CompetitionAnnouncementsManager";
+import CompetitionAttachmentsManager from "@/components/CompetitionAttachmentsManager";
 import CompetitionPublicGallery from "@/components/CompetitionPublicGallery";
 import CompetitionStartListPanel from "@/components/CompetitionStartListPanel";
 import { appRoutes } from "@/lib/appRoutes";
@@ -93,6 +95,13 @@ export default async function CompetitionDetailPage({
       },
       technicalOfficialQualificationTemplate: {
         select: { name: true },
+      },
+      announcements: {
+        where: { publishedAt: { not: null } },
+        orderBy: { createdAt: "desc" },
+      },
+      attachments: {
+        orderBy: { createdAt: "desc" },
       },
       galleryPhotos: {
         orderBy: { createdAt: "asc" },
@@ -825,6 +834,35 @@ export default async function CompetitionDetailPage({
           }
           canEdit={false}
         />
+
+        {competition.announcements.length > 0 ? (
+          <CompetitionAnnouncementsManager
+            competitionId={competition.id}
+            initialAnnouncements={competition.announcements.map((a) => ({
+              id: a.id,
+              title: a.title,
+              content: a.content,
+              publishedAt: a.publishedAt?.toISOString() ?? null,
+              createdAt: a.createdAt.toISOString(),
+            }))}
+            canEdit={false}
+          />
+        ) : null}
+
+        {competition.attachments.length > 0 ? (
+          <CompetitionAttachmentsManager
+            competitionId={competition.id}
+            initialAttachments={competition.attachments.map((a) => ({
+              id: a.id,
+              fileName: a.fileName,
+              fileUrl: a.fileUrl,
+              fileSize: a.fileSize,
+              mimeType: a.mimeType,
+              createdAt: a.createdAt.toISOString(),
+            }))}
+            canEdit={false}
+          />
+        ) : null}
 
         <CompetitionPublicGallery photos={competition.galleryPhotos} />
           </div>

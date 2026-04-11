@@ -89,6 +89,11 @@ export default function QualificationsSelectionClient({
   );
   const [search, setSearch] = useState("");
 
+  const profileCertOk = useMemo(
+    () => isValidJlaMemberNumber(normalizeJlaMemberNumber(initialJlaMemberNumber ?? "")),
+    [initialJlaMemberNumber]
+  );
+
   useEffect(() => {
     setJlaMemberNumber(normalizeJlaMemberNumber(initialJlaMemberNumber ?? ""));
   }, [initialJlaMemberNumber]);
@@ -211,6 +216,17 @@ export default function QualificationsSelectionClient({
       );
       return;
     }
+    if (profileCertOk) {
+      if (
+        !confirm(
+          `${selectedAvailableCount}件の資格を、アカウントに登録済みのJLAメンバーIDで暫定紐付け申請しますか？`
+        )
+      ) {
+        return;
+      }
+      void submitProvisionalBatch({ useProfileCert: true });
+      return;
+    }
     setJlaMemberNumber(normalizeJlaMemberNumber(initialJlaMemberNumber ?? ""));
     // 同一クリックが「外側押下」と解釈されてダイアログが即閉じるのを避ける（Radix Dialog + ボタン起動の定番対策）
     window.setTimeout(() => {
@@ -218,11 +234,16 @@ export default function QualificationsSelectionClient({
     }, 0);
   };
 
-  const confirmApplyFromDialog = async () => {
+  async function submitProvisionalBatch(options: { useProfileCert: boolean }) {
     if (selectedAvailableCount === 0 || submitting) return;
-    const cert = normalizeJlaMemberNumber(jlaMemberNumber);
-    if (!isValidJlaMemberNumber(cert)) {
-      toast.error("JLAメンバーIDは500から始まる半角9桁の数字で入力してください");
+    if (!options.useProfileCert) {
+      const cert = normalizeJlaMemberNumber(jlaMemberNumber);
+      if (!isValidJlaMemberNumber(cert)) {
+        toast.error("JLAメンバーIDは500から始まる半角9桁の数字で入力してください");
+        return;
+      }
+    } else if (!profileCertOk) {
+      toast.error("アカウントにJLAメンバーIDが登録されていません。マイアカウントの保有資格で登録してください。");
       return;
     }
     setSubmitting(true);
@@ -239,11 +260,15 @@ export default function QualificationsSelectionClient({
           const res = await fetch("/api/qualifications", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              kind,
-              provisionalLink: true,
-              certNumber: cert,
-            }),
+            body: JSON.stringify(
+              options.useProfileCert
+                ? { kind, provisionalLink: true }
+                : {
+                    kind,
+                    provisionalLink: true,
+                    certNumber: normalizeJlaMemberNumber(jlaMemberNumber),
+                  }
+            ),
           });
           const data = (await res.json().catch(() => ({}))) as { error?: string };
           if (!res.ok) {
@@ -276,6 +301,10 @@ export default function QualificationsSelectionClient({
     } finally {
       setSubmitting(false);
     }
+  }
+
+  const confirmApplyFromDialog = async () => {
+    await submitProvisionalBatch({ useProfileCert: false });
   };
 
   return (
@@ -283,8 +312,8 @@ export default function QualificationsSelectionClient({
       <div className="rounded-xl border border-blue-200/70 bg-blue-50/60 p-4 text-sm text-blue-950 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-100">
         <p className="font-semibold">資格の選択</p>
         <p className="mt-1 text-xs leading-relaxed">
-          資格を選んで申請すると、マイアカウントに反映されます。申請時は JLA
-          メンバーIDの入力が必要です。すでに紐付け済みの資格は選択できません。
+          資格を選んで申請すると、マイアカウントに反映されます。JLA
+          メンバーIDはアカウントに1つだけ登録し、申請ではそのIDを使います（未登録のときのみ入力します）。すでに紐付け済みの資格は選択できません。
         </p>
       </div>
 
@@ -450,8 +479,8 @@ export default function QualificationsSelectionClient({
           <DialogHeader>
             <DialogTitle>JLAメンバーIDの入力</DialogTitle>
             <DialogDescription>
-              選択した {selectedAvailableCount}{" "}
-              件の暫定紐付けを申請する前に、協会発行のメンバーIDを入力してください。入力がないと申請は送信されません。
+              アカウントにメンバーIDがまだないため、選択した {selectedAvailableCount}{" "}
+              件の暫定紐付けの前に入力してください。保存後はアカウントに1つだけ紐づき、以降の申請では再入力不要です。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
