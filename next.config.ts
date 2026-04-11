@@ -104,6 +104,12 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
+        source: "/:path*",
+        has: [{ type: "host", value: "www.bluvium.jp" }],
+        destination: "https://bluvium.jp/:path*",
+        permanent: true,
+      },
+      {
         source: "/organizations",
         destination: "/dashboard",
         permanent: true,
