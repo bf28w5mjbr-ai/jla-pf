@@ -18,6 +18,7 @@ import { assertEventScheduleWithinCompetitionRange } from "@/lib/eventScheduleWi
 import { syncStartListSettingsRoundTabsForEvent } from "@/lib/startListRoundCountSync";
 import { parseEligibleBirthDateInput } from "@/lib/eligibleBirthDateInput";
 import { eventBirthFieldsFromAgeCategory } from "@/lib/competitionAgeCategorySync";
+import { eventSiblingGroupWhere } from "@/lib/eventSiblingGroup";
 
 export async function DELETE(
   request: NextRequest,
@@ -73,12 +74,9 @@ export async function DELETE(
       throw e;
     }
 
-    // 同じ種目名の男女両方を削除
+    // 同一種目名・同一競技区分・同一年齢カテゴリ内の男女行をまとめて削除
     await prisma.event.deleteMany({
-      where: {
-        competitionId,
-        name: event.name,
-      },
+      where: eventSiblingGroupWhere(competitionId, event),
     });
 
     // 更新後の種目一覧を取得
@@ -193,12 +191,7 @@ export async function PATCH(
         }
         const birth = eventBirthFieldsFromAgeCategory(cat);
         await prisma.event.updateMany({
-          where: {
-            competitionId,
-            name: event.name,
-            type: event.type,
-            category: event.category,
-          },
+          where: eventSiblingGroupWhere(competitionId, event),
           data: {
             ageCategoryId: categoryId,
             ...birth,
@@ -206,12 +199,7 @@ export async function PATCH(
         });
       } else {
         await prisma.event.updateMany({
-          where: {
-            competitionId,
-            name: event.name,
-            type: event.type,
-            category: event.category,
-          },
+          where: eventSiblingGroupWhere(competitionId, event),
           data: { ageCategoryId: null },
         });
       }
@@ -350,10 +338,8 @@ export async function PATCH(
 
       await prisma.event.updateMany({
         where: {
-          competitionId,
-          name: event.name,
+          ...eventSiblingGroupWhere(competitionId, event),
           type: "TEAM",
-          category: event.category,
         },
         data: {
           teamRelayPositionCount: nextCount,
@@ -664,7 +650,7 @@ export async function PATCH(
       const clearLegacyAge = Boolean(fromD || toD);
 
       await prisma.event.updateMany({
-        where: { competitionId, name: event.name },
+        where: eventSiblingGroupWhere(competitionId, event),
         data: {
           eligibleBirthDateFrom: fromD,
           eligibleBirthDateTo: toD,
@@ -734,12 +720,7 @@ export async function PATCH(
       const requestedSexSet = new Set<"MALE" | "FEMALE" | "OTHER">(requestedSexes);
 
       const sameNameEvents = await prisma.event.findMany({
-        where: {
-          competitionId,
-          name: event.name,
-          type: event.type,
-          category: event.category,
-        },
+        where: eventSiblingGroupWhere(competitionId, event),
         orderBy: { displayOrder: "asc" },
       });
 
@@ -832,6 +813,7 @@ export async function PATCH(
           await tx.event.create({
             data: {
               competitionId,
+              ageCategoryId: event.ageCategoryId,
               name: event.name,
               sex,
               type: event.type,
@@ -915,10 +897,7 @@ export async function PATCH(
       }
 
       await prisma.event.updateMany({
-        where: {
-          competitionId,
-          name: event.name,
-        },
+        where: eventSiblingGroupWhere(competitionId, event),
         data: {
           minAge: minAge === undefined ? undefined : minAge,
           maxAge: maxAge === undefined ? undefined : maxAge,

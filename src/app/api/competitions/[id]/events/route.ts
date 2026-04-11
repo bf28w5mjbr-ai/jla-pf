@@ -79,6 +79,7 @@ export async function POST(
       category?: unknown;
       sexOption?: unknown;
       announcementMessage?: unknown;
+      ageCategoryId?: unknown;
     };
     const {
       name,
@@ -86,7 +87,13 @@ export async function POST(
       category = "POOL",
       sexOption = "BOTH",
       announcementMessage,
+      ageCategoryId: rawAgeCategoryId,
     } = body;
+
+    const targetAgeCategoryId =
+      typeof rawAgeCategoryId === "string" && rawAgeCategoryId.trim()
+        ? rawAgeCategoryId.trim()
+        : null;
 
     if (!name || typeof name !== "string" || !name.trim()) {
       return NextResponse.json({ message: "種目名を入力してください" }, { status: 400 });
@@ -142,6 +149,18 @@ export async function POST(
       return NextResponse.json({ message: "大会が見つかりません" }, { status: 404 });
     }
 
+    let resolvedAgeCategory: Awaited<
+      ReturnType<typeof prisma.competitionAgeCategory.findFirst>
+    > = null;
+    if (targetAgeCategoryId) {
+      resolvedAgeCategory = await prisma.competitionAgeCategory.findFirst({
+        where: { id: targetAgeCategoryId, competitionId },
+      });
+      if (!resolvedAgeCategory) {
+        return NextResponse.json({ message: "年齢カテゴリが見つかりません" }, { status: 404 });
+      }
+    }
+
     // 権限チェック（管理者のみ）
     const isAdmin = competition.organization.admins.some(
       (admin) =>
@@ -183,7 +202,8 @@ export async function POST(
       (event) =>
         event.name.toLowerCase() === name.trim().toLowerCase() &&
         event.type === type &&
-        event.category === category
+        event.category === category &&
+        (event.ageCategoryId ?? null) === targetAgeCategoryId
     );
     const existingSexes = new Set(sameNameEvents.map((event) => event.sex));
     const missingSexes = sexesToCreate.filter((sex) => !existingSexes.has(sex));
@@ -197,22 +217,34 @@ export async function POST(
       );
     }
 
-    // 現在の最大displayOrderを取得
-    const maxDisplayOrder = competition.events.length > 0
-      ? Math.max(...competition.events.map((e) => e.displayOrder))
-      : -1;
+    const bucketEvents = competition.events.filter(
+      (e) => (e.ageCategoryId ?? null) === targetAgeCategoryId
+    );
+    const maxDisplayOrder =
+      bucketEvents.length > 0 ? Math.max(...bucketEvents.map((e) => e.displayOrder)) : -1;
+
+    const birthForCreate = resolvedAgeCategory
+      ? {
+          eligibleBirthDateFrom: resolvedAgeCategory.eligibleBirthDateFrom,
+          eligibleBirthDateTo: resolvedAgeCategory.eligibleBirthDateTo,
+          minAge: null as number | null,
+          maxAge: null as number | null,
+        }
+      : {};
 
     await prisma.$transaction(
       missingSexes.map((sex, index) =>
         prisma.event.create({
           data: {
             competitionId,
+            ageCategoryId: targetAgeCategoryId,
             name: name.trim(),
             sex,
             type,
             category,
             requiresEntryTime,
             displayOrder: maxDisplayOrder + index + 1,
+            ...birthForCreate,
           },
         })
       )

@@ -26,6 +26,7 @@ type WorkingEvent = {
   type: EventType;
   category: EventCategory;
   sex: Sex;
+  ageCategoryId: string | null;
 };
 
 function sexesForOption(
@@ -89,8 +90,15 @@ export async function POST(
       return NextResponse.json({ message: "認証が必要です" }, { status: 401 });
     }
 
-    const body = (await request.json().catch(() => null)) as { items?: unknown } | null;
+    const body = (await request.json().catch(() => null)) as {
+      items?: unknown;
+      ageCategoryId?: unknown;
+    } | null;
     const rawItems = body?.items;
+    const bulkAgeCategoryId =
+      typeof body?.ageCategoryId === "string" && body.ageCategoryId.trim()
+        ? body.ageCategoryId.trim()
+        : null;
     if (!Array.isArray(rawItems) || rawItems.length === 0) {
       return NextResponse.json({ message: "items が必要です" }, { status: 400 });
     }
@@ -115,6 +123,18 @@ export async function POST(
       return NextResponse.json({ message: "大会が見つかりません" }, { status: 404 });
     }
 
+    let resolvedBulkAgeCategory: Awaited<
+      ReturnType<typeof prisma.competitionAgeCategory.findFirst>
+    > = null;
+    if (bulkAgeCategoryId) {
+      resolvedBulkAgeCategory = await prisma.competitionAgeCategory.findFirst({
+        where: { id: bulkAgeCategoryId, competitionId },
+      });
+      if (!resolvedBulkAgeCategory) {
+        return NextResponse.json({ message: "年齢カテゴリが見つかりません" }, { status: 404 });
+      }
+    }
+
     const isAdmin = competition.organization.admins.some(
       (admin) => admin.userId === session.userId && isOrgAdminRole(admin.role)
     );
@@ -131,12 +151,23 @@ export async function POST(
       type: e.type,
       category: e.category,
       sex: e.sex,
+      ageCategoryId: e.ageCategoryId ?? null,
     }));
 
+    const bucketEvents = competition.events.filter(
+      (e) => (e.ageCategoryId ?? null) === bulkAgeCategoryId
+    );
     let nextOrder =
-      competition.events.length > 0
-        ? Math.max(...competition.events.map((e) => e.displayOrder))
-        : -1;
+      bucketEvents.length > 0 ? Math.max(...bucketEvents.map((e) => e.displayOrder)) : -1;
+
+    const birthForCreate = resolvedBulkAgeCategory
+      ? {
+          eligibleBirthDateFrom: resolvedBulkAgeCategory.eligibleBirthDateFrom,
+          eligibleBirthDateTo: resolvedBulkAgeCategory.eligibleBirthDateTo,
+          minAge: null as number | null,
+          maxAge: null as number | null,
+        }
+      : {};
 
     const creates: Prisma.EventCreateManyInput[] = [];
     const announcements: string[] = [];
@@ -166,7 +197,8 @@ export async function POST(
         (e) =>
           e.nameLower === nameLower &&
           e.type === item.type &&
-          e.category === item.category
+          e.category === item.category &&
+          e.ageCategoryId === bulkAgeCategoryId
       );
       const existingSexes = new Set(sameName.map((e) => e.sex));
       const sexesToCreate = sexesForOption(item.sexOption);
@@ -195,12 +227,14 @@ export async function POST(
         nextOrder += 1;
         creates.push({
           competitionId,
+          ageCategoryId: bulkAgeCategoryId,
           name: item.name,
           sex,
           type: item.type,
           category: item.category,
           requiresEntryTime,
           displayOrder: nextOrder,
+          ...birthForCreate,
         });
         working.push({
           name: item.name,
@@ -208,6 +242,7 @@ export async function POST(
           type: item.type,
           category: item.category,
           sex,
+          ageCategoryId: bulkAgeCategoryId,
         });
       }
 

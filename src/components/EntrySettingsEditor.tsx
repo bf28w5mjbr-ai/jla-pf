@@ -5,7 +5,6 @@ import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import { formatDateForDatetimeLocalInput } from "@/lib/datetimeLocal";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
@@ -19,6 +18,7 @@ import {
   resolveCompetitionEventCategoryScope,
 } from "@/lib/competitionEventCategoryScope";
 import { cn } from "@/lib/utils";
+import { birthRangeFormKey } from "@/lib/eventSiblingGroup";
 import {
   buildEntryPeriodExtensionAnnouncement,
   buildEventAddedAnnouncement,
@@ -129,8 +129,12 @@ export type CompetitionAgeCategoryDraft = {
   eligibleBirthDateTo: Date | string | null;
 };
 
-function teamRelayStateKey(category: "POOL" | "OCEAN", eventName: string) {
-  return `${category}:${eventName}`;
+function teamRelayStateKey(
+  category: "POOL" | "OCEAN",
+  eventName: string,
+  ageCategoryId?: string | null
+) {
+  return `${category}:${ageCategoryId ?? "__NONE__"}:${eventName}`;
 }
 
 function parseTeamRelayNamesFromEvent(e: Event): string[] {
@@ -146,7 +150,7 @@ function buildTeamRelayPositionsMap(evts: Event[]) {
   const map: Record<string, { count: string; namesText: string }> = {};
   for (const e of evts) {
     if (e.type !== "TEAM") continue;
-    const k = teamRelayStateKey(e.category, e.name);
+    const k = teamRelayStateKey(e.category, e.name, e.ageCategoryId);
     if (map[k]) continue;
     const count =
       typeof e.teamRelayPositionCount === "number" && e.teamRelayPositionCount >= 1
@@ -389,8 +393,9 @@ export default function EntrySettingsEditor({
   >(() => {
     const map: Record<string, { from: string; to: string }> = {};
     initialEvents.forEach((event) => {
-      if (!map[event.name]) {
-        map[event.name] = {
+      const k = birthRangeFormKey(event);
+      if (!map[k]) {
+        map[k] = {
           from: toEligibleBirthDateInput(event.eligibleBirthDateFrom),
           to: toEligibleBirthDateInput(event.eligibleBirthDateTo),
         };
@@ -410,7 +415,13 @@ export default function EntrySettingsEditor({
     [initialAgeCategories]
   );
 
-  const [eventsSubTab, setEventsSubTab] = useState<"list" | "ageCategories">("list");
+  /** 種目を編集するスコープ: 年齢カテゴリ ID / 未分類 / カテゴリ管理 */
+  const [eventScopeTabId, setEventScopeTabId] = useState<string>(() => {
+    const cats = initialAgeCategories ?? [];
+    if (cats.length > 0) return cats[0]!.id;
+    return "__MANAGE__";
+  });
+
   const [ageCategories, setAgeCategories] = useState<CompetitionAgeCategoryDraft[]>(
     () => initialAgeCategories ?? []
   );
@@ -418,6 +429,24 @@ export default function EntrySettingsEditor({
   useEffect(() => {
     setAgeCategories(initialAgeCategories ?? []);
   }, [initialAgeCategoriesFingerprint]);
+
+  const eventsInTabScope = useMemo(() => {
+    if (eventScopeTabId === "__MANAGE__") return [];
+    if (eventScopeTabId === "__NONE__") {
+      return events.filter((e) => e.ageCategoryId == null || e.ageCategoryId === "");
+    }
+    return events.filter((e) => e.ageCategoryId === eventScopeTabId);
+  }, [events, eventScopeTabId]);
+
+  useEffect(() => {
+    if (eventScopeTabId === "__MANAGE__" || eventScopeTabId === "__NONE__") return;
+    if (!ageCategories.some((c) => c.id === eventScopeTabId)) {
+      const next =
+        ageCategories[0]?.id ??
+        (events.some((e) => e.ageCategoryId == null || e.ageCategoryId === "") ? "__NONE__" : "__MANAGE__");
+      setEventScopeTabId(next);
+    }
+  }, [ageCategories, eventScopeTabId, events]);
 
   type CatDraft = { name: string; from: string; to: string };
   const [catDrafts, setCatDrafts] = useState<Record<string, CatDraft>>({});
@@ -440,9 +469,6 @@ export default function EntrySettingsEditor({
   const [newCatFrom, setNewCatFrom] = useState("");
   const [newCatTo, setNewCatTo] = useState("");
   const [ageCatBusy, setAgeCatBusy] = useState<string | null>(null);
-  const [updatingEventAgeCategoryForGroup, setUpdatingEventAgeCategoryForGroup] = useState<
-    Record<string, boolean>
-  >({});
 
   const [eventTableBulkSaveStatus, setEventTableBulkSaveStatus] = useState<Record<string, Date>>({});
   const buildPreliminaryLanesMap = (evts: Event[]) => {
@@ -499,12 +525,13 @@ export default function EntrySettingsEditor({
   ) => {
     const next: Record<string, { from: string; to: string }> = {};
     updatedEvents.forEach((event) => {
-      if (next[event.name]) return;
-      const kept = prev[event.name];
+      const k = birthRangeFormKey(event);
+      if (next[k]) return;
+      const kept = prev[k];
       if (kept) {
-        next[event.name] = { ...kept };
+        next[k] = { ...kept };
       } else {
-        next[event.name] = {
+        next[k] = {
           from: toEligibleBirthDateInput(event.eligibleBirthDateFrom),
           to: toEligibleBirthDateInput(event.eligibleBirthDateTo),
         };
@@ -520,7 +547,8 @@ export default function EntrySettingsEditor({
     const next = buildTeamRelayPositionsMap(updatedEvents);
     for (const key of Object.keys(prev)) {
       const stillThere = updatedEvents.some(
-        (e) => e.type === "TEAM" && teamRelayStateKey(e.category, e.name) === key
+        (e) =>
+          e.type === "TEAM" && teamRelayStateKey(e.category, e.name, e.ageCategoryId) === key
       );
       if (stillThere) next[key] = prev[key] as { count: string; namesText: string };
     }
@@ -532,7 +560,7 @@ export default function EntrySettingsEditor({
     type: "INDIVIDUAL" | "TEAM",
     category: "POOL" | "OCEAN"
   ) =>
-    events
+    eventsInTabScope
       .filter((e) => e.category === category && e.type === type && e.name === name)
       .slice()
       .sort((a, b) => {
@@ -562,8 +590,9 @@ export default function EntrySettingsEditor({
     if (options?.resetEventTableForm) {
       const updatedMap: Record<string, { from: string; to: string }> = {};
       updatedEvents.forEach((event) => {
-        if (!updatedMap[event.name]) {
-          updatedMap[event.name] = {
+        const k = birthRangeFormKey(event);
+        if (!updatedMap[k]) {
+          updatedMap[k] = {
             from: toEligibleBirthDateInput(event.eligibleBirthDateFrom),
             to: toEligibleBirthDateInput(event.eligibleBirthDateTo),
           };
@@ -680,7 +709,7 @@ export default function EntrySettingsEditor({
     type: "INDIVIDUAL" | "TEAM"
   ) => {
     const sexes = new Set(
-      events
+      eventsInTabScope
         .filter(
           (event) =>
             event.name === eventName &&
@@ -702,7 +731,7 @@ export default function EntrySettingsEditor({
     type: "INDIVIDUAL" | "TEAM"
   ): SexOption => {
     const sexes = new Set(
-      events
+      eventsInTabScope
         .filter(
           (event) =>
             event.name === eventName &&
@@ -749,7 +778,7 @@ export default function EntrySettingsEditor({
     setUpdatingEventSexOptions((prev) => ({ ...prev, [key]: true }));
 
     try {
-      const addsGenders = eventSexOptionAddsGenders(events, event, nextSexOption);
+      const addsGenders = eventSexOptionAddsGenders(eventsInTabScope, event, nextSexOption);
       const announce = addsGenders
         ? buildEventSexOptionExpandAnnouncement(event.name, requiresParticipantNotice)
         : undefined;
@@ -807,7 +836,13 @@ export default function EntrySettingsEditor({
             ? ["OTHER"]
             : ["MALE", "FEMALE"];
 
-    const categoryEvents = events.filter((e) => e.category === category && e.type === type);
+    if (eventScopeTabId === "__MANAGE__") {
+      toast.info("年齢カテゴリを選んでから追加してください");
+      setIsAddingDefaultEvents(null);
+      return;
+    }
+
+    const categoryEvents = eventsInTabScope.filter((e) => e.category === category && e.type === type);
     const newEventNames = defaultEventNames.filter((name) => {
       const sameNameEvents = categoryEvents.filter((event) => event.name === name);
       if (sameNameEvents.length === 0) return true;
@@ -835,6 +870,7 @@ export default function EntrySettingsEditor({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          ageCategoryId: eventScopeTabId === "__NONE__" ? null : eventScopeTabId,
           items: newEventNames.map((eventName) =>
             withOptionalAnnounce(
               buildEventAddedAnnouncement(eventName, requiresParticipantNotice),
@@ -877,7 +913,7 @@ export default function EntrySettingsEditor({
 
   // 種目を一括削除
   const handleDeleteAllEvents = async (category: "POOL" | "OCEAN", type: "INDIVIDUAL" | "TEAM") => {
-    const targetEvents = events.filter(e => e.category === category && e.type === type);
+    const targetEvents = eventsInTabScope.filter((e) => e.category === category && e.type === type);
     const uniqueNames = Array.from(new Set(targetEvents.map(e => e.name)));
     
     if (uniqueNames.length === 0) {
@@ -1366,6 +1402,11 @@ export default function EntrySettingsEditor({
       return;
     }
 
+    if (eventScopeTabId === "__MANAGE__") {
+      setPoolIndividualError("種目を追加するには、上の年齢カテゴリ（または未分類）を選んでください");
+      return;
+    }
+
     if (isAddingPoolIndividual) return; // 二重送信防止
 
     setIsAddingPoolIndividual(true);
@@ -1383,6 +1424,7 @@ export default function EntrySettingsEditor({
               type: "INDIVIDUAL",
               category: "POOL",
               sexOption: "BOTH",
+              ageCategoryId: eventScopeTabId === "__NONE__" ? null : eventScopeTabId,
             }
           )
         ),
@@ -1414,6 +1456,11 @@ export default function EntrySettingsEditor({
       return;
     }
 
+    if (eventScopeTabId === "__MANAGE__") {
+      setPoolTeamError("種目を追加するには、上の年齢カテゴリ（または未分類）を選んでください");
+      return;
+    }
+
     if (isAddingPoolTeam) return; // 二重送信防止
 
     setIsAddingPoolTeam(true);
@@ -1431,6 +1478,7 @@ export default function EntrySettingsEditor({
               type: "TEAM",
               category: "POOL",
               sexOption: "BOTH",
+              ageCategoryId: eventScopeTabId === "__NONE__" ? null : eventScopeTabId,
             }
           )
         ),
@@ -1462,6 +1510,11 @@ export default function EntrySettingsEditor({
       return;
     }
 
+    if (eventScopeTabId === "__MANAGE__") {
+      setOceanIndividualError("種目を追加するには、上の年齢カテゴリ（または未分類）を選んでください");
+      return;
+    }
+
     if (isAddingOceanIndividual) return; // 二重送信防止
 
     setIsAddingOceanIndividual(true);
@@ -1479,6 +1532,7 @@ export default function EntrySettingsEditor({
               type: "INDIVIDUAL",
               category: "OCEAN",
               sexOption: "BOTH",
+              ageCategoryId: eventScopeTabId === "__NONE__" ? null : eventScopeTabId,
             }
           )
         ),
@@ -1510,6 +1564,11 @@ export default function EntrySettingsEditor({
       return;
     }
 
+    if (eventScopeTabId === "__MANAGE__") {
+      setOceanTeamError("種目を追加するには、上の年齢カテゴリ（または未分類）を選んでください");
+      return;
+    }
+
     if (isAddingOceanTeam) return; // 二重送信防止
 
     setIsAddingOceanTeam(true);
@@ -1527,6 +1586,7 @@ export default function EntrySettingsEditor({
               type: "TEAM",
               category: "OCEAN",
               sexOption: "BOTH",
+              ageCategoryId: eventScopeTabId === "__NONE__" ? null : eventScopeTabId,
             }
           )
         ),
@@ -1558,42 +1618,13 @@ export default function EntrySettingsEditor({
   ) => {
     const ageTargets = Array.from(
       new Map(
-        events
+        eventsInTabScope
           .filter((event) => event.category === category && event.type === type)
           .map((event) => [event.name, event])
       ).values()
     );
-    const rowTargets = events.filter((e) => e.category === category && e.type === type);
+    const rowTargets = eventsInTabScope.filter((e) => e.category === category && e.type === type);
     return { ageTargets, rowTargets, sectionKey: `${category}-${type}` as const };
-  };
-
-  const isAgeCategoryLinkedGroup = (
-    name: string,
-    type: "INDIVIDUAL" | "TEAM",
-    category: "POOL" | "OCEAN"
-  ) => {
-    const sib = events.filter(
-      (e) => e.name === name && e.type === type && e.category === category
-    );
-    if (sib.length === 0) return false;
-    const ids = new Set(sib.map((e) => e.ageCategoryId ?? null));
-    if (ids.size !== 1) return false;
-    return [...ids][0] != null;
-  };
-
-  const groupAgeCategorySelectValue = (
-    name: string,
-    type: "INDIVIDUAL" | "TEAM",
-    category: "POOL" | "OCEAN"
-  ): "" | "mixed" | string => {
-    const sib = events.filter(
-      (e) => e.name === name && e.type === type && e.category === category
-    );
-    if (sib.length === 0) return "";
-    const ids = new Set(sib.map((e) => e.ageCategoryId ?? null));
-    if (ids.size > 1) return "mixed";
-    const only = [...ids][0];
-    return only ?? "";
   };
 
   type EventTableValidate =
@@ -1612,10 +1643,10 @@ export default function EntrySettingsEditor({
 
     const isoDateRe = /^\d{4}-\d{2}-\d{2}$/;
     for (const event of ageTargets) {
-      if (isAgeCategoryLinkedGroup(event.name, event.type, event.category)) {
+      if (event.ageCategoryId) {
         continue;
       }
-      const range = eventBirthDateRanges[event.name] || { from: "", to: "" };
+      const range = eventBirthDateRanges[birthRangeFormKey(event)] || { from: "", to: "" };
       const from = range.from.trim();
       const to = range.to.trim();
       if (from && !isoDateRe.test(from)) {
@@ -1666,7 +1697,7 @@ export default function EntrySettingsEditor({
 
     if (type === "TEAM") {
       for (const event of ageTargets) {
-        const k = teamRelayStateKey(category, event.name);
+        const k = teamRelayStateKey(category, event.name, event.ageCategoryId);
         const st = eventTeamRelayPositions[k] ?? { count: "", namesText: "" };
         const countRaw = st.count.trim();
         const lines = st.namesText
@@ -1719,10 +1750,10 @@ export default function EntrySettingsEditor({
 
     const ageOk = await Promise.all(
       ageTargets.map((event) => {
-        if (isAgeCategoryLinkedGroup(event.name, event.type, event.category)) {
+        if (event.ageCategoryId) {
           return Promise.resolve(true);
         }
-        const range = eventBirthDateRanges[event.name] || { from: "", to: "" };
+        const range = eventBirthDateRanges[birthRangeFormKey(event)] || { from: "", to: "" };
         const fromTrim = range.from.trim();
         const toTrim = range.to.trim();
         return patchEvent(event.id, {
@@ -1764,7 +1795,7 @@ export default function EntrySettingsEditor({
     if (type === "TEAM") {
       const teamOk = await Promise.all(
         ageTargets.map((event) => {
-          const k = teamRelayStateKey(category, event.name);
+          const k = teamRelayStateKey(category, event.name, event.ageCategoryId);
           const st = eventTeamRelayPositions[k] ?? { count: "", namesText: "" };
           const countRaw = st.count.trim();
           const lines = st.namesText
@@ -1800,6 +1831,10 @@ export default function EntrySettingsEditor({
     category: "POOL" | "OCEAN",
     type: "INDIVIDUAL" | "TEAM"
   ) => {
+    if (eventScopeTabId === "__MANAGE__") {
+      toast.info("カテゴリ管理では種目表を保存できません。年齢カテゴリのタブを選んでください");
+      return;
+    }
     const { sectionKey } = getEventTableSectionTargets(category, type);
     const vr = validateEventTableSection(category, type);
     if (!vr.ok) {
@@ -1856,8 +1891,12 @@ export default function EntrySettingsEditor({
 
   /** プール／オーシャン × 個人／チームの、入力済みブロックをまとめて一度に保存 */
   const handleBulkUpdateAllEventTables = async () => {
+    if (eventScopeTabId === "__MANAGE__") {
+      toast.info("カテゴリ管理では種目表を保存できません。年齢カテゴリのタブを選んでください");
+      return;
+    }
     const active = EVENT_TABLE_ALL_SECTIONS.filter(([c, t]) =>
-      events.some((e) => e.category === c && e.type === t)
+      eventsInTabScope.some((e) => e.category === c && e.type === t)
     );
     if (active.length === 0) {
       toast.info("保存対象の種目がありません");
@@ -1913,60 +1952,6 @@ export default function EntrySettingsEditor({
       toast.error("種目表の一括保存に失敗しました");
     } finally {
       setBulkSavingAllEventTables(false);
-    }
-  };
-
-  const ageCategoryGroupBusyKey = (
-    name: string,
-    type: "INDIVIDUAL" | "TEAM",
-    category: "POOL" | "OCEAN"
-  ) => `${category}-${type}-${name}`;
-
-  const handleAssignAgeCategoryToGroup = async (
-    representativeEvent: Event,
-    nextValue: string
-  ) => {
-    const categoryId = nextValue === "" ? null : nextValue;
-    const key = ageCategoryGroupBusyKey(
-      representativeEvent.name,
-      representativeEvent.type,
-      representativeEvent.category
-    );
-    setUpdatingEventAgeCategoryForGroup((prev) => ({ ...prev, [key]: true }));
-    try {
-      const response = await fetch(
-        `/api/competitions/${competitionId}/events/${representativeEvent.id}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ageCategoryId: categoryId }),
-        }
-      );
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(
-          typeof body.message === "string" ? body.message : "年齢カテゴリの更新に失敗しました"
-        );
-      }
-      const nextEvents = body.events as Event[] | undefined;
-      if (Array.isArray(nextEvents)) {
-        syncEvents(nextEvents, { resetEventTableForm: true });
-      }
-      toast.success(
-        categoryId
-          ? "種目を年齢カテゴリに連動しました（生年月日が更新されました）。"
-          : "年齢カテゴリ連動を解除しました。"
-      );
-      router.refresh();
-    } catch (e) {
-      console.error(e);
-      toast.error(e instanceof Error ? e.message : "年齢カテゴリの更新に失敗しました");
-    } finally {
-      setUpdatingEventAgeCategoryForGroup((prev) => {
-        const copy = { ...prev };
-        delete copy[key];
-        return copy;
-      });
     }
   };
 
@@ -2046,6 +2031,8 @@ export default function EntrySettingsEditor({
       if (Array.isArray(body.ageCategories)) {
         setAgeCategories(body.ageCategories as CompetitionAgeCategoryDraft[]);
       }
+      const created = body.ageCategory as { id?: string } | undefined;
+      if (created?.id) setEventScopeTabId(created.id);
       setNewCatName("");
       setNewCatFrom("");
       setNewCatTo("");
@@ -2056,6 +2043,14 @@ export default function EntrySettingsEditor({
     } finally {
       setAgeCatBusy(null);
     }
+  };
+
+  const formatAgeCategoryRangeSubtitle = (c: CompetitionAgeCategoryDraft) => {
+    const a = toEligibleBirthDateInput(c.eligibleBirthDateFrom);
+    const b = toEligibleBirthDateInput(c.eligibleBirthDateTo);
+    if (!a && !b) return "生年月日の制限なし";
+    if (a && b) return `${a} 〜 ${b}`;
+    return a ? `${a} 〜` : `〜 ${b}`;
   };
 
   const handleDeleteAgeCategory = async (categoryRowId: string, label: string) => {
@@ -2114,7 +2109,7 @@ export default function EntrySettingsEditor({
   ): Event[] =>
     Array.from(
       new Map(
-        events
+        eventsInTabScope
           .filter((e) => e.category === category && e.type === type)
           .map((e) => [e.name, e])
       ).values()
@@ -2213,11 +2208,8 @@ export default function EntrySettingsEditor({
     const sexOption = getEventSexOption(event.name, category, type);
     const isUpdatingSexOption = !!updatingEventSexOptions[makeEventSexOptionKey(event)];
     const siblings = eventSiblingsFor(event.name, type, category);
-    const relayKey = teamRelayStateKey(category, event.name);
-    const linked = isAgeCategoryLinkedGroup(event.name, type, category);
-    const catSel = groupAgeCategorySelectValue(event.name, type, category);
-    const grpBusy =
-      updatingEventAgeCategoryForGroup[ageCategoryGroupBusyKey(event.name, type, category)];
+    const relayKey = teamRelayStateKey(category, event.name, event.ageCategoryId);
+    const linked = Boolean(event.ageCategoryId);
 
     const surface =
       tone === "pool"
@@ -2226,7 +2218,7 @@ export default function EntrySettingsEditor({
 
     return (
       <div
-        key={event.name}
+        key={event.id}
         id={eventSettingsCardDomId(event.id)}
         className={cn(
           "scroll-mt-24 flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-start sm:justify-between",
@@ -2270,44 +2262,10 @@ export default function EntrySettingsEditor({
             </div>
           ) : null}
 
-          {canEdit ? (
-            <div className="space-y-1.5 rounded-md border border-border/50 bg-background/30 px-2.5 py-2">
-              <p className="text-[10px] font-medium text-muted-foreground">年齢カテゴリ（即時保存）</p>
-              <div className="flex max-w-md items-center gap-2">
-                <select
-                  className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring/70 disabled:cursor-not-allowed disabled:opacity-50"
-                  value={catSel === "mixed" ? "" : catSel}
-                  disabled={grpBusy}
-                  aria-busy={grpBusy}
-                  onChange={(e) => {
-                    void handleAssignAgeCategoryToGroup(event, e.target.value);
-                  }}
-                >
-                  <option value="">なし（下の日付を種目表の保存で手入力）</option>
-                  {ageCategories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-                {grpBusy ? (
-                  <Loader2
-                    className="h-4 w-4 shrink-0 animate-spin text-muted-foreground"
-                    aria-hidden
-                  />
-                ) : null}
-              </div>
-              {catSel === "mixed" ? (
-                <p className="text-[10px] text-amber-800 dark:text-amber-200">
-                  男女行で異なるカテゴリが付いています。いずれかに揃えるか、一度「なし」にしてください。
-                </p>
-              ) : null}
-              {linked ? (
-                <p className="text-[10px] text-muted-foreground">
-                  カテゴリ連動中のため、下の生年月日は読み取り専用です。範囲の変更は「年齢カテゴリ」タブから行ってください。
-                </p>
-              ) : null}
-            </div>
+          {linked ? (
+            <p className="text-[10px] text-muted-foreground">
+              年齢カテゴリに紐づいているため、下の生年月日はカテゴリの範囲に従います（読み取り専用）。範囲の変更は「カテゴリ管理」タブでカテゴリを保存してください。
+            </p>
           ) : null}
 
           <div
@@ -2332,14 +2290,15 @@ export default function EntrySettingsEditor({
                   <Input
                     type="date"
                     aria-label={`${event.name} 参加可能な生年月日の開始`}
-                    value={eventBirthDateRanges[event.name]?.from ?? ""}
+                    value={eventBirthDateRanges[birthRangeFormKey(event)]?.from ?? ""}
                     onChange={(e) => {
                       clearEventTableBulkSaveStatus(sectionKey);
+                      const k = birthRangeFormKey(event);
                       setEventBirthDateRanges((prev) => ({
                         ...prev,
-                        [event.name]: {
+                        [k]: {
                           from: e.target.value,
-                          to: prev[event.name]?.to ?? "",
+                          to: prev[k]?.to ?? "",
                         },
                       }));
                     }}
@@ -2350,13 +2309,14 @@ export default function EntrySettingsEditor({
                   <Input
                     type="date"
                     aria-label={`${event.name} 参加可能な生年月日の終了`}
-                    value={eventBirthDateRanges[event.name]?.to ?? ""}
+                    value={eventBirthDateRanges[birthRangeFormKey(event)]?.to ?? ""}
                     onChange={(e) => {
                       clearEventTableBulkSaveStatus(sectionKey);
+                      const k = birthRangeFormKey(event);
                       setEventBirthDateRanges((prev) => ({
                         ...prev,
-                        [event.name]: {
-                          from: prev[event.name]?.from ?? "",
+                        [k]: {
+                          from: prev[k]?.from ?? "",
                           to: e.target.value,
                         },
                       }));
@@ -2949,20 +2909,52 @@ export default function EntrySettingsEditor({
 
       {isSection("events") && (
       <>
-      <Tabs
-        value={eventsSubTab}
-        onValueChange={(v) => setEventsSubTab(v as "list" | "ageCategories")}
-        className="space-y-3"
-      >
-        <TabsList className="grid h-auto w-full max-w-lg grid-cols-2 gap-1 p-1">
-          <TabsTrigger value="list" className="text-xs sm:text-sm">
-            種目一覧
-          </TabsTrigger>
-          <TabsTrigger value="ageCategories" className="text-xs sm:text-sm">
-            年齢カテゴリ
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="list" className="mt-0 space-y-0 focus-visible:outline-none">
+      <div className="mb-3 space-y-2 rounded-lg border border-border/60 bg-muted/15 px-3 py-2.5 sm:px-4">
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          年齢カテゴリごとに種目を設定します。タブが異なれば同名の種目も別種目として扱われます。
+        </p>
+        <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="年齢カテゴリ">
+          {ageCategories.map((c) => (
+            <Button
+              key={c.id}
+              type="button"
+              size="sm"
+              variant={eventScopeTabId === c.id ? "default" : "secondary"}
+              className="h-auto min-h-10 max-w-[14rem] flex-col items-stretch gap-0.5 px-2.5 py-1.5 text-left"
+              onClick={() => setEventScopeTabId(c.id)}
+            >
+              <span className="text-xs font-semibold leading-tight">{c.name}</span>
+              <span className="text-[10px] font-normal opacity-90">
+                {formatAgeCategoryRangeSubtitle(c)}
+              </span>
+            </Button>
+          ))}
+          {events.some((e) => e.ageCategoryId == null || e.ageCategoryId === "") ? (
+            <Button
+              type="button"
+              size="sm"
+              variant={eventScopeTabId === "__NONE__" ? "default" : "secondary"}
+              className="h-auto min-h-10 px-2.5 py-1.5 text-left"
+              onClick={() => setEventScopeTabId("__NONE__")}
+            >
+              <span className="text-xs font-semibold leading-tight">未分類</span>
+              <span className="block text-[10px] font-normal opacity-80">カテゴリ未設定</span>
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant={eventScopeTabId === "__MANAGE__" ? "default" : "outline"}
+            className="h-auto min-h-10 px-2.5 py-1.5 text-left"
+            onClick={() => setEventScopeTabId("__MANAGE__")}
+          >
+            <span className="text-xs font-semibold leading-tight">カテゴリ管理</span>
+            <span className="block text-[10px] font-normal opacity-80">追加・編集</span>
+          </Button>
+        </div>
+      </div>
+
+      {eventScopeTabId !== "__MANAGE__" ? (
       <Card className={cn(categoryMeta.toneClass, "overflow-hidden")}>
         <CardHeader className="space-y-1.5 border-b border-border/60 bg-background/40 px-3 py-3 sm:px-4">
           <CardTitle className="text-base font-semibold">{categoryMeta.title}</CardTitle>
@@ -2982,7 +2974,7 @@ export default function EntrySettingsEditor({
                 種目ごとの参加可能な生年月日: 大会全体の年齢に加え、種目ごとに「この日〜この日に生まれた人」（両端含む）を指定できます。空欄は大会の年齢設定に従います。
               </li>
               <li>
-                <span className="text-foreground">年齢カテゴリ</span>タブ: 名前付きの生年月日レンジを定義し、種目一覧の各種目から割り当てると、その範囲が種目に連動します（手動で種目の日付を保存すると連動は解除されます）。
+                上の年齢カテゴリを切り替えると、そのカテゴリに属する種目だけが表示されます。同名種目もカテゴリが違えば別種目です。
               </li>
             </ul>
           </details>
@@ -3004,7 +2996,7 @@ export default function EntrySettingsEditor({
               </li>
               <li>
                 <span className="text-foreground">年齢カテゴリ</span>
-                … 上の「年齢カテゴリ」タブで追加・編集し、種目カードのプルダウンで割り当て（即時保存）
+                … 「カテゴリ管理」で名前と生年月日範囲を追加し、各カテゴリのタブで種目を追加します
               </li>
               <li>
                 <span className="text-foreground">年齢・最大レーン・ラウンド数</span>
@@ -3041,7 +3033,7 @@ export default function EntrySettingsEditor({
                         size="sm"
                         className="h-8 px-2 text-[11px]"
                         onClick={() => handleAddDefaultEvents("POOL", "INDIVIDUAL", "BOTH")}
-                        disabled={isAddingDefaultEvents === "POOL-INDIVIDUAL"}
+                        disabled={eventScopeTabId === "__MANAGE__" || isAddingDefaultEvents === "POOL-INDIVIDUAL"}
                       >
                         {isAddingDefaultEvents === "POOL-INDIVIDUAL" ? "追加中…" : "＋デフォルト"}
                       </Button>
@@ -3085,6 +3077,7 @@ export default function EntrySettingsEditor({
                       className="h-9 shrink-0 px-3"
                       onClick={handleAddPoolIndividual}
                       disabled={
+                        eventScopeTabId === "__MANAGE__" ||
                         isAddingPoolIndividual ||
                         isAddingDefaultEvents === "POOL-INDIVIDUAL" ||
                         !poolIndividualName.trim()
@@ -3094,14 +3087,14 @@ export default function EntrySettingsEditor({
                     </Button>
                   </div>
                 ) : null}
-                {events.filter((e) => e.category === "POOL" && e.type === "INDIVIDUAL").length ===
+                {eventsInTabScope.filter((e) => e.category === "POOL" && e.type === "INDIVIDUAL").length ===
                 0 ? (
                   <p className="text-xs text-muted-foreground">個人種目はまだありません。</p>
                 ) : (
                   <div className="space-y-1.5">
                     {Array.from(
                       new Map(
-                        events
+                        eventsInTabScope
                           .filter((e) => e.category === "POOL" && e.type === "INDIVIDUAL")
                           .map((e) => [e.name, e])
                       ).values()
@@ -3147,7 +3140,7 @@ export default function EntrySettingsEditor({
                         size="sm"
                         className="h-8 px-2 text-[11px]"
                         onClick={() => handleAddDefaultEvents("POOL", "TEAM", "BOTH")}
-                        disabled={isAddingDefaultEvents === "POOL-TEAM"}
+                        disabled={eventScopeTabId === "__MANAGE__" || isAddingDefaultEvents === "POOL-TEAM"}
                       >
                         {isAddingDefaultEvents === "POOL-TEAM" ? "追加中…" : "＋デフォルト"}
                       </Button>
@@ -3191,6 +3184,7 @@ export default function EntrySettingsEditor({
                       className="h-9 shrink-0 px-3"
                       onClick={handleAddPoolTeam}
                       disabled={
+                        eventScopeTabId === "__MANAGE__" ||
                         isAddingPoolTeam ||
                         isAddingDefaultEvents === "POOL-TEAM" ||
                         !poolTeamName.trim()
@@ -3200,13 +3194,13 @@ export default function EntrySettingsEditor({
                     </Button>
                   </div>
                 ) : null}
-                {events.filter((e) => e.category === "POOL" && e.type === "TEAM").length === 0 ? (
+                {eventsInTabScope.filter((e) => e.category === "POOL" && e.type === "TEAM").length === 0 ? (
                   <p className="text-xs text-muted-foreground">チーム種目はまだありません。</p>
                 ) : (
                   <div className="space-y-1.5">
                     {Array.from(
                       new Map(
-                        events
+                        eventsInTabScope
                           .filter((e) => e.category === "POOL" && e.type === "TEAM")
                           .map((e) => [e.name, e])
                       ).values()
@@ -3252,7 +3246,7 @@ export default function EntrySettingsEditor({
                         size="sm"
                         className="h-8 px-2 text-[11px]"
                         onClick={() => handleAddDefaultEvents("OCEAN", "INDIVIDUAL", "BOTH")}
-                        disabled={isAddingDefaultEvents === "OCEAN-INDIVIDUAL"}
+                        disabled={eventScopeTabId === "__MANAGE__" || isAddingDefaultEvents === "OCEAN-INDIVIDUAL"}
                       >
                         {isAddingDefaultEvents === "OCEAN-INDIVIDUAL" ? "追加中…" : "＋デフォルト"}
                       </Button>
@@ -3296,6 +3290,7 @@ export default function EntrySettingsEditor({
                       className="h-9 shrink-0 px-3"
                       onClick={handleAddOceanIndividual}
                       disabled={
+                        eventScopeTabId === "__MANAGE__" ||
                         isAddingOceanIndividual ||
                         isAddingDefaultEvents === "OCEAN-INDIVIDUAL" ||
                         !oceanIndividualName.trim()
@@ -3305,14 +3300,14 @@ export default function EntrySettingsEditor({
                     </Button>
                   </div>
                 ) : null}
-                {events.filter((e) => e.category === "OCEAN" && e.type === "INDIVIDUAL").length ===
+                {eventsInTabScope.filter((e) => e.category === "OCEAN" && e.type === "INDIVIDUAL").length ===
                 0 ? (
                   <p className="text-xs text-muted-foreground">個人種目はまだありません。</p>
                 ) : (
                   <div className="space-y-1.5">
                     {Array.from(
                       new Map(
-                        events
+                        eventsInTabScope
                           .filter((e) => e.category === "OCEAN" && e.type === "INDIVIDUAL")
                           .map((e) => [e.name, e])
                       ).values()
@@ -3359,7 +3354,7 @@ export default function EntrySettingsEditor({
                         size="sm"
                         className="h-8 px-2 text-[11px]"
                         onClick={() => handleAddDefaultEvents("OCEAN", "TEAM", "BOTH")}
-                        disabled={isAddingDefaultEvents === "OCEAN-TEAM"}
+                        disabled={eventScopeTabId === "__MANAGE__" || isAddingDefaultEvents === "OCEAN-TEAM"}
                       >
                         {isAddingDefaultEvents === "OCEAN-TEAM" ? "追加中…" : "＋デフォルト"}
                       </Button>
@@ -3403,6 +3398,7 @@ export default function EntrySettingsEditor({
                       className="h-9 shrink-0 px-3"
                       onClick={handleAddOceanTeam}
                       disabled={
+                        eventScopeTabId === "__MANAGE__" ||
                         isAddingOceanTeam ||
                         isAddingDefaultEvents === "OCEAN-TEAM" ||
                         !oceanTeamName.trim()
@@ -3412,13 +3408,13 @@ export default function EntrySettingsEditor({
                     </Button>
                   </div>
                 ) : null}
-                {events.filter((e) => e.category === "OCEAN" && e.type === "TEAM").length === 0 ? (
+                {eventsInTabScope.filter((e) => e.category === "OCEAN" && e.type === "TEAM").length === 0 ? (
                   <p className="text-xs text-muted-foreground">チーム種目はまだありません。</p>
                 ) : (
                   <div className="space-y-1.5">
                     {Array.from(
                       new Map(
-                        events
+                        eventsInTabScope
                           .filter((e) => e.category === "OCEAN" && e.type === "TEAM")
                           .map((e) => [e.name, e])
                       ).values()
@@ -3451,7 +3447,11 @@ export default function EntrySettingsEditor({
                 variant="default"
                 className="h-9 shrink-0 text-xs sm:min-w-[7.5rem]"
                 onClick={() => void handleBulkUpdateAllEventTables()}
-                disabled={bulkSavingAllEventTables || bulkUpdatingEventSection !== null}
+                disabled={
+                  eventScopeTabId === "__MANAGE__" ||
+                  bulkSavingAllEventTables ||
+                  bulkUpdatingEventSection !== null
+                }
               >
                 {bulkSavingAllEventTables ? "保存中…" : "すべて保存"}
               </Button>
@@ -3459,13 +3459,12 @@ export default function EntrySettingsEditor({
           ) : null}
         </CardContent>
       </Card>
-        </TabsContent>
-        <TabsContent value="ageCategories" className="mt-0 focus-visible:outline-none">
+      ) : (
           <Card className="overflow-hidden border-border/80 shadow-sm">
             <CardHeader className="space-y-1 border-b border-border bg-muted/15 px-3 py-3 sm:px-4">
               <CardTitle className="text-base font-semibold">年齢カテゴリ</CardTitle>
               <CardDescription className="text-xs leading-relaxed">
-                名前と「参加可能な生年月日」の範囲を定義します。「種目一覧」タブで種目に割り当てると、同一種目名（男女別行）の生年月日制限がカテゴリに合わせて更新されます。ここで日付を保存すると、連動中の種目へ反映されます（エントリー成立後など、大会ルールで変更できない場合は保存できません）。
+                名前と「参加可能な生年月日」の範囲を定義します。各カテゴリのタブで追加した種目はこのカテゴリに紐づき、日付を保存するとその種目の生年月日制限が更新されます（エントリー成立後など、大会ルールで変更できない場合は保存できません）。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 px-3 py-3 sm:px-4">
@@ -3635,8 +3634,7 @@ export default function EntrySettingsEditor({
               ) : null}
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+      )}
 
       <Card className="overflow-hidden border-border/90 shadow-sm">
         <CardHeader className="space-y-2 border-b border-border bg-gradient-to-r from-muted/40 to-background px-4 py-3 sm:px-5">
