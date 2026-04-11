@@ -1,6 +1,12 @@
 import type { EventCategory } from "@prisma/client";
 import { formatEventStartJa } from "@/lib/eventScheduleDisplay";
 
+export type ParticipationEventAgeCategoryLite = {
+  id: string;
+  name: string;
+  displayOrder: number;
+};
+
 export type ParticipationEventLite = {
   id: string;
   name: string;
@@ -8,6 +14,8 @@ export type ParticipationEventLite = {
   type: string;
   /** プール／オーシャンなど。同一種目名でもカテゴリが違えば別行にする */
   category: EventCategory;
+  /** 種目に紐づく年齢カテゴリ（未設定のとき null） */
+  ageCategory: ParticipationEventAgeCategoryLite | null;
   scheduledStartAt: Date | null;
 };
 
@@ -73,6 +81,22 @@ export type ParticipationEventRow = {
   scheduleLine: string | null;
 };
 
+function compareJaEventName(a: string, b: string): number {
+  return a.localeCompare(b, "ja", { numeric: true, sensitivity: "base" });
+}
+
+function sortEventsByJaName(events: ParticipationEventLite[]): ParticipationEventLite[] {
+  return [...events].sort(
+    (x, y) => compareJaEventName(x.name, y.name) || x.id.localeCompare(y.id)
+  );
+}
+
+function sortRowsByJaName(rows: ParticipationEventRow[]): ParticipationEventRow[] {
+  return [...rows].sort(
+    (x, y) => compareJaEventName(x.name, y.name) || x.key.localeCompare(y.key)
+  );
+}
+
 /**
  * 大会公開ページ「参加情報」の種目一覧用。
  * 同一の種目名・個人/チーム区分で男女別にレコードがある場合は 1 行にまとめる。
@@ -80,9 +104,11 @@ export type ParticipationEventRow = {
 export function buildParticipationEventRows(events: ParticipationEventLite[]): ParticipationEventRow[] {
   if (events.length === 0) return [];
 
+  const sorted = sortEventsByJaName(events);
+
   const groupKey = (e: ParticipationEventLite) => `${e.category}\0${e.type}\0${e.name}`;
   const buckets = new Map<string, ParticipationEventLite[]>();
-  for (const e of events) {
+  for (const e of sorted) {
     const k = groupKey(e);
     const list = buckets.get(k);
     if (list) {
@@ -93,14 +119,15 @@ export function buildParticipationEventRows(events: ParticipationEventLite[]): P
   }
 
   const orderedKeys: string[] = [];
-  for (const e of events) {
+  for (const e of sorted) {
     const k = groupKey(e);
     if (!orderedKeys.includes(k)) {
       orderedKeys.push(k);
     }
   }
 
-  return orderedKeys.map((k) => {
+  return sortRowsByJaName(
+    orderedKeys.map((k) => {
     const g = buckets.get(k)!;
     const name = g[0]!.name;
     const type = g[0]!.type;
@@ -112,19 +139,87 @@ export function buildParticipationEventRows(events: ParticipationEventLite[]): P
       metaLine,
       scheduleLine: formatScheduleLine(g),
     };
-  });
+    })
+  );
 }
+
+const AGE_BLOCK_UNASSIGNED_KEY = "__unassigned__";
+
+export type ParticipationEventAgeBlock = {
+  key: string;
+  title: string;
+  rows: ParticipationEventRow[];
+};
 
 export type ParticipationEventSection = {
   category: EventCategory;
   label: string;
-  rows: ParticipationEventRow[];
+  ageBlocks: ParticipationEventAgeBlock[];
 };
 
+function buildAgeBlocksForCategory(
+  sub: ParticipationEventLite[],
+  competitionAgeCategories: readonly ParticipationEventAgeCategoryLite[]
+): ParticipationEventAgeBlock[] {
+  if (sub.length === 0) return [];
+
+  const byAgeId = new Map<string | null, ParticipationEventLite[]>();
+  for (const e of sub) {
+    const id = e.ageCategory?.id ?? null;
+    const list = byAgeId.get(id) ?? [];
+    list.push(e);
+    byAgeId.set(id, list);
+  }
+
+  const blocks: ParticipationEventAgeBlock[] = [];
+  const seen = new Set<string>();
+
+  for (const ac of competitionAgeCategories) {
+    const list = byAgeId.get(ac.id);
+    if (!list?.length) continue;
+    seen.add(ac.id);
+    blocks.push({
+      key: ac.id,
+      title: ac.name,
+      rows: buildParticipationEventRows(list),
+    });
+  }
+
+  const orphanIds = [...byAgeId.keys()].filter((k): k is string => k != null && !seen.has(k));
+  orphanIds.sort((a, b) => {
+    const ea = byAgeId.get(a)![0]!.ageCategory;
+    const eb = byAgeId.get(b)![0]!.ageCategory;
+    const oa = ea?.displayOrder ?? 0;
+    const ob = eb?.displayOrder ?? 0;
+    if (oa !== ob) return oa - ob;
+    return compareJaEventName(ea?.name ?? a, eb?.name ?? b);
+  });
+  for (const id of orphanIds) {
+    const list = byAgeId.get(id)!;
+    const title = list[0]!.ageCategory?.name ?? "年齢カテゴリ";
+    blocks.push({ key: id, title, rows: buildParticipationEventRows(list) });
+  }
+
+  const unassigned = byAgeId.get(null);
+  if (unassigned?.length) {
+    blocks.push({
+      key: AGE_BLOCK_UNASSIGNED_KEY,
+      title: "年齢カテゴリ未設定",
+      rows: buildParticipationEventRows(unassigned),
+    });
+  }
+
+  return blocks;
+}
+
 /**
- * 大会公開ページ「参加情報」用。カテゴリ（プール／オーシャン）ごとに行を分け、表示順を整える。
+ * 大会公開ページ「参加情報」用。
+ * カテゴリ（プール／オーシャン）ごとに分け、その中を年齢カテゴリ別の枠にし、種目名は日本語の読み順で並べる。
  */
-export function buildParticipationEventSections(events: ParticipationEventLite[]): ParticipationEventSection[] {
+export function buildParticipationEventSections(
+  events: ParticipationEventLite[],
+  competitionAgeCategories: readonly ParticipationEventAgeCategoryLite[]
+): ParticipationEventSection[] {
   if (events.length === 0) return [];
   const primaryOrder: EventCategory[] = ["POOL", "OCEAN"];
   const used = new Set<EventCategory>();
@@ -136,7 +231,7 @@ export function buildParticipationEventSections(events: ParticipationEventLite[]
     out.push({
       category: cat,
       label: competitionEventCategoryPublicLabel(cat),
-      rows: buildParticipationEventRows(sub),
+      ageBlocks: buildAgeBlocksForCategory(sub, competitionAgeCategories),
     });
   }
   const rest = events.filter((e) => !used.has(e.category));
@@ -147,9 +242,13 @@ export function buildParticipationEventSections(events: ParticipationEventLite[]
       out.push({
         category: cat,
         label: competitionEventCategoryPublicLabel(cat),
-        rows: buildParticipationEventRows(sub),
+        ageBlocks: buildAgeBlocksForCategory(sub, competitionAgeCategories),
       });
     }
   }
   return out;
+}
+
+export function isUnassignedParticipationAgeBlock(block: ParticipationEventAgeBlock): boolean {
+  return block.key === AGE_BLOCK_UNASSIGNED_KEY;
 }

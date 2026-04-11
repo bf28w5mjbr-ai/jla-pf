@@ -32,7 +32,10 @@ import {
   competitionHostDisplayName,
 } from "@/lib/competitionHostDisplay";
 import { formatCompactJaDateRange } from "@/lib/datetimeLocal";
-import { buildParticipationEventSections } from "@/lib/competitionPublicParticipationEvents";
+import {
+  buildParticipationEventSections,
+  isUnassignedParticipationAgeBlock,
+} from "@/lib/competitionPublicParticipationEvents";
 import { ensureStartListSnapshotIfEligible } from "@/lib/startListSnapshot";
 import { parseTechnicalOfficialTiers } from "@/lib/technicalOfficialRules";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
@@ -97,7 +100,7 @@ export default async function CompetitionDetailPage({
       },
       ageCategories: {
         orderBy: { displayOrder: "asc" },
-        select: { id: true, name: true },
+        select: { id: true, name: true, displayOrder: true },
       },
       events: {
         select: {
@@ -110,6 +113,9 @@ export default async function CompetitionDetailPage({
           scheduledStartAt: true,
           scheduledEndAt: true,
           startListRoundCount: true,
+          ageCategory: {
+            select: { id: true, name: true, displayOrder: true },
+          },
         },
         orderBy: { displayOrder: "asc" },
       },
@@ -377,7 +383,10 @@ export default async function CompetitionDetailPage({
   const hasIndividualEvents = competition.events.some((e) => e.type === "INDIVIDUAL");
   const hasTeamEvents = competition.events.some((e) => e.type === "TEAM");
 
-  const participationEventSections = buildParticipationEventSections(competition.events);
+  const participationEventSections = buildParticipationEventSections(
+    competition.events,
+    competition.ageCategories
+  );
   const technicalOfficialTiers = parseTechnicalOfficialTiers(competition.technicalOfficialTiers);
   const showTechnicalOfficialPublicBlock =
     (competition.officialRecruitmentEnabled ?? true) &&
@@ -655,23 +664,48 @@ export default async function CompetitionDetailPage({
                                 {section.label}
                               </p>
                             ) : null}
-                            <ul className="flex flex-col gap-2">
-                              {section.rows.map((row) => (
-                                <li key={row.key} className="text-sm">
-                                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                                    <span className="font-medium text-foreground">{row.name}</span>
-                                    <span className="text-[11px] leading-snug text-muted-foreground">
-                                      {row.metaLine}
-                                    </span>
+                            <div className="flex flex-col gap-3">
+                              {section.ageBlocks.map((block) => {
+                                const framed = section.ageBlocks.length > 1;
+                                const showAgeLabel =
+                                  section.ageBlocks.length > 1 ||
+                                  (section.ageBlocks.length === 1 &&
+                                    !isUnassignedParticipationAgeBlock(block));
+                                return (
+                                  <div
+                                    key={`${section.category}-${block.key}`}
+                                    className={
+                                      framed
+                                        ? "rounded-lg border border-border/70 bg-muted/20 px-3 py-2.5 sm:px-3.5"
+                                        : undefined
+                                    }
+                                  >
+                                    {showAgeLabel ? (
+                                      <p className="mb-1.5 text-[11px] font-semibold text-muted-foreground">
+                                        {block.title}
+                                      </p>
+                                    ) : null}
+                                    <ul className="flex flex-col gap-2">
+                                      {block.rows.map((row) => (
+                                        <li key={row.key} className="text-sm">
+                                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                            <span className="font-medium text-foreground">{row.name}</span>
+                                            <span className="text-[11px] leading-snug text-muted-foreground">
+                                              {row.metaLine}
+                                            </span>
+                                          </div>
+                                          {row.scheduleLine ? (
+                                            <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                                              {row.scheduleLine}
+                                            </p>
+                                          ) : null}
+                                        </li>
+                                      ))}
+                                    </ul>
                                   </div>
-                                  {row.scheduleLine ? (
-                                    <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                                      {row.scheduleLine}
-                                    </p>
-                                  ) : null}
-                                </li>
-                              ))}
-                            </ul>
+                                );
+                              })}
+                            </div>
                           </div>
                         ))}
                       </div>
