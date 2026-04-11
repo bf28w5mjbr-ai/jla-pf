@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.20.0",
   "scripts": {
     "dev": "prisma generate && next dev",
     "dev:logged": "mkdir -p .logs && next dev 2>&1 | tee .logs/next-dev.log",
@@ -84,7 +85,18 @@
       "handlebars": "^4.7.9",
       "fast-xml-parser": "^5.5.8",
       "rollup": "^4.59.0"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "@firebase/util",
+      "@prisma/client",
+      "@prisma/engines",
+      "bcrypt",
+      "esbuild",
+      "prisma",
+      "protobufjs",
+      "sharp",
+      "unrs-resolver"
+    ]
   },
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
@@ -110,6 +122,7 @@
     "tsx": "^4.21.0",
     "typescript": "^5",
     "undici": "^6.21.2",
+    "vite": "^5.4.21",
     "vitest": "^2.1.8"
   }
 }
