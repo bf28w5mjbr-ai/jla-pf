@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 
 export type CompetitionListSort = "start" | "entry_end" | "entries";
 
@@ -133,7 +134,7 @@ export function CompetitionsListControls({
               <DialogTitle className="text-base">絞り込み</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 pt-1">
-              <form action="/competitions" method="get" className="space-y-2">
+              <AutofillSyncForm action="/competitions" method="get" className="space-y-2">
                 {sort !== "start" && (
                   <input type="hidden" name="sort" value={sort} />
                 )}
@@ -157,7 +158,7 @@ export function CompetitionsListControls({
                     検索
                   </Button>
                 </div>
-              </form>
+              </AutofillSyncForm>
 
               <div className="space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">期間</p>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 
 interface Props {
   isOpen: boolean;
@@ -78,7 +79,7 @@ export default function PasswordVerificationModal({
           {description}
         </p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <AutofillSyncForm onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-semibold mb-2 text-gray-900 dark:text-gray-100">
               パスワード <span className="text-red-600 dark:text-red-400">*</span>
@@ -117,7 +118,7 @@ export default function PasswordVerificationModal({
               {loading ? "確認中..." : "確認"}
             </button>
           </div>
-        </form>
+        </AutofillSyncForm>
       </div>
     </div>
   );

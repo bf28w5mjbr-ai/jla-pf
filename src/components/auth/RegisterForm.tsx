@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
@@ -223,7 +224,7 @@ function RegisterFormInner() {
           登録メールまたはSMSで届く認証コードにより本人確認を行い、アカウントを作成します。パスキーは任意です。JLA番号は選手登録の申請時に入力します。
         </p>
       </div>
-      <form onSubmit={handleSubmit} className="space-y-8">
+      <AutofillSyncForm onSubmit={handleSubmit} className="space-y-8">
         <FormSection title="基本情報" description="ログインと本人確認に使います。" descriptionDensity="balanced">
           <div className="space-y-2">
             <Label htmlFor="email">メールアドレス *</Label>
@@ -539,7 +540,7 @@ function RegisterFormInner() {
             </Button>
           </p>
         </div>
-      </form>
+      </AutofillSyncForm>
     </AuthPanel>
   );
 }

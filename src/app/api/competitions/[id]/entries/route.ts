@@ -18,6 +18,7 @@ import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheck
 import { refreshStartListSnapshotAfterEligibleEntryChange } from "@/lib/startListSnapshot";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { calculateCompetitionEntryFee, type CompetitionEntryFeeConfig } from "@/lib/entryFee";
+import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -219,17 +220,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     };
 
-    const calculateAge = (dateOfBirth: Date) => {
-      const today = new Date();
-      let age = today.getFullYear() - dateOfBirth.getFullYear();
-      const monthDiff = today.getMonth() - dateOfBirth.getMonth();
-      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dateOfBirth.getDate())) {
-        age--;
-      }
-      return age;
-    };
-
-    const userAge = user?.dateOfBirth ? calculateAge(new Date(user.dateOfBirth)) : null;
+    const userAge = user?.dateOfBirth
+      ? getCompetitionEligibilityAgeYears(
+          new Date(user.dateOfBirth),
+          new Date(competition.startDate)
+        )
+      : null;
     const userSex = user?.sex ?? "OTHER";
     const userQualifications = user?.qualifications.map((q) => q.kind) ?? [];
 

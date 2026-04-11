@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -112,7 +113,7 @@ export function CompetitionBalanceSheetPanel({ competitionId, initialLines }: Pr
 
   return (
     <div className="space-y-3">
-      <form
+      <AutofillSyncForm
         onSubmit={submit}
         className="rounded-md border border-dashed border-border bg-background/80 p-2.5"
       >
@@ -195,7 +196,7 @@ export function CompetitionBalanceSheetPanel({ competitionId, initialLines }: Pr
             {isPending ? "…" : "登録"}
           </Button>
         </div>
-      </form>
+      </AutofillSyncForm>
 
       {initialLines.length === 0 ? (
         <p className="py-2 text-center text-xs text-muted-foreground">行がありません。上のフォームから追加してください。</p>

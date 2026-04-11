@@ -7,6 +7,7 @@ import { formatDateForDatetimeLocalInput } from "@/lib/datetimeLocal";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -685,62 +686,45 @@ export default function EntrySettingsEditor({
     const loadingToastId = toast.loading(`${categoryLabel}${typeLabel}種目を追加中...`);
 
     try {
-      let successCount = 0;
-      let errorCount = 0;
+      const response = await fetch(`/api/competitions/${competitionId}/events/bulk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: newEventNames.map((eventName) =>
+            withOptionalAnnounce(
+              buildEventAddedAnnouncement(eventName, requiresParticipantNotice),
+              {
+                name: eventName,
+                type,
+                category,
+                sexOption,
+              }
+            )
+          ),
+        }),
+      });
 
-      // 各種目を順次追加
-      for (const eventName of newEventNames) {
-        try {
-          const response = await fetch(`/api/competitions/${competitionId}/events`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(
-              withOptionalAnnounce(
-                buildEventAddedAnnouncement(eventName, requiresParticipantNotice),
-                {
-                  name: eventName,
-                  type,
-                  category,
-                  sexOption,
-                }
-              )
-            ),
-          });
+      toast.dismiss(loadingToastId);
 
-          if (response.ok) {
-            successCount++;
-          } else {
-            const error = await response.json();
-            console.error(`種目「${eventName}」の追加に失敗:`, error);
-            errorCount++;
-          }
-        } catch (err) {
-          console.error(`種目「${eventName}」の追加エラー:`, err);
-          errorCount++;
-        }
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(
+          typeof err.message === "string" ? err.message : "種目の一括追加に失敗しました"
+        );
       }
 
-      // 最新の種目一覧を取得
-      const response = await fetch(`/api/competitions/${competitionId}/events`);
-      if (response.ok) {
-        const { events: updatedEvents } = await response.json();
-        syncEvents(updatedEvents);
-        
-        toast.dismiss(loadingToastId);
-        if (errorCount === 0) {
-          toast.success(`${categoryLabel}${typeLabel}種目を追加しました（${sexOptionLabel(sexOption)} / ${successCount}件）`);
-        } else {
-          toast.warning(`${successCount}件追加、${errorCount}件失敗しました`);
-        }
-        router.refresh();
-      } else {
-        toast.dismiss(loadingToastId);
-        toast.error("種目一覧の更新に失敗しました");
-      }
+      const { events: updatedEvents } = await response.json();
+      syncEvents(updatedEvents);
+      toast.success(
+        `${categoryLabel}${typeLabel}種目を追加しました（${sexOptionLabel(sexOption)} / ${newEventNames.length}件）`
+      );
+      router.refresh();
     } catch (error) {
       console.error("デフォルト種目追加エラー:", error);
       toast.dismiss(loadingToastId);
-      toast.error("デフォルト種目の追加に失敗しました");
+      toast.error(
+        error instanceof Error ? error.message : "デフォルト種目の追加に失敗しました"
+      );
     } finally {
       setIsAddingDefaultEvents(null);
     }
@@ -766,31 +750,31 @@ export default function EntrySettingsEditor({
     toast.loading(`${categoryLabel}${typeLabel}種目を削除中...`);
 
     try {
-      let successCount = 0;
-      let errorCount = 0;
-
-      // 各種目名ごとに削除（性別が複数あってもまとめて削除）
-      for (const name of uniqueNames) {
-        const eventToDelete = targetEvents.find(e => e.name === name);
-        if (!eventToDelete) continue;
-
-        try {
-          const response = await fetch(`/api/competitions/${competitionId}/events/${eventToDelete.id}`, {
-            method: "DELETE",
-          });
-
-          if (response.ok) {
-            successCount++;
-          } else {
-            const error = await response.json();
-            console.error(`種目「${name}」の削除に失敗:`, error);
-            errorCount++;
+      const deleteResults = await Promise.all(
+        uniqueNames.map(async (name) => {
+          const eventToDelete = targetEvents.find((e) => e.name === name);
+          if (!eventToDelete) return null;
+          try {
+            const response = await fetch(
+              `/api/competitions/${competitionId}/events/${eventToDelete.id}`,
+              { method: "DELETE" }
+            );
+            if (!response.ok) {
+              const error = await response.json().catch(() => ({}));
+              console.error(`種目「${name}」の削除に失敗:`, error);
+            }
+            return { ok: response.ok };
+          } catch (err) {
+            console.error(`種目「${name}」の削除エラー:`, err);
+            return { ok: false as const };
           }
-        } catch (err) {
-          console.error(`種目「${name}」の削除エラー:`, err);
-          errorCount++;
-        }
-      }
+        })
+      );
+      const attempted = deleteResults.filter(
+        (r): r is { ok: boolean } => r != null
+      );
+      const successCount = attempted.filter((r) => r.ok).length;
+      const errorCount = attempted.filter((r) => !r.ok).length;
 
       // 最新の種目一覧を取得
       const response = await fetch(`/api/competitions/${competitionId}/events`);
@@ -1442,79 +1426,77 @@ export default function EntrySettingsEditor({
     const { ageTargets, rowTargets } = getEventTableSectionTargets(category, type);
     let errorCount = 0;
 
-    for (const event of ageTargets) {
-      const range = eventAgeRanges[event.name] || { minAge: "", maxAge: "" };
-      const minAgeValue = range.minAge.trim() === "" ? null : Number(range.minAge);
-      const maxAgeValue = range.maxAge.trim() === "" ? null : Number(range.maxAge);
-
+    const patchEvent = async (eventId: string, body: Record<string, unknown>) => {
       const response = await fetch(
-        `/api/competitions/${competitionId}/events/${event.id}`,
+        `/api/competitions/${competitionId}/events/${eventId}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ minAge: minAgeValue, maxAge: maxAgeValue }),
+          body: JSON.stringify(body),
         }
       );
-      if (!response.ok) errorCount += 1;
-    }
+      return response.ok;
+    };
 
-    for (const event of rowTargets) {
-      const raw = (eventPreliminaryLanes[event.id] ?? "").trim();
-      const laneValue = raw === "" ? null : Number(raw);
+    const ageOk = await Promise.all(
+      ageTargets.map((event) => {
+        const range = eventAgeRanges[event.name] || { minAge: "", maxAge: "" };
+        const minAgeValue = range.minAge.trim() === "" ? null : Number(range.minAge);
+        const maxAgeValue = range.maxAge.trim() === "" ? null : Number(range.maxAge);
+        return patchEvent(event.id, { minAge: minAgeValue, maxAge: maxAgeValue });
+      })
+    );
+    errorCount += ageOk.filter((ok) => !ok).length;
 
-      const response = await fetch(
-        `/api/competitions/${competitionId}/events/${event.id}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ preliminaryHeatLaneCount: laneValue }),
-        }
-      );
-      if (!response.ok) errorCount += 1;
-    }
+    const laneOk = await Promise.all(
+      rowTargets.map((event) => {
+        const raw = (eventPreliminaryLanes[event.id] ?? "").trim();
+        const laneValue = raw === "" ? null : Number(raw);
+        return patchEvent(event.id, { preliminaryHeatLaneCount: laneValue });
+      })
+    );
+    errorCount += laneOk.filter((ok) => !ok).length;
 
-    for (const event of rowTargets) {
-      const raw = (eventStartListRoundCounts[event.id] ?? "1").trim();
-      const roundCount = Number(raw);
-
-      const response = await fetch(
-        `/api/competitions/${competitionId}/events/${event.id}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ startListRoundCount: roundCount }),
-        }
-      );
-      if (!response.ok) errorCount += 1;
+    const roundRes = await fetch(
+      `/api/competitions/${competitionId}/events/bulk-round-counts`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: rowTargets.map((event) => ({
+            eventId: event.id,
+            startListRoundCount: Number(
+              (eventStartListRoundCounts[event.id] ?? "1").trim()
+            ),
+          })),
+        }),
+      }
+    );
+    if (!roundRes.ok) {
+      errorCount += rowTargets.length;
     }
 
     if (type === "TEAM") {
-      for (const event of ageTargets) {
-        const k = teamRelayStateKey(category, event.name);
-        const st = eventTeamRelayPositions[k] ?? { count: "", namesText: "" };
-        const countRaw = st.count.trim();
-        const lines = st.namesText
-          .split(/\r?\n/)
-          .map((l) => l.trim())
-          .filter(Boolean);
-        const body =
-          countRaw === "" && lines.length === 0
-            ? { teamRelayPositionCount: null, teamRelayPositionNames: [] }
-            : {
-                teamRelayPositionCount: Number(countRaw),
-                teamRelayPositionNames: lines,
-              };
-
-        const response = await fetch(
-          `/api/competitions/${competitionId}/events/${event.id}`,
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          }
-        );
-        if (!response.ok) errorCount += 1;
-      }
+      const teamOk = await Promise.all(
+        ageTargets.map((event) => {
+          const k = teamRelayStateKey(category, event.name);
+          const st = eventTeamRelayPositions[k] ?? { count: "", namesText: "" };
+          const countRaw = st.count.trim();
+          const lines = st.namesText
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter(Boolean);
+          const body =
+            countRaw === "" && lines.length === 0
+              ? { teamRelayPositionCount: null, teamRelayPositionNames: [] }
+              : {
+                  teamRelayPositionCount: Number(countRaw),
+                  teamRelayPositionNames: lines,
+                };
+          return patchEvent(event.id, body);
+        })
+      );
+      errorCount += teamOk.filter((ok) => !ok).length;
     }
 
     return errorCount;
@@ -1846,7 +1828,9 @@ export default function EntrySettingsEditor({
             </p>
             <div className="space-y-2">
               <div>
-                <p className="mb-1 text-[10px] text-muted-foreground">年齢（歳・空欄は大会の年齢設定に従う）</p>
+                <p className="mb-1 text-[10px] text-muted-foreground">
+                  年齢（歳・4/2始まり年度の翌年4/1時点の満年齢・空欄は大会の年齢設定に従う）
+                </p>
                 <label className="inline-flex flex-wrap items-center gap-1 text-[11px]">
                   <Input
                     numericInput="integer"
@@ -2025,7 +2009,7 @@ export default function EntrySettingsEditor({
           <CardDescription className="text-xs">受付の開始・終了日時です。</CardDescription>
         </CardHeader>
         <CardContent className="px-4 py-3">
-          <form
+          <AutofillSyncForm
             onSubmit={(e) => {
               e.preventDefault();
               void handleSavePeriod();
@@ -2065,7 +2049,7 @@ export default function EntrySettingsEditor({
                 </Button>
               </div>
             )}
-          </form>
+          </AutofillSyncForm>
         </CardContent>
       </Card>
       )}
@@ -2074,7 +2058,9 @@ export default function EntrySettingsEditor({
       <Card className="overflow-hidden">
         <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
           <CardTitle className="text-base font-semibold">年齢・所属クラブ</CardTitle>
-          <CardDescription className="text-xs">大会全体の年齢範囲と、エントリー時のクラブ所属の要否です。</CardDescription>
+          <CardDescription className="text-xs">
+            大会全体の年齢範囲と、エントリー時のクラブ所属の要否です。年齢条件は4月2日始まりの年度に属する開催開始日について、その年度の末日（翌年4月1日・日本時間）時点の満年齢で判定します。
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 px-4 py-3">
           <div className="rounded-md border border-border bg-muted/25 px-3 py-2 text-xs text-muted-foreground">

@@ -1,4 +1,5 @@
 import * as React from "react"
+import { flushSync } from "react-dom"
 
 import { cn } from "@/lib/utils"
 import {
@@ -12,7 +13,7 @@ export type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
 }
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, numericInput, onChange, inputMode, ...props }, ref) => {
+  ({ className, type, numericInput, onChange, onBlur, inputMode, value, ...props }, ref) => {
     const resolvedType =
       numericInput && type === "number" ? "text" : type
     const resolvedInputMode =
@@ -45,6 +46,25 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
       onChange?.(e)
     }
 
+    const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+      if (resolvedType === "file" || value === undefined || !onChange) {
+        onBlur?.(e)
+        return
+      }
+      const dom = e.target.value
+      const prop = value == null ? "" : String(value)
+      if (dom !== prop) {
+        flushSync(() => {
+          handleChange({
+            ...e,
+            target: e.target,
+            currentTarget: e.currentTarget,
+          } as React.ChangeEvent<HTMLInputElement>)
+        })
+      }
+      onBlur?.(e)
+    }
+
     return (
       <input
         type={resolvedType}
@@ -55,7 +75,9 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         ref={ref}
         inputMode={resolvedInputMode}
         onChange={handleChange}
+        onBlur={handleBlur}
         {...props}
+        {...(value !== undefined ? { value } : {})}
       />
     )
   }

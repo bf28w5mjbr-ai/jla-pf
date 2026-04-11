@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import { appRoutes } from "@/lib/appRoutes";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 
 interface JoinClubFormProps {
   club: {
@@ -51,7 +52,7 @@ export default function JoinClubForm({ club }: JoinClubFormProps) {
   return (
     <Card className="max-w-2xl">
       <CardContent className="pt-6">
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <AutofillSyncForm onSubmit={handleSubmit} className="space-y-6">
           {/* クラブ情報 */}
           <div className="space-y-4">
             <div>
@@ -92,7 +93,7 @@ export default function JoinClubForm({ club }: JoinClubFormProps) {
               {loading ? "申請中..." : "参加を申請"}
             </Button>
           </div>
-        </form>
+        </AutofillSyncForm>
       </CardContent>
     </Card>
   );

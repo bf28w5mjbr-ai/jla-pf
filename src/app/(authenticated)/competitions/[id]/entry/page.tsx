@@ -25,6 +25,7 @@ import { stripe } from "@/lib/stripe";
 import { buildEntryCompletionReceipt } from "@/lib/entryCompletionReceipt";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
 import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
+import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 
 type CompetitionEntryFormProps = ComponentProps<typeof CompetitionEntryForm>;
 
@@ -268,17 +269,12 @@ export default async function CompetitionEntryPage({
     );
   };
 
-  const calculateAge = (dateOfBirth: Date) => {
-    const today = new Date();
-    let age = today.getFullYear() - dateOfBirth.getFullYear();
-    const monthDiff = today.getMonth() - dateOfBirth.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dateOfBirth.getDate())) {
-      age--;
-    }
-    return age;
-  };
-
-  const userAge = user?.dateOfBirth ? calculateAge(new Date(user.dateOfBirth)) : null;
+  const userAge = user?.dateOfBirth
+    ? getCompetitionEligibilityAgeYears(
+        new Date(user.dateOfBirth),
+        new Date(competition.startDate)
+      )
+    : null;
   const userSex = user?.sex ?? "OTHER";
   const userQualifications = user?.qualifications.map((q) => q.kind) ?? [];
 
@@ -337,12 +333,12 @@ export default async function CompetitionEntryPage({
   if (!meetsCompetitionAge && userAge !== null) {
     if (typeof competition.minAge === "number" && userAge < competition.minAge) {
       eligibilityMessages.push(
-        `大会の年齢下限は${competition.minAge}歳以上です（あなたの年齢は${userAge}歳）。`
+        `大会の年齢下限は${competition.minAge}歳以上です（あなたの年齢は${userAge}歳。4月2日始まりの年度の末日＝翌年4月1日・日本時間時点の満年齢）。`
       );
     }
     if (typeof competition.maxAge === "number" && userAge > competition.maxAge) {
       eligibilityMessages.push(
-        `大会の年齢上限は${competition.maxAge}歳以下です（あなたの年齢は${userAge}歳）。`
+        `大会の年齢上限は${competition.maxAge}歳以下です（あなたの年齢は${userAge}歳。4月2日始まりの年度の末日＝翌年4月1日・日本時間時点の満年齢）。`
       );
     }
   }

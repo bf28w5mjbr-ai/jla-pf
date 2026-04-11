@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import { Calendar, MapPin } from "lucide-react";
 import { toast } from "sonner";
@@ -164,7 +165,7 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
         <CardDescription className="text-xs">保存すると公開ページに反映されます。</CardDescription>
       </CardHeader>
       <CardContent className="px-4 py-3">
-        <form onSubmit={handleSave} className="space-y-3">
+        <AutofillSyncForm onSubmit={handleSave} className="space-y-3">
           <div>
             <Label htmlFor="name" className="text-xs">
               大会名 <span className="text-red-500">*</span>
@@ -283,7 +284,7 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
               キャンセル
             </Button>
           </div>
-        </form>
+        </AutofillSyncForm>
       </CardContent>
     </Card>
   );

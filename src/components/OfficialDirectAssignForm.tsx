@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition, type FormEvent } from "rea
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import type { OfficialPositionRow } from "@/lib/officialPositions";
 
@@ -132,7 +133,7 @@ export default function OfficialDirectAssignForm({
   if (positions.length === 0) return null;
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+    <AutofillSyncForm onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
       <p className="text-xs font-medium text-foreground">主催による直接割当</p>
       <p className="text-[11px] leading-relaxed text-muted-foreground">
         対象日の出席確認済みメンバーから選んで割り当てます。割当後は承認済みオフィシャルとして登録され、スタートリスト関連の操作権限が付与されます。
@@ -203,6 +204,6 @@ export default function OfficialDirectAssignForm({
           {pending ? "処理中…" : "割当する"}
         </Button>
       </div>
-    </form>
+    </AutofillSyncForm>
   );
 }

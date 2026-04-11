@@ -4,6 +4,7 @@ import { useState, useTransition, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 
 type Props = {
@@ -75,7 +76,7 @@ export default function CompetitionDayOpsPassphraseEditor({
           状態: {configured ? "設定済み" : "未設定"}
         </p>
       </div>
-      <form onSubmit={onSubmit} className="space-y-2">
+      <AutofillSyncForm onSubmit={onSubmit} className="space-y-2">
         <div className="space-y-1">
           <Label htmlFor="dayops-pass-new" className="text-xs">
             新しい暗号（6文字以上）
@@ -107,7 +108,7 @@ export default function CompetitionDayOpsPassphraseEditor({
             削除
           </Button>
         </div>
-      </form>
+      </AutofillSyncForm>
     </div>
   );
 }

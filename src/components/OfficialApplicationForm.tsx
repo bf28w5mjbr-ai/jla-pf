@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { pageIntroTextClass } from "@/lib/explanation";
 import { cn } from "@/lib/utils";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 
 type InitialApplication = {
   status: "PENDING" | "APPROVED" | "REJECTED";
@@ -136,7 +137,7 @@ export function OfficialApplicationForm({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={submit} className="space-y-4">
+        <AutofillSyncForm onSubmit={submit} className="space-y-4">
           {initialApplication?.status === "REJECTED" ? (
             <p className={pageIntroTextClass("balanced")}>
               前回の応募は見送りとなりました。内容を更新して再エントリーできます。
@@ -251,7 +252,7 @@ export function OfficialApplicationForm({
           >
             {isPending ? "送信中…" : "応募する"}
           </Button>
-        </form>
+        </AutofillSyncForm>
       </CardContent>
     </Card>
   );

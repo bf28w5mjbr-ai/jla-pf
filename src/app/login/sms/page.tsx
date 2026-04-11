@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -90,7 +91,7 @@ function SMSLoginContent() {
       subtitleDensity="balanced"
     >
       <AuthPanel>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <AutofillSyncForm onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <div
               className="rounded-lg border border-red-200/80 bg-red-50 px-3 py-2.5 dark:border-red-900/50 dark:bg-red-950/40"
@@ -129,7 +130,7 @@ function SMSLoginContent() {
               <Link href={appendRedirectQuery("/register", redirectAfterLogin)}>アカウントをお持ちでない方</Link>
             </Button>
           </div>
-        </form>
+        </AutofillSyncForm>
       </AuthPanel>
     </AuthShell>
   );

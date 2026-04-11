@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { normalizeIntegerNumericInput } from "@/lib/numericInput";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 
 interface Props {
   currentPhone: string;
@@ -117,7 +118,7 @@ export default function PhoneChangeForm({ currentPhone }: Props) {
 
   if (step === "verify") {
     return (
-      <form onSubmit={handleVerifyPassword} className="space-y-6">
+      <AutofillSyncForm onSubmit={handleVerifyPassword} className="space-y-6">
         <div className="bg-orange-50 dark:bg-orange-950 border-2 border-orange-200 dark:border-orange-800 rounded-lg p-6">
           <label className="block text-sm font-semibold mb-3 text-gray-900 dark:text-gray-100">
             現在の電話番号
@@ -156,12 +157,12 @@ export default function PhoneChangeForm({ currentPhone }: Props) {
         >
           {loading ? "確認中..." : "次へ"}
         </button>
-      </form>
+      </AutofillSyncForm>
     );
   }
 
   return (
-    <form onSubmit={handleVerifyOTP} className="space-y-6">
+    <AutofillSyncForm onSubmit={handleVerifyOTP} className="space-y-6">
       <div>
         <label className="block text-sm font-semibold mb-3 text-gray-900 dark:text-gray-100">
           新しい電話番号 <span className="text-red-600 dark:text-red-400">*</span>
@@ -222,6 +223,6 @@ export default function PhoneChangeForm({ currentPhone }: Props) {
       >
         {loading ? "変更中..." : "電話番号を変更"}
       </button>
-    </form>
+    </AutofillSyncForm>
   );
 }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
@@ -109,7 +110,7 @@ export default function EditClubForm({ club }: EditClubFormProps) {
   return (
     <Card className="max-w-3xl">
       <CardContent className="pt-6">
-        <form onSubmit={handleSubmit} className="space-y-8">
+        <AutofillSyncForm onSubmit={handleSubmit} className="space-y-8">
           <div className="space-y-1">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">クラブ編集</p>
             <p className={cn(pageIntroTextClass("compact"), "mt-1")}>
@@ -351,7 +352,7 @@ export default function EditClubForm({ club }: EditClubFormProps) {
               {loading ? "保存中..." : "変更を保存"}
             </Button>
           </div>
-        </form>
+        </AutofillSyncForm>
       </CardContent>
     </Card>
   );

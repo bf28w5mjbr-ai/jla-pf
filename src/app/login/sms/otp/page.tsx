@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
@@ -116,7 +117,7 @@ function OTPLoginContent() {
   return (
     <AuthShell maxWidth="md" title="認証コード入力" subtitle={subtitle} subtitleDensity="balanced">
       <AuthPanel>
-        <form onSubmit={handleVerify} className="space-y-4">
+        <AutofillSyncForm onSubmit={handleVerify} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="otp">認証コード</Label>
             <Input
@@ -161,7 +162,7 @@ function OTPLoginContent() {
                   : "認証コードを再送信"}
             </Button>
           </div>
-        </form>
+        </AutofillSyncForm>
       </AuthPanel>
     </AuthShell>
   );

@@ -7,6 +7,7 @@ import { UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -115,7 +116,7 @@ export default function AssociationAccessGrantForm({
         </div>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <AutofillSyncForm onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-2">
             <Label htmlFor="associationId">対象協会</Label>
             <Select value={associationId} onValueChange={setAssociationId}>
@@ -152,7 +153,7 @@ export default function AssociationAccessGrantForm({
               {loading ? "付与中..." : "アクセス権限を付与"}
             </Button>
           </div>
-        </form>
+        </AutofillSyncForm>
       </CardContent>
     </Card>
   );

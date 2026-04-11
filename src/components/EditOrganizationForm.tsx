@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
@@ -152,7 +153,7 @@ export default function EditOrganizationForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <AutofillSyncForm onSubmit={handleSubmit} className="space-y-6">
       {/* 基本情報 */}
       <Card className="p-6">
         <h2 className="text-xl font-bold mb-4">基本情報</h2>
@@ -376,6 +377,6 @@ export default function EditOrganizationForm({
           キャンセル
         </Button>
       </div>
-    </form>
+    </AutofillSyncForm>
   );
 }

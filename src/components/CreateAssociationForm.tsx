@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
@@ -55,7 +56,7 @@ export default function CreateAssociationForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <AutofillSyncForm onSubmit={handleSubmit} className="space-y-6">
       <Card className="p-6">
         <h2 className="text-xl font-bold mb-4">協会基本情報</h2>
         <div className="space-y-4">
@@ -99,6 +100,6 @@ export default function CreateAssociationForm() {
           キャンセル
         </Button>
       </div>
-    </form>
+    </AutofillSyncForm>
   );
 }

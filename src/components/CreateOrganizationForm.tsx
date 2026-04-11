@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
@@ -115,7 +116,7 @@ export default function CreateOrganizationForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+    <AutofillSyncForm onSubmit={handleSubmit} className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">大会主催団体を作成</h1>
         <p className={cn(pageIntroTextClass("guided"), "mt-1")}>
@@ -326,6 +327,6 @@ export default function CreateOrganizationForm({
           {loading ? "作成中..." : "大会主催団体を作成"}
         </Button>
       </div>
-    </form>
+    </AutofillSyncForm>
   );
 }

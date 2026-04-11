@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { MapPin, Phone, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -150,7 +151,7 @@ export default function EditProfileForm({ user }: EditProfileFormProps) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-8 p-5 sm:p-6">
-        <form onSubmit={handleSubmit} className="space-y-8">
+        <AutofillSyncForm onSubmit={handleSubmit} className="space-y-8">
           <FormSection
             icon={User}
             title="基本情報"
@@ -388,7 +389,7 @@ export default function EditProfileForm({ user }: EditProfileFormProps) {
               {loading ? "保存中..." : "変更を保存"}
             </Button>
           </div>
-        </form>
+        </AutofillSyncForm>
       </CardContent>
     </Card>
   );

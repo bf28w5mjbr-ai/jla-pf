@@ -11,6 +11,7 @@ import { fieldHintClass } from "@/lib/explanation";
 import { AuthPanel, AuthShell } from "@/components/auth/AuthShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import { appendRedirectQuery, safePostLoginPath } from "@/lib/postLoginRedirect";
 
@@ -182,7 +183,7 @@ export default function LoginForm() {
           </p>
         )}
 
-        <form onSubmit={onSubmit} className="space-y-4" aria-busy={submitting}>
+        <AutofillSyncForm onSubmit={onSubmit} className="space-y-4" aria-busy={submitting}>
           <div className="space-y-1.5">
             <Label htmlFor="login-email">メールアドレス</Label>
             <Input
@@ -266,7 +267,7 @@ export default function LoginForm() {
               <Link href={appendRedirectQuery("/register", redirectAfterLogin)}>新規登録</Link>
             </Button>
           </p>
-        </form>
+        </AutofillSyncForm>
       </AuthPanel>
     </AuthShell>
   );

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import { FormSection } from "@/components/auth/FormSection";
 import { fieldHintClass } from "@/lib/explanation";
@@ -87,7 +88,7 @@ export default function CreateClubForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-8">
+    <AutofillSyncForm onSubmit={handleSubmit} className="space-y-8">
       <FormSection
         title="基本情報"
         description="公開プロフィールに表示される名称です。"
@@ -318,6 +319,6 @@ export default function CreateClubForm() {
           {loading ? "作成中…" : "クラブを作成"}
         </Button>
       </div>
-    </form>
+    </AutofillSyncForm>
   );
 }

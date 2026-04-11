@@ -64,9 +64,9 @@ export default function BusinessInfoPage() {
           {contactEmail ? (
             <p className="text-sm text-muted-foreground">
               サービス全般に関するお問い合わせ:{" "}
-              <a className="font-medium text-primary underline-offset-4 hover:underline" href={`mailto:${contactEmail}`}>
-                {contactEmail}
-              </a>
+              <Button asChild variant="outline" size="sm" className="ml-1 inline-flex h-auto min-h-0 py-1 align-baseline font-normal">
+                <a href={`mailto:${contactEmail}`}>{contactEmail}</a>
+              </Button>
             </p>
           ) : (
             <p className="text-sm leading-relaxed text-muted-foreground">

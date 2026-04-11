@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
@@ -130,7 +131,7 @@ export default function SecuritySetupForm({ currentEmail, hasPassword }: Securit
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <AutofillSyncForm onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">
               メールアドレス {currentEmail && "(設定済み)"}
@@ -191,7 +192,7 @@ export default function SecuritySetupForm({ currentEmail, hasPassword }: Securit
               戻る
             </Button>
           </div>
-        </form>
+        </AutofillSyncForm>
       </CardContent>
     </Card>
   );

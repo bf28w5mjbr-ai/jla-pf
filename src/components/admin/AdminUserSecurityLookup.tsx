@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ClipboardList, KeyRound, Search, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -80,7 +81,7 @@ export default function AdminUserSecurityLookup() {
           </CardDescription>
         </CardHeader>
         <CardContent className="p-5 sm:p-6">
-          <form
+          <AutofillSyncForm
             className="flex flex-col gap-4 sm:flex-row sm:items-end"
             onSubmit={(e) => {
               e.preventDefault();
@@ -101,7 +102,7 @@ export default function AdminUserSecurityLookup() {
             <Button type="submit" disabled={loading} className="w-full shrink-0 sm:w-auto sm:min-w-[7rem]">
               {loading ? "検索中…" : "照会"}
             </Button>
-          </form>
+          </AutofillSyncForm>
           {error ? (
             <div
               className="mt-4 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2.5 text-sm text-destructive"

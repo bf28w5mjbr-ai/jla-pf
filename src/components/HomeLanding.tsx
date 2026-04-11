@@ -69,9 +69,9 @@ export function HomeLanding() {
         <footer className="mt-auto space-y-2 pt-14 text-center text-xs text-muted-foreground">
           <p>日本ライフセービング協会向けの業務支援アプリです。</p>
           <p>
-            <Link className="underline-offset-4 hover:text-foreground hover:underline" href="/business">
-              事業者情報
-            </Link>
+            <Button asChild variant="outline" size="sm" className="h-auto px-3 py-1 text-xs font-normal">
+              <Link href="/business">事業者情報</Link>
+            </Button>
           </p>
         </footer>
       </div>

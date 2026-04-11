@@ -8,22 +8,12 @@ import {
   type HeatSetting,
 } from "@/lib/startListSettings";
 
-/** 大会 JSON の該当種目だけ roundTabs を差し替えて保存 */
-export async function syncStartListSettingsRoundTabsForEvent(params: {
-  competitionId: string;
-  eventId: string;
-  roundCount: number;
-}): Promise<void> {
-  const { competitionId, eventId, roundCount } = params;
-  const competition = await prisma.competition.findUnique({
-    where: { id: competitionId },
-    select: { startListSettings: true },
-  });
-  if (!competition) return;
-
-  const { eventSettings, teamAssignmentDeadline } = parseStartListSettings(
-    competition.startListSettings
-  );
+/** メモリ上の startListSettings.events に、1 種目分のラウンド数変更を反映する（DB 書き込みなし） */
+export function mergeRoundTabUpdateIntoEventSettings(
+  eventSettings: Record<string, HeatSetting>,
+  eventId: string,
+  roundCount: number
+): Record<string, HeatSetting> {
   const prev = eventSettings[eventId];
   const prevTabs = normalizeRoundTabs(prev ?? {});
   const newTabs = buildRoundTabsForRoundCount(roundCount, prevTabs);
@@ -47,7 +37,30 @@ export async function syncStartListSettingsRoundTabsForEvent(params: {
     heatSize: head?.heatSize ?? "",
   };
 
-  const nextEvents = { ...eventSettings, [eventId]: nextSetting };
+  return { ...eventSettings, [eventId]: nextSetting };
+}
+
+/** 大会 JSON の該当種目だけ roundTabs を差し替えて保存 */
+export async function syncStartListSettingsRoundTabsForEvent(params: {
+  competitionId: string;
+  eventId: string;
+  roundCount: number;
+}): Promise<void> {
+  const { competitionId, eventId, roundCount } = params;
+  const competition = await prisma.competition.findUnique({
+    where: { id: competitionId },
+    select: { startListSettings: true },
+  });
+  if (!competition) return;
+
+  const { eventSettings, teamAssignmentDeadline } = parseStartListSettings(
+    competition.startListSettings
+  );
+  const nextEvents = mergeRoundTabUpdateIntoEventSettings(
+    eventSettings,
+    eventId,
+    roundCount
+  );
   const payload = buildStartListSettingsPayload({
     eventSettings: nextEvents,
     teamAssignmentDeadline,
@@ -56,6 +69,48 @@ export async function syncStartListSettingsRoundTabsForEvent(params: {
   await prisma.competition.update({
     where: { id: competitionId },
     data: { startListSettings: payload as Prisma.InputJsonValue },
+  });
+}
+
+/**
+ * 複数種目のラウンド数を一度に反映（大会 startListSettings は 1 回の読み書き＋各 Event 行を同一トランザクションで更新）。
+ */
+export async function syncStartListSettingsRoundTabsForEvents(params: {
+  competitionId: string;
+  items: Array<{ eventId: string; roundCount: number }>;
+}): Promise<void> {
+  const { competitionId, items } = params;
+  if (items.length === 0) return;
+
+  const competition = await prisma.competition.findUnique({
+    where: { id: competitionId },
+    select: { startListSettings: true },
+  });
+  if (!competition) return;
+
+  const { eventSettings, teamAssignmentDeadline } = parseStartListSettings(
+    competition.startListSettings
+  );
+  let nextEvents = { ...eventSettings };
+  for (const { eventId, roundCount } of items) {
+    nextEvents = mergeRoundTabUpdateIntoEventSettings(nextEvents, eventId, roundCount);
+  }
+  const payload = buildStartListSettingsPayload({
+    eventSettings: nextEvents,
+    teamAssignmentDeadline,
+  });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.competition.update({
+      where: { id: competitionId },
+      data: { startListSettings: payload as Prisma.InputJsonValue },
+    });
+    for (const { eventId, roundCount } of items) {
+      await tx.event.update({
+        where: { id: eventId },
+        data: { startListRoundCount: roundCount },
+      });
+    }
   });
 }
 

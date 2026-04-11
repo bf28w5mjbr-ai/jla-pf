@@ -4,6 +4,7 @@ import { useState, useTransition, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 
 type Props = {
@@ -58,7 +59,7 @@ export default function DayOpsUnlockBanner({
       <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
         主催から共有された暗号を入力すると、このブラウザでスタートリストの編集と当日運用 API が利用できます。
       </p>
-      <form onSubmit={onSubmit} className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+      <AutofillSyncForm onSubmit={onSubmit} className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
         <div className="min-w-0 flex-1 space-y-1">
           <Label htmlFor="dayops-code" className="text-xs">
             当日運用暗号
@@ -76,7 +77,7 @@ export default function DayOpsUnlockBanner({
         <Button type="submit" size="sm" className="h-9 shrink-0" disabled={pending}>
           {pending ? "確認中…" : "有効化"}
         </Button>
-      </form>
+      </AutofillSyncForm>
     </div>
   );
 }

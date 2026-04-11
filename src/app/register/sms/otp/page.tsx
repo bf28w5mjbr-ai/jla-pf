@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { RegistrationStepper } from "@/components/auth/RegistrationStepper";
@@ -192,7 +193,7 @@ function OTPVerifyContent() {
           </p>
         </div>
 
-        <form onSubmit={handleVerify} className="space-y-6">
+        <AutofillSyncForm onSubmit={handleVerify} className="space-y-6">
           <div className="space-y-2">
             <Label htmlFor="otp" className="text-gray-700">
               認証コード（6桁）
@@ -255,7 +256,7 @@ function OTPVerifyContent() {
               入力画面に戻る
             </Link>
           </Button>
-        </form>
+        </AutofillSyncForm>
       </AuthPanel>
     </AuthShell>
   );
