@@ -45,6 +45,21 @@ type CompetitionEntryFormProps = ComponentProps<typeof CompetitionEntryForm>;
 /** エントリーページの RSC が Stripe 待ちで長時間ブロックしないよう、取得だけ短めに打ち切る */
 const ENTRY_PAGE_STRIPE_RETRIEVE_MS = 7000;
 
+/** NFKC は孤立サロゲート等で RangeError になり得るため、比較用途では握りつぶす */
+function safeNormalizeComparable(value: string | null | undefined): string {
+  const raw = value ?? "";
+  try {
+    return raw
+      .normalize("NFKC")
+      .toLowerCase()
+      .replace(/[\s_\-./()（）・]+/g, "");
+  } catch {
+    return raw
+      .toLowerCase()
+      .replace(/[\s_\-./()（）・]+/g, "");
+  }
+}
+
 async function retrieveCheckoutSessionForEntryPage(
   sessionId: string
 ): Promise<Stripe.Checkout.Session | null> {
@@ -86,10 +101,17 @@ export default async function CompetitionEntryPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ session_id?: string }>;
+  searchParams: Promise<{ session_id?: string | string[] }>;
 }) {
   const { id } = await params;
-  const { session_id: sessionIdFromUrl } = await searchParams;
+  const sp = await searchParams;
+  const rawSessionId = sp.session_id;
+  const sessionIdFromUrl =
+    typeof rawSessionId === "string"
+      ? rawSessionId
+      : Array.isArray(rawSessionId)
+        ? rawSessionId[0]
+        : undefined;
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
   const session = await verifySessionCached(token);
@@ -350,15 +372,9 @@ export default async function CompetitionEntryPage({
     },
   });
 
-  const normalize = (value: string | null | undefined) =>
-    (value ?? "")
-      .normalize("NFKC")
-      .toLowerCase()
-      .replace(/[\s_\-./()（）・]+/g, "");
-
   const matchesQualification = (value: string, required: string) => {
-    const normalizedValue = normalize(value);
-    const normalizedRequired = normalize(required);
+    const normalizedValue = safeNormalizeComparable(value);
+    const normalizedRequired = safeNormalizeComparable(required);
     if (!normalizedValue || !normalizedRequired) return false;
     return (
       normalizedValue === normalizedRequired ||
