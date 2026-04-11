@@ -8,11 +8,7 @@ import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { z } from "zod";
 import { Prisma, QualificationStatus } from "@prisma/client";
-import {
-  isPlayerRegistrationKind,
-  isValidJlaMemberNumber,
-  normalizeJlaMemberNumber,
-} from "@/lib/jlaMemberNumber";
+import { isValidJlaMemberNumber, normalizeJlaMemberNumber } from "@/lib/jlaMemberNumber";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 import {
   evaluatePrerequisiteExpression,

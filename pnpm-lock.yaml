@@ -207,7 +207,7 @@ importers:
         specifier: ^8.20.0
         version: 8.20.0
       prisma:
-        specifier: ^6.2.0
+        specifier: 6.19.2
         version: 6.19.2(typescript@5.9.3)
       semantic-release:
         specifier: ^24.2.9

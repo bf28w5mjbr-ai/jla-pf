@@ -47,7 +47,7 @@ async function main() {
   // /api/health — DB は一時失敗しうるので 2 回試行
   let health;
   for (let i = 0; i < 2; i++) {
-    const { res, json } = await fetchJson("/api/health");
+    const { json } = await fetchJson("/api/health");
     health = json;
     if (json.ok !== false || json.error !== "database_connection_failed") break;
     if (i === 0) await new Promise((r) => setTimeout(r, 1500));

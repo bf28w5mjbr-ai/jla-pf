@@ -555,7 +555,7 @@ export default function EntrySettingsEditor({
 
   useEffect(() => {
     setAgeCategories(initialAgeCategories ?? []);
-  }, [initialAgeCategoriesFingerprint]);
+  }, [initialAgeCategoriesFingerprint, initialAgeCategories]);
 
   const eventsInTabScope = useMemo(() => {
     if (eventScopeTabId === "__MANAGE__") return [];
