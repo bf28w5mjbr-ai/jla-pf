@@ -9,6 +9,7 @@ type EventLike = {
 
 export function formatCompetitionDateTimeJa(d: Date): string {
   return d.toLocaleString("ja-JP", {
+    timeZone: "Asia/Tokyo",
     year: "numeric",
     month: "long",
     day: "numeric",

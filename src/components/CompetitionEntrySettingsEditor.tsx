@@ -95,6 +95,7 @@ export default function CompetitionEntrySettingsEditor({
   const formatDateTime = (date: Date | null) => {
     if (!date) return "未設定";
     return new Date(date).toLocaleString("ja-JP", {
+      timeZone: "Asia/Tokyo",
       year: "numeric",
       month: "long",
       day: "numeric",

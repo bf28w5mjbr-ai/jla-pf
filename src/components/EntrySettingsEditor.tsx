@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
+  COMPETITION_ADMIN_DATE_TIME_ZONE,
   datetimeLocalInputValueToUtcIsoString,
   formatDateForDatetimeLocalInput,
 } from "@/lib/datetimeLocal";
@@ -239,14 +240,52 @@ export default function EntrySettingsEditor({
   };
   const [entryStartDate, setEntryStartDate] = useState(
     initialData.entryStartDate
-      ? formatDateForDatetimeLocalInput(new Date(initialData.entryStartDate))
+      ? formatDateForDatetimeLocalInput(new Date(initialData.entryStartDate), {
+          timeZone: COMPETITION_ADMIN_DATE_TIME_ZONE,
+        })
       : ""
   );
   const [entryEndDate, setEntryEndDate] = useState(
     initialData.entryEndDate
-      ? formatDateForDatetimeLocalInput(new Date(initialData.entryEndDate))
+      ? formatDateForDatetimeLocalInput(new Date(initialData.entryEndDate), {
+          timeZone: COMPETITION_ADMIN_DATE_TIME_ZONE,
+        })
       : ""
   );
+
+  const initialEntryStartMs =
+    initialData.entryStartDate == null
+      ? null
+      : (() => {
+          const t = new Date(initialData.entryStartDate).getTime();
+          return Number.isNaN(t) ? null : t;
+        })();
+  const initialEntryEndMs =
+    initialData.entryEndDate == null
+      ? null
+      : (() => {
+          const t = new Date(initialData.entryEndDate).getTime();
+          return Number.isNaN(t) ? null : t;
+        })();
+  const entryPeriodFromServer = useMemo(() => {
+    const start =
+      initialEntryStartMs == null
+        ? ""
+        : formatDateForDatetimeLocalInput(new Date(initialEntryStartMs), {
+            timeZone: COMPETITION_ADMIN_DATE_TIME_ZONE,
+          });
+    const end =
+      initialEntryEndMs == null
+        ? ""
+        : formatDateForDatetimeLocalInput(new Date(initialEntryEndMs), {
+            timeZone: COMPETITION_ADMIN_DATE_TIME_ZONE,
+          });
+    return { start, end };
+  }, [initialEntryStartMs, initialEntryEndMs]);
+  useEffect(() => {
+    setEntryStartDate(entryPeriodFromServer.start);
+    setEntryEndDate(entryPeriodFromServer.end);
+  }, [entryPeriodFromServer]);
   const [allowMultipleEventEntries, setAllowMultipleEventEntries] = useState(
     initialData.allowMultipleEventEntries ?? true
   );
@@ -989,8 +1028,12 @@ export default function EntrySettingsEditor({
       toast.error("エントリー期間を入力してください");
       return;
     }
-    const entryStartUtcIso = datetimeLocalInputValueToUtcIsoString(entryStartDate);
-    const entryEndUtcIso = datetimeLocalInputValueToUtcIsoString(entryEndDate);
+    const entryStartUtcIso = datetimeLocalInputValueToUtcIsoString(entryStartDate, {
+      timeZone: COMPETITION_ADMIN_DATE_TIME_ZONE,
+    });
+    const entryEndUtcIso = datetimeLocalInputValueToUtcIsoString(entryEndDate, {
+      timeZone: COMPETITION_ADMIN_DATE_TIME_ZONE,
+    });
     if (!entryStartUtcIso || !entryEndUtcIso) {
       toast.error("エントリー期間の日時形式が正しくありません");
       return;
