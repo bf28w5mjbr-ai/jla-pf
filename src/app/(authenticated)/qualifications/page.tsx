@@ -22,7 +22,7 @@ export default async function QualificationsSelectPage() {
   const sess = await verifySessionCached(token);
   if (!sess?.userId) redirect("/login");
 
-  const [rawTemplates, linkedQualifications] = await Promise.all([
+  const [rawTemplates, linkedQualifications, user] = await Promise.all([
     prisma.qualificationTemplate.findMany({
       orderBy: [{ kind: "asc" }, { name: "asc" }],
       select: {
@@ -42,6 +42,10 @@ export default async function QualificationsSelectPage() {
       select: {
         kind: true,
       },
+    }),
+    prisma.user.findUnique({
+      where: { id: sess.userId },
+      select: { jlaMemberNumber: true },
     }),
   ]);
 
@@ -93,7 +97,11 @@ export default async function QualificationsSelectPage() {
               表示できる資格がありません。
             </p>
           ) : (
-            <QualificationsSelectionClient templates={templates} linkedKinds={linkedKinds} />
+            <QualificationsSelectionClient
+              templates={templates}
+              linkedKinds={linkedKinds}
+              initialJlaMemberNumber={user?.jlaMemberNumber ?? null}
+            />
           )}
         </CardContent>
       </Card>

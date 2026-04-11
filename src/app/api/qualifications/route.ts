@@ -243,54 +243,53 @@ export async function POST(req: NextRequest) {
 
     const certNumber = data.certNumber;
 
-    if (!isProvisionalLink) {
-      if (!certNumber) {
-        return NextResponse.json(
-          { error: "資格申請にはJLAメンバーIDの入力が必要です" },
-          { status: 400 }
-        );
-      }
+    // 暫定紐付け（provisionalLink）も含め、すべての資格申請で JLA メンバーID を必須にする
+    if (!certNumber) {
+      return NextResponse.json(
+        { error: "資格申請にはJLAメンバーIDの入力が必要です" },
+        { status: 400 }
+      );
+    }
 
-      if (!JLA_MEMBER_NUMBER_REGEX.test(certNumber)) {
-        return NextResponse.json(
-          { error: "JLAメンバーIDは500から始まる9桁の半角数字で入力してください" },
-          { status: 400 }
-        );
-      }
+    if (!JLA_MEMBER_NUMBER_REGEX.test(certNumber)) {
+      return NextResponse.json(
+        { error: "JLAメンバーIDは500から始まる9桁の半角数字で入力してください" },
+        { status: 400 }
+      );
+    }
 
-      const existingUser = await prisma.user.findFirst({
-        where: {
-          jlaMemberNumber: certNumber,
-          NOT: { id: sess.userId },
-        },
-        select: { id: true },
-      });
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        jlaMemberNumber: certNumber,
+        NOT: { id: sess.userId },
+      },
+      select: { id: true },
+    });
 
-      if (existingUser) {
-        return NextResponse.json(
-          { error: "このJLAメンバーIDは既に別の会員に紐づいています" },
-          { status: 400 }
-        );
-      }
+    if (existingUser) {
+      return NextResponse.json(
+        { error: "このJLAメンバーIDは既に別の会員に紐づいています" },
+        { status: 400 }
+      );
+    }
 
-      const existingQualificationWithNumber = await prisma.qualification.findFirst({
-        where: {
-          certNumber,
-          status: { in: ["PENDING", "APPROVED"] },
-          NOT: { userId: sess.userId },
-        },
-        select: {
-          id: true,
-          kind: true,
-        },
-      });
+    const existingQualificationWithNumber = await prisma.qualification.findFirst({
+      where: {
+        certNumber,
+        status: { in: ["PENDING", "APPROVED"] },
+        NOT: { userId: sess.userId },
+      },
+      select: {
+        id: true,
+        kind: true,
+      },
+    });
 
-      if (existingQualificationWithNumber) {
-        return NextResponse.json(
-          { error: "このJLAメンバーIDは既に別の会員の申請で使用されています" },
-          { status: 400 }
-        );
-      }
+    if (existingQualificationWithNumber) {
+      return NextResponse.json(
+        { error: "このJLAメンバーIDは既に別の会員の申請で使用されています" },
+        { status: 400 }
+      );
     }
 
     if (!isProvisionalLink && templateMeta.prerequisiteExpression) {

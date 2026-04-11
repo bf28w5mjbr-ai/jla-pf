@@ -1,12 +1,25 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckSquare, Link2, Square } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import {
+  isValidJlaMemberNumber,
+  normalizeJlaMemberNumber,
+} from "@/lib/jlaMemberNumber";
 import {
   qualificationJapaneseExpression,
   qualificationJapaneseLabel,
@@ -31,6 +44,8 @@ type TemplateRow = {
 type Props = {
   templates: TemplateRow[];
   linkedKinds: string[];
+  /** プロフィールで登録済みの JLA メンバーID（ダイアログ初期値） */
+  initialJlaMemberNumber?: string | null;
 };
 
 const domainOrder = [
@@ -60,11 +75,23 @@ const domainLabelMap: Record<string, string> = {
   Other: "その他",
 };
 
-export default function QualificationsSelectionClient({ templates, linkedKinds }: Props) {
+export default function QualificationsSelectionClient({
+  templates,
+  linkedKinds,
+  initialJlaMemberNumber = null,
+}: Props) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
+  const [applyDialogOpen, setApplyDialogOpen] = useState(false);
+  const [jlaMemberNumber, setJlaMemberNumber] = useState(() =>
+    normalizeJlaMemberNumber(initialJlaMemberNumber ?? "")
+  );
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    setJlaMemberNumber(normalizeJlaMemberNumber(initialJlaMemberNumber ?? ""));
+  }, [initialJlaMemberNumber]);
   const linkedNormalized = useMemo(
     () => new Set(linkedKinds.map((k) => normalizeQualificationKind(k))),
     [linkedKinds]
@@ -157,13 +184,17 @@ export default function QualificationsSelectionClient({ templates, linkedKinds }
     });
   };
 
-  const submitProvisionalLinks = async () => {
+  const openApplyDialog = () => {
     if (selectedCount === 0 || submitting) return;
-    if (
-      !window.confirm(
-        `選択した ${selectedAvailableCount} 件の資格を申請します。よろしいですか？`
-      )
-    ) {
+    setJlaMemberNumber(normalizeJlaMemberNumber(initialJlaMemberNumber ?? ""));
+    setApplyDialogOpen(true);
+  };
+
+  const confirmApplyFromDialog = async () => {
+    if (selectedCount === 0 || submitting) return;
+    const cert = normalizeJlaMemberNumber(jlaMemberNumber);
+    if (!isValidJlaMemberNumber(cert)) {
+      toast.error("JLAメンバーIDは500から始まる半角9桁の数字で入力してください");
       return;
     }
     setSubmitting(true);
@@ -177,6 +208,7 @@ export default function QualificationsSelectionClient({ templates, linkedKinds }
             body: JSON.stringify({
               kind,
               provisionalLink: true,
+              certNumber: cert,
             }),
           });
           const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -190,6 +222,7 @@ export default function QualificationsSelectionClient({ templates, linkedKinds }
       const ng = results.filter((r) => r.status === "rejected");
       if (ok > 0) {
         toast.success(`${ok}件を暫定紐付けしました（審査待ち）`);
+        router.refresh();
       }
       if (ng.length > 0) {
         const first = ng[0];
@@ -198,9 +231,14 @@ export default function QualificationsSelectionClient({ templates, linkedKinds }
             ? first.reason.message
             : "一部の暫定紐付けに失敗しました";
         toast.error(msg);
+        if (ok > 0) {
+          toast.message("未成功の資格はそのまま選択中です。内容を確認してから再試行できます。");
+        }
       }
-      setSelected(new Set());
-      router.refresh();
+      if (ok > 0 && ng.length === 0) {
+        setApplyDialogOpen(false);
+        setSelected(new Set());
+      }
     } finally {
       setSubmitting(false);
     }
@@ -211,7 +249,8 @@ export default function QualificationsSelectionClient({ templates, linkedKinds }
       <div className="rounded-xl border border-blue-200/70 bg-blue-50/60 p-4 text-sm text-blue-950 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-100">
         <p className="font-semibold">資格の選択</p>
         <p className="mt-1 text-xs leading-relaxed">
-          資格を選んで申請すると、マイアカウントに反映されます。すでに紐付け済みの資格は選択できません。
+          資格を選んで申請すると、マイアカウントに反映されます。申請時は JLA
+          メンバーIDの入力が必要です。すでに紐付け済みの資格は選択できません。
         </p>
       </div>
 
@@ -351,7 +390,7 @@ export default function QualificationsSelectionClient({ templates, linkedKinds }
 
       <div className="sticky bottom-2 z-20 rounded-xl border border-border/80 bg-background/95 p-3 shadow-sm backdrop-blur">
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button type="button" onClick={submitProvisionalLinks} disabled={selectedCount === 0 || submitting}>
+          <Button type="button" onClick={openApplyDialog} disabled={selectedCount === 0 || submitting}>
             <Link2 className="mr-1 h-4 w-4" />
             {submitting
               ? "暫定紐付け中..."
@@ -359,6 +398,55 @@ export default function QualificationsSelectionClient({ templates, linkedKinds }
           </Button>
         </div>
       </div>
+
+      <Dialog
+        open={applyDialogOpen}
+        onOpenChange={(open) => {
+          setApplyDialogOpen(open);
+          if (!open && !submitting) {
+            setJlaMemberNumber(normalizeJlaMemberNumber(initialJlaMemberNumber ?? ""));
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>JLAメンバーIDの入力</DialogTitle>
+            <DialogDescription>
+              選択した {selectedAvailableCount}{" "}
+              件の暫定紐付けを申請する前に、協会発行のメンバーIDを入力してください。入力がないと申請は送信されません。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="qual-select-jla-id">JLAメンバーID</Label>
+            <Input
+              id="qual-select-jla-id"
+              value={jlaMemberNumber}
+              onChange={(e) => setJlaMemberNumber(normalizeJlaMemberNumber(e.target.value))}
+              numericInput="integer"
+              maxLength={9}
+              placeholder="500123456"
+              inputMode="numeric"
+              autoComplete="off"
+            />
+            <p className="text-xs text-muted-foreground">
+              500から始まる半角9桁の数字で入力してください。
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setApplyDialogOpen(false)}
+              disabled={submitting}
+            >
+              キャンセル
+            </Button>
+            <Button type="button" onClick={() => void confirmApplyFromDialog()} disabled={submitting}>
+              {submitting ? "申請中…" : "申請する"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
