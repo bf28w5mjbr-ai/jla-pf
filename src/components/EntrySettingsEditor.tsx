@@ -2949,6 +2949,20 @@ export default function EntrySettingsEditor({
 
       {isSection("events") && (
       <>
+      <Tabs
+        value={eventsSubTab}
+        onValueChange={(v) => setEventsSubTab(v as "list" | "ageCategories")}
+        className="space-y-3"
+      >
+        <TabsList className="grid h-auto w-full max-w-lg grid-cols-2 gap-1 p-1">
+          <TabsTrigger value="list" className="text-xs sm:text-sm">
+            種目一覧
+          </TabsTrigger>
+          <TabsTrigger value="ageCategories" className="text-xs sm:text-sm">
+            年齢カテゴリ
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="list" className="mt-0 space-y-0 focus-visible:outline-none">
       <Card className={cn(categoryMeta.toneClass, "overflow-hidden")}>
         <CardHeader className="space-y-1.5 border-b border-border/60 bg-background/40 px-3 py-3 sm:px-4">
           <CardTitle className="text-base font-semibold">{categoryMeta.title}</CardTitle>
@@ -2967,6 +2981,9 @@ export default function EntrySettingsEditor({
               <li>
                 種目ごとの参加可能な生年月日: 大会全体の年齢に加え、種目ごとに「この日〜この日に生まれた人」（両端含む）を指定できます。空欄は大会の年齢設定に従います。
               </li>
+              <li>
+                <span className="text-foreground">年齢カテゴリ</span>タブ: 名前付きの生年月日レンジを定義し、種目一覧の各種目から割り当てると、その範囲が種目に連動します（手動で種目の日付を保存すると連動は解除されます）。
+              </li>
             </ul>
           </details>
         </CardHeader>
@@ -2984,6 +3001,10 @@ export default function EntrySettingsEditor({
               <li>
                 <span className="text-foreground">性別区分</span>（男女／男のみ／女のみ／混合）
                 … タップすると<span className="text-foreground">その場で保存</span>されます
+              </li>
+              <li>
+                <span className="text-foreground">年齢カテゴリ</span>
+                … 上の「年齢カテゴリ」タブで追加・編集し、種目カードのプルダウンで割り当て（即時保存）
               </li>
               <li>
                 <span className="text-foreground">年齢・最大レーン・ラウンド数</span>
@@ -3438,6 +3459,184 @@ export default function EntrySettingsEditor({
           ) : null}
         </CardContent>
       </Card>
+        </TabsContent>
+        <TabsContent value="ageCategories" className="mt-0 focus-visible:outline-none">
+          <Card className="overflow-hidden border-border/80 shadow-sm">
+            <CardHeader className="space-y-1 border-b border-border bg-muted/15 px-3 py-3 sm:px-4">
+              <CardTitle className="text-base font-semibold">年齢カテゴリ</CardTitle>
+              <CardDescription className="text-xs leading-relaxed">
+                名前と「参加可能な生年月日」の範囲を定義します。「種目一覧」タブで種目に割り当てると、同一種目名（男女別行）の生年月日制限がカテゴリに合わせて更新されます。ここで日付を保存すると、連動中の種目へ反映されます（エントリー成立後など、大会ルールで変更できない場合は保存できません）。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 px-3 py-3 sm:px-4">
+              {ageCategories.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  まだカテゴリがありません。下のフォームから追加できます。
+                </p>
+              ) : (
+                <ul className="space-y-3" role="list">
+                  {ageCategories.map((c) => {
+                    const d = catDrafts[c.id] ?? {
+                      name: c.name,
+                      from: toEligibleBirthDateInput(c.eligibleBirthDateFrom),
+                      to: toEligibleBirthDateInput(c.eligibleBirthDateTo),
+                    };
+                    const busy = ageCatBusy === c.id;
+                    return (
+                      <li
+                        key={c.id}
+                        className="space-y-2 rounded-lg border border-border/80 bg-muted/10 p-3 dark:bg-muted/5"
+                      >
+                        <div className="grid gap-2 sm:grid-cols-[1fr,auto] sm:items-end">
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground">カテゴリ名</Label>
+                            <Input
+                              value={d.name}
+                              disabled={!canEdit || busy}
+                              onChange={(e) =>
+                                setCatDrafts((prev) => ({
+                                  ...prev,
+                                  [c.id]: { ...d, name: e.target.value },
+                                }))
+                              }
+                              className="h-9 text-sm"
+                            />
+                          </div>
+                          <div className="flex flex-wrap gap-2 sm:justify-end">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              className="h-8 text-xs"
+                              disabled={!canEdit || busy}
+                              onClick={() => void handleSaveAgeCategoryRow(c.id)}
+                            >
+                              {busy ? (
+                                <>
+                                  <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" />
+                                  保存中
+                                </>
+                              ) : (
+                                "保存"
+                              )}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 text-xs text-destructive hover:text-destructive"
+                              disabled={!canEdit || busy}
+                              onClick={() => void handleDeleteAgeCategory(c.id, c.name)}
+                            >
+                              削除
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-end gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground">生年月日（開始）</Label>
+                            <Input
+                              type="date"
+                              value={d.from}
+                              disabled={!canEdit || busy}
+                              onChange={(e) =>
+                                setCatDrafts((prev) => ({
+                                  ...prev,
+                                  [c.id]: { ...d, from: e.target.value },
+                                }))
+                              }
+                              className="h-8 w-[9.5rem] px-1.5 text-xs"
+                            />
+                          </div>
+                          <span className="pb-2 text-xs text-muted-foreground">〜</span>
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground">生年月日（終了）</Label>
+                            <Input
+                              type="date"
+                              value={d.to}
+                              disabled={!canEdit || busy}
+                              onChange={(e) =>
+                                setCatDrafts((prev) => ({
+                                  ...prev,
+                                  [c.id]: { ...d, to: e.target.value },
+                                }))
+                              }
+                              className="h-8 w-[9.5rem] px-1.5 text-xs"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          両方空欄は生年月日による制限なし。範囲は両端を含みます。
+                        </p>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {canEdit ? (
+                <div className="space-y-3 rounded-lg border border-dashed border-primary/25 bg-primary/[0.04] p-3 dark:bg-primary/[0.07]">
+                  <p className="text-xs font-semibold text-foreground">新規カテゴリ</p>
+                  <div className="space-y-1">
+                    <Label htmlFor="new-age-cat-name" className="text-[10px] text-muted-foreground">
+                      名前
+                    </Label>
+                    <Input
+                      id="new-age-cat-name"
+                      value={newCatName}
+                      onChange={(e) => setNewCatName(e.target.value)}
+                      placeholder="例: ジュニア"
+                      disabled={ageCatBusy === "__new__"}
+                      className="h-9 max-w-md text-sm"
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-[10px] text-muted-foreground">開始（任意）</Label>
+                      <Input
+                        type="date"
+                        value={newCatFrom}
+                        onChange={(e) => setNewCatFrom(e.target.value)}
+                        disabled={ageCatBusy === "__new__"}
+                        className="h-8 w-[9.5rem] px-1.5 text-xs"
+                      />
+                    </div>
+                    <span className="pb-2 text-xs text-muted-foreground">〜</span>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] text-muted-foreground">終了（任意）</Label>
+                      <Input
+                        type="date"
+                        value={newCatTo}
+                        onChange={(e) => setNewCatTo(e.target.value)}
+                        disabled={ageCatBusy === "__new__"}
+                        className="h-8 w-[9.5rem] px-1.5 text-xs"
+                      />
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 text-xs"
+                    disabled={ageCatBusy === "__new__"}
+                    onClick={() => void handleAddAgeCategory()}
+                  >
+                    {ageCatBusy === "__new__" ? (
+                      <>
+                        <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" />
+                        追加中
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="mr-1 inline h-3.5 w-3.5" />
+                        カテゴリを追加
+                      </>
+                    )}
+                  </Button>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       <Card className="overflow-hidden border-border/90 shadow-sm">
         <CardHeader className="space-y-2 border-b border-border bg-gradient-to-r from-muted/40 to-background px-4 py-3 sm:px-5">
