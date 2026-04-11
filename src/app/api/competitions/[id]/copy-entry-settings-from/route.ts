@@ -57,6 +57,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
               admins: { where: { userId: session.userId } },
             },
           },
+          ageCategories: { orderBy: { displayOrder: "asc" } },
           events: { orderBy: { displayOrder: "asc" } },
         },
       }),
@@ -105,11 +106,31 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     await prisma.$transaction(async (tx) => {
       await tx.event.deleteMany({ where: { competitionId: targetCompetitionId } });
+      await tx.competitionAgeCategory.deleteMany({
+        where: { competitionId: targetCompetitionId },
+      });
+
+      const ageCategoryIdMap = new Map<string, string>();
+      for (const cat of source.ageCategories) {
+        const created = await tx.competitionAgeCategory.create({
+          data: {
+            competitionId: targetCompetitionId,
+            name: cat.name,
+            displayOrder: cat.displayOrder,
+            eligibleBirthDateFrom: cat.eligibleBirthDateFrom,
+            eligibleBirthDateTo: cat.eligibleBirthDateTo,
+          },
+        });
+        ageCategoryIdMap.set(cat.id, created.id);
+      }
 
       for (const ev of source.events) {
+        const mappedAgeCategoryId =
+          ev.ageCategoryId != null ? ageCategoryIdMap.get(ev.ageCategoryId) ?? null : null;
         await tx.event.create({
           data: {
             competitionId: targetCompetitionId,
+            ageCategoryId: mappedAgeCategoryId,
             name: ev.name,
             sex: ev.sex,
             type: ev.type,

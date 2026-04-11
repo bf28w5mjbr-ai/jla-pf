@@ -115,6 +115,9 @@ export default async function CompetitionDetailPage({
       events: {
         orderBy: { displayOrder: "asc" },
       },
+      ageCategories: {
+        orderBy: { displayOrder: "asc" },
+      },
       officialApplications: {
         orderBy: { createdAt: "desc" },
         include: {
@@ -476,10 +479,18 @@ export default async function CompetitionDetailPage({
                 sex: e.sex as "MALE" | "FEMALE",
                 minAge: e.minAge,
                 maxAge: e.maxAge,
+                ageCategoryId: e.ageCategoryId ?? null,
                 createdAt: e.createdAt.toISOString(),
                 updatedAt: e.updatedAt.toISOString(),
               })) as unknown as NonNullable<EntrySettingsEditorProps["initialEvents"]>
             }
+            initialAgeCategories={competition.ageCategories.map((c) => ({
+              id: c.id,
+              name: c.name,
+              displayOrder: c.displayOrder,
+              eligibleBirthDateFrom: c.eligibleBirthDateFrom,
+              eligibleBirthDateTo: c.eligibleBirthDateTo,
+            }))}
           />
 
           {/* 大会説明 */}
