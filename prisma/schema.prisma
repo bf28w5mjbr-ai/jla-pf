@@ -1,5 +1,5 @@
 // This is your Prisma schema file
-// JLA PF Database Schema
+// Bluvium Database Schema
 
 generator client {
   provider = "prisma-client-js"

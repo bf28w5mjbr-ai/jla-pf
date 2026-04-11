@@ -42,7 +42,7 @@ export async function sendOTPviaSMS(phoneNumber: string, otp: string): Promise<v
       },
       'AWS.SNS.SMS.SenderID': {
         DataType: 'String',
-        StringValue: 'JLAPF', // 送信者ID（日本では表示されない場合あり）
+        StringValue: 'BLUVIUM', // 送信者ID（日本では表示されない場合あり）
       },
     },
   };
@@ -80,7 +80,7 @@ export async function sendSecurityNoticeSms(
       },
       'AWS.SNS.SMS.SenderID': {
         DataType: 'String',
-        StringValue: 'JLAPF',
+        StringValue: 'BLUVIUM',
       },
     },
   };

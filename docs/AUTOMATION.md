@@ -67,10 +67,10 @@ bash scripts/setup-branch-protection.sh
 
 ### List Branch Protection Rules
 ```bash
-gh api repos/bf28w5mjbr-ai/jla-pf/branches/main/protection
+gh api repos/bf28w5mjbr-ai/bluvium/branches/main/protection
 ```
 
 ### Remove Branch Protection
 ```bash
-gh api repos/bf28w5mjbr-ai/jla-pf/branches/main/protection -X DELETE
+gh api repos/bf28w5mjbr-ai/bluvium/branches/main/protection -X DELETE
 ```

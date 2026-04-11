@@ -1,1 +1,8 @@
-{}
+{
+  "crons": [
+    {
+      "path": "/api/cron/ensure-start-list-snapshots",
+      "schedule": "0 * * * *"
+    }
+  ]
+}

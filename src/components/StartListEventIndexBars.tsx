@@ -89,7 +89,7 @@ function sortByStartTimeOrder(
   });
 }
 
-const AUTO_SORT_STORAGE_KEY = "jla-pf:start-list:auto-sort-after-save";
+const AUTO_SORT_STORAGE_KEY = "bluvium:start-list:auto-sort-after-save";
 
 type SchedulePatchResponseEvent = { id: string; scheduledStartAt: string | null };
 
