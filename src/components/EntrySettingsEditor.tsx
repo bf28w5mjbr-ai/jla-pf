@@ -212,6 +212,8 @@ type EntrySettingsEditorProps = {
   canEdit: boolean;
   /** 保存成功後に親へ通知（エントリー設定の一覧へ戻す等） */
   onSuccessfulSectionSave?: () => void;
+  /** 種目一覧が API 応答で更新されたとき（一覧画面の件数・チップを同期。router.refresh の代替） */
+  onEventsChange?: (events: Event[]) => void;
 };
 
 function withOptionalAnnounce(
@@ -233,6 +235,7 @@ export default function EntrySettingsEditor({
   initialAgeCategories = [],
   canEdit,
   onSuccessfulSectionSave,
+  onEventsChange,
 }: EntrySettingsEditorProps) {
   const router = useRouter();
   const notifySectionSaved = () => {
@@ -644,6 +647,7 @@ export default function EntrySettingsEditor({
       setEventPreliminaryLanes(buildPreliminaryLanesMap(updatedEvents));
       setEventStartListRoundCounts(buildStartListRoundCountsMap(updatedEvents));
       setEventTeamRelayPositions(buildTeamRelayPositionsMap(updatedEvents));
+      onEventsChange?.(updatedEvents);
       return;
     }
 
@@ -651,6 +655,7 @@ export default function EntrySettingsEditor({
     setEventPreliminaryLanes((prev) => mergePreliminaryLanesFromSync(prev, updatedEvents));
     setEventStartListRoundCounts((prev) => mergeStartListRoundCountsFromSync(prev, updatedEvents));
     setEventTeamRelayPositions((prev) => mergeTeamRelayPositionsFromSync(prev, updatedEvents));
+    onEventsChange?.(updatedEvents);
   };
 
   const clearEventTableBulkSaveStatus = (key: string) => {
@@ -845,7 +850,6 @@ export default function EntrySettingsEditor({
       const { events: updatedEvents } = await response.json();
       syncEvents(updatedEvents);
       toast.success(`「${event.name}」の性別区分を${sexOptionLabel(nextSexOption)}に変更しました`);
-      router.refresh();
     } catch (error) {
       console.error("種目性別更新エラー:", error);
       toast.error(
@@ -941,7 +945,6 @@ export default function EntrySettingsEditor({
       toast.success(
         `${categoryLabel}${typeLabel}種目を追加しました（${sexOptionLabel(sexOption)} / ${newEventNames.length}件）`
       );
-      router.refresh();
     } catch (error) {
       console.error("デフォルト種目追加エラー:", error);
       toast.dismiss(loadingToastId);
@@ -1011,7 +1014,6 @@ export default function EntrySettingsEditor({
         } else {
           toast.warning(`${successCount}件削除、${errorCount}件失敗しました`);
         }
-        router.refresh();
       } else {
         toast.dismiss();
         toast.error("種目一覧の更新に失敗しました");
@@ -1493,7 +1495,6 @@ export default function EntrySettingsEditor({
       const addedName = poolIndividualName.trim();
       setPoolIndividualName("");
       toast.success(`プール個人種目「${addedName}」を追加しました（${sexOptionLabel("BOTH")}）`);
-      router.refresh();
     } catch (error) {
       console.error("種目追加エラー:", error);
       setPoolIndividualError(error instanceof Error ? error.message : "種目の追加に失敗しました");
@@ -1547,7 +1548,6 @@ export default function EntrySettingsEditor({
       const addedName = poolTeamName.trim();
       setPoolTeamName("");
       toast.success(`プールチーム種目「${addedName}」を追加しました（${sexOptionLabel("BOTH")}）`);
-      router.refresh();
     } catch (error) {
       console.error("種目追加エラー:", error);
       setPoolTeamError(error instanceof Error ? error.message : "種目の追加に失敗しました");
@@ -1601,7 +1601,6 @@ export default function EntrySettingsEditor({
       const addedName = oceanIndividualName.trim();
       setOceanIndividualName("");
       toast.success(`オーシャン個人種目「${addedName}」を追加しました（${sexOptionLabel("BOTH")}）`);
-      router.refresh();
     } catch (error) {
       console.error("種目追加エラー:", error);
       setOceanIndividualError(error instanceof Error ? error.message : "種目の追加に失敗しました");
@@ -1655,7 +1654,6 @@ export default function EntrySettingsEditor({
       const addedName = oceanTeamName.trim();
       setOceanTeamName("");
       toast.success(`オーシャンチーム種目「${addedName}」を追加しました（${sexOptionLabel("BOTH")}）`);
-      router.refresh();
     } catch (error) {
       console.error("種目追加エラー:", error);
       setOceanTeamError(error instanceof Error ? error.message : "種目の追加に失敗しました");
@@ -1918,11 +1916,11 @@ export default function EntrySettingsEditor({
           ...prev,
           [sectionKey]: new Date(),
         }));
+        router.refresh();
         notifySectionSaved();
       } else {
         toast.warning("一部の種目で保存に失敗しました");
       }
-      router.refresh();
     } catch (error) {
       console.error("種目表一括更新エラー:", error);
       toast.dismiss();
@@ -1991,13 +1989,13 @@ export default function EntrySettingsEditor({
         toast.success(
           "種目表（年齢・最大レーン・ラウンド数・チームポジション）をすべて保存しました"
         );
+        router.refresh();
         notifySectionSaved();
       } else {
         toast.warning(
           "一部の種目で保存に失敗しました。各ブロック下部の保存ボタンから再試行できます。"
         );
       }
-      router.refresh();
     } catch (error) {
       console.error("種目表一括保存エラー:", error);
       toast.dismiss();
@@ -2148,7 +2146,6 @@ export default function EntrySettingsEditor({
       const { events: updatedEvents } = await response.json();
       syncEvents(updatedEvents);
       toast.success(`「${eventName}」を削除しました`);
-      router.refresh();
     } catch (error) {
       console.error("種目削除エラー:", error);
       toast.error(error instanceof Error ? error.message : "種目の削除に失敗しました");

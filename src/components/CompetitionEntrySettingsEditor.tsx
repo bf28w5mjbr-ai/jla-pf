@@ -1,7 +1,8 @@
 "use client";
 
 import type { ComponentProps, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import {
 } from "@/lib/competitionEntryAgeTiered";
 
 type EntrySettingsEditorProps = ComponentProps<typeof EntrySettingsEditor>;
+type EntryEventRow = NonNullable<EntrySettingsEditorProps["initialEvents"]>[number];
 
 type Props = {
   competitionId: string;
@@ -61,15 +63,21 @@ export default function CompetitionEntrySettingsEditor({
   copyEntrySettingsAllowed,
   copyEntrySettingsBlockedReason = null,
 }: Props) {
+  const router = useRouter();
   const [editingSection, setEditingSection] = useState<EntrySettingsFocusSection | null>(null);
+  const [overviewEvents, setOverviewEvents] = useState<EntryEventRow[]>(initialEvents);
+
+  useEffect(() => {
+    setOverviewEvents(initialEvents);
+  }, [settingsVersion]);
 
   const individualEventCount = useMemo(
-    () => initialEvents.filter((e) => e.type === "INDIVIDUAL").length,
-    [initialEvents]
+    () => overviewEvents.filter((e) => e.type === "INDIVIDUAL").length,
+    [overviewEvents]
   );
   const teamEventCount = useMemo(
-    () => initialEvents.filter((e) => e.type === "TEAM").length,
-    [initialEvents]
+    () => overviewEvents.filter((e) => e.type === "TEAM").length,
+    [overviewEvents]
   );
 
   const readinessItems = useMemo(
@@ -77,7 +85,7 @@ export default function CompetitionEntrySettingsEditor({
       buildEntrySettingsReadinessItems({
         entryStartDate: initialData.entryStartDate,
         entryEndDate: initialData.entryEndDate,
-        eventsCount: initialEvents.length,
+        eventsCount: overviewEvents.length,
         individualEventCount,
         teamEventCount,
         entryFee: initialData.entryFee,
@@ -87,7 +95,7 @@ export default function CompetitionEntrySettingsEditor({
       initialData.entryFee,
       initialData.entryStartDate,
       individualEventCount,
-      initialEvents.length,
+      overviewEvents.length,
       teamEventCount,
     ]
   );
@@ -223,7 +231,7 @@ export default function CompetitionEntrySettingsEditor({
   };
 
   const renderEventChips = () => {
-    if (!initialEvents || initialEvents.length === 0) {
+    if (!overviewEvents || overviewEvents.length === 0) {
       return <p className="text-sm text-muted-foreground">未登録</p>;
     }
 
@@ -235,7 +243,7 @@ export default function CompetitionEntrySettingsEditor({
 
     return (
       <div className="flex flex-wrap gap-2">
-        {initialEvents
+        {overviewEvents
           .slice()
           .sort((a, b) => a.displayOrder - b.displayOrder)
           .map((event, index) => (
@@ -274,7 +282,10 @@ export default function CompetitionEntrySettingsEditor({
   );
 
   if (editingSection) {
-    const backToList = () => setEditingSection(null);
+    const backToList = () => {
+      setEditingSection(null);
+      router.refresh();
+    };
     return (
       <div className="space-y-4">
         <div className="sticky top-[max(0.25rem,var(--safe-area-top,0px))] z-20 flex flex-col gap-2 rounded-lg border border-border bg-background/95 px-3 py-3 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
@@ -299,10 +310,11 @@ export default function CompetitionEntrySettingsEditor({
           requiresParticipantNotice={requiresParticipantNotice}
           isPublished={isPublished}
           initialData={initialData}
-          initialEvents={initialEvents}
+          initialEvents={overviewEvents}
           initialAgeCategories={initialAgeCategories}
           canEdit={canEdit}
           onSuccessfulSectionSave={() => setEditingSection(null)}
+          onEventsChange={setOverviewEvents}
         />
         <div className="flex justify-center border-t border-border/60 pt-4">
           <Button

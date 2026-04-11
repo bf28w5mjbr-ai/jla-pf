@@ -11,6 +11,7 @@ import {
   loadCompetitionMutationState,
 } from "@/lib/competitionPublishedEditRules";
 import { resolveCompetitionEventCategoryScope } from "@/lib/competitionEventCategoryScope";
+import { buildStoredCompetitionEventName } from "@/lib/competitionEventStoredName";
 
 type BulkItem = {
   name: string;
@@ -192,7 +193,12 @@ export async function POST(
         );
       }
 
-      const nameLower = item.name.toLowerCase();
+      const storedName = buildStoredCompetitionEventName({
+        tabInnerName: item.name,
+        ageCategoryId: bulkAgeCategoryId,
+        ageCategoryName: resolvedBulkAgeCategory?.name ?? null,
+      });
+      const nameLower = storedName.toLowerCase();
       const sameName = working.filter(
         (e) =>
           e.nameLower === nameLower &&
@@ -228,7 +234,7 @@ export async function POST(
         creates.push({
           competitionId,
           ageCategoryId: bulkAgeCategoryId,
-          name: item.name,
+          name: storedName,
           sex,
           type: item.type,
           category: item.category,
@@ -237,7 +243,7 @@ export async function POST(
           ...birthForCreate,
         });
         working.push({
-          name: item.name,
+          name: storedName,
           nameLower,
           type: item.type,
           category: item.category,

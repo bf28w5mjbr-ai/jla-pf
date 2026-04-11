@@ -11,6 +11,7 @@ import {
 } from "@/lib/competitionPublishedEditRules";
 import { isOrgAdminRole } from "@/lib/roleScopes";
 import { resolveCompetitionEventCategoryScope } from "@/lib/competitionEventCategoryScope";
+import { buildStoredCompetitionEventName } from "@/lib/competitionEventStoredName";
 
 export async function GET(
   request: NextRequest,
@@ -198,9 +199,15 @@ export async function POST(
       throw e;
     }
 
+    const storedEventName = buildStoredCompetitionEventName({
+      tabInnerName: name.trim(),
+      ageCategoryId: targetAgeCategoryId,
+      ageCategoryName: resolvedAgeCategory?.name ?? null,
+    });
+
     const sameNameEvents = competition.events.filter(
       (event) =>
-        event.name.toLowerCase() === name.trim().toLowerCase() &&
+        event.name.toLowerCase() === storedEventName.toLowerCase() &&
         event.type === type &&
         event.category === category &&
         (event.ageCategoryId ?? null) === targetAgeCategoryId
@@ -238,7 +245,7 @@ export async function POST(
           data: {
             competitionId,
             ageCategoryId: targetAgeCategoryId,
-            name: name.trim(),
+            name: storedEventName,
             sex,
             type,
             category,
