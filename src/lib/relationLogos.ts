@@ -87,20 +87,17 @@ export function normalizeStoredRelationLogoUrl(logoUrl: string): string {
 function getSupabaseProjectUrlForRelationLogos(): string | null {
   const pub = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   if (pub) return pub.replace(/\/$/, "");
-  if (typeof window === "undefined") {
-    const srv = process.env.SUPABASE_URL?.trim();
-    if (srv) return srv.replace(/\/$/, "");
-  }
+  const srv = process.env.SUPABASE_URL?.trim();
+  if (srv) return srv.replace(/\/$/, "");
   return null;
 }
 
 function getStorageBucketForRelationLogos(): string | null {
-  const pub = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET?.trim();
-  if (pub) return pub;
-  if (typeof window === "undefined") {
-    return process.env.SUPABASE_STORAGE_BUCKET?.trim() || null;
-  }
-  return null;
+  return (
+    process.env.SUPABASE_STORAGE_BUCKET?.trim() ||
+    process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET?.trim() ||
+    null
+  );
 }
 
 /**
