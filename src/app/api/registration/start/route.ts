@@ -30,7 +30,11 @@ import {
   getResendCooldown,
 } from "@/lib/otp";
 import { maskEmailForHint } from "@/lib/email/maskEmail";
-import { formatResendRegistrationOtpFailure } from "@/lib/email/resendRegistrationOtp";
+import {
+  formatResendRegistrationOtpFailure,
+  isResendOnboardingFrom,
+  resolveResendRegistrationFrom,
+} from "@/lib/email/resendRegistrationOtp";
 import {
   sendRegistrationOtpDelivery,
   sendRegistrationOtpResendDelivery,
@@ -206,6 +210,8 @@ export async function POST(req: NextRequest) {
 
       const otpDelivery = delivery === "EMAIL" ? "email" : "sms";
 
+      const fromAddr = resolveResendRegistrationFrom();
+
       return NextResponse.json({
         sessionId: updatedSession.id,
         message:
@@ -217,6 +223,11 @@ export async function POST(req: NextRequest) {
         ...(delivery === "EMAIL" &&
           existingSession.email && {
             otpDeliveryHint: maskEmailForHint(existingSession.email),
+          }),
+        ...(delivery === "EMAIL" &&
+          isResendOnboardingFrom(fromAddr) && {
+            resendDeliveryHint:
+              "テスト用送信元のため、届くのは Resend アカウントのメールアドレス宛に限られることがあります。別アドレスで試す場合は Resend でドメインを検証し、REGISTRATION_EMAIL_FROM を設定してください。",
           }),
       });
     }
@@ -339,6 +350,7 @@ export async function POST(req: NextRequest) {
     });
 
     const otpDelivery = delivery === "EMAIL" ? "email" : "sms";
+    const fromAddr = resolveResendRegistrationFrom();
 
     return NextResponse.json({
       sessionId: session.id,
@@ -350,6 +362,11 @@ export async function POST(req: NextRequest) {
       ...(delivery === "EMAIL" && {
         otpDeliveryHint: maskEmailForHint(normalizedEmail),
       }),
+      ...(delivery === "EMAIL" &&
+        isResendOnboardingFrom(fromAddr) && {
+          resendDeliveryHint:
+            "テスト用送信元のため、届くのは Resend アカウントのメールアドレス宛に限られることがあります。別アドレスで試す場合は Resend でドメインを検証し、REGISTRATION_EMAIL_FROM を設定してください。",
+        }),
     });
   } catch (error) {
     if (

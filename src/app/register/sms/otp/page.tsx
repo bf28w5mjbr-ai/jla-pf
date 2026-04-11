@@ -121,13 +121,20 @@ function OTPVerifyContent() {
       }
 
       const viaEmail = data.otpDelivery === "email";
-      toast.success(
-        viaEmail
-          ? `認証コードをメールで再送信しました${
-              typeof data.otpDeliveryHint === "string" ? `（${data.otpDeliveryHint}）` : ""
-            }`
-          : "認証コードを再送信しました"
-      );
+      const resendTitle = viaEmail
+        ? `認証コードをメールで再送信しました${
+            typeof data.otpDeliveryHint === "string" ? `（${data.otpDeliveryHint}）` : ""
+          }`
+        : "認証コードを再送信しました";
+
+      if (viaEmail && typeof data.resendDeliveryHint === "string") {
+        toast.success(resendTitle, {
+          description: data.resendDeliveryHint,
+          duration: 14_000,
+        });
+      } else {
+        toast.success(resendTitle);
+      }
       setCooldown(60);
       if (viaEmail) {
         const base = `/register/sms/otp?sessionId=${sessionId}&phone=${encodeURIComponent(phone || "")}&delivery=email`;

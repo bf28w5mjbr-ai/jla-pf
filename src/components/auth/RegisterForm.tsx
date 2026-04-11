@@ -188,15 +188,22 @@ function RegisterFormInner() {
       }
 
       const viaEmail = data.otpDelivery === "email";
-      toast.success(
-        viaEmail
-          ? `認証コードをメールで送信しました${
-              typeof data.otpDeliveryHint === "string"
-                ? `（${data.otpDeliveryHint}）`
-                : ""
-            }`
-          : "認証コードを送信しました。SMSを確認してください。"
-      );
+      const emailTitle = viaEmail
+        ? `認証コードをメールで送信しました${
+            typeof data.otpDeliveryHint === "string"
+              ? `（${data.otpDeliveryHint}）`
+              : ""
+          }`
+        : "認証コードを送信しました。SMSを確認してください。";
+
+      if (viaEmail && typeof data.resendDeliveryHint === "string") {
+        toast.success(emailTitle, {
+          description: data.resendDeliveryHint,
+          duration: 14_000,
+        });
+      } else {
+        toast.success(emailTitle);
+      }
       const deliveryQ = viaEmail ? "&delivery=email" : "";
       const otpBase = `/register/sms/otp?sessionId=${data.sessionId}&phone=${encodeURIComponent(formData.phoneNumber)}${deliveryQ}`;
       router.push(appendRedirectQuery(otpBase, redirectAfterRegister));

@@ -1,4 +1,17 @@
+import { maskEmailForHint } from "@/lib/email/maskEmail";
+
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
+
+const DEFAULT_RESEND_FROM = "Bluvium <onboarding@resend.dev>";
+
+export function resolveResendRegistrationFrom(): string {
+  return process.env.REGISTRATION_EMAIL_FROM?.trim() || DEFAULT_RESEND_FROM;
+}
+
+/** Resend のテスト用 From（未検証ドメイン時のフォールバック）か */
+export function isResendOnboardingFrom(from: string): boolean {
+  return from.toLowerCase().includes("onboarding@resend.dev");
+}
 
 /**
  * 新規登録用 OTP を Resend で送信する。
@@ -10,8 +23,7 @@ export async function sendRegistrationOtpEmail(to: string, otp: string): Promise
     throw new Error("RESEND_API_KEY が未設定です");
   }
 
-  const from =
-    process.env.REGISTRATION_EMAIL_FROM?.trim() || "Bluvium <onboarding@resend.dev>";
+  const from = resolveResendRegistrationFrom();
 
   const res = await fetch(RESEND_ENDPOINT, {
     method: "POST",
@@ -37,6 +49,13 @@ export async function sendRegistrationOtpEmail(to: string, otp: string): Promise
     const body = await res.text().catch(() => "");
     throw new Error(`Resend が失敗しました (${res.status}): ${body.slice(0, 500)}`);
   }
+
+  const json = (await res.json().catch(() => null)) as { data?: { id?: string } } | null;
+  const id = json?.data?.id;
+  console.info("[Resend] registration OTP accepted", {
+    id,
+    toHint: maskEmailForHint(to),
+  });
 }
 
 /**
@@ -64,6 +83,19 @@ export function formatResendRegistrationOtpFailure(fullMessage: string): {
     "認証コードメールの送信に失敗しました（メール送信サービスが拒否しました）。";
 
   if (http === "403") {
+    const lower = fullMessage.toLowerCase();
+    const recipientRestricted =
+      lower.includes("only send testing") ||
+      lower.includes("own email address") ||
+      lower.includes("verify a domain");
+
+    if (recipientRestricted) {
+      return {
+        code: "RESEND_TEST_FROM_RECIPIENT",
+        error: `${base} Resend のテスト用送信元（onboarding@resend.dev）では、原則として Resend アカウントに登録したメールアドレス宛のみ送信できます。登録フォームのメールをそのアドレスにするか、Resend で bluvium.jp などのドメインを検証し、REGISTRATION_EMAIL_FROM を検証済みドメインの From に設定してください。`,
+      };
+    }
+
     return {
       code,
       error: `${base} 送信元（Vercel の REGISTRATION_EMAIL_FROM）のドメインが Resend で未検証の可能性が高いです。REGISTRATION_EMAIL_FROM をいったん削除して既定の送信元で試すか、Resend でドメイン検証を完了してください。`,
