@@ -5,7 +5,7 @@
 > 注意: `method_not_allowed` を返すダミー実装も、HTTPメソッドとしては定義済み扱いで記載しています。
 
 ## ヘルスチェック
-- `GET /api/_health`
+- `GET /api/health`（旧ドキュメントの `/api/_health` は App Router の `_` 規則でルートにならないため非推奨）
 
 ## 認証
 - `POST /api/auth/register`

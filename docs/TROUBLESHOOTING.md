@@ -50,9 +50,9 @@
 - `pnpm prisma generate` が未実行の場合は先に実行。
 
 ## healthcheck が失敗する
-- `GET /api/_health/live` が 200 ならプロセスは起動中。
-- `GET /api/_health/ready` が 503 の場合、レスポンスの `required` / `integrations` を見て不足設定を特定する。
-- `GET /api/_health?deep=1` は Stripe API も確認するため、Stripe 障害時は `deep.stripeApi=failed` になる。
+- `GET /api/health/live` が 200 ならプロセスは起動中。
+- `GET /api/health/ready` が 503 の場合、レスポンスの `required` / `integrations` を見て不足設定を特定する。
+- `GET /api/health?deep=1` は Stripe API も確認するため、Stripe 障害時は `deep.stripeApi=failed` になる。
 
 ## エラー追跡時のポイント
 - API 500 応答の `x-request-id` を控え、同じ ID をサーバーログで検索する。

@@ -108,6 +108,22 @@ const nextConfig: NextConfig = {
         destination: "/dashboard",
         permanent: true,
       },
+      // `_health` は App Router のプライベートフォルダ規則で URL にならないため、実体は `/api/health`。
+      {
+        source: "/api/_health",
+        destination: "/api/health",
+        permanent: false,
+      },
+      {
+        source: "/api/_health/ready",
+        destination: "/api/health/ready",
+        permanent: false,
+      },
+      {
+        source: "/api/_health/live",
+        destination: "/api/health/live",
+        permanent: false,
+      },
     ];
   },
 };
