@@ -30,6 +30,7 @@ import {
   getResendCooldown,
 } from "@/lib/otp";
 import { maskEmailForHint } from "@/lib/email/maskEmail";
+import { formatResendRegistrationOtpFailure } from "@/lib/email/resendRegistrationOtp";
 import {
   sendRegistrationOtpDelivery,
   sendRegistrationOtpResendDelivery,
@@ -177,12 +178,10 @@ export async function POST(req: NextRequest) {
             );
           }
           if (sendErr.message.startsWith("Resend が失敗しました")) {
-            return NextResponse.json(
-              {
-                error: "認証コードメールの送信に失敗しました。しばらくしてから再度お試しください。",
-              },
-              { status: 503 }
+            const { code, error } = formatResendRegistrationOtpFailure(
+              sendErr.message
             );
+            return NextResponse.json({ error, code }, { status: 503 });
           }
         }
         throw sendErr;
@@ -295,12 +294,10 @@ export async function POST(req: NextRequest) {
           );
         }
         if (sendErr.message.startsWith("Resend が失敗しました")) {
-          return NextResponse.json(
-            {
-              error: "認証コードメールの送信に失敗しました。しばらくしてから再度お試しください。",
-            },
-            { status: 503 }
+          const { code, error } = formatResendRegistrationOtpFailure(
+            sendErr.message
           );
+          return NextResponse.json({ error, code }, { status: 503 });
         }
         if (sendErr.message.includes("REGISTRATION_EMAIL_OTP requires")) {
           return NextResponse.json(

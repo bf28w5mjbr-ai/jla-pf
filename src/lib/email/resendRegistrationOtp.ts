@@ -38,3 +38,52 @@ export async function sendRegistrationOtpEmail(to: string, otp: string): Promise
     throw new Error(`Resend が失敗しました (${res.status}): ${body.slice(0, 500)}`);
   }
 }
+
+/**
+ * Resend 失敗メッセージ（{@link sendRegistrationOtpEmail} の Error.message）からユーザー向け文言を組み立てる。
+ * 生の API 本文はレスポンスに含めず、サーバーログ用に fullMessage を出力する。
+ */
+export function formatResendRegistrationOtpFailure(fullMessage: string): {
+  code: string;
+  error: string;
+} {
+  const code = "RESEND_SEND_FAILED";
+  console.error("[Resend] registration OTP:", fullMessage);
+
+  if (!fullMessage.startsWith("Resend が失敗しました")) {
+    return {
+      code,
+      error:
+        "認証コードメールの送信に失敗しました。しばらくしてから再度お試しください。",
+    };
+  }
+
+  const m = fullMessage.match(/\((\d+)\)/);
+  const http = m?.[1] ?? "";
+  const base =
+    "認証コードメールの送信に失敗しました（メール送信サービスが拒否しました）。";
+
+  if (http === "403") {
+    return {
+      code,
+      error: `${base} 送信元（Vercel の REGISTRATION_EMAIL_FROM）のドメインが Resend で未検証の可能性が高いです。REGISTRATION_EMAIL_FROM をいったん削除して既定の送信元で試すか、Resend でドメイン検証を完了してください。`,
+    };
+  }
+  if (http === "422") {
+    return {
+      code,
+      error: `${base} From / To が不正か、無料枠の宛先制限などに該当している可能性があります。Resend のダッシュボードでエラー内容を確認してください。`,
+    };
+  }
+  if (http === "429") {
+    return {
+      code,
+      error: `${base} 送信レート制限に達している可能性があります。しばらく時間をおいて再度お試しください。`,
+    };
+  }
+
+  return {
+    code,
+    error: `${base} Vercel の Runtime Logs に出力された詳細（HTTP ステータスと JSON）を確認してください。`,
+  };
+}
