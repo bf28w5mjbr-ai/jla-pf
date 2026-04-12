@@ -80,6 +80,9 @@ export default function BusinessInfoPage() {
             <Link href="/">サービストップへ</Link>
           </Button>
           <Button asChild variant="outline" size="lg">
+            <Link href="/legal/tokushoho">特定商取引法に基づく表示</Link>
+          </Button>
+          <Button asChild variant="outline" size="lg">
             <Link href="/login">ログイン</Link>
           </Button>
         </div>
