@@ -1,5 +1,7 @@
-import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { jsonInternalError500, logApiError } from "@/lib/apiInternalError";
+import { getPublicAppUrl } from "@/lib/appBaseUrl";
 import { NextRequest, NextResponse } from "next/server";
+import Stripe from "stripe";
 import { verifySession } from "@/lib/auth";
 import { requireOrgAdmin } from "@/lib/accessControl";
 import { stripe } from "@/lib/stripe";
@@ -38,7 +40,7 @@ export async function POST(
     }
 
     const accountId = await ensureStripeExpressConnectAccount(organizationId);
-    const origin = new URL(req.url).origin;
+    const origin = getPublicAppUrl().replace(/\/$/, "");
 
     const link = await stripe.accountLinks.create({
       account: accountId,
@@ -53,9 +55,27 @@ export async function POST(
 
     return NextResponse.json({ url: link.url });
   } catch (error) {
-    return jsonInternalError500(
-      "POST api/organizations/[orgId]/stripe-connect/account-link/route.ts",
-      error
-    );
+    const ctx = "POST api/organizations/[orgId]/stripe-connect/account-link/route.ts";
+    if (error instanceof Stripe.errors.StripeAuthenticationError) {
+      logApiError(ctx, error);
+      return NextResponse.json(
+        {
+          error:
+            "Stripe の API キーが無効か未設定です。サーバーの STRIPE_SECRET_KEY を確認してください。",
+        },
+        { status: 503 }
+      );
+    }
+    if (error instanceof Stripe.errors.StripeInvalidRequestError) {
+      logApiError(ctx, error);
+      return NextResponse.json(
+        {
+          error:
+            "Stripe Connect の設定を完了できませんでした。Stripe ダッシュボードで Connect が有効か、本番／テストモードがキーと一致しているか確認してください。",
+        },
+        { status: 400 }
+      );
+    }
+    return jsonInternalError500(ctx, error);
   }
 }

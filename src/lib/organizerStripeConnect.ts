@@ -19,8 +19,12 @@ export async function refreshOrganizationStripeConnectFlags(organizationId: stri
       where: { id: organizationId },
       data: { stripeConnectChargesEnabled: account.charges_enabled === true },
     });
-  } catch {
-    // Stripe 未設定・API 失敗時はフラグ更新を諦める
+  } catch (e) {
+    console.error(
+      "[refreshOrganizationStripeConnectFlags] Stripe retrieve/update failed",
+      { organizationId, stripeConnectAccountId: org.stripeConnectAccountId },
+      e
+    );
   }
 }
 

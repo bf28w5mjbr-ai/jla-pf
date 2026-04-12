@@ -21,11 +21,30 @@ export default function OrganizationStripeConnectPanel({
     try {
       const res = await fetch(
         `/api/organizations/${organizationId}/stripe-connect/account-link`,
-        { method: "POST" }
+        {
+          method: "POST",
+          credentials: "include",
+        }
       );
-      const data = (await res.json()) as { error?: string; url?: string };
+      let data: { error?: string; url?: string } = {};
+      const ct = res.headers.get("content-type") ?? "";
+      if (ct.includes("application/json")) {
+        try {
+          data = (await res.json()) as { error?: string; url?: string };
+        } catch {
+          data = {};
+        }
+      }
       if (!res.ok) {
-        toast.error(data.error || "Stripe の設定画面を開けませんでした");
+        const msg =
+          typeof data.error === "string" && data.error.trim()
+            ? data.error.trim()
+            : res.status === 401
+              ? "ログインの有効期限が切れている可能性があります。再度ログインしてください。"
+              : res.status === 403
+                ? "この操作を行う権限がありません。"
+                : "Stripe の設定画面を開けませんでした";
+        toast.error(msg);
         return;
       }
       if (!data.url) {

@@ -6,7 +6,10 @@ import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { organizerYearlySubscriptionAmountYen, stripe } from "@/lib/stripe";
 import { finalizeOrganizerSubscriptionCheckoutSession } from "@/lib/organizerSubscriptionStripe";
-import { hasOrganizerPlatformSubscription } from "@/lib/organizerBilling";
+import {
+  connectRequirementSkipped,
+  hasOrganizerPlatformSubscription,
+} from "@/lib/organizerBilling";
 import { refreshOrganizationStripeConnectFlags } from "@/lib/organizerStripeConnect";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -167,7 +170,7 @@ export default async function OrganizationDetailPage({
     }
   }
 
-  const organization = await prisma.organization.findUnique({
+  let organization = await prisma.organization.findUnique({
     where: { id },
     include: {
       admins: {
@@ -220,6 +223,31 @@ export default async function OrganizationDetailPage({
   if (!userRole || !isOrgAdmin) {
     redirect("/dashboard");
   }
+
+  /** Webhook 未着・オンボ直後の Stripe 側のみ先に有効化、など DB と実状態のズレを解消 */
+  if (
+    !connectRequirementSkipped() &&
+    hasOrganizerPlatformSubscription(organization) &&
+    organization.stripeConnectAccountId &&
+    !organization.stripeConnectChargesEnabled
+  ) {
+    try {
+      await refreshOrganizationStripeConnectFlags(id);
+      const chargesRow = await prisma.organization.findUnique({
+        where: { id },
+        select: { stripeConnectChargesEnabled: true },
+      });
+      if (chargesRow) {
+        organization = {
+          ...organization,
+          stripeConnectChargesEnabled: chargesRow.stripeConnectChargesEnabled,
+        };
+      }
+    } catch (error) {
+      console.error("Stripe Connect sync on organization page failed:", error);
+    }
+  }
+
   const needsOnboardingPayment =
     isOrgAdmin &&
     organization.status === "PENDING" &&
@@ -227,7 +255,7 @@ export default async function OrganizationDetailPage({
   const organizerYearlyAmount = organizerYearlySubscriptionAmountYen();
   const showStripeConnectSetup =
     isOrgAdmin &&
-    process.env.STRIPE_CONNECT_SKIP_REQUIREMENT !== "true" &&
+    !connectRequirementSkipped() &&
     hasOrganizerPlatformSubscription(organization) &&
     (!organization.stripeConnectAccountId || !organization.stripeConnectChargesEnabled);
   const statusLabelMap = {
