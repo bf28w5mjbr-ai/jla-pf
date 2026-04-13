@@ -21,7 +21,7 @@ async function ensureClubEstablished(
     );
   }
 
-  if (club.status !== "APPROVED") {
+  if (club.status !== "APPROVED" && club.status !== "JLA_APPROVED") {
     throw new MembershipApplicationError(
       "CLUB_NOT_ACCEPTING",
       "このクラブは現在参加申請を受け付けていません"

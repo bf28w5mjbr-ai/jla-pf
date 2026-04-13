@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/qualifications - 資格申請
+// POST /api/qualifications - 資格の即時紐づけ（APPROVED）
 export async function POST(req: NextRequest) {
   try {
     const jar = await cookies();
@@ -197,7 +197,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(
           {
             error:
-              "資格申請にはJLAメンバーIDが必要です。マイアカウントの「保有資格」でメンバーIDを登録するか、申請時に入力してください。",
+              "資格の紐づけにはJLAメンバーIDが必要です。マイアカウントの「保有資格」でメンバーIDを登録するか、入力してください。",
           },
           { status: 400 }
         );
@@ -232,6 +232,7 @@ export async function POST(req: NextRequest) {
         status: { in: ["PENDING", "APPROVED"] },
       },
       select: {
+        id: true,
         kind: true,
         status: true,
         expiryDate: true,
@@ -249,10 +250,6 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
-      return NextResponse.json(
-        { error: "既に申請済みです" },
-        { status: 400 }
-      );
     }
 
     if (!isProvisionalLink && requestedKind === "BLS・WS") {
@@ -381,48 +378,69 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 資格申請作成 + アカウント（User）への JLA メンバーIDの紐付け
+    // 資格の即時紐づけ（APPROVED）+ アカウント（User）への JLA メンバーIDの紐付け
     const qualification = await prisma.$transaction(async (tx) => {
-      const created = await tx.qualification.create({
-        data: {
-          userId: sess.userId,
-          kind: requestedKind,
-          certNumber: effectiveCert,
-          issueDate: data.issueDate ? new Date(data.issueDate) : null,
-          expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
-          status: "PENDING",
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              email: true,
-              givenName: true,
-              familyName: true,
-            },
-          },
-        },
-      });
+      const row =
+        existingMatch?.status === "PENDING"
+          ? await tx.qualification.update({
+              where: { id: existingMatch.id },
+              data: {
+                kind: requestedKind,
+                certNumber: effectiveCert,
+                issueDate: data.issueDate ? new Date(data.issueDate) : null,
+                expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
+                status: "APPROVED",
+              },
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    email: true,
+                    givenName: true,
+                    familyName: true,
+                  },
+                },
+              },
+            })
+          : await tx.qualification.create({
+              data: {
+                userId: sess.userId,
+                kind: requestedKind,
+                certNumber: effectiveCert,
+                issueDate: data.issueDate ? new Date(data.issueDate) : null,
+                expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
+                status: "APPROVED",
+              },
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    email: true,
+                    givenName: true,
+                    familyName: true,
+                  },
+                },
+              },
+            });
 
       await tx.user.update({
         where: { id: sess.userId },
         data: { jlaMemberNumber: effectiveCert },
       });
 
-      return created;
+      return row;
     });
 
-    // AuditLog 記録
     await prisma.auditLog.create({
       data: {
         actorUserId: sess.userId,
-        action: "QUALIFICATION_APPLY",
+        action: "QUALIFICATION_LINK",
         target: `qualification:${qualification.id}`,
         meta: { kind: requestedKind, certNumber: effectiveCert, provisionalLink: isProvisionalLink },
       },
     });
 
-    return NextResponse.json(qualification, { status: 201 });
+    return NextResponse.json(qualification, { status: existingMatch?.status === "PENDING" ? 200 : 201 });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(zodErrorJsonBody(err, "validation_message_ja"), { status: 400 });

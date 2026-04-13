@@ -63,7 +63,7 @@ export default function JlaMemberNumberEditor({ initialValue }: JlaMemberNumberE
           <CardTitle className="text-lg">JLAメンバーID</CardTitle>
         </div>
         <CardDescription>
-          日本ライフセービング協会が発行するメンバーID（半角9桁・500から始まる）を登録します。資格申請でも使用されます。
+          日本ライフセービング協会が発行するメンバーID（半角9桁・500から始まる）を登録します。保有資格の紐づけ保存でも使用されます。
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:p-6">

@@ -1,8 +1,12 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/server/db";
 import { verifySession } from "@/lib/auth";
+import { applyForMembership } from "@/lib/membershipService";
 
+/**
+ * プロフィール「クラブ検索・参加」からの参加。
+ * {@link applyForMembership} と同一（即時 APPROVED）。`/api/clubs/[clubId]/join` と同じ正とする。
+ */
 export async function POST(request: NextRequest) {
   try {
     const token = request.cookies.get("session")?.value;
@@ -22,69 +26,30 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "クラブIDが必要です" }, { status: 400 });
     }
 
-    // クラブが存在するか確認
-    const club = await prisma.club.findUnique({
-      where: { id: clubId },
-      select: {
-        id: true,
-        name: true,
-        status: true,
-      }
-    });
+    const result = await applyForMembership(session.userId, clubId);
 
-    if (!club) {
-      return NextResponse.json({ error: "クラブが見つかりません" }, { status: 404 });
+    if (!result.success || !result.membership) {
+      const msg = result.message ?? "参加に失敗しました";
+      const code = result.error;
+      if (code === "CLUB_NOT_FOUND") {
+        return NextResponse.json({ error: msg }, { status: 404 });
+      }
+      if (code === "ALREADY_MEMBER") {
+        return NextResponse.json({ error: msg }, { status: 400 });
+      }
+      if (code === "RATE_LIMIT_EXCEEDED" || code === "REJECTED_COOLDOWN") {
+        return NextResponse.json({ error: msg }, { status: 429 });
+      }
+      return NextResponse.json({ error: msg }, { status: 400 });
     }
-
-    // クラブが参加可能な状態か確認
-    if (club.status !== 'APPROVED' && club.status !== 'JLA_APPROVED') {
-      return NextResponse.json({ error: "このクラブは現在参加申請を受け付けていません" }, { status: 400 });
-    }
-
-    // 既に申請済みまたは所属しているか確認
-    const existingMembership = await prisma.membership.findUnique({
-      where: {
-        userId_clubId: {
-          userId: session.userId,
-          clubId: clubId,
-        }
-      }
-    });
-
-    if (existingMembership) {
-      if (existingMembership.status === 'APPROVED') {
-        return NextResponse.json({ error: "既にこのクラブに所属しています" }, { status: 400 });
-      } else if (existingMembership.status === 'PENDING') {
-        return NextResponse.json({ error: "既に参加申請を送信済みです" }, { status: 400 });
-      } else if (existingMembership.status === 'REJECTED') {
-        return NextResponse.json({ error: "このクラブからの参加が拒否されています" }, { status: 400 });
-      }
-    }
-
-    // 参加申請を作成
-    const membership = await prisma.membership.create({
-      data: {
-        userId: session.userId,
-        clubId: clubId,
-        role: 'MEMBER',
-        status: 'PENDING',
-      },
-      include: {
-        club: {
-          select: {
-            name: true,
-          }
-        }
-      }
-    });
 
     return NextResponse.json({
-      message: `${club.name}に参加申請を送信しました`,
+      message: result.message,
       membership: {
-        id: membership.id,
-        clubName: membership.club.name,
-        status: membership.status,
-      }
+        id: result.membership.id,
+        clubName: result.membership.club.name,
+        status: result.membership.status,
+      },
     });
   } catch (error) {
     return jsonInternalError500("POST api/clubs/apply/route.ts", error);

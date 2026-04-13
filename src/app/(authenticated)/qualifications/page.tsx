@@ -32,6 +32,11 @@ export default async function QualificationsSelectPage() {
         description: true,
         requiresExpiry: true,
         validityMonths: true,
+        domain: true,
+        level: true,
+        minAge: true,
+        prerequisiteExpression: true,
+        nextKinds: true,
       },
     }),
     prisma.qualification.findMany({
@@ -87,9 +92,7 @@ export default async function QualificationsSelectPage() {
       <Card padding="none" className="overflow-hidden border-border/90 shadow-sm">
         <CardHeader className="border-b border-border/80 bg-muted/25">
           <CardTitle className="text-lg">資格一覧</CardTitle>
-          <CardDescription>
-            取得済みまたは申請したい資格を選択してください。
-          </CardDescription>
+          <CardDescription>保有している資格にチェックを入れ、保存するとアカウントにすぐ反映されます。</CardDescription>
         </CardHeader>
         <CardContent className="p-5 sm:p-6">
           {templates.length === 0 ? (

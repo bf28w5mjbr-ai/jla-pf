@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { appRoutes } from "@/lib/appRoutes";
 
 interface Club {
   id: string;
@@ -52,7 +53,7 @@ export default function ClubSearchList({ excludeClubIds }: ClubSearchListProps) 
   const handleApply = async (clubId: string, clubName: string) => {
     if (applyingClubId) return;
 
-    if (!confirm(`${clubName}に参加申請を送信しますか？`)) return;
+    if (!confirm(`${clubName}に参加しますか？`)) return;
 
     setApplyingClubId(clubId);
 
@@ -69,8 +70,16 @@ export default function ClubSearchList({ excludeClubIds }: ClubSearchListProps) 
         throw new Error(data.error || "申請に失敗しました");
       }
 
-      toast.success("参加申請を送信しました");
-      
+      toast.success("参加しました", {
+        action: {
+          label: "ダッシュボードへ",
+          onClick: () => {
+            router.push(appRoutes.dashboard());
+            router.refresh();
+          },
+        },
+      });
+
       // リストから削除（申請済みなので表示しない）
       setClubs(clubs.filter(c => c.id !== clubId));
       setSelectedClubId(null);
@@ -169,11 +178,11 @@ export default function ClubSearchList({ excludeClubIds }: ClubSearchListProps) 
               disabled={!selectedClub || applyingClubId === selectedClub.id}
               className="shrink-0"
             >
-              {selectedClub && applyingClubId === selectedClub.id ? "申請中..." : "申請"}
+              {selectedClub && applyingClubId === selectedClub.id ? "処理中..." : "参加"}
             </Button>
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            候補から選択すると正式名で固定され、申請ボタンが有効になります。
+            候補から選択すると正式名で固定され、参加ボタンが有効になります。
           </p>
         </CardContent>
       </Card>

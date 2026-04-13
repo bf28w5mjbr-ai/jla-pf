@@ -2,15 +2,15 @@ import Link from "next/link";
 import { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { ArrowLeft, ArrowRight, Award, BookOpen, ClipboardList, GraduationCap } from "lucide-react";
+import { ArrowLeft, ArrowRight, Award, BookOpen, GraduationCap, ListChecks } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { cn } from "@/lib/utils";
 import { CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP } from "@/lib/competitionEntryAgeTiered";
-import QualificationRegisterButton from "./QualificationRegisterButton";
+import { parseQualificationTemplateMeta } from "@/lib/qualificationTemplateRules";
 import JlaMemberNumberEditor from "./JlaMemberNumberEditor";
+import QualificationsSelectionClient from "../../qualifications/QualificationsSelectionClient";
 
 export const metadata: Metadata = {
   title: "保有資格の管理 | Bluvium",
@@ -39,35 +39,38 @@ export default async function ProfileQualificationsPage() {
     redirect("/login");
   }
 
-  const [qualifications, qualificationTemplates] = await Promise.all([
+  const [qualifications, rawTemplates] = await Promise.all([
     prisma.qualification.findMany({
       where: { userId: sess.userId },
       orderBy: { createdAt: "desc" },
     }),
     prisma.qualificationTemplate.findMany({
-      orderBy: { kind: "asc" },
+      orderBy: [{ kind: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        kind: true,
+        name: true,
+        description: true,
+        requiresExpiry: true,
+        validityMonths: true,
+        domain: true,
+        level: true,
+        minAge: true,
+        prerequisiteExpression: true,
+        nextKinds: true,
+      },
     }),
   ]);
 
-  const statusLabel = {
-    APPROVED: "有効",
-    PENDING: "審査中",
-    REJECTED: "却下",
-    EXPIRED: "期限切れ",
-    INCLUDED: "認定ライフセーバーに含む",
-  } as const;
+  const templatesForClient = rawTemplates.map((template) => ({
+    ...template,
+    name: template.name?.trim() || template.kind,
+    ...parseQualificationTemplateMeta(template.description),
+  }));
 
-  const statusClass = {
-    APPROVED:
-      "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200",
-    PENDING:
-      "border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-200",
-    REJECTED:
-      "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200",
-    EXPIRED: "border-border bg-muted text-muted-foreground",
-    INCLUDED:
-      "border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-200",
-  } as const;
+  const linkedKinds = qualifications
+    .filter((q) => q.status === "APPROVED" || q.status === "PENDING")
+    .map((q) => q.kind);
 
   const normalize = (value: string | null | undefined) =>
     (value ?? "")
@@ -92,102 +95,33 @@ export default async function ProfileQualificationsPage() {
     });
   };
 
-  const findTemplateByKeywords = (keywords: string[]) =>
-    qualificationTemplates.find(
-      (template) =>
-        matchesKeywords(template.kind, keywords) ||
-        matchesKeywords(template.name, keywords)
-    );
-
-  const findOwnedByKeywords = (keywords: string[]) =>
-    qualifications.find((q) => matchesKeywords(q.kind, keywords)) ?? null;
-
-  const playerRegistrationTemplate =
-    findTemplateByKeywords(playerRegistrationKeywords) ?? {
-      id: "default-player-registration",
-      kind: "選手登録",
-      name: "選手登録",
-      description: "全選手が登録可能な基本資格",
-      requiresExpiry: true,
-      validityMonths: 12,
-    };
-
-  const blsWsTemplate =
-    findTemplateByKeywords(blsWsKeywords) ?? {
-      id: "default-bls-ws",
-      kind: "BLS・WS",
-      name: "BLS・WS",
-      description: "救命・安全に関する基礎資格",
-      requiresExpiry: true,
-      validityMonths: null,
-    };
-
-  const lifesaverTemplate =
-    findTemplateByKeywords(lifesaverKeywords) ?? {
-      id: "default-certified-lifesaver",
-      kind: "認定ライフセーバー",
-      name: "認定ライフセーバー",
-      description: "上位資格保持者向けの認定資格",
-      requiresExpiry: true,
-      validityMonths: null,
-    };
-
-  const ownedLifesaver = findOwnedByKeywords(lifesaverKeywords);
-  const lifesaverExpiryDate = ownedLifesaver?.expiryDate
-    ? new Date(ownedLifesaver.expiryDate)
-    : null;
-  const lifesaverIsExpired =
-    !!lifesaverExpiryDate && lifesaverExpiryDate.getTime() < new Date().getTime();
-  const isLifesaverEffective =
-    !!ownedLifesaver && ownedLifesaver.status === "APPROVED" && !lifesaverIsExpired;
-
-  const registrationQualifications = [
-    {
-      key: "player",
-      template: playerRegistrationTemplate,
-      owned: findOwnedByKeywords(playerRegistrationKeywords),
-      eligible: true,
-    },
-    {
-      key: "bls-ws",
-      template: blsWsTemplate,
-      owned: findOwnedByKeywords(blsWsKeywords),
-      eligible: true,
-      coveredByLifesaver: isLifesaverEffective,
-    },
-    {
-      key: "lifesaver",
-      template: lifesaverTemplate,
-      owned: ownedLifesaver,
-      eligible: true,
-    },
-  ];
-
   const isRegistrationKind = (value: string | null | undefined) =>
     matchesKeywords(value, playerRegistrationKeywords) ||
     matchesKeywords(value, blsWsKeywords) ||
     matchesKeywords(value, lifesaverKeywords);
 
-  const isRegistrationTemplate = (template: (typeof qualificationTemplates)[number]) =>
+  const isRegistrationTemplate = (template: (typeof rawTemplates)[number]) =>
     isRegistrationKind(template.kind) || isRegistrationKind(template.name);
 
-  const isOwnedTemplate = (template: (typeof qualificationTemplates)[number]) =>
+  const isOwnedTemplate = (template: (typeof rawTemplates)[number]) =>
     qualifications.some(
       (q) =>
-        normalize(q.kind) === normalize(template.kind) ||
-        normalize(q.kind) === normalize(template.name)
+        q.status === "APPROVED" &&
+        (normalize(q.kind) === normalize(template.kind) || normalize(q.kind) === normalize(template.name ?? ""))
     );
 
-  const templateByKind = new Map<string, (typeof qualificationTemplates)[number]>();
-  for (const template of qualificationTemplates) {
+  const templateByKind = new Map<string, (typeof rawTemplates)[number]>();
+  for (const template of rawTemplates) {
     if (!templateByKind.has(template.kind)) {
       templateByKind.set(template.kind, template);
     }
   }
 
-  const ownedQualifications = qualifications.filter((q) => !isRegistrationKind(q.kind));
+  const ownedQualifications = qualifications.filter(
+    (q) => !isRegistrationKind(q.kind) && q.status === "APPROVED"
+  );
 
-  const unownedTemplates = qualificationTemplates.filter(
+  const unownedTemplates = rawTemplates.filter(
     (template) => !isOwnedTemplate(template) && !isRegistrationTemplate(template)
   );
 
@@ -209,7 +143,7 @@ export default async function ProfileQualificationsPage() {
             保有資格の管理
           </h1>
           <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            登録資格・保有資格・未取得の資格を一覧し、申請状況や講習への導線をまとめています。
+            チェックボックスで資格を選んで保存すると、すぐにアカウントに紐づきます。更新講習の案内は下の一覧から進められます。
           </p>
         </div>
       </header>
@@ -219,80 +153,28 @@ export default async function ProfileQualificationsPage() {
       <Card padding="none" className="overflow-hidden border-border/90 shadow-sm">
         <CardHeader className="border-b border-border/80 bg-muted/25">
           <div className="flex items-center gap-2">
-            <ClipboardList className="h-5 w-5 text-primary" strokeWidth={1.75} aria-hidden />
-            <CardTitle className="text-lg">登録資格</CardTitle>
+            <ListChecks className="h-5 w-5 text-primary" strokeWidth={1.75} aria-hidden />
+            <CardTitle className="text-lg">資格の紐づけ</CardTitle>
           </div>
-          <CardDescription className="space-y-1">
+          <CardDescription className="space-y-2">
             <span className="block">
-              選手登録・BLS・WS・認定ライフセーバーの状況を確認できます。JLAメンバーIDはアカウントに1つだけ登録し、各資格の申請ではそのIDを使います（上の欄で登録済みなら申請ダイアログでの再入力は不要です）。
+              保有している資格にチェックを入れて保存してください。JLAメンバーIDがアカウントに未登録のときだけ、資格を保存する際に下の必須欄（または上のカード）でIDが必要です。登録済みの場合は不要です。
             </span>
             <span className="block text-muted-foreground">{CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP}</span>
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3 p-5 sm:p-6">
-          {registrationQualifications.map(({ key, template, owned, coveredByLifesaver }) => {
-            const expiryDate = owned?.expiryDate ? new Date(owned.expiryDate) : null;
-            const now = new Date();
-            const isExpired = !!expiryDate && expiryDate.getTime() < now.getTime();
-            const status = owned ? (isExpired ? "EXPIRED" : owned.status) : null;
-            const displayStatus = status ?? (coveredByLifesaver ? "INCLUDED" : null);
-
-            return (
-              <div
-                key={key}
-                className="rounded-xl border border-border/80 bg-card/60 p-4 shadow-sm dark:bg-card/30"
-              >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <h3 className="text-base font-semibold text-foreground">
-                      {template.name ?? template.kind}
-                    </h3>
-                    {template.description ? (
-                      <p className="text-xs text-muted-foreground">{template.description}</p>
-                    ) : null}
-                  </div>
-                  <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 lg:flex lg:shrink-0 lg:gap-8">
-                    <div>
-                      <p className="font-medium text-muted-foreground">発行日</p>
-                      <p className="mt-0.5 tabular-nums text-foreground">
-                        {owned?.issueDate ? new Date(owned.issueDate).toLocaleDateString("ja-JP") : "—"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="font-medium text-muted-foreground">有効期限</p>
-                      <p className="mt-0.5 tabular-nums text-foreground">
-                        {expiryDate ? expiryDate.toLocaleDateString("ja-JP") : "設定なし"}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 justify-start lg:justify-end">
-                    {displayStatus ? (
-                      <span
-                        className={cn(
-                          "inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold",
-                          statusClass[displayStatus]
-                        )}
-                      >
-                        {statusLabel[displayStatus]}
-                      </span>
-                    ) : (
-                      <QualificationRegisterButton
-                        defaultJlaMemberNumber={user.jlaMemberNumber}
-                        item={{
-                          id: template.id,
-                          kind: template.kind,
-                          name: template.name,
-                          description: template.description,
-                          requiresExpiry: template.requiresExpiry,
-                          validityMonths: template.validityMonths,
-                        }}
-                      />
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+        <CardContent className="p-5 sm:p-6">
+          {templatesForClient.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-border/90 bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+              表示できる資格がありません。
+            </p>
+          ) : (
+            <QualificationsSelectionClient
+              templates={templatesForClient}
+              linkedKinds={linkedKinds}
+              initialJlaMemberNumber={user.jlaMemberNumber}
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -304,9 +186,9 @@ export default async function ProfileQualificationsPage() {
               className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground"
             >
               <GraduationCap className="h-5 w-5 text-primary" strokeWidth={1.75} aria-hidden />
-              保有資格
+              保有資格（更新講習）
             </h2>
-            <p className="text-sm text-muted-foreground">発行済みの資格と更新のための講習へのリンクです。</p>
+            <p className="text-sm text-muted-foreground">紐づけ済みの資格から、更新のための講習情報へ進めます。</p>
           </div>
         </div>
 
@@ -316,9 +198,9 @@ export default async function ProfileQualificationsPage() {
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
                 <Award className="h-5 w-5" strokeWidth={1.5} aria-hidden />
               </div>
-              <p className="text-sm font-medium text-foreground">保有資格はまだありません</p>
+              <p className="text-sm font-medium text-foreground">表示する資格はまだありません</p>
               <p className="max-w-sm text-xs text-muted-foreground">
-                登録資格以外で発行された資格がここに表示されます。
+                上の一覧で資格にチェックを入れて保存すると、ここに表示されます。
               </p>
             </CardContent>
           </Card>
@@ -388,7 +270,7 @@ export default async function ProfileQualificationsPage() {
             <BookOpen className="h-5 w-5 text-primary" strokeWidth={1.75} aria-hidden />
             <CardTitle className="text-lg">未取得の資格</CardTitle>
           </div>
-          <CardDescription>まだ持っていない資格から、講習会情報へ進めます。</CardDescription>
+          <CardDescription>まだ紐づけていない資格から、取得用の講習会情報へ進めます。</CardDescription>
         </CardHeader>
         <CardContent className="p-5 sm:p-6">
           {unownedTemplates.length === 0 ? (

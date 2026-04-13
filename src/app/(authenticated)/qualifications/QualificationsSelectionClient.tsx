@@ -1,20 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckSquare, Link2, Square } from "lucide-react";
+import { CheckSquare, Save, Square } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
   isValidJlaMemberNumber,
@@ -75,21 +67,35 @@ const domainLabelMap: Record<string, string> = {
   Other: "その他",
 };
 
+function checkedSetFromServer(templates: TemplateRow[], linkedKinds: string[]): Set<string> {
+  const linkedNorm = linkedKinds.map((k) => normalizeQualificationKind(k));
+  const next = new Set<string>();
+  for (const t of templates) {
+    const tk = normalizeQualificationKind(t.kind);
+    if (linkedNorm.some((ln) => ln === tk)) {
+      next.add(t.kind);
+    }
+  }
+  return next;
+}
+
 export default function QualificationsSelectionClient({
   templates,
   linkedKinds,
   initialJlaMemberNumber = null,
 }: Props) {
   const router = useRouter();
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [checkedKinds, setCheckedKinds] = useState<Set<string>>(() =>
+    checkedSetFromServer(templates, linkedKinds)
+  );
   const [submitting, setSubmitting] = useState(false);
-  const [applyDialogOpen, setApplyDialogOpen] = useState(false);
   const [jlaMemberNumber, setJlaMemberNumber] = useState(() =>
     normalizeJlaMemberNumber(initialJlaMemberNumber ?? "")
   );
   const [search, setSearch] = useState("");
 
-  const profileCertOk = useMemo(
+  /** DB に有効な JLA メンバーIDが紐づいている（この場合、資格保存時に ID の再入力は不要） */
+  const accountJlaLinked = useMemo(
     () => isValidJlaMemberNumber(normalizeJlaMemberNumber(initialJlaMemberNumber ?? "")),
     [initialJlaMemberNumber]
   );
@@ -98,21 +104,9 @@ export default function QualificationsSelectionClient({
     setJlaMemberNumber(normalizeJlaMemberNumber(initialJlaMemberNumber ?? ""));
   }, [initialJlaMemberNumber]);
 
-  /** 紐付け済みになった種目は選択から外す（申請後の refresh で選択だけ残るとダイアログが開けない／0件表示になるのを防ぐ） */
   useEffect(() => {
-    const linked = new Set(linkedKinds.map((k) => normalizeQualificationKind(k)));
-    setSelected((prev) => {
-      let changed = false;
-      const next = new Set(prev);
-      for (const k of prev) {
-        if (linked.has(normalizeQualificationKind(k))) {
-          next.delete(k);
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [linkedKinds]);
+    setCheckedKinds(checkedSetFromServer(templates, linkedKinds));
+  }, [linkedKinds, templates]);
 
   const linkedNormalized = useMemo(
     () => new Set(linkedKinds.map((k) => normalizeQualificationKind(k))),
@@ -159,25 +153,8 @@ export default function QualificationsSelectionClient({
     return { map, domains, total: filteredRows.length };
   }, [search, templates]);
 
-  const selectableKinds = useMemo(
-    () =>
-      templates
-        .filter((t) => !linkedNormalized.has(normalizeQualificationKind(t.kind)))
-        .map((t) => t.kind),
-    [linkedNormalized, templates]
-  );
-
-  const selectedCount = selected.size;
-  const selectedAvailableCount = useMemo(() => {
-    let count = 0;
-    for (const kind of selected) {
-      if (!linkedNormalized.has(normalizeQualificationKind(kind))) count += 1;
-    }
-    return count;
-  }, [linkedNormalized, selected]);
-
   const toggle = (kind: string) => {
-    setSelected((prev) => {
+    setCheckedKinds((prev) => {
       const next = new Set(prev);
       if (next.has(kind)) next.delete(kind);
       else next.add(kind);
@@ -186,134 +163,69 @@ export default function QualificationsSelectionClient({
   };
 
   const selectAll = () => {
-    setSelected(new Set(selectableKinds));
+    setCheckedKinds(new Set(templates.map((t) => t.kind)));
   };
-  const clearAll = () => setSelected(new Set());
+  const clearAll = () => setCheckedKinds(new Set());
   const selectDomain = (domain: string) => {
     const rows = grouped.map.get(domain) ?? [];
-    const domainKinds = rows
-      .map((r) => r.kind)
-      .filter((kind) => !linkedNormalized.has(normalizeQualificationKind(kind)));
-    setSelected((prev) => new Set([...prev, ...domainKinds]));
+    setCheckedKinds((prev) => new Set([...prev, ...rows.map((r) => r.kind)]));
   };
   const clearDomain = (domain: string) => {
     const rows = grouped.map.get(domain) ?? [];
     const domainSet = new Set(rows.map((r) => r.kind));
-    setSelected((prev) => {
+    setCheckedKinds((prev) => {
       const next = new Set([...prev]);
       for (const kind of domainSet) next.delete(kind);
       return next;
     });
   };
 
-  const openApplyDialog = () => {
-    if (submitting) return;
-    if (selectedAvailableCount === 0) {
-      toast.error(
-        selectedCount > 0
-          ? "申請できる資格が選択されていません。紐付け済みの資格だけが選ばれている可能性があります。"
-          : "資格を1件以上選択してください。"
-      );
-      return;
-    }
-    if (profileCertOk) {
-      if (
-        !confirm(
-          `${selectedAvailableCount}件の資格を、アカウントに登録済みのJLAメンバーIDで暫定紐付け申請しますか？`
-        )
-      ) {
-        return;
-      }
-      void submitProvisionalBatch({ useProfileCert: true });
-      return;
-    }
-    setJlaMemberNumber(normalizeJlaMemberNumber(initialJlaMemberNumber ?? ""));
-    // 同一クリックが「外側押下」と解釈されてダイアログが即閉じるのを避ける（Radix Dialog + ボタン起動の定番対策）
-    window.setTimeout(() => {
-      setApplyDialogOpen(true);
-    }, 0);
-  };
-
-  async function submitProvisionalBatch(options: { useProfileCert: boolean }) {
-    if (selectedAvailableCount === 0 || submitting) return;
-    if (!options.useProfileCert) {
-      const cert = normalizeJlaMemberNumber(jlaMemberNumber);
-      if (!isValidJlaMemberNumber(cert)) {
+  const persist = useCallback(async () => {
+    const kinds = [...checkedKinds];
+    if (kinds.length > 0 && !accountJlaLinked) {
+      const c = normalizeJlaMemberNumber(jlaMemberNumber);
+      if (!isValidJlaMemberNumber(c)) {
         toast.error("JLAメンバーIDは500から始まる半角9桁の数字で入力してください");
         return;
       }
-    } else if (!profileCertOk) {
-      toast.error("アカウントにJLAメンバーIDが登録されていません。マイアカウントの保有資格で登録してください。");
-      return;
     }
+
     setSubmitting(true);
     try {
-      const targets = [...selected].filter(
-        (kind) => !linkedNormalized.has(normalizeQualificationKind(kind))
-      );
-      if (targets.length === 0) {
-        toast.error("申請対象の資格がありません。");
-        return;
+      const body: { kinds: string[]; certNumber?: string } = { kinds };
+      if (kinds.length > 0 && !accountJlaLinked) {
+        body.certNumber = normalizeJlaMemberNumber(jlaMemberNumber);
       }
-      const results = await Promise.allSettled(
-        targets.map(async (kind) => {
-          const res = await fetch("/api/qualifications", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(
-              options.useProfileCert
-                ? { kind, provisionalLink: true }
-                : {
-                    kind,
-                    provisionalLink: true,
-                    certNumber: normalizeJlaMemberNumber(jlaMemberNumber),
-                  }
-            ),
-          });
-          const data = (await res.json().catch(() => ({}))) as { error?: string };
-          if (!res.ok) {
-            throw new Error(`${kind}: ${data.error ?? "暫定紐付けに失敗しました"}`);
-          }
-          return kind;
-        })
-      );
-      const ok = results.filter((r) => r.status === "fulfilled").length;
-      const ng = results.filter((r) => r.status === "rejected");
-      if (ok > 0) {
-        toast.success(`${ok}件を暫定紐付けしました（審査待ち）`);
-        router.refresh();
+      const res = await fetch("/api/users/me/qualifications", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        throw new Error(data.error || "保存に失敗しました");
       }
-      if (ng.length > 0) {
-        const first = ng[0];
-        const msg =
-          first?.status === "rejected" && first.reason instanceof Error
-            ? first.reason.message
-            : "一部の暫定紐付けに失敗しました";
-        toast.error(msg);
-        if (ok > 0) {
-          toast.message("未成功の資格はそのまま選択中です。内容を確認してから再試行できます。");
-        }
-      }
-      if (ok > 0 && ng.length === 0) {
-        setApplyDialogOpen(false);
-        setSelected(new Set());
-      }
+      toast.success("保有資格を保存しました");
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "保存に失敗しました");
     } finally {
       setSubmitting(false);
     }
-  }
+  }, [accountJlaLinked, checkedKinds, jlaMemberNumber, router]);
 
-  const confirmApplyFromDialog = async () => {
-    await submitProvisionalBatch({ useProfileCert: false });
-  };
+  const checkedCount = checkedKinds.size;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" id="qual-checklist">
       <div className="rounded-xl border border-blue-200/70 bg-blue-50/60 p-4 text-sm text-blue-950 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-100">
-        <p className="font-semibold">資格の選択</p>
+        <p className="font-semibold">資格の紐づけ</p>
         <p className="mt-1 text-xs leading-relaxed">
-          資格を選んで申請すると、マイアカウントに反映されます。JLA
-          メンバーIDはアカウントに1つだけ登録し、申請ではそのIDを使います（未登録のときのみ入力します）。すでに紐付け済みの資格は選択できません。
+          保有している資格にチェックを入れて「保存」すると、すぐにアカウントに反映されます（協会の承認は不要です）。JLA
+          メンバーIDはアカウントに1つだけ登録します。
+          <span className="font-medium text-foreground">
+            アカウントにまだ紐づいていない場合は、資格を1件以上保存するときにIDの入力が必要です。すでに紐づけ済みの場合は入力不要です。
+          </span>
         </p>
       </div>
 
@@ -331,7 +243,7 @@ export default function QualificationsSelectionClient({
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          選択中: <span className="font-semibold text-foreground">{selectedCount}</span> 件
+          チェック中: <span className="font-semibold text-foreground">{checkedCount}</span> 件
         </p>
         <div className="flex items-center gap-1.5">
           <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={selectAll}>
@@ -340,7 +252,7 @@ export default function QualificationsSelectionClient({
           </Button>
           <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={clearAll}>
             <Square className="mr-1 h-3.5 w-3.5" />
-            解除
+            すべて外す
           </Button>
         </div>
       </div>
@@ -352,141 +264,119 @@ export default function QualificationsSelectionClient({
           </p>
         ) : (
           grouped.domains.map((domain) => {
-          const rows = grouped.map.get(domain) ?? [];
-          return (
-            <section key={domain} className="space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold text-foreground">
-                  {domainLabelMap[domain] ?? domain}
-                </h2>
-                <div className="flex items-center gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-[11px]"
-                    onClick={() => selectDomain(domain)}
-                  >
-                    この領域を選択
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-[11px]"
-                    onClick={() => clearDomain(domain)}
-                  >
-                    この領域を解除
-                  </Button>
-                </div>
-              </div>
-              <ul className="grid gap-3">
-                {rows.map((template) => {
-                  const label = qualificationJapaneseLabel(template.kind, template.name);
-                  const linked = linkedNormalized.has(normalizeQualificationKind(template.kind));
-                  const checked = selected.has(template.kind);
-                  return (
-                    <li
-                      key={template.id}
-                      className={cn(
-                        "rounded-xl border p-4 shadow-sm",
-                        linked
-                          ? "border-emerald-300/70 bg-emerald-50/40 dark:border-emerald-800/70 dark:bg-emerald-950/20"
-                          : checked
-                            ? "border-primary/60 bg-primary/5"
-                            : "border-border/80 bg-muted/10"
-                      )}
+            const rows = grouped.map.get(domain) ?? [];
+            return (
+              <section key={domain} className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-sm font-semibold text-foreground">
+                    {domainLabelMap[domain] ?? domain}
+                  </h2>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-[11px]"
+                      onClick={() => selectDomain(domain)}
                     >
-                      <label className={cn("flex items-start gap-3", linked ? "cursor-not-allowed" : "cursor-pointer")}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={linked}
-                          onChange={() => toggle(template.kind)}
-                          className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-semibold text-foreground">{label}</span>
-                          <span className="mt-1 flex flex-wrap gap-1.5 text-[11px]">
-                            {template.level ? (
+                      この領域を選択
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-[11px]"
+                      onClick={() => clearDomain(domain)}
+                    >
+                      この領域を解除
+                    </Button>
+                  </div>
+                </div>
+                <ul className="grid gap-3">
+                  {rows.map((template) => {
+                    const label = qualificationJapaneseLabel(template.kind, template.name);
+                    const linked = linkedNormalized.has(normalizeQualificationKind(template.kind));
+                    const checked = checkedKinds.has(template.kind);
+                    return (
+                      <li
+                        key={template.id}
+                        className={cn(
+                          "rounded-xl border p-4 shadow-sm",
+                          linked && checked
+                            ? "border-emerald-300/70 bg-emerald-50/40 dark:border-emerald-800/70 dark:bg-emerald-950/20"
+                            : checked
+                              ? "border-primary/60 bg-primary/5"
+                              : "border-border/80 bg-muted/10"
+                        )}
+                      >
+                        <label className="flex cursor-pointer items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggle(template.kind)}
+                            className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-semibold text-foreground">{label}</span>
+                            <span className="mt-1 flex flex-wrap gap-1.5 text-[11px]">
+                              {template.level ? (
+                                <span className="rounded border border-border/80 bg-background px-1.5 py-0.5 text-muted-foreground">
+                                  区分: {template.level}
+                                </span>
+                              ) : null}
+                              {typeof template.minAge === "number" ? (
+                                <span className="rounded border border-border/80 bg-background px-1.5 py-0.5 text-muted-foreground">
+                                  最低年齢: {template.minAge}歳
+                                </span>
+                              ) : null}
                               <span className="rounded border border-border/80 bg-background px-1.5 py-0.5 text-muted-foreground">
-                                区分: {template.level}
+                                {template.requiresExpiry && template.validityMonths
+                                  ? `有効期間: ${template.validityMonths}か月`
+                                  : "有効期限: なし"}
                               </span>
-                            ) : null}
-                            {typeof template.minAge === "number" ? (
-                              <span className="rounded border border-border/80 bg-background px-1.5 py-0.5 text-muted-foreground">
-                                最低年齢: {template.minAge}歳
-                              </span>
-                            ) : null}
-                            <span className="rounded border border-border/80 bg-background px-1.5 py-0.5 text-muted-foreground">
-                              {template.requiresExpiry && template.validityMonths
-                                ? `有効期間: ${template.validityMonths}か月`
-                                : "有効期限: なし"}
+                              {linked ? (
+                                <span className="rounded border border-emerald-300/80 bg-emerald-100/70 px-1.5 py-0.5 text-emerald-800 dark:border-emerald-700/70 dark:bg-emerald-900/40 dark:text-emerald-200">
+                                  保存済み
+                                </span>
+                              ) : null}
                             </span>
-                            {linked ? (
-                              <span className="rounded border border-emerald-300/80 bg-emerald-100/70 px-1.5 py-0.5 text-emerald-800 dark:border-emerald-700/70 dark:bg-emerald-900/40 dark:text-emerald-200">
-                                紐付け済み
+                            {template.prerequisiteExpression ? (
+                              <span className="mt-1 block text-xs text-muted-foreground">
+                                前提条件: {qualificationJapaneseExpression(template.prerequisiteExpression)}
+                              </span>
+                            ) : null}
+                            {template.nextKinds.length > 0 ? (
+                              <span className="mt-0.5 block text-xs text-muted-foreground">
+                                次資格: {qualificationJapaneseList(template.nextKinds).join(" / ")}
                               </span>
                             ) : null}
                           </span>
-                          {template.prerequisiteExpression ? (
-                            <span className="mt-1 block text-xs text-muted-foreground">
-                              前提条件: {qualificationJapaneseExpression(template.prerequisiteExpression)}
-                            </span>
-                          ) : null}
-                          {template.nextKinds.length > 0 ? (
-                            <span className="mt-0.5 block text-xs text-muted-foreground">
-                              次資格: {qualificationJapaneseList(template.nextKinds).join(" / ")}
-                            </span>
-                          ) : null}
-                        </span>
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          );
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            );
           })
         )}
       </div>
 
-      <div className="sticky bottom-2 z-20 rounded-xl border border-border/80 bg-background/95 p-3 shadow-sm backdrop-blur">
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button
-            type="button"
-            onClick={openApplyDialog}
-            disabled={selectedAvailableCount === 0 || submitting}
-          >
-            <Link2 className="mr-1 h-4 w-4" />
-            {submitting
-              ? "暫定紐付け中..."
-              : `暫定紐付けを申請${selectedCount > 0 ? `（${selectedCount}件）` : ""}`}
-          </Button>
-        </div>
-      </div>
-
-      <Dialog
-        open={applyDialogOpen}
-        onOpenChange={(open) => {
-          setApplyDialogOpen(open);
-          if (!open && !submitting) {
-            setJlaMemberNumber(normalizeJlaMemberNumber(initialJlaMemberNumber ?? ""));
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>JLAメンバーIDの入力</DialogTitle>
-            <DialogDescription>
-              アカウントにメンバーIDがまだないため、選択した {selectedAvailableCount}{" "}
-              件の暫定紐付けの前に入力してください。保存後はアカウントに1つだけ紐づき、以降の申請では再入力不要です。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="qual-select-jla-id">JLAメンバーID</Label>
+      {!accountJlaLinked && checkedCount > 0 ? (
+        <div
+          className="rounded-xl border border-amber-200/90 bg-amber-50/90 p-4 dark:border-amber-900/60 dark:bg-amber-950/35"
+          id="qual-save-requires-jla"
+        >
+          <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">
+            JLAメンバーIDがアカウントに未登録です
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-amber-950/85 dark:text-amber-100/85">
+            資格を保存するには、協会発行のメンバーIDが必要です。マイページの「保有資格」でJLAメンバーIDを登録済みならページを再表示すると反映され、この欄は不要になります。
+          </p>
+          <div className="mt-3 max-w-xs space-y-2">
+            <Label htmlFor="qual-inline-jla-id">JLAメンバーID（保存時に必須）</Label>
             <Input
-              id="qual-select-jla-id"
+              id="qual-inline-jla-id"
               value={jlaMemberNumber}
               onChange={(e) => setJlaMemberNumber(normalizeJlaMemberNumber(e.target.value))}
               numericInput="integer"
@@ -494,26 +384,23 @@ export default function QualificationsSelectionClient({
               placeholder="500123456"
               inputMode="numeric"
               autoComplete="off"
+              className="font-mono"
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-amber-900/80 dark:text-amber-200/80">
               500から始まる半角9桁の数字で入力してください。
             </p>
           </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setApplyDialogOpen(false)}
-              disabled={submitting}
-            >
-              キャンセル
-            </Button>
-            <Button type="button" onClick={() => void confirmApplyFromDialog()} disabled={submitting}>
-              {submitting ? "申請中…" : "申請する"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </div>
+      ) : null}
+
+      <div className="sticky bottom-2 z-20 rounded-xl border border-border/80 bg-background/95 p-3 shadow-sm backdrop-blur">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button type="button" onClick={() => void persist()} disabled={submitting}>
+            <Save className="mr-1 h-4 w-4" />
+            {submitting ? "保存中..." : "保存"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
