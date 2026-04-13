@@ -12,9 +12,29 @@
  *   pnpm formalize:organization -- "団体名の一部"
  *
  * 接続: `DATABASE_URL_UNPOOLED` があれば優先（プーラーに届かないとき用）。未設定時は `DATABASE_URL`。
+ * `*.supabase.co` には未指定時のみ `sslmode=require` を付与（`src/server/db.ts`）。
  */
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import { datasourceUrlForScripts } from "@/server/db";
+
+function printSqlEditorFallback(): void {
+  console.error(`
+[formalize] ローカルから DB に届かないときの代替（Supabase ダッシュボード → SQL Editor）:
+
+-- 1) 対象を確認
+SELECT id, name, status, "onboardingFeeStatus"
+FROM "Organization"
+WHERE name ILIKE '%DAYDAY%OPERATIONS%' OR name ILIKE '%DAY DAY%OPERATIONS%';
+
+-- 2) 1 行だけヒットしたことを確認したうえで、id を置き換えて実行
+UPDATE "Organization"
+SET
+  status = 'APPROVED',
+  "onboardingFeeStatus" = 'PAID',
+  "onboardingFeePaidAt" = NOW()
+WHERE id = '（上の SELECT の id）';
+`);
+}
 
 const DEFAULT_NAMES = ["DAYDAY OPERATIONS", "DAY DAY OPERATIONS"];
 
@@ -44,6 +64,19 @@ async function main(): Promise<number> {
     log: ["error", "warn"],
   });
   try {
+    try {
+      await prisma.$connect();
+    } catch (connectErr) {
+      if (connectErr instanceof Prisma.PrismaClientInitializationError) {
+        console.error(
+          "[formalize] DB に接続できません（Pause / VPN / 回線 / 社内 FW で 5432 が遮断されていることが多いです）。"
+        );
+        printSqlEditorFallback();
+        return 1;
+      }
+      throw connectErr;
+    }
+
     const { needle } = parseArgs();
     const patterns = needle ? [needle] : DEFAULT_NAMES;
 

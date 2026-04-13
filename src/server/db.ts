@@ -13,6 +13,20 @@ const globalForPrisma = globalThis as unknown as {
  * Prisma は `pgbouncer=true` でプリペアドを使わない挙動になる。
  * @see https://www.prisma.io/docs/orm/prisma-client/setup-and-configuration/databases-connections/pgbouncer
  */
+/** 外向き Postgres（特に Supabase）で TLS が必須のとき、未指定なら `sslmode=require` を付与する */
+export function withSupabaseSslModeDefault(url: string | undefined): string | undefined {
+  if (!url) return url;
+  try {
+    const u = new URL(url);
+    if (!u.hostname.includes("supabase.co")) return url;
+    if (u.searchParams.has("sslmode")) return url;
+    u.searchParams.set("sslmode", "require");
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 function withSupabaseTransactionPooler(url: string | undefined): string | undefined {
   if (!url) return url;
   if (/[?&]pgbouncer=true(?:&|$)/i.test(url)) return url;
@@ -72,12 +86,14 @@ function withNonProdPoolTuning(url: string | undefined): string | undefined {
  */
 export function datasourceUrlForScripts(): string | undefined {
   const unpooled = process.env.DATABASE_URL_UNPOOLED?.trim();
-  if (unpooled) return unpooled;
-  return withNonProdPoolTuning(withSupabaseTransactionPooler(process.env.DATABASE_URL));
+  const raw = unpooled
+    ? unpooled
+    : withNonProdPoolTuning(withSupabaseTransactionPooler(process.env.DATABASE_URL));
+  return withSupabaseSslModeDefault(raw);
 }
 
-const datasourceUrl = withNonProdPoolTuning(
-  withSupabaseTransactionPooler(process.env.DATABASE_URL)
+const datasourceUrl = withSupabaseSslModeDefault(
+  withNonProdPoolTuning(withSupabaseTransactionPooler(process.env.DATABASE_URL))
 );
 
 export const prisma =

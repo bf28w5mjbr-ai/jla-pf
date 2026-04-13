@@ -3,7 +3,8 @@
 ## Supabase に接続できない（`Can't reach database server`・pooler 6543）
 
 - プロジェクトが **Paused** になっていないか Supabase ダッシュボードで確認する。
-- **Transaction pooler**（`*.pooler.supabase.com:6543`）にローカルから届かない場合がある。ダッシュボードの **Connect** → **Database** で **Direct connection**（`db.*.supabase.co:5432`）の URI を `.env` の **`DATABASE_URL_UNPOOLED`** に入れる。`pnpm formalize:organization` など CLI は `DATABASE_URL_UNPOOLED` を優先する（`src/server/db.ts` の `datasourceUrlForScripts`）。
+- **Transaction pooler**（`*.pooler.supabase.com:6543`）にローカルから届かない場合がある。ダッシュボードの **Connect** → **Database** で **Direct connection**（`db.*.supabase.co:5432`）の URI を `.env` の **`DATABASE_URL_UNPOOLED`** に入れる。`pnpm formalize:organization` など CLI は `datasourceUrlForScripts`（`src/server/db.ts`）で **`DATABASE_URL_UNPOOLED` を優先**し、ホストが `*.supabase.co` のとき **未指定なら `sslmode=require` を自動付与**する。
+- **Direct でも `Can't reach`** のときは、ローカルから **5432 番がブロック**されていることが多い（テザリングや別回線、VPN オフを試す）。CLI が不要なら **Supabase → SQL Editor** で更新する（`pnpm formalize:organization` 失敗時に案内 SQLが標準エラーへ出る）。
 - IPv6 まわりの問題のときは別回線・VPN オフを試す。
 
 ## Prisma migrate dev の警告
