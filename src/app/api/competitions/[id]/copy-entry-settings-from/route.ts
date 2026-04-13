@@ -88,7 +88,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     if (entryCount > 0 || teamEntryCount > 0) {
       return NextResponse.json(
-        { message: "エントリーが1件でもある大会には種目・参加費をコピーできません" },
+        {
+          message:
+            "エントリーが1件でもある大会には、種目・参加費・年齢カテゴリ・アンダー制・出場資格などの設定をコピーできません",
+        },
         { status: 400 }
       );
     }
@@ -153,6 +156,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 ? undefined
                 : (ev.teamRelayPositionNames as Prisma.InputJsonValue),
             maxTeamEntriesPerClub: ev.maxTeamEntriesPerClub ?? null,
+            underAgeEligibilityEnabled: ev.underAgeEligibilityEnabled ?? true,
           },
         });
       }
@@ -164,6 +168,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
             source.entryFee == null
               ? Prisma.JsonNull
               : (source.entryFee as Prisma.InputJsonValue),
+          underAgeSystemEnabled: source.underAgeSystemEnabled ?? false,
+          underAgeUThresholds: source.underAgeUThresholds ?? [],
+          underAgeOpenEnabled: source.underAgeOpenEnabled ?? true,
+          requiredQualifications:
+            source.requiredQualifications == null
+              ? Prisma.JsonNull
+              : (source.requiredQualifications as Prisma.InputJsonValue),
         },
       });
     });

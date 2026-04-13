@@ -54,7 +54,7 @@ export default function CopyEntrySettingsFromCompetition({
       if (!res.ok) {
         throw new Error(data.message || "コピーに失敗しました");
       }
-      toast.success("種目と参加費をコピーしました");
+      toast.success("種目・参加費・関連設定をコピーしました");
       router.refresh();
       setSourceId("");
     } catch (e) {
@@ -71,7 +71,7 @@ export default function CopyEntrySettingsFromCompetition({
         <div className="min-w-0 flex-1 space-y-1">
           <p className="text-sm font-semibold">他の大会からコピー</p>
           <p className="text-xs text-muted-foreground">
-            同一主催の別大会から種目と参加費を取り込みます。エントリーがない大会のみ。
+            同一主催の別大会から種目・参加費・年齢カテゴリ・アンダー制・出場資格を取り込みます。エントリーがない大会のみ。
           </p>
         </div>
       </div>

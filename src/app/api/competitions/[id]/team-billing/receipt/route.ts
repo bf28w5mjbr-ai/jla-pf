@@ -11,6 +11,7 @@ import { buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
 import { isClubAdminRole } from "@/lib/roleScopes";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import { resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
+import { partitionUnderBandsForCompetition } from "@/lib/competitionUnderAgeSettings";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -88,6 +89,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
           name: true,
           startDate: true,
           entryFee: true,
+          underAgeSystemEnabled: true,
+          underAgeUThresholds: true,
+          underAgeOpenEnabled: true,
           ageCategories: {
             orderBy: { displayOrder: "asc" },
             select: {
@@ -157,9 +161,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
         )
       : null;
     const payerDob = payerForAge?.dateOfBirth ? new Date(payerForAge.dateOfBirth) : null;
+    const underPartition = partitionUnderBandsForCompetition(competition);
     const teamUnit = resolveEntryFeeUnits(competition.entryFee, payerAge, {
       userDateOfBirth: payerDob,
       competitionAgeCategories: competition.ageCategories,
+      underFeePartition: underPartition ?? null,
     }).teamUnit;
     const totalFeeFromPricing = teamCount * teamUnit;
     const totalFee =

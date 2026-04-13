@@ -2,6 +2,7 @@ import {
   type CompetitionAgeCategoryForEntryFee,
   resolveEntryFeeUnits,
 } from "@/lib/competitionEntryAgeTiered";
+import { partitionUnderAgeBands } from "@/lib/competitionUnderAgeSystem";
 
 export type CompetitionEntryFeeConfig = {
   individualEntryFee?: number;
@@ -20,6 +21,11 @@ export type CompetitionEntryFeeConfig = {
     individualEntryFee: number;
     teamEntryFeePerTeam: number;
   }>;
+  underFeeTiers?: Array<{
+    tierKey: string;
+    individualEntryFee: number;
+    teamEntryFeePerTeam: number;
+  }>;
 };
 
 export function calculateCompetitionEntryFee(
@@ -32,6 +38,7 @@ export function calculateCompetitionEntryFee(
     userAgeYearsAtCompetitionStart?: number | null;
     userDateOfBirth?: Date | null;
     competitionAgeCategories?: ReadonlyArray<CompetitionAgeCategoryForEntryFee> | null;
+    underFeePartition?: ReturnType<typeof partitionUnderAgeBands> | null;
   }
 ): number {
   const individualCount = Math.max(0, counts.individualCount);
@@ -47,6 +54,7 @@ export function calculateCompetitionEntryFee(
     {
       userDateOfBirth: options?.userDateOfBirth ?? null,
       competitionAgeCategories: options?.competitionAgeCategories ?? null,
+      underFeePartition: options?.underFeePartition ?? null,
     }
   );
   if (ageTierMissing) return 0;

@@ -217,6 +217,45 @@ export async function PATCH(
       });
     }
 
+    const onlyUnderAgeEligibility =
+      rawKeys.length === 1 &&
+      Object.prototype.hasOwnProperty.call(raw, "underAgeEligibilityEnabled");
+    if (onlyUnderAgeEligibility) {
+      if (!isAdmin) {
+        return NextResponse.json({ message: "権限がありません" }, { status: 403 });
+      }
+      const v = raw.underAgeEligibilityEnabled;
+      if (typeof v !== "boolean") {
+        return NextResponse.json(
+          { message: "underAgeEligibilityEnabled は true または false にしてください" },
+          { status: 400 }
+        );
+      }
+      const mutationStateUnder = await loadCompetitionMutationState(competitionId);
+      try {
+        assertEventAgePatchAllowed(mutationStateUnder);
+      } catch (e) {
+        if (e instanceof CompetitionEditForbiddenError) {
+          return NextResponse.json({ message: e.message }, { status: 400 });
+        }
+        throw e;
+      }
+      await prisma.event.updateMany({
+        where: eventSiblingGroupWhere(competitionId, event),
+        data: { underAgeEligibilityEnabled: v },
+      });
+      const updatedEventsUnder = await prisma.event.findMany({
+        where: { competitionId },
+        orderBy: { displayOrder: "asc" },
+      });
+      return NextResponse.json({
+        message: v
+          ? "この種目グループでアンダー制による年齢判定を有効にしました。"
+          : "この種目グループでは従来の生年月日／年齢のみで判定します。",
+        events: updatedEventsUnder,
+      });
+    }
+
     const onlyName =
       rawKeys.length === 1 && Object.prototype.hasOwnProperty.call(raw, "name");
     if (onlyName) {

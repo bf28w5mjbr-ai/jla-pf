@@ -6,6 +6,7 @@ import { isOrgAdminRole } from "@/lib/roleScopes";
 import { buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import { resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
+import { partitionUnderBandsForCompetition } from "@/lib/competitionUnderAgeSettings";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -104,9 +105,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
           )
         : null;
       const userDob = feeUser?.dateOfBirth ? new Date(feeUser.dateOfBirth) : null;
+      const underPartition = partitionUnderBandsForCompetition(competition);
       const defaultTeamUnit = resolveEntryFeeUnits(competition.entryFee, userAge, {
         userDateOfBirth: userDob,
         competitionAgeCategories: competition.ageCategories,
+        underFeePartition: underPartition ?? null,
       }).teamUnit;
 
       for (const targetClubId of targetClubIds) {

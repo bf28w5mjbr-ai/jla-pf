@@ -1269,6 +1269,13 @@ model Competition {
   minAge          Int? // 参加可能な最小年齢
   maxAge          Int? // 参加可能な最大年齢
 
+  /// true のとき U-○・OPEN（年度年齢）で種目の参加可否を判定。false は従来の生年月日／種目年齢のみ。
+  underAgeSystemEnabled Boolean @default(false)
+  /// U のしきい値（満年齢・年度末基準）。空配列で OPEN のみ＝年齢制限なし（無差別）。
+  underAgeUThresholds   Int[]   @default([])
+  /// 最大 U より上を OPEN とするか。false のときその年齢帯は不可（仕様 A）。
+  underAgeOpenEnabled   Boolean @default(true)
+
   /// エントリー時の誓約（公開時に未使用だった大会は後から有効化不可）
   entryPledgeEnabled     Boolean @default(false)
   entryPledgeText        String? @db.Text
@@ -1599,6 +1606,8 @@ model Event {
   teamRelayPositionNames   Json?
   /// チーム種目のみ: 同一クラブがこの種目（性別行）に出せるチーム数の上限。null は制限なし
   maxTeamEntriesPerClub    Int?
+  /// 大会でアンダー制が有効なとき、この種目でアンダー判定を使うか（false は従来の生年月日／年齢のみ）。
+  underAgeEligibilityEnabled Boolean @default(true)
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
   ageCategory CompetitionAgeCategory? @relation(fields: [ageCategoryId], references: [id], onDelete: Restrict)

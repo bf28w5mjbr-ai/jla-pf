@@ -37,9 +37,12 @@ import {
   parseAgeCategoryFeeTiers,
   parseAgeFeeTiers,
   parseAgeQualificationTiers,
+  parseUnderFeeTiers,
+  parseUnderQualificationTiers,
   type AgeFeeTier,
   type AgeQualificationTier,
 } from "@/lib/competitionEntryAgeTiered";
+import { expectedUnderFeeTierKeys, partitionUnderAgeBands } from "@/lib/competitionUnderAgeSystem";
 import {
   ENTRY_PLEDGE_TEXT_MAX_CHARS,
   wrapMarkdownBoldAroundSelection,
@@ -126,6 +129,8 @@ type Event = {
   maxTeamEntriesPerClub?: number | null;
   /** 年齢カテゴリに連動する場合（手動の生年月日一括保存で解除される） */
   ageCategoryId?: string | null;
+  /** 大会でアンダー制が有効なとき、この種目でアンダーによる年齢判定を使う */
+  underAgeEligibilityEnabled?: boolean;
 };
 
 export type CompetitionAgeCategoryDraft = {
@@ -235,6 +240,9 @@ type EntrySettingsEditorProps = {
     entryPledgeEnabled?: boolean | null;
     entryPledgeText?: string | null;
     entryPledgeLockNoOffer?: boolean | null;
+    underAgeSystemEnabled?: boolean | null;
+    underAgeUThresholds?: number[] | null;
+    underAgeOpenEnabled?: boolean | null;
   };
   initialEvents?: Event[];
   initialAgeCategories?: CompetitionAgeCategoryDraft[];
@@ -448,8 +456,12 @@ export default function EntrySettingsEditor({
 
   const initialParsedFeeTiers = parseAgeFeeTiers(initialData.entryFee as unknown);
   const initialParsedCategoryFeeTiers = parseAgeCategoryFeeTiers(initialData.entryFee as unknown);
-  const [feePricingMode, setFeePricingMode] = useState<"flat" | "byAge" | "byAgeCategory">(() => {
+  const initialParsedUnderFeeTiers = parseUnderFeeTiers(initialData.entryFee as unknown);
+  const [feePricingMode, setFeePricingMode] = useState<
+    "flat" | "byAge" | "byAgeCategory" | "byUnderAge"
+  >(() => {
     if (initialParsedCategoryFeeTiers?.length) return "byAgeCategory";
+    if (initialParsedUnderFeeTiers?.length) return "byUnderAge";
     if (initialParsedFeeTiers) return "byAge";
     return "flat";
   });
@@ -484,10 +496,36 @@ export default function EntrySettingsEditor({
     Record<string, { individual: string; team: string }>
   >(() => buildCategoryFeeDraft(initialAgeCategories, initialParsedCategoryFeeTiers));
 
+  const [underFeeDraft, setUnderFeeDraft] = useState<
+    Record<string, { individual: string; team: string }>
+  >(() => {
+    if (!initialData.underAgeSystemEnabled) return {};
+    const part = partitionUnderAgeBands(
+      initialData.underAgeUThresholds ?? [],
+      initialData.underAgeOpenEnabled ?? true
+    );
+    const keys = expectedUnderFeeTierKeys(part);
+    const parsed = initialParsedUnderFeeTiers;
+    const m: Record<string, { individual: string; team: string }> = {};
+    for (const k of keys) {
+      const row = parsed?.find((t) => t.tierKey === k);
+      m[k] = {
+        individual: String(row?.individualEntryFee ?? 0),
+        team: String(row?.teamEntryFeePerTeam ?? 0),
+      };
+    }
+    return m;
+  });
+
   const initialParsedQualTiers = parseAgeQualificationTiers(initialData.requiredQualifications);
-  const [qualPricingMode, setQualPricingMode] = useState<"flat" | "byAge">(
-    initialParsedQualTiers ? "byAge" : "flat"
+  const initialParsedUnderQualTiers = parseUnderQualificationTiers(
+    initialData.requiredQualifications
   );
+  const [qualPricingMode, setQualPricingMode] = useState<"flat" | "byAge" | "byUnder">(() => {
+    if (initialParsedUnderQualTiers?.length) return "byUnder";
+    if (initialParsedQualTiers?.length) return "byAge";
+    return "flat";
+  });
   const [ageQualFormRows, setAgeQualFormRows] = useState<
     { id: string; minAge: string; maxAge: string; qualifications: string[] }[]
   >(() => {
@@ -512,6 +550,40 @@ export default function EntrySettingsEditor({
       },
     ];
   });
+
+  const [underQualDraft, setUnderQualDraft] = useState<Record<string, string[]>>(() => {
+    if (!initialData.underAgeSystemEnabled) return {};
+    const part = partitionUnderAgeBands(
+      initialData.underAgeUThresholds ?? [],
+      initialData.underAgeOpenEnabled ?? true
+    );
+    const keys = expectedUnderFeeTierKeys(part);
+    const parsed = initialParsedUnderQualTiers;
+    const m: Record<string, string[]> = {};
+    for (const k of keys) {
+      m[k] = [...(parsed?.find((t) => t.tierKey === k)?.requiredQualifications ?? [])];
+    }
+    return m;
+  });
+
+  const [underSystemEnabled, setUnderSystemEnabled] = useState(
+    initialData.underAgeSystemEnabled ?? false
+  );
+  const [underOpenEnabled, setUnderOpenEnabled] = useState(initialData.underAgeOpenEnabled ?? true);
+  const [underUThresholdsText, setUnderUThresholdsText] = useState(() =>
+    (initialData.underAgeUThresholds ?? []).join(", ")
+  );
+  const [isUpdatingUnderAgeSettings, setIsUpdatingUnderAgeSettings] = useState(false);
+
+  useEffect(() => {
+    setUnderSystemEnabled(initialData.underAgeSystemEnabled ?? false);
+    setUnderOpenEnabled(initialData.underAgeOpenEnabled ?? true);
+    setUnderUThresholdsText((initialData.underAgeUThresholds ?? []).join(", "));
+  }, [
+    initialData.underAgeOpenEnabled,
+    initialData.underAgeSystemEnabled,
+    initialData.underAgeUThresholds,
+  ]);
 
   // 種目管理
   const [events, setEvents] = useState<Event[]>(initialEvents);
@@ -835,6 +907,32 @@ export default function EntrySettingsEditor({
     }
   };
 
+  const handlePatchEventUnderAgeEligibility = async (event: Event, enabled: boolean) => {
+    try {
+      const response = await fetch(`/api/competitions/${competitionId}/events/${event.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ underAgeEligibilityEnabled: enabled }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(typeof err.message === "string" ? err.message : "更新に失敗しました");
+      }
+      const data = (await response.json()) as { events?: Event[] };
+      if (Array.isArray(data.events)) {
+        syncEvents(data.events);
+      }
+      toast.success(
+        enabled
+          ? "この種目グループでアンダー判定を有効にしました"
+          : "従来の生年月日／年齢のみで判定します"
+      );
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "更新に失敗しました");
+    }
+  };
+
   const clearEventTableBulkSaveStatus = (key: string) => {
     setEventTableBulkSaveStatus((prev) => {
       if (!prev[key]) return prev;
@@ -867,6 +965,19 @@ export default function EntrySettingsEditor({
   );
   const hasTeamEvents = events.some((event) => event.type === "TEAM");
   const hasIndividualEvents = events.some((event) => event.type === "INDIVIDUAL");
+
+  const underPartitionForEditors = useMemo(() => {
+    if (!initialData.underAgeSystemEnabled) return null;
+    return partitionUnderAgeBands(
+      initialData.underAgeUThresholds ?? [],
+      initialData.underAgeOpenEnabled ?? true
+    );
+  }, [
+    initialData.underAgeOpenEnabled,
+    initialData.underAgeSystemEnabled,
+    initialData.underAgeUThresholds,
+  ]);
+
   const selectedCategory: "POOL" | "OCEAN" =
     categoryScope === "OCEAN_ONLY" ? "OCEAN" : "POOL";
   const categoryMeta =
@@ -1276,6 +1387,39 @@ export default function EntrySettingsEditor({
     }
   };
 
+  const handleSaveUnderAgeSettings = async () => {
+    const parts = underUThresholdsText
+      .split(/[,、\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => parseInt(s, 10))
+      .filter((n) => Number.isFinite(n) && n >= 0 && n <= 150);
+    const unique = Array.from(new Set(parts)).sort((a, b) => a - b);
+    setIsUpdatingUnderAgeSettings(true);
+    try {
+      const res = await fetch(`/api/competitions/${competitionId}/under-age-settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          underAgeSystemEnabled: underSystemEnabled,
+          underAgeUThresholds: unique,
+          underAgeOpenEnabled: underOpenEnabled,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(typeof err.message === "string" ? err.message : "更新に失敗しました");
+      }
+      toast.success("アンダー制の設定を更新しました");
+      router.refresh();
+      notifySectionSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "更新に失敗しました");
+    } finally {
+      setIsUpdatingUnderAgeSettings(false);
+    }
+  };
+
   const handleSaveAgeClub = async () => {
     const minAgeValue = competitionMinAge.trim() === "" ? null : Number(competitionMinAge);
     const maxAgeValue = competitionMaxAge.trim() === "" ? null : Number(competitionMaxAge);
@@ -1467,6 +1611,44 @@ export default function EntrySettingsEditor({
         });
       }
       payload = { pricingMode: "byAgeCategory", ageCategoryFeeTiers: tiers };
+    } else if (feePricingMode === "byUnderAge") {
+      if (!initialData.underAgeSystemEnabled) {
+        toast.error("先に下の「アンダー制」で有効化し、Uのしきい値を保存してください");
+        return;
+      }
+      const part = underPartitionForEditors;
+      if (!part) {
+        toast.error("アンダー区分を計算できませんでした");
+        return;
+      }
+      const need = expectedUnderFeeTierKeys(part);
+      const tiers: {
+        tierKey: string;
+        individualEntryFee: number;
+        teamEntryFeePerTeam: number;
+      }[] = [];
+      for (const k of need) {
+        const row = underFeeDraft[k] ?? { individual: "0", team: "0" };
+        const individualEntryFee = parseFloat(row.individual);
+        const teamEntryFeePerTeam = parseFloat(row.team);
+        if (
+          hasIndividualEvents &&
+          (!Number.isFinite(individualEntryFee) || individualEntryFee < 0)
+        ) {
+          toast.error(`区分「${k}」の個人料金を正しく入力してください`);
+          return;
+        }
+        if (hasTeamEvents && (!Number.isFinite(teamEntryFeePerTeam) || teamEntryFeePerTeam < 0)) {
+          toast.error(`区分「${k}」のチーム料金を正しく入力してください`);
+          return;
+        }
+        tiers.push({
+          tierKey: k,
+          individualEntryFee: hasIndividualEvents ? individualEntryFee : 0,
+          teamEntryFeePerTeam: hasTeamEvents ? teamEntryFeePerTeam : 0,
+        });
+      }
+      payload = { pricingMode: "byUnderAge", underFeeTiers: tiers };
     } else if (feePricingMode === "byAge") {
       const tiers: AgeFeeTier[] = [];
       for (const row of ageFeeFormRows) {
@@ -1552,6 +1734,19 @@ export default function EntrySettingsEditor({
           buildCategoryFeeDraft(ageCategories, parseAgeCategoryFeeTiers(feeBody.entryFee))
         );
       }
+      if (feeBody.entryFee != null && feePricingMode === "byUnderAge" && underPartitionForEditors) {
+        const parsed = parseUnderFeeTiers(feeBody.entryFee);
+        const keys = expectedUnderFeeTierKeys(underPartitionForEditors);
+        const next: Record<string, { individual: string; team: string }> = {};
+        for (const k of keys) {
+          const row = parsed?.find((t) => t.tierKey === k);
+          next[k] = {
+            individual: String(row?.individualEntryFee ?? 0),
+            team: String(row?.teamEntryFeePerTeam ?? 0),
+          };
+        }
+        setUnderFeeDraft(next);
+      }
 
       toast.success("エントリー費用設定を更新しました");
       router.refresh();
@@ -1587,6 +1782,17 @@ export default function EntrySettingsEditor({
     );
   };
 
+  const toggleQualInUnderTier = (tierKey: string, option: string) => {
+    setUnderQualDraft((prev) => {
+      const cur = prev[tierKey] ?? [];
+      const has = cur.includes(option);
+      return {
+        ...prev,
+        [tierKey]: has ? cur.filter((q) => q !== option) : [...cur, option],
+      };
+    });
+  };
+
   const handleUpdateQualifications = async () => {
     if (qualPricingMode === "byAge") {
       for (const row of ageQualFormRows) {
@@ -1604,6 +1810,13 @@ export default function EntrySettingsEditor({
       }
     }
 
+    if (qualPricingMode === "byUnder") {
+      if (!initialData.underAgeSystemEnabled || !underPartitionForEditors) {
+        toast.error("アンダー制を有効にしてから、アンダー区分別の資格を設定してください");
+        return;
+      }
+    }
+
     const nextStored: unknown =
       qualPricingMode === "byAge"
         ? {
@@ -1618,7 +1831,16 @@ export default function EntrySettingsEditor({
               };
             }),
           }
-        : requiredQualifications;
+        : qualPricingMode === "byUnder" && underPartitionForEditors
+          ? {
+              underQualificationTiers: expectedUnderFeeTierKeys(underPartitionForEditors).map(
+                (k) => ({
+                  tierKey: k,
+                  requiredQualifications: underQualDraft[k] ?? [],
+                })
+              ),
+            }
+          : requiredQualifications;
 
     setIsUpdatingQualifications(true);
 
@@ -1626,7 +1848,8 @@ export default function EntrySettingsEditor({
       const announce = buildQualificationRelaxAnnouncementFromConfigs(
         initialData.requiredQualifications,
         nextStored,
-        requiresParticipantNotice
+        requiresParticipantNotice,
+        underPartitionForEditors ?? null
       );
       const basePayload =
         qualPricingMode === "byAge"
@@ -1634,7 +1857,13 @@ export default function EntrySettingsEditor({
               ageQualificationTiers: (nextStored as { ageQualificationTiers: AgeQualificationTier[] })
                 .ageQualificationTiers,
             }
-          : { requiredQualifications };
+          : qualPricingMode === "byUnder"
+            ? {
+                underQualificationTiers: (
+                  nextStored as { underQualificationTiers: { tierKey: string; requiredQualifications: string[] }[] }
+                ).underQualificationTiers,
+              }
+            : { requiredQualifications };
       const response = await fetch(
         `/api/competitions/${competitionId}/entry-qualifications`,
         {
@@ -2567,6 +2796,19 @@ export default function EntrySettingsEditor({
             </div>
           ) : null}
 
+          {initialData.underAgeSystemEnabled ? (
+            <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted-foreground">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5"
+                checked={event.underAgeEligibilityEnabled !== false}
+                onChange={(e) => void handlePatchEventUnderAgeEligibility(event, e.target.checked)}
+                disabled={!canEdit}
+              />
+              <span>アンダー制で年齢判定（オフのときは下の生年月日／年齢）</span>
+            </label>
+          ) : null}
+
           {linked ? (
             <p className="text-[10px] text-muted-foreground">
               年齢カテゴリ連動中です。下の日付はカテゴリの範囲を表示しています。種目ごとに変えて保存すると連動は解除され、その範囲が使われます。日付を変えずに保存すれば連動のままです。カテゴリ全体の変更は「カテゴリ管理」タブから行ってください。
@@ -2845,6 +3087,64 @@ export default function EntrySettingsEditor({
       )}
 
       {isSection("ageClub") && (
+      <>
+      <Card className="overflow-hidden">
+        <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
+          <CardTitle className="text-base font-semibold">アンダー制（U・OPEN・年度年齢）</CardTitle>
+          <CardDescription className="text-xs">
+            有効にすると、種目の参加可否に生年月日の手入力範囲の代わりに「U-○」「OPEN」を使えます（年度年齢は4月2日始まりの年度・翌年4月1日時点の満年齢と一致）。OPEN をオフにすると最大 U より上はエントリー不可です。種目ごとのオンオフは種目設定カードで切り替えます。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 px-4 py-3">
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={underSystemEnabled}
+              onChange={(e) => setUnderSystemEnabled(e.target.checked)}
+              disabled={!canEdit || isUpdatingUnderAgeSettings}
+            />
+            <span>この大会でアンダー制を使う</span>
+          </label>
+          <div className="space-y-1.5">
+            <Label className="text-xs">U のしきい値（カンマ区切り・歳）</Label>
+            <Input
+              className="h-9 text-sm"
+              value={underUThresholdsText}
+              onChange={(e) => setUnderUThresholdsText(e.target.value)}
+              placeholder="例: 10, 15"
+              disabled={!canEdit || !underSystemEnabled || isUpdatingUnderAgeSettings}
+            />
+            <p className="text-[10px] text-muted-foreground">
+              空欄で OPEN のみ＝年齢制限なし。複数あるときは帯が重ならないよう分割されます。
+            </p>
+          </div>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={underOpenEnabled}
+              onChange={(e) => setUnderOpenEnabled(e.target.checked)}
+              disabled={!canEdit || !underSystemEnabled || isUpdatingUnderAgeSettings}
+            />
+            <span>最大 U より上を OPEN とする</span>
+          </label>
+          {canEdit ? (
+            <div className="flex justify-end pt-0.5">
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 w-full text-xs md:w-auto"
+                onClick={() => void handleSaveUnderAgeSettings()}
+                disabled={isUpdatingUnderAgeSettings}
+              >
+                {isUpdatingUnderAgeSettings ? "保存中…" : "アンダー制を保存"}
+              </Button>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
       <Card className="overflow-hidden">
         <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
           <CardTitle className="text-base font-semibold">年齢・所属クラブ</CardTitle>
@@ -2962,6 +3262,7 @@ export default function EntrySettingsEditor({
           )}
         </CardContent>
       </Card>
+      </>
       )}
 
       {isSection("eligibility") && (
@@ -3035,9 +3336,21 @@ export default function EntrySettingsEditor({
                 />
                 年齢帯別
               </label>
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="radio"
+                  className="h-3.5 w-3.5"
+                  checked={qualPricingMode === "byUnder"}
+                  onChange={() => setQualPricingMode("byUnder")}
+                  disabled={!canEdit || !initialData.underAgeSystemEnabled}
+                />
+                アンダー区分別
+              </label>
             </div>
             <p className="text-xs text-muted-foreground">
-              年齢は大会の「年齢・所属クラブ」で設定した範囲（開催日時点の満年齢）に合わせて帯を分けてください。帯が重なると保存できません。
+              {qualPricingMode === "byUnder"
+                ? "大会でアンダー制を有効にし、U/OPEN を保存してから設定してください。区分キーは料金（アンダー区分別）と一致します。"
+                : "年齢は大会の「年齢・所属クラブ」で設定した範囲（開催日時点の満年齢）に合わせて帯を分けてください。帯が重なると保存できません。"}
             </p>
 
             {qualPricingMode === "flat" ? (
@@ -3070,6 +3383,33 @@ export default function EntrySettingsEditor({
                     </label>
                   ))}
                 </div>
+              </div>
+            ) : qualPricingMode === "byUnder" && underPartitionForEditors ? (
+              <div className="space-y-3">
+                {expectedUnderFeeTierKeys(underPartitionForEditors).map((k) => (
+                  <div
+                    key={k}
+                    className="space-y-2 rounded-lg border border-border/80 bg-muted/15 p-3"
+                  >
+                    <p className="text-sm font-medium leading-tight">{k}</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {allowedQualificationOptions.map((option) => (
+                        <label
+                          key={`${k}-${option}`}
+                          className="flex items-center gap-2 rounded-md border border-gray-200 bg-background px-2 py-1.5 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={(underQualDraft[k] ?? []).includes(option)}
+                            onChange={() => toggleQualInUnderTier(k, option)}
+                            disabled={!canEdit}
+                          />
+                          <span>{option}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : (
               <div className="space-y-3">
@@ -4042,10 +4382,24 @@ export default function EntrySettingsEditor({
               />
               年齢カテゴリ別
             </label>
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="radio"
+                className="h-3.5 w-3.5"
+                checked={feePricingMode === "byUnderAge"}
+                onChange={() => setFeePricingMode("byUnderAge")}
+                disabled={!canEdit || !initialData.underAgeSystemEnabled}
+              />
+              アンダー区分別
+            </label>
           </div>
           {feePricingMode === "byAge" ? (
             <p className="text-xs text-muted-foreground">
               年齢は大会開催日基準の満年齢です。大会に参加年齢の上下限がある場合、その範囲をすべての帯で覆う必要があります。
+            </p>
+          ) : feePricingMode === "byUnderAge" ? (
+            <p className="text-xs text-muted-foreground">
+              年度年齢に応じた U/OPEN の区分ごとに料金を設定します。先に「年齢・所属クラブ」でアンダー制と U を保存してください。全員同一料金のときはこの UI は使いません。
             </p>
           ) : feePricingMode === "byAgeCategory" ? (
             <p className="text-xs text-muted-foreground">
@@ -4177,6 +4531,61 @@ export default function EntrySettingsEditor({
                 </Button>
               ) : null}
             </div>
+          ) : feePricingMode === "byUnderAge" && underPartitionForEditors ? (
+            <div className="space-y-3">
+              {expectedUnderFeeTierKeys(underPartitionForEditors).map((k) => {
+                const row = underFeeDraft[k] ?? { individual: "0", team: "0" };
+                return (
+                  <div
+                    key={k}
+                    className="grid gap-2 rounded-lg border border-border/80 bg-muted/15 p-3 sm:grid-cols-2 lg:grid-cols-4"
+                  >
+                    <div className="space-y-1 sm:col-span-2 lg:col-span-4">
+                      <Label className="text-[10px] text-muted-foreground">区分</Label>
+                      <p className="text-sm font-medium leading-tight">{k}</p>
+                    </div>
+                    {hasIndividualEvents ? (
+                      <div className="space-y-1">
+                        <Label className="text-[10px]">個人（円）</Label>
+                        <Input
+                          numericInput="integer"
+                          min={0}
+                          className="h-8 text-xs"
+                          value={row.individual}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setUnderFeeDraft((prev) => ({
+                              ...prev,
+                              [k]: { ...(prev[k] ?? row), individual: v },
+                            }));
+                          }}
+                          disabled={!canEdit}
+                        />
+                      </div>
+                    ) : null}
+                    {hasTeamEvents ? (
+                      <div className="space-y-1">
+                        <Label className="text-[10px]">チーム1組（円）</Label>
+                        <Input
+                          numericInput="integer"
+                          min={0}
+                          className="h-8 text-xs"
+                          value={row.team}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setUnderFeeDraft((prev) => ({
+                              ...prev,
+                              [k]: { ...(prev[k] ?? row), team: v },
+                            }));
+                          }}
+                          disabled={!canEdit}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           ) : feePricingMode === "byAgeCategory" ? (
             <div className="space-y-3">
               {ageCategories.map((cat) => {
@@ -4284,7 +4693,7 @@ export default function EntrySettingsEditor({
           <div className="rounded-md border border-border/80 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
             <p>個人種目: 種目数に関係なく選手ごとに一律課金</p>
             <p>
-              チーム種目: 1種目1チームごとにクラブへ課金（年齢帯別は登録者の満年齢、年齢カテゴリ別は生年月日が属する区分の単価）
+              チーム種目: 1種目1チームごとにクラブへ課金（年齢帯別は登録者の満年齢、年齢カテゴリ別は生年月日が属する区分、アンダー区分別は年度年齢の区分の単価）
             </p>
             <p>複数種目割増とチーム種目のみ特別料金は使用しません。</p>
           </div>

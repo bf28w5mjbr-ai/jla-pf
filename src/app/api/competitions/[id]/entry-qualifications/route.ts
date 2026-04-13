@@ -11,10 +11,13 @@ import {
 } from "@/lib/competitionPublishedEditRules";
 import {
   ALLOWED_ENTRY_REQUIRED_QUALIFICATIONS,
+  parseUnderQualificationTiers,
   validateAgeQualificationTiersCoverCompetitionRange,
   validateAgeTiersNoOverlap,
+  validateUnderQualificationTiersAgainstPartition,
   type AgeQualificationTier,
 } from "@/lib/competitionEntryAgeTiered";
+import { partitionUnderBandsForCompetition } from "@/lib/competitionUnderAgeSettings";
 import { isOrgAdminRole } from "@/lib/roleScopes";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -95,13 +98,48 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const body = (await request.json().catch(() => ({}))) as {
       requiredQualifications?: unknown;
       ageQualificationTiers?: unknown;
+      underQualificationTiers?: unknown;
       announcementMessage?: unknown;
     };
-    const { requiredQualifications, ageQualificationTiers, announcementMessage } = body;
+    const { requiredQualifications, ageQualificationTiers, underQualificationTiers, announcementMessage } =
+      body;
 
     let stored: unknown;
 
-    if (ageQualificationTiers !== undefined) {
+    if (underQualificationTiers !== undefined) {
+      if (!competition.underAgeSystemEnabled) {
+        return NextResponse.json(
+          {
+            message:
+              "アンダー区分別の資格を使うには、先に大会のアンダー制を有効にしてください。",
+          },
+          { status: 400 }
+        );
+      }
+      if (!Array.isArray(underQualificationTiers)) {
+        return NextResponse.json(
+          { message: "アンダー区分別の資格の形式が正しくありません" },
+          { status: 400 }
+        );
+      }
+      const fake = { underQualificationTiers };
+      const tiers = parseUnderQualificationTiers(fake);
+      if (!tiers?.length) {
+        return NextResponse.json(
+          { message: "アンダー区分を1件以上、正しい形式で指定してください" },
+          { status: 400 }
+        );
+      }
+      const part = partitionUnderBandsForCompetition(competition);
+      if (!part) {
+        return NextResponse.json({ message: "アンダー制が無効です" }, { status: 400 });
+      }
+      const uErr = validateUnderQualificationTiersAgainstPartition(part, tiers);
+      if (uErr) {
+        return NextResponse.json({ message: uErr }, { status: 400 });
+      }
+      stored = { underQualificationTiers: tiers };
+    } else if (ageQualificationTiers !== undefined) {
       if (!Array.isArray(ageQualificationTiers)) {
         return NextResponse.json(
           { message: "年齢帯別の資格の形式が正しくありません" },

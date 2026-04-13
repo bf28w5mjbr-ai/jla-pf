@@ -8,8 +8,10 @@ import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityA
 import {
   isTieredEntryFee,
   parseAgeCategoryFeeTiers,
+  parseUnderFeeTiers,
   resolveEntryFeeUnits,
 } from "@/lib/competitionEntryAgeTiered";
+import { partitionUnderBandsForCompetition } from "@/lib/competitionUnderAgeSettings";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -143,10 +145,12 @@ export async function PUT(request: NextRequest, context: RouteContext) {
           new Date(competition.startDate)
         )
       : null;
+    const underPartition = partitionUnderBandsForCompetition(competition);
     const userDob = feeUser?.dateOfBirth ? new Date(feeUser.dateOfBirth) : null;
     const feeUnits = resolveEntryFeeUnits(competition.entryFee, userAge, {
       userDateOfBirth: userDob,
       competitionAgeCategories: competition.ageCategories,
+      underFeePartition: underPartition ?? null,
     });
     if (
       feeUnits.ageTierMissing &&
@@ -154,15 +158,20 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       normalizedTeams.length > 0
     ) {
       const isCat = parseAgeCategoryFeeTiers(competition.entryFee) !== null;
+      const isUnder = parseUnderFeeTiers(competition.entryFee) !== null;
       return NextResponse.json(
         {
           message: isCat
             ? feeUser?.dateOfBirth
               ? "参加費の年齢カテゴリに、あなたの生年月日が該当する区分がありません。主催者へお問い合わせください。"
               : "この大会は年齢カテゴリ別の参加費です。プロフィールに生年月日を登録してください。"
-            : feeUser?.dateOfBirth
-              ? "参加費の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
-              : "この大会は年齢帯別の参加費です。プロフィールに生年月日を登録してください。",
+            : isUnder
+              ? feeUser?.dateOfBirth
+                ? "参加費のアンダー区分に、あなたの年度年齢が該当する区分がありません。主催者へお問い合わせください。"
+                : "この大会はアンダー区分別の参加費です。プロフィールに生年月日を登録してください。"
+              : feeUser?.dateOfBirth
+                ? "参加費の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
+                : "この大会は年齢帯別の参加費です。プロフィールに生年月日を登録してください。",
         },
         { status: 400 }
       );

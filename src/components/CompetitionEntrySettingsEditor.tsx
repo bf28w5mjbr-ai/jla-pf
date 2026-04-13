@@ -18,6 +18,8 @@ import {
   parseAgeCategoryFeeTiers,
   parseAgeFeeTiers,
   parseAgeQualificationTiers,
+  parseUnderFeeTiers,
+  parseUnderQualificationTiers,
   unionRequiredQualifications,
 } from "@/lib/competitionEntryAgeTiered";
 
@@ -91,11 +93,19 @@ function CompetitionEntrySettingsEditorInner({
         individualEventCount,
         teamEventCount,
         entryFee: initialData.entryFee,
+        competitionForUnderFee: {
+          underAgeSystemEnabled: initialData.underAgeSystemEnabled ?? false,
+          underAgeUThresholds: initialData.underAgeUThresholds ?? [],
+          underAgeOpenEnabled: initialData.underAgeOpenEnabled ?? true,
+        },
       }),
     [
       initialData.entryEndDate,
       initialData.entryFee,
       initialData.entryStartDate,
+      initialData.underAgeOpenEnabled,
+      initialData.underAgeSystemEnabled,
+      initialData.underAgeUThresholds,
       individualEventCount,
       overviewEvents.length,
       teamEventCount,
@@ -117,6 +127,22 @@ function CompetitionEntrySettingsEditorInner({
   ) => {
     if (!entryFee) {
       return <p className="font-medium">未設定</p>;
+    }
+
+    const underFee = parseUnderFeeTiers(entryFee as unknown);
+    if (underFee?.length) {
+      return (
+        <div className="space-y-1 text-sm">
+          <p className="text-[10px] font-medium text-muted-foreground">アンダー区分別</p>
+          {underFee.map((t, i) => (
+            <p key={i} className="font-medium leading-snug">
+              {t.tierKey}
+              {hasIndividualEvents ? <> · 個人 ¥{formatCurrency(t.individualEntryFee)}</> : null}
+              {hasTeamEvents ? <> · チーム ¥{formatCurrency(t.teamEntryFeePerTeam)}</> : null}
+            </p>
+          ))}
+        </div>
+      );
     }
 
     const catTiers = parseAgeCategoryFeeTiers(entryFee as unknown);
@@ -177,6 +203,22 @@ function CompetitionEntrySettingsEditorInner({
   };
 
   const renderRequiredQualifications = (requiredQualifications: unknown) => {
+    const underQ = parseUnderQualificationTiers(requiredQualifications);
+    if (underQ?.length) {
+      return (
+        <div className="space-y-1.5 text-sm">
+          <p className="text-[10px] font-medium text-muted-foreground">アンダー区分別</p>
+          {underQ.map((t, i) => (
+            <p key={i} className="text-xs leading-snug">
+              <span className="font-medium">{t.tierKey}</span>
+              {t.requiredQualifications.length > 0
+                ? ` · ${t.requiredQualifications.join("、")}`
+                : " · 資格不要"}
+            </p>
+          ))}
+        </div>
+      );
+    }
     const tiered = parseAgeQualificationTiers(requiredQualifications);
     if (tiered?.length) {
       return (

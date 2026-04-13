@@ -478,6 +478,9 @@ export default async function CompetitionDetailPage({
               entryPledgeEnabled: competition.entryPledgeEnabled ?? false,
               entryPledgeText: competition.entryPledgeText,
               entryPledgeLockNoOffer: competition.entryPledgeLockNoOffer ?? false,
+              underAgeSystemEnabled: competition.underAgeSystemEnabled ?? false,
+              underAgeUThresholds: competition.underAgeUThresholds ?? [],
+              underAgeOpenEnabled: competition.underAgeOpenEnabled ?? true,
             }}
             initialEvents={
               competition.events.map((e) => ({
@@ -486,6 +489,7 @@ export default async function CompetitionDetailPage({
                 minAge: e.minAge,
                 maxAge: e.maxAge,
                 ageCategoryId: e.ageCategoryId ?? null,
+                underAgeEligibilityEnabled: e.underAgeEligibilityEnabled ?? true,
                 createdAt: e.createdAt.toISOString(),
                 updatedAt: e.updatedAt.toISOString(),
               })) as unknown as NonNullable<EntrySettingsEditorProps["initialEvents"]>

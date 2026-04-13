@@ -43,6 +43,7 @@ import {
 } from "lucide-react";
 import { calculateCompetitionEntryFee } from "@/lib/entryFee";
 import { isTieredEntryFee, resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
+import { partitionUnderAgeBands } from "@/lib/competitionUnderAgeSystem";
 import type { EntryReceiptForClient } from "@/lib/entryCompletionReceipt";
 import EntryDetailsSummary from "@/components/EntryDetailsSummary";
 import { EntryPaymentConfirmPoller } from "@/components/competitions/EntryPaymentConfirmPoller";
@@ -181,6 +182,8 @@ type CompetitionEntryFormProps = {
     eligibleBirthDateFrom: string | null;
     eligibleBirthDateTo: string | null;
   }>;
+  /** アンダー別参加費の解決用（大会でアンダー制が有効なとき） */
+  underAgeFeeBands?: { uThresholds: number[]; openEnabled: boolean } | null;
 };
 
 export default function CompetitionEntryForm({
@@ -207,6 +210,7 @@ export default function CompetitionEntryForm({
   userAgeYearsAtCompetitionStart = null,
   userDateOfBirthISO = null,
   feeAgeCategories,
+  underAgeFeeBands = null,
 }: CompetitionEntryFormProps) {
   const router = useRouter();
   const [showEstablishedEdit, setShowEstablishedEdit] = useState(false);
@@ -273,6 +277,11 @@ export default function CompetitionEntryForm({
     [userDateOfBirthISO]
   );
 
+  const underFeePartitionResolved = useMemo(() => {
+    if (!underAgeFeeBands) return null;
+    return partitionUnderAgeBands(underAgeFeeBands.uThresholds, underAgeFeeBands.openEnabled);
+  }, [underAgeFeeBands]);
+
   const estimatedFee = useMemo(() => {
     const individualCount = selectedIndividualEvents.length;
     const teamCount = selectedTeamEvents.length;
@@ -280,6 +289,7 @@ export default function CompetitionEntryForm({
     const r = resolveEntryFeeUnits(entryFee, userAgeYearsAtCompetitionStart ?? null, {
       userDateOfBirth: userDobForFee,
       competitionAgeCategories: feeResolveAgeCategories,
+      underFeePartition: underFeePartitionResolved,
     });
     if (r.ageTierMissing && isTieredEntryFee(entryFee)) {
       return null;
@@ -294,6 +304,7 @@ export default function CompetitionEntryForm({
         userAgeYearsAtCompetitionStart: userAgeYearsAtCompetitionStart ?? null,
         userDateOfBirth: userDobForFee,
         competitionAgeCategories: feeResolveAgeCategories,
+        underFeePartition: underFeePartitionResolved,
       }
     );
   }, [
@@ -301,6 +312,7 @@ export default function CompetitionEntryForm({
     feeResolveAgeCategories,
     selectedIndividualEvents.length,
     selectedTeamEvents.length,
+    underFeePartitionResolved,
     userAgeYearsAtCompetitionStart,
     userDobForFee,
   ]);

@@ -4,6 +4,11 @@ import {
   eventUsesBirthDateRange,
   isUserDobInEventBirthDateRange,
 } from "@/lib/eventBirthDateEligibility";
+import {
+  expectedUnderFeeTierKeys,
+  partitionUnderAgeBands,
+  resolveUnderTierKeyForSeasonalAge,
+} from "@/lib/competitionUnderAgeSystem";
 
 export const ALLOWED_ENTRY_REQUIRED_QUALIFICATIONS = [
   "選手登録",
@@ -26,6 +31,13 @@ export type AgeCategoryFeeTier = {
   teamEntryFeePerTeam: number;
 };
 
+/** entryFee JSON の underFeeTiers（アンダー区分別） */
+export type UnderFeeTier = {
+  tierKey: string;
+  individualEntryFee: number;
+  teamEntryFeePerTeam: number;
+};
+
 export type CompetitionAgeCategoryForEntryFee = {
   id: string;
   eligibleBirthDateFrom: Date | null;
@@ -36,12 +48,23 @@ export type CompetitionAgeCategoryForEntryFee = {
 export type ResolveEntryFeeContext = {
   userDateOfBirth?: Date | null;
   competitionAgeCategories?: ReadonlyArray<CompetitionAgeCategoryForEntryFee> | null;
+  /** アンダー別料金のとき、大会の U/OPEN から求めた partition */
+  underFeePartition?: ReturnType<typeof partitionUnderAgeBands> | null;
+};
+
+export type ResolveQualificationsContext = {
+  underPartition?: ReturnType<typeof partitionUnderAgeBands> | null;
 };
 
 export type AgeQualificationTier = {
   minAge: number;
   maxAge: number | null;
   /** DB の JSON キーと一致 */
+  requiredQualifications: string[];
+};
+
+export type UnderQualificationTier = {
+  tierKey: string;
   requiredQualifications: string[];
 };
 
@@ -91,6 +114,27 @@ export function parseAgeFeeTiers(entryFee: unknown): AgeFeeTier[] | null {
   return out.length > 0 ? sortAgeTiers(out) : null;
 }
 
+export function parseUnderFeeTiers(entryFee: unknown): UnderFeeTier[] | null {
+  if (!entryFee || typeof entryFee !== "object" || Array.isArray(entryFee)) return null;
+  const raw = (entryFee as Record<string, unknown>).underFeeTiers;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const out: UnderFeeTier[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const t = item as Record<string, unknown>;
+    const tierKey = typeof t.tierKey === "string" ? t.tierKey.trim() : "";
+    const individualEntryFee =
+      typeof t.individualEntryFee === "number" ? t.individualEntryFee : NaN;
+    const teamEntryFeePerTeam =
+      typeof t.teamEntryFeePerTeam === "number" ? t.teamEntryFeePerTeam : NaN;
+    if (!tierKey) continue;
+    if (!Number.isFinite(individualEntryFee) || individualEntryFee < 0) continue;
+    if (!Number.isFinite(teamEntryFeePerTeam) || teamEntryFeePerTeam < 0) continue;
+    out.push({ tierKey, individualEntryFee, teamEntryFeePerTeam });
+  }
+  return out.length > 0 ? out : null;
+}
+
 export function parseAgeCategoryFeeTiers(entryFee: unknown): AgeCategoryFeeTier[] | null {
   if (!entryFee || typeof entryFee !== "object" || Array.isArray(entryFee)) return null;
   const o = entryFee as Record<string, unknown>;
@@ -135,7 +179,11 @@ export function pickAgeCategoryIdForBirthDate(
 }
 
 export function isTieredEntryFee(entryFee: unknown): boolean {
-  return parseAgeFeeTiers(entryFee) !== null || parseAgeCategoryFeeTiers(entryFee) !== null;
+  return (
+    parseAgeFeeTiers(entryFee) !== null ||
+    parseAgeCategoryFeeTiers(entryFee) !== null ||
+    parseUnderFeeTiers(entryFee) !== null
+  );
 }
 
 export function flattenFlatEntryFeeUnits(entryFee: unknown): {
@@ -150,7 +198,7 @@ export function flattenFlatEntryFeeUnits(entryFee: unknown): {
   if (typeof entryFee !== "object" || Array.isArray(entryFee)) {
     return { individual: 0, team: 0 };
   }
-  if (parseAgeFeeTiers(entryFee) || parseAgeCategoryFeeTiers(entryFee)) {
+  if (parseAgeFeeTiers(entryFee) || parseAgeCategoryFeeTiers(entryFee) || parseUnderFeeTiers(entryFee)) {
     return { individual: 0, team: 0 };
   }
   const o = entryFee as Record<string, unknown>;
@@ -187,6 +235,30 @@ export function resolveEntryFeeUnits(
       return { individualUnit: 0, teamUnit: 0, tiered: true, ageTierMissing: true };
     }
     const row = catTiers.find((t) => t.ageCategoryId === categoryId);
+    if (!row) {
+      return { individualUnit: 0, teamUnit: 0, tiered: true, ageTierMissing: true };
+    }
+    return {
+      individualUnit: row.individualEntryFee,
+      teamUnit: row.teamEntryFeePerTeam,
+      tiered: true,
+      ageTierMissing: false,
+    };
+  }
+
+  const underFees = parseUnderFeeTiers(entryFee);
+  if (underFees && context?.underFeePartition) {
+    if (userAgeYearsAtCompetitionStart === null) {
+      return { individualUnit: 0, teamUnit: 0, tiered: true, ageTierMissing: true };
+    }
+    const key = resolveUnderTierKeyForSeasonalAge(
+      userAgeYearsAtCompetitionStart,
+      context.underFeePartition
+    );
+    if (!key) {
+      return { individualUnit: 0, teamUnit: 0, tiered: true, ageTierMissing: true };
+    }
+    const row = underFees.find((t) => t.tierKey === key);
     if (!row) {
       return { individualUnit: 0, teamUnit: 0, tiered: true, ageTierMissing: true };
     }
@@ -268,14 +340,57 @@ export function parseAgeQualificationTiers(raw: unknown): AgeQualificationTier[]
   return out.length > 0 ? sortAgeTiers(out) : null;
 }
 
+export function parseUnderQualificationTiers(raw: unknown): UnderQualificationTier[] | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const arr = o.underQualificationTiers;
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  const allowed = new Set<string>(ALLOWED_ENTRY_REQUIRED_QUALIFICATIONS);
+  const out: UnderQualificationTier[] = [];
+  for (const item of arr) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const t = item as Record<string, unknown>;
+    const tierKey = typeof t.tierKey === "string" ? t.tierKey.trim() : "";
+    const qualsRaw = t.requiredQualifications;
+    if (!Array.isArray(qualsRaw)) continue;
+    const requiredQualifications = Array.from(
+      new Set(
+        qualsRaw
+          .map(normalizeQualificationToken)
+          .filter((s) => s.length > 0 && allowed.has(s))
+      )
+    );
+    if (!tierKey) continue;
+    out.push({ tierKey, requiredQualifications });
+  }
+  return out.length > 0 ? out : null;
+}
+
 export function isTieredRequiredQualifications(raw: unknown): boolean {
-  return parseAgeQualificationTiers(raw) !== null;
+  return parseAgeQualificationTiers(raw) !== null || parseUnderQualificationTiers(raw) !== null;
 }
 
 export function resolveRequiredQualificationsForAge(
   raw: unknown,
-  age: number | null
+  age: number | null,
+  context?: ResolveQualificationsContext
 ): { list: string[]; tiered: boolean; tierMissing: boolean } {
+  const underTiers = parseUnderQualificationTiers(raw);
+  if (underTiers && context?.underPartition) {
+    if (age === null) {
+      return { list: [], tiered: true, tierMissing: true };
+    }
+    const key = resolveUnderTierKeyForSeasonalAge(age, context.underPartition);
+    if (!key) {
+      return { list: [], tiered: true, tierMissing: true };
+    }
+    const row = underTiers.find((t) => t.tierKey === key);
+    if (!row) {
+      return { list: [], tiered: true, tierMissing: true };
+    }
+    return { list: row.requiredQualifications, tiered: true, tierMissing: false };
+  }
+
   const tiers = parseAgeQualificationTiers(raw);
   if (!tiers) {
     return {
@@ -296,6 +411,14 @@ export function resolveRequiredQualificationsForAge(
 
 /** 一覧表示用: フラット配列と年齢帯別オブジェクトの両方から一意な資格ラベルを集約 */
 export function unionRequiredQualifications(raw: unknown): string[] {
+  const under = parseUnderQualificationTiers(raw);
+  if (under?.length) {
+    const set = new Set<string>();
+    for (const t of under) {
+      for (const q of t.requiredQualifications) set.add(q);
+    }
+    return Array.from(set);
+  }
   const tiers = parseAgeQualificationTiers(raw);
   if (!tiers) return parseFlatRequiredQualifications(raw);
   const set = new Set<string>();
@@ -305,24 +428,36 @@ export function unionRequiredQualifications(raw: unknown): string[] {
   return Array.from(set);
 }
 
-function requiredQualsAtAgeForCompare(raw: unknown, age: number): string[] {
-  return resolveRequiredQualificationsForAge(raw, age).list;
+function requiredQualsAtAgeForCompare(
+  raw: unknown,
+  age: number,
+  underPartition?: ReturnType<typeof partitionUnderAgeBands> | null
+): string[] {
+  return resolveRequiredQualificationsForAge(raw, age, { underPartition }).list;
 }
 
-export function isQualificationTighteningMulti(oldRaw: unknown, newRaw: unknown): boolean {
+export function isQualificationTighteningMulti(
+  oldRaw: unknown,
+  newRaw: unknown,
+  underPartition?: ReturnType<typeof partitionUnderAgeBands> | null
+): boolean {
   for (let age = 0; age <= 120; age++) {
-    const oldReq = new Set(requiredQualsAtAgeForCompare(oldRaw, age));
-    for (const q of requiredQualsAtAgeForCompare(newRaw, age)) {
+    const oldReq = new Set(requiredQualsAtAgeForCompare(oldRaw, age, underPartition));
+    for (const q of requiredQualsAtAgeForCompare(newRaw, age, underPartition)) {
       if (!oldReq.has(q)) return true;
     }
   }
   return false;
 }
 
-export function isQualificationRelaxedMulti(oldRaw: unknown, newRaw: unknown): boolean {
+export function isQualificationRelaxedMulti(
+  oldRaw: unknown,
+  newRaw: unknown,
+  underPartition?: ReturnType<typeof partitionUnderAgeBands> | null
+): boolean {
   for (let age = 0; age <= 120; age++) {
-    const newReq = new Set(requiredQualsAtAgeForCompare(newRaw, age));
-    for (const q of requiredQualsAtAgeForCompare(oldRaw, age)) {
+    const newReq = new Set(requiredQualsAtAgeForCompare(newRaw, age, underPartition));
+    for (const q of requiredQualsAtAgeForCompare(oldRaw, age, underPartition)) {
       if (!newReq.has(q)) return true;
     }
   }
@@ -332,9 +467,18 @@ export function isQualificationRelaxedMulti(oldRaw: unknown, newRaw: unknown): b
 export function buildQualificationRelaxAnnouncementFromConfigs(
   oldRaw: unknown,
   newRaw: unknown,
-  needsNotice: boolean
+  needsNotice: boolean,
+  underPartition?: ReturnType<typeof partitionUnderAgeBands> | null
 ): string | undefined {
   if (!needsNotice) return undefined;
+  const oldUnder = parseUnderQualificationTiers(oldRaw);
+  const newUnder = parseUnderQualificationTiers(newRaw);
+  if (oldUnder || newUnder) {
+    if (isQualificationRelaxedMulti(oldRaw, newRaw, underPartition)) {
+      return `出場資格（アンダー区分別）を変更しました。いずれかの区分で要件が緩和されています。エントリー済みの参加者へ周知しました。`;
+    }
+    return undefined;
+  }
   const oldTiered = parseAgeQualificationTiers(oldRaw);
   const newTiered = parseAgeQualificationTiers(newRaw);
   if (!oldTiered && !newTiered) {
@@ -344,7 +488,7 @@ export function buildQualificationRelaxAnnouncementFromConfigs(
     if (removed.length === 0) return undefined;
     return `出場に必要な資格を変更しました。次の要件は不要になりました：${removed.join("、")}。エントリー済みの参加者へ周知しました。`;
   }
-  if (isQualificationRelaxedMulti(oldRaw, newRaw)) {
+  if (isQualificationRelaxedMulti(oldRaw, newRaw, underPartition)) {
     return `年齢帯ごとの出場資格を変更しました。いずれかの年齢で要件が緩和されています。エントリー済みの参加者へ周知しました。`;
   }
   return undefined;
@@ -406,10 +550,49 @@ export function validateAgeQualificationTiersCoverCompetitionRange(
   return null;
 }
 
+export function validateUnderFeeTiersAgainstPartition(
+  partition: ReturnType<typeof partitionUnderAgeBands>,
+  tiers: UnderFeeTier[]
+): string | null {
+  const need = expectedUnderFeeTierKeys(partition);
+  const got = new Set(tiers.map((t) => t.tierKey));
+  for (const k of need) {
+    if (!got.has(k)) {
+      return `アンダー別参加費には区分「${k}」の行が必要です。`;
+    }
+  }
+  for (const k of got) {
+    if (!need.includes(k)) {
+      return `参加費に不要な区分キー「${k}」が含まれています。`;
+    }
+  }
+  return null;
+}
+
+export function validateUnderQualificationTiersAgainstPartition(
+  partition: ReturnType<typeof partitionUnderAgeBands>,
+  tiers: UnderQualificationTier[]
+): string | null {
+  const need = expectedUnderFeeTierKeys(partition);
+  const got = new Set(tiers.map((t) => t.tierKey));
+  for (const k of need) {
+    if (!got.has(k)) {
+      return `アンダー区分別の資格には区分「${k}」の行が必要です。`;
+    }
+  }
+  for (const k of got) {
+    if (!need.includes(k)) {
+      return `資格設定に不要な区分キー「${k}」が含まれています。`;
+    }
+  }
+  return null;
+}
+
 export function entryFeeReadinessOk(
   entryFee: unknown,
   hasIndividualEvents: boolean,
-  hasTeamEvents: boolean
+  hasTeamEvents: boolean,
+  opts?: { underFeePartition?: ReturnType<typeof partitionUnderAgeBands> | null }
 ): boolean {
   const catTiers = parseAgeCategoryFeeTiers(entryFee);
   if (catTiers) {
@@ -419,6 +602,20 @@ export function entryFeeReadinessOk(
     const teamOk =
       !hasTeamEvents || catTiers.every((t) => Number.isFinite(t.teamEntryFeePerTeam) && t.teamEntryFeePerTeam >= 0);
     return indOk && teamOk && catTiers.length > 0;
+  }
+
+  const underFees = parseUnderFeeTiers(entryFee);
+  if (underFees) {
+    const part = opts?.underFeePartition ?? null;
+    if (!part) return false;
+    if (validateUnderFeeTiersAgainstPartition(part, underFees)) return false;
+    const indOk =
+      !hasIndividualEvents ||
+      underFees.every((t) => Number.isFinite(t.individualEntryFee) && t.individualEntryFee >= 0);
+    const teamOk =
+      !hasTeamEvents ||
+      underFees.every((t) => Number.isFinite(t.teamEntryFeePerTeam) && t.teamEntryFeePerTeam >= 0);
+    return indOk && teamOk;
   }
 
   const tiers = parseAgeFeeTiers(entryFee);

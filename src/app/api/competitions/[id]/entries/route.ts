@@ -20,11 +20,16 @@ import { clearIndividualWithdrawalParticipantStatusesForEvents } from "@/lib/ent
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { calculateCompetitionEntryFee, type CompetitionEntryFeeConfig } from "@/lib/entryFee";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
-import { meetsEventAgeOrBirthRule } from "@/lib/eventBirthDateEligibility";
+import {
+  competitionUsesUnderAgeSystem,
+  partitionUnderBandsForCompetition,
+} from "@/lib/competitionUnderAgeSettings";
+import { meetsCompetitionEventAgeEligibility } from "@/lib/underAgeEventEligibility";
 import {
   isTieredEntryFee,
   isTieredRequiredQualifications,
   parseAgeCategoryFeeTiers,
+  parseUnderFeeTiers,
   resolveEntryFeeUnits,
   resolveRequiredQualificationsForAge,
 } from "@/lib/competitionEntryAgeTiered";
@@ -244,12 +249,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
           new Date(competition.startDate)
         )
       : null;
+    const underPartition = partitionUnderBandsForCompetition(competition);
     const userSex = user?.sex ?? "OTHER";
     const userQualifications = user?.qualifications?.map((q) => q.kind) ?? [];
 
     const rq = resolveRequiredQualificationsForAge(
       competition.requiredQualifications,
-      userAge
+      userAge,
+      { underPartition: underPartition ?? null }
     );
     if (rq.tierMissing && isTieredRequiredQualifications(competition.requiredQualifications)) {
       return NextResponse.json(
@@ -346,10 +353,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
         throw new Error("性別条件を満たしていません");
       }
       if (
-        !meetsEventAgeOrBirthRule({
-          userDateOfBirth: user?.dateOfBirth ? new Date(user.dateOfBirth) : null,
-          userEligibilityAgeYears: userAge,
+        !meetsCompetitionEventAgeEligibility({
+          competitionUnderAgeEnabled: competitionUsesUnderAgeSystem(competition),
+          underPartition,
+          eventUnderAgeEligibilityEnabled: event.underAgeEligibilityEnabled ?? true,
           event,
+          userDateOfBirth: user?.dateOfBirth ? new Date(user.dateOfBirth) : null,
+          seasonalAgeYears: userAge,
         })
       ) {
         throw new Error("年齢条件を満たしていません");
@@ -378,10 +388,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
         throw new Error("性別条件を満たしていません");
       }
       if (
-        !meetsEventAgeOrBirthRule({
-          userDateOfBirth: user?.dateOfBirth ? new Date(user.dateOfBirth) : null,
-          userEligibilityAgeYears: userAge,
+        !meetsCompetitionEventAgeEligibility({
+          competitionUnderAgeEnabled: competitionUsesUnderAgeSystem(competition),
+          underPartition,
+          eventUnderAgeEligibilityEnabled: event.underAgeEligibilityEnabled ?? true,
           event,
+          userDateOfBirth: user?.dateOfBirth ? new Date(user.dateOfBirth) : null,
+          seasonalAgeYears: userAge,
         })
       ) {
         throw new Error("年齢条件を満たしていません");
@@ -400,6 +413,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const feeUnits = resolveEntryFeeUnits(competition.entryFee, userAge, {
       userDateOfBirth: userDob,
       competitionAgeCategories: competition.ageCategories,
+      underFeePartition: underPartition ?? null,
     });
     if (
       feeUnits.ageTierMissing &&
@@ -407,15 +421,20 @@ export async function POST(request: NextRequest, context: RouteContext) {
       entryItemsData.length + teamEntriesData.length > 0
     ) {
       const isCat = parseAgeCategoryFeeTiers(competition.entryFee) !== null;
+      const isUnder = parseUnderFeeTiers(competition.entryFee) !== null;
       return NextResponse.json(
         {
           message: isCat
             ? user?.dateOfBirth
               ? "参加費の年齢カテゴリに、あなたの生年月日が該当する区分がありません。主催者へお問い合わせください。"
               : "この大会は年齢カテゴリ別の参加費です。プロフィールに生年月日を登録してください。"
-            : user?.dateOfBirth
-              ? "参加費の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
-              : "この大会は年齢帯別の参加費です。プロフィールに生年月日を登録してください。",
+            : isUnder
+              ? user?.dateOfBirth
+                ? "参加費のアンダー区分に、あなたの年度年齢が該当する区分がありません。主催者へお問い合わせください。"
+                : "この大会はアンダー区分別の参加費です。プロフィールに生年月日を登録してください。"
+              : user?.dateOfBirth
+                ? "参加費の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
+                : "この大会は年齢帯別の参加費です。プロフィールに生年月日を登録してください。",
         },
         { status: 400 }
       );
@@ -431,6 +450,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         userAgeYearsAtCompetitionStart: userAge,
         userDateOfBirth: userDob,
         competitionAgeCategories: competition.ageCategories,
+        underFeePartition: underPartition ?? null,
       }
     );
 

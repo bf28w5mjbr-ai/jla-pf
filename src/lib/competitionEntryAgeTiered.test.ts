@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { partitionUnderAgeBands } from "./competitionUnderAgeSystem";
 import {
   isQualificationRelaxedMulti,
   isQualificationTighteningMulti,
   parseAgeCategoryFeeTiers,
   parseAgeFeeTiers,
+  parseUnderFeeTiers,
+  parseUnderQualificationTiers,
   pickTierForAge,
   resolveEntryFeeUnits,
   resolveRequiredQualificationsForAge,
@@ -119,5 +122,62 @@ describe("competitionEntryAgeTiered", () => {
         { minAge: 11, maxAge: 20 },
       ])
     ).toBeNull();
+  });
+
+  const underPartition = partitionUnderAgeBands([15, 10], true);
+
+  it("parseUnderFeeTiers と resolveEntryFeeUnits でアンダー区分別料金を解決する", () => {
+    const fee = {
+      underFeeTiers: [
+        { tierKey: "U-10", individualEntryFee: 1000, teamEntryFeePerTeam: 2000 },
+        { tierKey: "U-15", individualEntryFee: 3000, teamEntryFeePerTeam: 4000 },
+        { tierKey: "OPEN", individualEntryFee: 5000, teamEntryFeePerTeam: 6000 },
+      ],
+    };
+    expect(parseUnderFeeTiers(fee)?.length).toBe(3);
+    expect(resolveEntryFeeUnits(fee, 9, { underFeePartition: underPartition }).individualUnit).toBe(1000);
+    expect(resolveEntryFeeUnits(fee, 12, { underFeePartition: underPartition }).teamUnit).toBe(4000);
+    expect(resolveEntryFeeUnits(fee, 20, { underFeePartition: underPartition }).individualUnit).toBe(5000);
+  });
+
+  it("アンダー別料金は年度年齢なし・帯外は ageTierMissing", () => {
+    const fee = {
+      underFeeTiers: [
+        { tierKey: "U-10", individualEntryFee: 1, teamEntryFeePerTeam: 2 },
+        { tierKey: "U-15", individualEntryFee: 3, teamEntryFeePerTeam: 4 },
+        { tierKey: "OPEN", individualEntryFee: 5, teamEntryFeePerTeam: 6 },
+      ],
+    };
+    expect(resolveEntryFeeUnits(fee, null, { underFeePartition: underPartition }).ageTierMissing).toBe(true);
+    const closed = partitionUnderAgeBands([15, 10], false);
+    expect(resolveEntryFeeUnits(fee, 16, { underFeePartition: closed }).ageTierMissing).toBe(true);
+  });
+
+  it("parseUnderQualificationTiers と resolveRequiredQualificationsForAge でアンダー別資格を解決する", () => {
+    const raw = {
+      underQualificationTiers: [
+        { tierKey: "U-10", requiredQualifications: [] as string[] },
+        { tierKey: "U-15", requiredQualifications: ["選手登録"] },
+        { tierKey: "OPEN", requiredQualifications: ["選手登録", "BLS・WS"] },
+      ],
+    };
+    expect(parseUnderQualificationTiers(raw)?.length).toBe(3);
+    expect(resolveRequiredQualificationsForAge(raw, 10, { underPartition }).list).toEqual([]);
+    expect(resolveRequiredQualificationsForAge(raw, 12, { underPartition }).list).toEqual(["選手登録"]);
+    expect(resolveRequiredQualificationsForAge(raw, 18, { underPartition }).list).toEqual([
+      "選手登録",
+      "BLS・WS",
+    ]);
+  });
+
+  it("アンダー別資格は OPEN オフで帯外なら tierMissing", () => {
+    const raw = {
+      underQualificationTiers: [
+        { tierKey: "U-10", requiredQualifications: [] },
+        { tierKey: "U-15", requiredQualifications: ["選手登録"] },
+      ],
+    };
+    const closed = partitionUnderAgeBands([15, 10], false);
+    expect(resolveRequiredQualificationsForAge(raw, 16, { underPartition: closed }).tierMissing).toBe(true);
   });
 });
