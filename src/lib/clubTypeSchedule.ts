@@ -1,4 +1,5 @@
 import { prisma } from "@/server/db";
+import { CLUB_ANNUAL_REGISTRATION_ENABLED } from "@/lib/clubAnnualRegistrationPolicy";
 
 export function isUpdateWindow(date: Date = new Date()): boolean {
   return date.getMonth() === 2; // March (0-indexed)
@@ -27,19 +28,21 @@ export async function applyScheduledClubTypeUpdates(
     return;
   }
 
-  const fiscalYear = getCurrentFiscalYear(date);
-  const annualRegistration = await prisma.clubAnnualRegistration.findUnique({
-    where: {
-      clubId_fiscalYear: {
-        clubId,
-        fiscalYear,
+  if (CLUB_ANNUAL_REGISTRATION_ENABLED) {
+    const fiscalYear = getCurrentFiscalYear(date);
+    const annualRegistration = await prisma.clubAnnualRegistration.findUnique({
+      where: {
+        clubId_fiscalYear: {
+          clubId,
+          fiscalYear,
+        },
       },
-    },
-    select: { status: true },
-  });
+      select: { status: true },
+    });
 
-  if (!annualRegistration || annualRegistration.status !== "PAID") {
-    return;
+    if (!annualRegistration || annualRegistration.status !== "PAID") {
+      return;
+    }
   }
 
   const approvedInitial = await prisma.clubTypeApplication.findFirst({

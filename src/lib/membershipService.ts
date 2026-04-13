@@ -1,14 +1,27 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { CLUB_ANNUAL_REGISTRATION_ENABLED } from "@/lib/clubAnnualRegistrationPolicy";
 import { isClubAdminRole } from "@/lib/roleScopes";
 
 const MEMBERSHIP_APPLICATIONS_PER_HOUR_LIMIT = 3;
 const MEMBERSHIP_REAPPLY_COOLDOWN_DAYS = 7;
 
+type EnsureClubEstablishedOptions = {
+  /**
+   * false のとき、当年度の年度登録（ClubAnnualRegistration PAID）を求めない。
+   * ユーザーからの参加申請のみ緩和し、管理者の承認・拒否は従来どおり年度登録完了を要求する。
+   */
+  requirePaidAnnualRegistration?: boolean;
+};
+
 async function ensureClubEstablished(
   tx: Prisma.TransactionClient,
-  clubId: string
+  clubId: string,
+  options: EnsureClubEstablishedOptions = {}
 ): Promise<{ id: string; name: string }> {
+  const requireAnnual =
+    CLUB_ANNUAL_REGISTRATION_ENABLED && options.requirePaidAnnualRegistration !== false;
+
   const club = await tx.club.findUnique({
     where: { id: clubId },
     select: { id: true, status: true, name: true },
@@ -28,22 +41,24 @@ async function ensureClubEstablished(
     );
   }
 
-  const fiscalYear = new Date().getFullYear();
-  const registration = await tx.clubAnnualRegistration.findUnique({
-    where: {
-      clubId_fiscalYear: {
-        clubId,
-        fiscalYear,
+  if (requireAnnual) {
+    const fiscalYear = new Date().getFullYear();
+    const registration = await tx.clubAnnualRegistration.findUnique({
+      where: {
+        clubId_fiscalYear: {
+          clubId,
+          fiscalYear,
+        },
       },
-    },
-    select: { status: true },
-  });
+      select: { status: true },
+    });
 
-  if (!registration || registration.status !== "PAID") {
-    throw new MembershipApplicationError(
-      "CLUB_NOT_ESTABLISHED",
-      "このクラブは年度登録が完了していないため参加申請を受け付けていません"
-    );
+    if (!registration || registration.status !== "PAID") {
+      throw new MembershipApplicationError(
+        "CLUB_NOT_ESTABLISHED",
+        "このクラブは年度登録が完了していないため参加申請を受け付けていません"
+      );
+    }
   }
 
   return { id: club.id, name: club.name };
@@ -67,7 +82,9 @@ export async function applyForMembership(
     // Transaction で競合を防ぐ
     const membership = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // 1. クラブの存在確認 + 申請受付状態の確認
-      await ensureClubEstablished(tx, clubId);
+      await ensureClubEstablished(tx, clubId, {
+        requirePaidAnnualRegistration: false,
+      });
 
       // 2. 既存の申請/所属をチェック（重複防止）
       const existing = await tx.membership.findUnique({
