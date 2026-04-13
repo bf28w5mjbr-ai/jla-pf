@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (data.resend && data.sessionId) {
-      let loginSession = await prisma.loginSession.findFirst({
+      const loginSession = await prisma.loginSession.findFirst({
         where: {
           id: data.sessionId,
           purpose: LoginSessionPurpose.SMS_LOGIN,
@@ -159,8 +159,9 @@ export async function POST(req: NextRequest) {
       const otpExpiresAt = getOTPExpiry();
       const now = new Date();
 
-      loginSession = await prisma.loginSession.update({
-        where: { id: loginSession.id },
+      const resendSessionId = loginSession.id;
+      await prisma.loginSession.update({
+        where: { id: resendSessionId },
         data: {
           phoneNumber: phoneE164,
           otpHash,
@@ -185,7 +186,7 @@ export async function POST(req: NextRequest) {
       }
 
       return NextResponse.json({
-        sessionId: loginSession.id,
+        sessionId: resendSessionId,
         message: "認証コードを再送信しました",
       });
     }

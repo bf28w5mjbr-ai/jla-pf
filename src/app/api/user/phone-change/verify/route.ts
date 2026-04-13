@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
       data: { phoneNumber: data.phone },
     });
 
-    await prisma.loginSession.delete({ where: { phoneNumber: data.phone } });
+    await prisma.loginSession.delete({ where: { id: session.id } });
 
     if (oldPhone && oldPhone !== data.phone) {
       try {

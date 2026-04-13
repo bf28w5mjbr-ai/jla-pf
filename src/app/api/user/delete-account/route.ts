@@ -34,7 +34,7 @@ export async function POST() {
     await prisma.$transaction(async (tx) => {
       // 1. ログインセッションを削除
       await tx.loginSession.deleteMany({
-        where: { phoneNumber: user.phoneNumber },
+        where: { userId },
       });
 
       // 2. ユーザーのセッションを削除（必要に応じて）

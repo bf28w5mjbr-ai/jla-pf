@@ -9,10 +9,7 @@ import { verifyOTP, isOTPValid } from "@/lib/otp";
 import { normalizeKana } from "@/lib/normalize-kana";
 import { isSupabaseSmsOtpChannelActive } from "@/lib/smsOtpSupabase";
 import { verifySmsOtpViaSupabase } from "@/lib/supabase/otp";
-import {
-  findUserByNormalizedNameAndDob,
-  findUserByPhoneCandidates,
-} from "@/lib/user-uniqueness";
+import { findUserByNormalizedNameAndDob } from "@/lib/user-uniqueness";
 import { onAuthLoginSuccess } from "@/lib/authLoginSuccess";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
@@ -88,15 +85,6 @@ export async function POST(req: NextRequest) {
 
     const normalizedFamilyName = normalizeKana(session.familyNameKana);
     const normalizedGivenName = normalizeKana(session.givenNameKana);
-
-    const existingPhone = await findUserByPhoneCandidates([session.phoneNumber]);
-    if (existingPhone) {
-      await prisma.registrationSession.delete({ where: { id: session.id } });
-      return NextResponse.json(
-        { error: "この電話番号は既に登録されています。最初からやり直してください。" },
-        { status: 409 }
-      );
-    }
 
     if (session.email) {
       const existingEmail = await prisma.user.findUnique({

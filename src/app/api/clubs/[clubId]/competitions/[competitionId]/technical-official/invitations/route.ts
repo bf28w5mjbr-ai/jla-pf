@@ -241,7 +241,7 @@ export async function POST(
       return NextResponse.json({ error: "この番号にはすでに招待中です" }, { status: 400 });
     }
 
-    const existingUser = await prisma.user.findUnique({
+    const existingUser = await prisma.user.findFirst({
       where: { phoneNumber: phoneE164 },
       select: { id: true },
     });

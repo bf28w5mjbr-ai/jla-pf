@@ -94,8 +94,8 @@ function OTPVerifyContent() {
   };
 
   const handleResend = async () => {
-    if (!phone) {
-      toast.error("電話番号が見つかりません");
+    if (!sessionId) {
+      toast.error("セッションIDが見つかりません");
       return;
     }
 
@@ -106,7 +106,7 @@ function OTPVerifyContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          phoneNumber: phone,
+          sessionId,
           resend: true,
         }),
       });

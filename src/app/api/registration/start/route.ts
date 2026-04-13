@@ -15,11 +15,8 @@ import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 import { prisma } from "@/server/db";
 import { isValidJapaneseMobile, toE164 } from "@/lib/phone";
-import { normalizeKana, normalizePhone } from "@/lib/normalize-kana";
-import {
-  findUserByPhoneCandidates,
-  findUserByNormalizedNameAndDob,
-} from "@/lib/user-uniqueness";
+import { normalizeKana } from "@/lib/normalize-kana";
+import { findUserByNormalizedNameAndDob } from "@/lib/user-uniqueness";
 import {
   generateOTP,
   hashOTP,
@@ -67,7 +64,7 @@ const InitialRegistrationSchema = z.object({
 });
 
 const ResendRegistrationSchema = z.object({
-  phoneNumber: z.string().min(10),
+  sessionId: z.string().cuid(),
   resend: z.literal(true),
 });
 
@@ -110,19 +107,9 @@ export async function POST(req: NextRequest) {
 
     const data = StartRegistrationSchema.parse(body);
 
-    if (!isValidJapaneseMobile(data.phoneNumber)) {
-      return NextResponse.json(
-        { error: "有効な日本国内の携帯電話番号を入力してください" },
-        { status: 400 }
-      );
-    }
-
-    const phoneE164 = toE164(data.phoneNumber);
-
     if (data.resend) {
-      const existingSession = await prisma.registrationSession.findFirst({
-        where: { phoneNumber: phoneE164 },
-        orderBy: { createdAt: "desc" },
+      const existingSession = await prisma.registrationSession.findUnique({
+        where: { id: data.sessionId },
       });
 
       if (!existingSession) {
@@ -158,6 +145,8 @@ export async function POST(req: NextRequest) {
           { status: 429 }
         );
       }
+
+      const phoneE164 = existingSession.phoneNumber;
 
       const otp = generateOTP();
       const otpHash = await hashOTP(otp);
@@ -232,22 +221,16 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const normalizedEmail = data.email.trim().toLowerCase();
-
-    const existingPhone = await findUserByPhoneCandidates([
-      phoneE164,
-      normalizePhone(data.phoneNumber),
-    ]);
-
-    if (existingPhone) {
+    if (!isValidJapaneseMobile(data.phoneNumber)) {
       return NextResponse.json(
-        {
-          error: "この電話番号は既に登録されています。ログインしてください。",
-          existingUser: true,
-        },
+        { error: "有効な日本国内の携帯電話番号を入力してください" },
         { status: 400 }
       );
     }
+
+    const phoneE164 = toE164(data.phoneNumber);
+
+    const normalizedEmail = data.email.trim().toLowerCase();
 
     const existingEmail = await prisma.user.findUnique({
       where: { email: normalizedEmail },
