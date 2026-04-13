@@ -18,6 +18,7 @@ import {
   qualificationJapaneseList,
 } from "@/lib/qualificationLabels";
 import { normalizeQualificationKind } from "@/lib/qualificationTemplateRules";
+import { appRoutes } from "@/lib/appRoutes";
 
 type TemplateRow = {
   id: string;
@@ -206,6 +207,7 @@ export default function QualificationsSelectionClient({
         throw new Error(data.error || "保存に失敗しました");
       }
       toast.success("保有資格を保存しました");
+      router.push(appRoutes.dashboard());
       router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "保存に失敗しました");
@@ -221,7 +223,7 @@ export default function QualificationsSelectionClient({
       <div className="rounded-xl border border-blue-200/70 bg-blue-50/60 p-4 text-sm text-blue-950 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-100">
         <p className="font-semibold">資格の紐づけ</p>
         <p className="mt-1 text-xs leading-relaxed">
-          保有している資格にチェックを入れて「保存」すると、すぐにアカウントに反映されます（協会の承認は不要です）。JLA
+          保有している資格にチェックを入れて「保存」すると、すぐにアカウントに反映され、ダッシュボードへ移動します（協会の承認は不要です）。JLA
           メンバーIDはアカウントに1つだけ登録します。
           <span className="font-medium text-foreground">
             アカウントにまだ紐づいていない場合は、資格を1件以上保存するときにIDの入力が必要です。すでに紐づけ済みの場合は入力不要です。
