@@ -6,7 +6,8 @@ import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, CheckCircle2, ChevronDown, Clock } from "lucide-react";
+import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
+import { ArrowLeft, AlertTriangle, CheckCircle2, ChevronDown, Clock } from "lucide-react";
 import StartListConfigurator from "@/components/admin/StartListConfigurator";
 import CompetitionTeamBillingManager from "@/components/admin/CompetitionTeamBillingManager";
 import CompetitionEntryAdminActions from "@/components/admin/CompetitionEntryAdminActions";
@@ -119,7 +120,7 @@ export default async function CompetitionEntriesPage({
       },
       checkoutSessions: {
         orderBy: { createdAt: "desc" },
-        take: 1,
+        take: 15,
       },
       items: {
         include: {
@@ -197,7 +198,12 @@ export default async function CompetitionEntriesPage({
   const paidEntries = entries.filter((entry) => {
     if (entry.totalFee === 0) return true;
     const sessionRecord = entry.checkoutSessions[0];
-    return sessionRecord?.status === "COMPLETED";
+    return isEntryCheckoutPaidForEligibility(sessionRecord?.status);
+  }).length;
+
+  const openDisputeEntryCount = entries.filter((entry) => {
+    if (entry.status === "CANCELLED" || entry.totalFee === 0) return false;
+    return entry.checkoutSessions.some((s) => s.status === "DISPUTED");
   }).length;
 
   const individualByEvent = new Map<string, { name: string }[]>();
@@ -301,6 +307,16 @@ export default async function CompetitionEntriesPage({
               決済完了: {paidEntries}件
             </span>
           </div>
+          {openDisputeEntryCount > 0 ? (
+            <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <p>
+                カード決済の異議申し立て（チャージバック）が付いているエントリーが{" "}
+                {openDisputeEntryCount} 件あります。証拠提出や対応が必要な場合は Stripe
+                ダッシュボード（プラットフォーム／Connect の該当アカウント）を確認してください。
+              </p>
+            </div>
+          ) : null}
           <div>
             <Link href={`/organizations/${organizationId}/competitions/${competitionId}`}>
               <Button variant="outline" size="sm" className="gap-2">
@@ -346,9 +362,21 @@ export default async function CompetitionEntriesPage({
                       }
                     : entry.totalFee === 0
                       ? { label: "決済不要", icon: CheckCircle2, color: "text-emerald-600" }
-                      : checkout?.status === "COMPLETED"
-                        ? { label: "決済完了", icon: CheckCircle2, color: "text-emerald-600" }
-                        : { label: "決済確認中", icon: Clock, color: "text-gray-500" };
+                      : checkout?.status === "DISPUTE_LOST"
+                        ? {
+                            label: "決済無効（異議・返金）",
+                            icon: AlertTriangle,
+                            color: "text-red-600 dark:text-red-400",
+                          }
+                        : checkout?.status === "DISPUTED"
+                          ? {
+                              label: "決済完了（異議申し立て中）",
+                              icon: AlertTriangle,
+                              color: "text-amber-600 dark:text-amber-400",
+                            }
+                          : isEntryCheckoutPaidForEligibility(checkout?.status)
+                            ? { label: "決済完了", icon: CheckCircle2, color: "text-emerald-600" }
+                            : { label: "決済確認中", icon: Clock, color: "text-gray-500" };
                   const StatusIcon = paymentStatus.icon;
 
                   return (

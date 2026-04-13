@@ -851,6 +851,8 @@ model Payment {
   currency                String        @default("jpy")
   stripeCheckoutSessionId String?       @unique
   stripePaymentIntentId   String?
+  /// 進行中の Stripe Dispute ID（charge.dispute.created で設定）
+  stripeDisputeId         String?
   metadata                Json?
   paidAt                  DateTime?
   expiresAt               DateTime?
@@ -889,6 +891,10 @@ model EntryCheckoutSession {
   amount                  Int
   currency                String                     @default("jpy")
   stripeCheckoutSessionId String?                    @unique
+  /// Checkout 完了後の PaymentIntent ID（紛争 Webhook の突合に使用）
+  stripePaymentIntentId   String?
+  /// 進行中の紛争（charge.dispute.created で設定、closed でクリア）
+  stripeDisputeId         String?
   /// Stripe Charge.receipt_url（カード決済のホスト領収書）
   stripeReceiptUrl        String?
   payload                 Json?
@@ -905,6 +911,7 @@ model EntryCheckoutSession {
   updatedAt DateTime @updatedAt
 
   @@index([competitionId, userId])
+  @@index([stripePaymentIntentId])
 }
 
 model CompetitionEntry {
@@ -1858,6 +1865,10 @@ enum EntryCheckoutSessionStatus {
   PENDING
   COMPLETED
   EXPIRED
+  /// カードのチャージバック申し立て中（結果までは COMPLETED と同等にエントリー成立扱い）
+  DISPUTED
+  /// 紛争に敗訴し返金確定（有料エントリーの支払いは無効扱い）
+  DISPUTE_LOST
 }
 
 enum CompetitionEntryStatus {

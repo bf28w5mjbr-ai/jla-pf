@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { logAuditAction } from "@/lib/auditLog";
 import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
+import { applyStripeDisputeToEntryCheckoutSessions } from "@/lib/entryCheckoutStripeDispute";
 import {
   finalizeOrganizerSubscriptionCheckoutSession,
   syncOrganizerSubscriptionFromStripeSubscription,
@@ -232,15 +233,26 @@ async function updatePaymentByDispute(
   );
   if (!paymentIntentId) return;
 
-  let status: "DISPUTED" | "REFUNDED" | "SUCCEEDED" = "DISPUTED";
-  if (eventType === "charge.dispute.closed") {
-    if (dispute.status === "won") status = "SUCCEEDED";
-    if (dispute.status === "lost") status = "REFUNDED";
+  const disputeId = dispute.id;
+
+  if (eventType === "charge.dispute.created") {
+    await prisma.payment.updateMany({
+      where: { stripePaymentIntentId: paymentIntentId },
+      data: { status: "DISPUTED", stripeDisputeId: disputeId },
+    });
+    return;
   }
+
+  let status: "DISPUTED" | "REFUNDED" | "SUCCEEDED" = "DISPUTED";
+  if (dispute.status === "won") status = "SUCCEEDED";
+  if (dispute.status === "lost") status = "REFUNDED";
 
   await prisma.payment.updateMany({
     where: { stripePaymentIntentId: paymentIntentId },
-    data: { status },
+    data: {
+      status,
+      stripeDisputeId: dispute.status === "won" ? null : disputeId,
+    },
   });
 }
 
@@ -409,6 +421,7 @@ export async function POST(req: NextRequest) {
       case "charge.dispute.closed": {
         const dispute = event.data.object as Stripe.Dispute;
         await updatePaymentByDispute(dispute, event.type);
+        await applyStripeDisputeToEntryCheckoutSessions(dispute, event.type);
         break;
       }
       case "account.updated": {

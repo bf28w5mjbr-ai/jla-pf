@@ -27,6 +27,7 @@ import { hasOrgAdminAccess, isClubAdminRole } from "@/lib/roleScopes";
 import { getTeamMemberAssignmentWindowState } from "@/lib/teamMemberAssignmentWindow";
 import { stripe } from "@/lib/stripe";
 import { buildEntryCompletionReceipt } from "@/lib/entryCompletionReceipt";
+import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
 import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
@@ -194,10 +195,7 @@ export default async function CompetitionEntryPage({
     existingEntry.totalFee > 0
   ) {
     const pendingCheckout = existingEntry.checkoutSessions[0];
-    if (
-      pendingCheckout?.stripeCheckoutSessionId &&
-      pendingCheckout.status !== "COMPLETED"
-    ) {
+    if (pendingCheckout?.stripeCheckoutSessionId && pendingCheckout.status === "PENDING") {
       try {
         const stripeSession = await retrieveCheckoutSessionForEntryPage(
           pendingCheckout.stripeCheckoutSessionId
@@ -588,17 +586,19 @@ export default async function CompetitionEntryPage({
               .filter((item) => item.eventId)
           : [],
         paymentStatus:
-          latestCheckout?.status === "COMPLETED" || existingEntry.totalFee === 0
+          isEntryCheckoutPaidForEligibility(latestCheckout?.status) || existingEntry.totalFee === 0
             ? ("PAID" as const)
             : ("UNPAID" as const),
       }
     : null;
 
+  const checkoutPaidLike = isEntryCheckoutPaidForEligibility(latestCheckout?.status);
   const awaitingDbPaymentConfirmation = Boolean(
     existingEntry &&
       existingEntry.status === "SUBMITTED" &&
       existingEntry.totalFee > 0 &&
-      latestCheckout?.status !== "COMPLETED"
+      !checkoutPaidLike &&
+      latestCheckout?.status !== "DISPUTE_LOST"
   );
   const unpaidContentLocked = awaitingDbPaymentConfirmation;
 
@@ -610,7 +610,8 @@ export default async function CompetitionEntryPage({
     existingEntry &&
     existingEntry.status === "SUBMITTED" &&
     existingEntry.totalFee > 0 &&
-    latestCheckout?.status !== "COMPLETED"
+    !checkoutPaidLike &&
+    latestCheckout?.status !== "DISPUTE_LOST"
   ) {
     const stripeSessionId = latestCheckout?.stripeCheckoutSessionId;
     if (stripeSessionId) {

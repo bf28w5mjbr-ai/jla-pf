@@ -1,9 +1,11 @@
+import type { EntryCheckoutSessionStatus } from "@prisma/client";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import React from "react";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
+import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
 import { ReceiptPDF } from "@/components/pdf/ReceiptPDF";
 import { generatePdfBuffer } from "@/lib/pdf-helper";
@@ -50,7 +52,9 @@ type CheckoutForReceipt = {
 async function ensureStripeHostedReceiptUrl(
   checkoutSessions: CheckoutForReceipt[]
 ): Promise<string | null> {
-  const completed = checkoutSessions.filter((s) => s.status === "COMPLETED");
+  const completed = checkoutSessions.filter((s) =>
+    isEntryCheckoutPaidForEligibility(s.status as EntryCheckoutSessionStatus)
+  );
   const withUrl = completed.find((s) => s.stripeReceiptUrl);
   if (withUrl?.stripeReceiptUrl) return withUrl.stripeReceiptUrl;
 
@@ -137,8 +141,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     const format = new URL(request.url).searchParams.get("format");
 
-    const latestCompletedCheckout = entry.checkoutSessions.find(
-      (item) => item.status === "COMPLETED"
+    const latestCompletedCheckout = entry.checkoutSessions.find((item) =>
+      isEntryCheckoutPaidForEligibility(item.status)
     );
     const issuedDate =
       latestCompletedCheckout?.completedAt ??

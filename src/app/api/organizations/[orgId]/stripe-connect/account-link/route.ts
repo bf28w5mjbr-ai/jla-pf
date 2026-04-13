@@ -12,6 +12,21 @@ import {
   STRIPE_CHECKOUT_CLIENT_FAILURE_MESSAGE,
 } from "@/lib/stripeCheckoutGuards";
 
+/** Stripe が「プラットフォーム側の Connect 設定未完了」で返す文言の検知 */
+function isConnectPlatformProfileIncompleteMessage(message: string | null | undefined): boolean {
+  if (!message) return false;
+  const m = message.toLowerCase();
+  return (
+    m.includes("platform-profile") ||
+    m.includes("managing losses") ||
+    m.includes("responsibilities of managing") ||
+    (m.includes("connect") && m.includes("platform profile"))
+  );
+}
+
+const STRIPE_CONNECT_PLATFORM_PROFILE_URL =
+  "https://dashboard.stripe.com/settings/connect/platform-profile";
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ orgId: string }> }
@@ -68,14 +83,20 @@ export async function POST(
     }
     if (error instanceof Stripe.errors.StripeInvalidRequestError) {
       logApiError(ctx, error);
-      const stripeDetail = error.message?.trim();
+      const msg = error.message?.trim() || null;
+      const platformProfilePending = isConnectPlatformProfileIncompleteMessage(msg);
       return NextResponse.json(
         {
-          error:
-            "Stripe Connect の設定を完了できませんでした。Stripe ダッシュボードで Connect が有効か、本番／テストモードがキーと一致しているか確認してください。",
-          /** ダッシュボード設定不備・モード不一致など、Stripe から返る具体的理由（英語のことが多い） */
-          stripeDetail: stripeDetail || undefined,
-          stripeCode: error.code ?? undefined,
+          error: platformProfilePending
+            ? "Stripe の「プラットフォームプロフィール」（紛争・損失の取扱い等）が未完了のため、Connect の本人確認リンクを発行できません。Stripe ダッシュボードで該当画面を開き、表示に沿って最後まで完了してください（テスト／本番は STRIPE_SECRET_KEY のモードに合わせたダッシュボードで操作してください）。"
+            : "Stripe Connect の設定を完了できませんでした。Stripe ダッシュボードで Connect が有効か、本番／テストモードがキーと一致しているか確認してください。",
+          /** Stripe からの本文（空のことがある）。空でも code / param / type で追える */
+          stripeDetail: msg,
+          stripeCode: error.code ?? null,
+          stripeParam: error.param ?? null,
+          stripeType: error.type ?? null,
+          /** プラットフォーム側の未完了時のみ。主催者向け案内用 */
+          stripeActionUrl: platformProfilePending ? STRIPE_CONNECT_PLATFORM_PROFILE_URL : null,
         },
         { status: 400 }
       );

@@ -28,7 +28,10 @@ export function getIndividualEntryPaymentStatusLabel(entry: EntryForPaymentLabel
   }
   if (entry.totalFee === 0) return "決済不要（受付済み）";
   const sessionRecord = entry.checkoutSessions[0];
-  if (sessionRecord?.status === "COMPLETED") return "決済完了";
+  const st = sessionRecord?.status;
+  if (st === "DISPUTE_LOST") return "決済無効（異議・返金確定）";
+  if (st === "DISPUTED") return "決済完了（異議申し立て中）";
+  if (st === "COMPLETED") return "決済完了";
   return "決済確認中";
 }
 

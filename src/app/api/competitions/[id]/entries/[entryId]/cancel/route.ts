@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { isOrgAdminRole } from "@/lib/roleScopes";
+import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
 import { stripe } from "@/lib/stripe";
 
 type RouteContext = {
@@ -60,11 +61,25 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ message: "すでに取消済みです" }, { status: 400 });
     }
 
-    const latestCompletedSession = entry.checkoutSessions.find(
-      (record) => record.status === "COMPLETED" && Boolean(record.stripeCheckoutSessionId)
+    const latestPaidSession = entry.checkoutSessions.find(
+      (record) =>
+        isEntryCheckoutPaidForEligibility(record.status) &&
+        Boolean(record.stripeCheckoutSessionId)
     );
 
     let refundId: string | null = null;
+    if (latestPaidSession?.status === "DISPUTED") {
+      return NextResponse.json(
+        {
+          message:
+            "カード決済に異議申し立てが付いているため、この画面からの自動返金はできません。紛争の結果を Stripe で確認するか、運営へお問い合わせください。",
+        },
+        { status: 409 }
+      );
+    }
+
+    const latestCompletedSession = latestPaidSession;
+
     if (latestCompletedSession?.stripeCheckoutSessionId && entry.totalFee > 0) {
       const checkoutSession = await stripe.checkout.sessions.retrieve(
         latestCompletedSession.stripeCheckoutSessionId,

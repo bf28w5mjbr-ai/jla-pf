@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { appRoutes } from "@/lib/appRoutes";
-import { ArrowRight, CheckCircle2, Clock } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
@@ -48,6 +48,7 @@ export default function EntryHistoryList({ entries, context = "personal", clubNa
                 totalFee: entry.totalFee,
                 checkoutSessions: entry.checkoutSessions.map((s) => ({ status: s.status })),
               });
+              const hasOpenDispute = entry.checkoutSessions.some((s) => s.status === "DISPUTED");
               const paymentStatus =
                 entry.status === "CANCELLED"
                   ? {
@@ -59,7 +60,13 @@ export default function EntryHistoryList({ entries, context = "personal", clubNa
                       color: "text-muted-foreground",
                     }
                   : userStatus.businessEstablished
-                    ? { label: userStatus.userLabel, icon: CheckCircle2, color: "text-emerald-600" }
+                    ? hasOpenDispute
+                      ? {
+                          label: userStatus.userLabel,
+                          icon: AlertTriangle,
+                          color: "text-amber-600 dark:text-amber-400",
+                        }
+                      : { label: userStatus.userLabel, icon: CheckCircle2, color: "text-emerald-600" }
                     : { label: userStatus.userLabel, icon: Clock, color: "text-muted-foreground" };
               const StatusIcon = paymentStatus.icon;
 

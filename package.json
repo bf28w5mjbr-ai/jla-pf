@@ -34,7 +34,8 @@
     "reset:start-list:event": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/reset-start-list-one-event.ts",
     "backfill:event-stored-names": "tsx --tsconfig tsconfig.json --env-file=.env scripts/backfill-event-stored-names.ts",
     "suggest:under-u-from-categories": "tsx --tsconfig tsconfig.json --env-file=.env scripts/suggest-under-u-from-age-categories.ts",
-    "formalize:organization": "tsx --tsconfig tsconfig.json --env-file=.env scripts/formalize-organization-by-name.ts"
+    "formalize:organization": "tsx --tsconfig tsconfig.json --env-file=.env scripts/formalize-organization-by-name.ts",
+    "seed:jla-affiliate-clubs": "tsx --tsconfig tsconfig.json --env-file=.env scripts/seed-jla-affiliate-clubs.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1024.0",

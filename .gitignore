@@ -22,6 +22,7 @@
 
 # misc
 .DS_Store
+.jla-ocr-work/
 *.pem
 
 # debug

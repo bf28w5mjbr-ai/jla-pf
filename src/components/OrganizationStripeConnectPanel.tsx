@@ -78,11 +78,19 @@ export default function OrganizationStripeConnectPanel({
           credentials: "include",
         }
       );
-      let data: { error?: string; url?: string; stripeDetail?: string; stripeCode?: string } = {};
+      let data: {
+        error?: string;
+        url?: string;
+        stripeDetail?: string | null;
+        stripeCode?: string | null;
+        stripeParam?: string | null;
+        stripeType?: string | null;
+        stripeActionUrl?: string | null;
+      } = {};
       const ct = res.headers.get("content-type") ?? "";
       if (ct.includes("application/json")) {
         try {
-          data = (await res.json()) as { error?: string; url?: string };
+          data = (await res.json()) as typeof data;
         } catch {
           data = {};
         }
@@ -96,11 +104,23 @@ export default function OrganizationStripeConnectPanel({
               : res.status === 403
                 ? "この操作を行う権限がありません。"
                 : "Stripe の設定画面を開けませんでした";
-        const detail =
-          typeof data.stripeDetail === "string" && data.stripeDetail.trim()
-            ? `\n\nStripe からのメッセージ: ${data.stripeDetail.trim()}`
+        const primary =
+          typeof data.stripeDetail === "string" && data.stripeDetail.trim() ? data.stripeDetail.trim() : null;
+        const meta = [
+          typeof data.stripeCode === "string" && data.stripeCode.trim() ? `code=${data.stripeCode.trim()}` : null,
+          typeof data.stripeParam === "string" && data.stripeParam.trim() ? `param=${data.stripeParam.trim()}` : null,
+          typeof data.stripeType === "string" && data.stripeType.trim() ? `type=${data.stripeType.trim()}` : null,
+        ].filter(Boolean);
+        const line =
+          primary && meta.length > 0
+            ? `${primary} (${meta.join(" · ")})`
+            : primary || meta.join(" · ") || "";
+        const detail = line ? `\n\nStripe からのメッセージ: ${line}` : "";
+        const action =
+          typeof data.stripeActionUrl === "string" && data.stripeActionUrl.trim()
+            ? `\n\n設定ページ: ${data.stripeActionUrl.trim()}`
             : "";
-        const msg = `${base}${detail}`;
+        const msg = `${base}${detail}${action}`;
         toast.error(msg);
         return;
       }
@@ -118,31 +138,29 @@ export default function OrganizationStripeConnectPanel({
   };
 
   return (
-    <div className="rounded-xl border border-sky-300/80 bg-sky-50/90 p-4 dark:border-sky-900/50 dark:bg-sky-950/25">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1">
-          <p className="flex items-center gap-2 text-sm font-semibold text-sky-950 dark:text-sky-100">
-            <CreditCard className="h-4 w-4 shrink-0" aria-hidden />
-            エントリー代の受け取り口座（Stripe Connect）
+    <div className="rounded-lg border border-sky-300/80 bg-sky-50/90 p-3 dark:border-sky-900/50 dark:bg-sky-950/25 sm:p-3.5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 space-y-0.5">
+          <p className="flex items-center gap-1.5 text-xs font-semibold text-sky-950 dark:text-sky-100 sm:text-sm">
+            <CreditCard className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" aria-hidden />
+            エントリー代の受け取り（Connect）
           </p>
-          <p className="text-xs leading-relaxed text-sky-900/90 dark:text-sky-200/90">
-            参加者からのエントリー代は、ご登録の Connect アカウントへ送金されます（プラットフォーム手数料を除く）。
-            {chargesEnabled
-              ? " 現在、決済を受け付け可能な状態です。"
-              : " 初回のみ Stripe の画面で事業者情報の登録が必要です。"}
+          <p className="text-[11px] leading-snug text-sky-900/90 dark:text-sky-200/90 sm:text-xs">
+            参加費は Connect 口座へ（PF 手数料を除く）。
+            {chargesEnabled ? " 受付可能です。" : " 初回は Stripe で事業者登録が必要です。"}
           </p>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+        <div className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:justify-end">
           <Button
             type="button"
             onClick={handleCheckStatus}
             disabled={checkLoading || loading}
             variant="outline"
             size="sm"
-            className="gap-1.5 sm:min-w-[200px]"
+            className="h-8 gap-1 px-2.5 text-xs sm:h-9 sm:min-w-0 sm:px-3 sm:text-sm"
           >
             <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${checkLoading ? "animate-spin" : ""}`} aria-hidden />
-            {checkLoading ? "確認中..." : "接続状態を確認"}
+            {checkLoading ? "確認中..." : "状態を確認"}
           </Button>
           {!chargesEnabled ? (
             <Button
@@ -150,9 +168,10 @@ export default function OrganizationStripeConnectPanel({
               onClick={handleConnect}
               disabled={loading || checkLoading}
               variant="secondary"
-              className="sm:min-w-[200px]"
+              size="sm"
+              className="h-8 text-xs sm:h-9 sm:text-sm"
             >
-              {loading ? "接続処理中..." : "口座・本人確認を行う"}
+              {loading ? "処理中..." : "口座・本人確認"}
             </Button>
           ) : null}
         </div>

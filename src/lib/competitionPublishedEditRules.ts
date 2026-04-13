@@ -58,7 +58,9 @@ export async function loadCompetitionMutationState(
         OR: [
           { totalFee: { lte: 0 } },
           {
-            checkoutSessions: { some: { status: "COMPLETED" } },
+            checkoutSessions: {
+              some: { status: { in: ["COMPLETED", "DISPUTED", "DISPUTE_LOST"] } },
+            },
           },
         ],
       },

@@ -1,7 +1,13 @@
 import { notFound } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/server/db";
+import { parseClubIdFromTeamEntryPaymentOwnerId } from "@/lib/competitionStripeDisputeAccess";
+import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
+import { stripe } from "@/lib/stripe";
 import { buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
+import CompetitionDisputeEvidencePanel, {
+  type DisputeEvidenceRow,
+} from "@/components/admin/CompetitionDisputeEvidencePanel";
 import { CompetitionBalanceSheetPanel } from "@/components/admin/CompetitionBalanceSheetPanel";
 
 type Props = {
@@ -11,6 +17,22 @@ type Props = {
 };
 
 const formatYen = (n: number) => `¥${n.toLocaleString("ja-JP")}`;
+
+async function stripeDisputeSummary(disputeId: string): Promise<{
+  status: string;
+  dueByLabel: string | null;
+}> {
+  try {
+    const d = await stripe.disputes.retrieve(disputeId);
+    const due = d.evidence_details?.due_by;
+    return {
+      status: d.status,
+      dueByLabel: typeof due === "number" ? new Date(due * 1000).toLocaleString("ja-JP") : null,
+    };
+  } catch {
+    return { status: "（Stripe参照失敗）", dueByLabel: null };
+  }
+}
 
 function Stat({
   label,
@@ -110,7 +132,7 @@ export default async function CompetitionFinanceTabContent({
   for (const e of entries) {
     if (e.status === "CANCELLED") continue;
     if (e.totalFee <= 0) continue;
-    const completed = e.checkoutSessions[0]?.status === "COMPLETED";
+    const completed = isEntryCheckoutPaidForEligibility(e.checkoutSessions[0]?.status);
     if (completed) individualReceived += e.totalFee;
     else individualPending += e.totalFee;
   }
@@ -134,7 +156,7 @@ export default async function CompetitionFinanceTabContent({
   let teamReceived = 0;
   let teamPending = 0;
   for (const p of teamPayments) {
-    if (p.status === "SUCCEEDED") {
+    if (p.status === "SUCCEEDED" || p.status === "DISPUTED") {
       teamReceived += p.amount;
     } else if (p.status === "PENDING") {
       teamPending += p.amount;
@@ -180,6 +202,81 @@ export default async function CompetitionFinanceTabContent({
     teamSubParts.push(`未入金クラブ ${clubsWithTeamEntryButNoSucceededPayment}件`);
   }
 
+  const teamOwnerPrefix = `competition-team-entry:${competition.id}:`;
+  const [openEntryDisputes, openTeamDisputes] = await Promise.all([
+    prisma.entryCheckoutSession.findMany({
+      where: {
+        competitionId: competition.id,
+        status: "DISPUTED",
+        stripeDisputeId: { not: null },
+      },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        stripeDisputeId: true,
+        amount: true,
+        user: { select: { familyName: true, givenName: true, email: true } },
+      },
+    }),
+    prisma.payment.findMany({
+      where: {
+        status: "DISPUTED",
+        type: "COMPETITION_ENTRY_FEE",
+        ownerType: "CLUB",
+        ownerId: { startsWith: teamOwnerPrefix },
+        stripeDisputeId: { not: null },
+      },
+      select: {
+        stripeDisputeId: true,
+        amount: true,
+        ownerId: true,
+      },
+    }),
+  ]);
+
+  const disputedClubIds = [
+    ...new Set(
+      openTeamDisputes
+        .map((p) => parseClubIdFromTeamEntryPaymentOwnerId(competition.id, p.ownerId))
+        .filter((id): id is string => Boolean(id))
+    ),
+  ];
+  const disputedClubs =
+    disputedClubIds.length > 0
+      ? await prisma.club.findMany({
+          where: { id: { in: disputedClubIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+  const disputedClubMap = new Map(disputedClubs.map((c) => [c.id, c.name]));
+
+  const disputeRows: DisputeEvidenceRow[] = [];
+  for (const row of openEntryDisputes) {
+    const disputeId = row.stripeDisputeId;
+    if (!disputeId) continue;
+    const sum = await stripeDisputeSummary(disputeId);
+    disputeRows.push({
+      disputeId,
+      scopeLabel: `個人エントリー: ${row.user.familyName} ${row.user.givenName}（${row.user.email}）`,
+      amountYen: row.amount,
+      dueByLabel: sum.dueByLabel,
+      stripeStatus: sum.status,
+    });
+  }
+  for (const row of openTeamDisputes) {
+    const disputeId = row.stripeDisputeId;
+    if (!disputeId) continue;
+    const clubId = parseClubIdFromTeamEntryPaymentOwnerId(competition.id, row.ownerId);
+    const clubName = clubId ? disputedClubMap.get(clubId) : undefined;
+    const sum = await stripeDisputeSummary(disputeId);
+    disputeRows.push({
+      disputeId,
+      scopeLabel: `チーム請求: ${clubName ?? "クラブ"}${clubId ? `（${clubId}）` : ""}`,
+      amountYen: row.amount,
+      dueByLabel: sum.dueByLabel,
+      stripeStatus: sum.status,
+    });
+  }
+
   return (
     <Card className="min-w-0 overflow-hidden">
       <CardHeader className="space-y-1 border-b border-border bg-muted/30 py-3">
@@ -216,6 +313,12 @@ export default async function CompetitionFinanceTabContent({
             />
           </div>
         </section>
+
+        <CompetitionDisputeEvidencePanel
+          organizationId={organizationId}
+          competitionId={competition.id}
+          rows={disputeRows}
+        />
 
         <section
           aria-labelledby="finance-manual-heading"

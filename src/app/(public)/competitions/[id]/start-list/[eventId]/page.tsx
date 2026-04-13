@@ -5,6 +5,7 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { verifySessionCached } from "@/lib/auth";
+import { competitionEntryPaidCheckoutWhere } from "@/lib/entryCheckoutSessionPaid";
 import { prisma } from "@/server/db";
 import { Button } from "@/components/ui/button";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
@@ -159,7 +160,7 @@ export default async function CompetitionEventStartListPage({
       where: {
         competitionId,
         status: "SUBMITTED",
-        OR: [{ totalFee: { lte: 0 } }, { checkoutSessions: { some: { status: "COMPLETED" } } }],
+        OR: [{ totalFee: { lte: 0 } }, competitionEntryPaidCheckoutWhere],
         items: { some: { eventId } },
       },
       select: {

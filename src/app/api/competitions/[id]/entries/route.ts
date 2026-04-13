@@ -15,6 +15,7 @@ import { applicationFeeAmountYen } from "@/lib/platformFee";
 import { connectRequirementSkipped, paidEntryCheckoutBlockReason } from "@/lib/organizerBilling";
 import { refreshOrganizationStripeConnectFlags } from "@/lib/organizerStripeConnect";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
+import { ENTRY_CHECKOUT_PAID_STATUSES } from "@/lib/entryCheckoutSessionPaid";
 import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
 import { refreshStartListSnapshotAfterEligibleEntryChange } from "@/lib/startListSnapshot";
 import { clearIndividualWithdrawalParticipantStatusesForEvents } from "@/lib/entryWithdrawalReinstatement";
@@ -485,7 +486,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
       if (existingEntry && !isAdmin && existingEntry.totalFee > 0) {
         const hasCompletedCheckout = await tx.entryCheckoutSession.findFirst({
-          where: { entryId: existingEntry.id, status: "COMPLETED" },
+          where: { entryId: existingEntry.id, status: { in: [...ENTRY_CHECKOUT_PAID_STATUSES] } },
           select: { id: true },
         });
         if (!hasCompletedCheckout) {
@@ -626,7 +627,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const latestCompletedCheckout = await prisma.entryCheckoutSession.findFirst({
       where: {
         entryId: result.entry.id,
-        status: "COMPLETED",
+        status: { in: [...ENTRY_CHECKOUT_PAID_STATUSES] },
       },
       orderBy: { createdAt: "desc" },
       select: { status: true },
@@ -654,7 +655,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         where: {
           entryId: result.entry.id,
           stripeCheckoutSessionId: { not: null },
-          status: { not: "COMPLETED" },
+          status: "PENDING",
         },
         orderBy: { createdAt: "desc" },
         select: { stripeCheckoutSessionId: true },
@@ -673,7 +674,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             const afterSync = await prisma.entryCheckoutSession.findFirst({
               where: {
                 entryId: result.entry.id,
-                status: "COMPLETED",
+                status: { in: [...ENTRY_CHECKOUT_PAID_STATUSES] },
               },
               orderBy: { createdAt: "desc" },
               select: { status: true },

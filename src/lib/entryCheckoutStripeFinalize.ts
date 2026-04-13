@@ -38,6 +38,13 @@ export type FinalizedEntryCheckoutTarget = {
   competitionId: string;
 };
 
+function extractPaymentIntentId(
+  ref: string | Stripe.PaymentIntent | null | undefined
+): string | null {
+  if (!ref) return null;
+  return typeof ref === "string" ? ref : ref.id;
+}
+
 /**
  * Stripe 上で入金確定している Checkout Session に紐づく EntryCheckoutSession を COMPLETED にする。
  * Webhook とエントリーページの自己修復の双方から呼ぶ（冪等）。
@@ -78,12 +85,15 @@ export async function finalizeEntryCheckoutSessionsFromStripeSession(
     }
   }
 
+  const paymentIntentId = extractPaymentIntentId(resolved.payment_intent);
+
   await prisma.entryCheckoutSession.updateMany({
     where: { OR: conditions },
     data: {
       status: "COMPLETED",
       completedAt: new Date(),
       ...(stripeReceiptUrl ? { stripeReceiptUrl } : {}),
+      ...(paymentIntentId ? { stripePaymentIntentId: paymentIntentId } : {}),
     },
   });
 

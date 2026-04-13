@@ -15,6 +15,7 @@ import {
   assertHeatSettingsUnchangedForMarshalLockedEvents,
   mergeEventSettingsForMarshalCompare,
 } from "@/lib/eventHeatPlanMarshal";
+import { competitionEntryPaidCheckoutWhere } from "@/lib/entryCheckoutSessionPaid";
 import { prisma } from "@/server/db";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
@@ -96,7 +97,7 @@ export async function PUT(
                 status: "SUBMITTED",
                 OR: [
                   { totalFee: { lte: 0 } },
-                  { checkoutSessions: { some: { status: "COMPLETED" } } },
+                  competitionEntryPaidCheckoutWhere,
                 ],
               },
             },

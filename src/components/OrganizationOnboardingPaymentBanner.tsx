@@ -42,23 +42,24 @@ export default function OrganizationOnboardingPaymentBanner({
   };
 
   return (
-    <div className="rounded-xl border border-amber-300 bg-amber-50/90 p-4 dark:border-amber-900/50 dark:bg-amber-950/30">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1">
-          <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
-            プラットフォーム利用料（年額）のお支払いが必要です
+    <div className="rounded-lg border border-amber-300 bg-amber-50/90 p-3 dark:border-amber-900/50 dark:bg-amber-950/30 sm:p-3.5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 space-y-0.5">
+          <p className="text-xs font-semibold text-amber-900 dark:text-amber-100 sm:text-sm">
+            年額利用料のお支払いが必要です
           </p>
-          <p className="text-xs leading-relaxed text-amber-800/90 dark:text-amber-200/90">
-            正式利用には年額 {formatted} 円のサブスクリプション登録が必要です。決済完了後に主催団体が有効化されます。
+          <p className="text-[11px] leading-snug text-amber-800/90 dark:text-amber-200/90 sm:text-xs">
+            年額 {formatted} 円。決済完了後に主催団体が有効化されます。
           </p>
         </div>
         <Button
           type="button"
           onClick={handleCheckout}
           disabled={loading}
-          className="sm:min-w-[170px]"
+          size="sm"
+          className="h-8 shrink-0 text-xs sm:h-9 sm:min-w-[160px] sm:text-sm"
         >
-          {loading ? "決済ページへ遷移中..." : "年額プランに登録する"}
+          {loading ? "遷移中..." : "年額プランに登録"}
         </Button>
       </div>
     </div>

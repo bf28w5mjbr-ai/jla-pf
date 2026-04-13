@@ -303,7 +303,7 @@ export default async function OrganizationDetailPage({
   const officeAddressLine = officeAddressParts.join(" ");
 
   return (
-    <div className="app-page mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:space-y-8 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+    <div className="app-page mx-auto w-full max-w-6xl space-y-4 px-3 py-4 sm:space-y-5 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
       {needsOnboardingPayment && (
         <OrganizationOnboardingPaymentBanner
           organizationId={organization.id}
@@ -317,57 +317,57 @@ export default async function OrganizationDetailPage({
         />
       )}
 
-      <header className="space-y-6">
-        <Button variant="outline" size="sm" className="gap-1.5" asChild>
-          <Link href="/dashboard">
-            <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
-            ダッシュボードに戻る
-          </Link>
-        </Button>
-
-        <div className="overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-muted/40 via-background to-background shadow-sm">
-          <div className="space-y-5 p-5 sm:p-7">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-              <div className="min-w-0 space-y-2">
-                <div className="flex items-center gap-2 text-primary">
-                  <Landmark className="h-5 w-5 shrink-0" strokeWidth={1.75} aria-hidden />
-                  <span className="text-sm font-medium">大会主催者</span>
-                </div>
-                <h1 className="text-balance text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-                  {organization.name}
-                </h1>
-                {nameSubtitleParts.length > 0 ? (
-                  <p className="text-sm text-muted-foreground">{nameSubtitleParts.join(" · ")}</p>
-                ) : null}
-                <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                  大会・メンバー・事業情報をまとめて管理します。よく使う操作は下のタブから選べます。
-                </p>
-              </div>
-
-              <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                <Button variant="outline" size="sm" className="gap-1.5" asChild>
+      <header>
+        <div className="overflow-hidden rounded-xl border border-border/70 bg-gradient-to-br from-muted/40 via-background to-background shadow-sm">
+          <div className="space-y-3 p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 px-2.5 text-xs sm:text-sm" asChild>
+                <Link href="/dashboard">
+                  <ArrowLeft className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" aria-hidden />
+                  <span className="max-sm:sr-only">ダッシュボードに戻る</span>
+                  <span className="sm:hidden">戻る</span>
+                </Link>
+              </Button>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+                <Button variant="outline" size="sm" className="h-8 gap-1 px-2.5 text-xs sm:gap-1.5 sm:px-3 sm:text-sm" asChild>
                   <Link href={`/organizations/${organization.id}/edit`}>
-                    プロフィールを編集
-                    <ChevronRight className="h-4 w-4 opacity-70" aria-hidden />
+                    編集
+                    <ChevronRight className="h-3.5 w-3.5 opacity-70 sm:h-4 sm:w-4" aria-hidden />
                   </Link>
                 </Button>
                 {isOrgAdmin ? (
-                  <Button size="sm" className="gap-2 shadow-sm" asChild>
+                  <Button size="sm" className="h-8 gap-1.5 px-2.5 text-xs shadow-sm sm:gap-2 sm:px-3 sm:text-sm" asChild>
                     <Link href={`/organizations/${organization.id}/competitions/create`}>
-                      <Plus className="h-4 w-4" aria-hidden />
-                      大会を作成
+                      <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
+                      大会作成
                     </Link>
                   </Button>
                 ) : null}
               </div>
             </div>
 
+            <div className="min-w-0 space-y-1">
+              <div className="flex items-center gap-1.5 text-primary">
+                <Landmark className="h-4 w-4 shrink-0 sm:h-[1.125rem] sm:w-[1.125rem]" strokeWidth={1.75} aria-hidden />
+                <span className="text-xs font-medium sm:text-sm">大会主催者</span>
+              </div>
+              <h1 className="text-balance text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+                {organization.name}
+              </h1>
+              {nameSubtitleParts.length > 0 ? (
+                <p className="text-xs text-muted-foreground sm:text-sm">{nameSubtitleParts.join(" · ")}</p>
+              ) : null}
+              <p className="max-w-2xl text-[11px] leading-snug text-muted-foreground sm:text-xs">
+                大会・メンバー・事業は下のタブから管理できます。
+              </p>
+            </div>
+
             <div
-              className="grid gap-2 border-t border-border/60 pt-5 sm:grid-cols-3"
+              className="grid gap-1.5 border-t border-border/60 pt-3 sm:grid-cols-3 sm:gap-2 sm:pt-3.5"
               role="group"
               aria-label="団体の概要"
             >
-              <div className="flex min-h-[3.25rem] flex-col justify-center rounded-xl border border-border/60 bg-card/60 px-3 py-2.5 sm:px-4">
+              <div className="flex min-h-[2.75rem] flex-col justify-center rounded-lg border border-border/60 bg-card/60 px-2.5 py-2 sm:min-h-[3rem] sm:px-3">
                 <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                   状態
                 </span>
@@ -381,27 +381,27 @@ export default async function OrganizationDetailPage({
                     organization.status}
                 </span>
               </div>
-              <div className="flex min-h-[3.25rem] items-center gap-3 rounded-xl border border-border/60 bg-card/60 px-3 py-2.5 sm:px-4">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Trophy className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+              <div className="flex min-h-[2.75rem] items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2.5 py-2 sm:min-h-[3rem] sm:gap-2.5 sm:px-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary sm:h-9 sm:w-9">
+                  <Trophy className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={1.75} aria-hidden />
                 </div>
                 <div>
                   <span className="text-[11px] font-medium text-muted-foreground">登録大会</span>
-                  <p className="text-sm font-semibold tabular-nums text-foreground">
+                  <p className="text-xs font-semibold tabular-nums text-foreground sm:text-sm">
                     {competitionTotalCount.toLocaleString("ja-JP")}
-                    <span className="ml-1 text-xs font-normal text-muted-foreground">件</span>
+                    <span className="ml-1 text-[10px] font-normal text-muted-foreground sm:text-xs">件</span>
                   </p>
                 </div>
               </div>
-              <div className="flex min-h-[3.25rem] items-center gap-3 rounded-xl border border-border/60 bg-card/60 px-3 py-2.5 sm:px-4">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Users className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+              <div className="flex min-h-[2.75rem] items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2.5 py-2 sm:min-h-[3rem] sm:gap-2.5 sm:px-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary sm:h-9 sm:w-9">
+                  <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={1.75} aria-hidden />
                 </div>
                 <div>
                   <span className="text-[11px] font-medium text-muted-foreground">メンバー</span>
-                  <p className="text-sm font-semibold tabular-nums text-foreground">
+                  <p className="text-xs font-semibold tabular-nums text-foreground sm:text-sm">
                     {organization.admins.length.toLocaleString("ja-JP")}
-                    <span className="ml-1 text-xs font-normal text-muted-foreground">名</span>
+                    <span className="ml-1 text-[10px] font-normal text-muted-foreground sm:text-xs">名</span>
                   </p>
                 </div>
               </div>
@@ -411,14 +411,14 @@ export default async function OrganizationDetailPage({
       </header>
 
       <Card className="overflow-hidden border-border/90 shadow-sm">
-        <CardHeader className="border-b border-border/60 bg-muted/15 px-4 py-2.5 sm:px-6">
-          <CardTitle className="text-base font-semibold">基本情報</CardTitle>
-          <CardDescription className="text-xs">
-            ロゴ・連絡先・所在地など、公開ページや大会情報に反映される内容です。
+        <CardHeader className="border-b border-border/60 bg-muted/15 px-3 py-2 sm:px-5">
+          <CardTitle className="text-sm font-semibold sm:text-base">基本情報</CardTitle>
+          <CardDescription className="text-[11px] leading-snug sm:text-xs">
+            ロゴ・連絡先・所在地（公開・大会に反映）
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-0 p-0">
-          <div className="bg-muted/10 px-4 py-3 sm:px-6 sm:py-3.5">
+          <div className="bg-muted/10 px-3 py-2.5 sm:px-5 sm:py-3">
             <OrganizationLogoManager
               organizationId={organization.id}
               currentLogoUrl={organization.logoUrl}
@@ -427,7 +427,7 @@ export default async function OrganizationDetailPage({
             />
           </div>
 
-          <div className="border-t border-border/60 px-4 py-3 sm:px-6 sm:py-3.5">
+          <div className="border-t border-border/60 px-3 py-2.5 sm:px-5 sm:py-3">
             <div className="rounded-lg border border-border/70 bg-card/40 p-2 sm:p-2.5">
               <div className="grid gap-1.5 text-sm sm:grid-cols-2 sm:gap-x-3 sm:gap-y-2 lg:grid-cols-3">
                 {organization.representativeFamilyName || organization.representativeGivenName ? (
@@ -549,16 +549,16 @@ export default async function OrganizationDetailPage({
         </CardContent>
       </Card>
 
-      <div className="space-y-6">
+      <div className="space-y-4">
         <OrganizationDetailTabsClient activeTab={activeTab}>
-          <div className="sticky top-[calc(var(--safe-area-top,0px)+0.5rem)] z-10 -mx-4 border-y border-border/60 bg-background/95 px-4 py-2 backdrop-blur-md sm:static sm:mx-0 sm:rounded-xl sm:border sm:bg-muted/35 sm:px-1.5 sm:py-1.5 sm:backdrop-blur-none">
+          <div className="sticky top-[calc(var(--safe-area-top,0px)+0.5rem)] z-10 -mx-3 border-y border-border/60 bg-background/95 px-3 py-1.5 backdrop-blur-md sm:static sm:mx-0 sm:rounded-lg sm:border sm:bg-muted/35 sm:px-1 sm:py-1 sm:backdrop-blur-none">
             <TabsList
-              className="flex h-auto w-full items-stretch gap-1 overflow-x-auto bg-transparent p-0"
+              className="flex h-auto w-full items-stretch gap-0.5 overflow-x-auto bg-transparent p-0 sm:gap-1"
               aria-label="団体管理の区分"
             >
               <TabsTrigger
                 value="competitions"
-                className="min-w-[8.5rem] flex-1 gap-1.5 rounded-lg px-2 py-2 text-xs data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:text-sm"
+                className="min-w-[7.25rem] flex-1 gap-1 rounded-md px-1.5 py-1.5 text-[11px] data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:min-w-[8rem] sm:gap-1.5 sm:rounded-lg sm:px-2 sm:py-2 sm:text-xs md:text-sm"
               >
                 <Trophy className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
                 <span>大会管理</span>
@@ -568,7 +568,7 @@ export default async function OrganizationDetailPage({
               </TabsTrigger>
               <TabsTrigger
                 value="members"
-                className="min-w-[7.5rem] flex-1 gap-1.5 rounded-lg px-2 py-2 text-xs data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:text-sm"
+                className="min-w-[6.5rem] flex-1 gap-1 rounded-md px-1.5 py-1.5 text-[11px] data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:min-w-[7.5rem] sm:gap-1.5 sm:rounded-lg sm:px-2 sm:py-2 sm:text-xs md:text-sm"
               >
                 <Users className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
                 <span>メンバー</span>
@@ -578,7 +578,7 @@ export default async function OrganizationDetailPage({
               </TabsTrigger>
               <TabsTrigger
                 value="business"
-                className="min-w-[7.5rem] flex-1 gap-1.5 rounded-lg px-2 py-2 text-xs data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:text-sm"
+                className="min-w-[6.5rem] flex-1 gap-1 rounded-md px-1.5 py-1.5 text-[11px] data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:min-w-[7.5rem] sm:gap-1.5 sm:rounded-lg sm:px-2 sm:py-2 sm:text-xs md:text-sm"
               >
                 <Landmark className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
                 <span>事業パネル</span>
@@ -587,22 +587,18 @@ export default async function OrganizationDetailPage({
           </div>
 
           {/* 大会管理タブ */}
-          <TabsContent value="competitions" className="space-y-6 pt-2">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-primary">
-                  <Trophy className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-                  <span className="text-sm font-medium">大会一覧</span>
-                </div>
-                <h2 className="text-lg font-semibold text-foreground">登録済みの大会</h2>
-                <p className="max-w-2xl text-sm text-muted-foreground">
-                  行をクリックすると各大会の編集・公開設定・エントリー状況へ進みます。
+          <TabsContent value="competitions" className="space-y-3 pt-1.5 sm:space-y-4 sm:pt-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 space-y-0.5">
+                <h2 className="text-base font-semibold text-foreground sm:text-lg">登録済みの大会</h2>
+                <p className="text-[11px] text-muted-foreground sm:text-xs">
+                  行をクリックで編集・公開・エントリーへ
                 </p>
               </div>
               {isOrgAdmin ? (
-                <Button className="shrink-0 gap-2" asChild>
+                <Button size="sm" className="h-8 shrink-0 gap-1.5 text-xs sm:h-9 sm:text-sm" asChild>
                   <Link href={`/organizations/${organization.id}/competitions/create`}>
-                    <Plus className="h-4 w-4" aria-hidden />
+                    <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
                     大会を作成
                   </Link>
                 </Button>
@@ -610,23 +606,23 @@ export default async function OrganizationDetailPage({
             </div>
 
             <Card className="overflow-hidden border-border/90 shadow-sm">
-              <CardHeader className="border-b border-border/60 bg-muted/15 px-4 py-4 sm:px-6">
-                <CardTitle className="text-base font-semibold">
+              <CardHeader className="border-b border-border/60 bg-muted/15 px-3 py-2.5 sm:px-5 sm:py-3">
+                <CardTitle className="text-sm font-semibold sm:text-base">
                   大会{" "}
                   <span className="tabular-nums">
                     {competitionTotalCount.toLocaleString("ja-JP")}
                   </span>
                   件
                   {competitionTotalCount > competitions.length ? (
-                    <span className="mt-1 block text-xs font-normal text-muted-foreground">
-                      直近 {competitions.length} 件を表示しています（作成日の新しい順）
+                    <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground sm:text-xs">
+                      直近 {competitions.length} 件（新しい順）
                     </span>
                   ) : null}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-4 sm:p-6">
+              <CardContent className="p-3 sm:p-5">
                 {competitions.length > 0 ? (
-                  <div className="space-y-3">
+                  <div className="space-y-2 sm:space-y-2.5">
                     {competitions.map((competition) => (
                       <CompetitionListItem
                         key={competition.id}
@@ -637,18 +633,18 @@ export default async function OrganizationDetailPage({
                     ))}
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/90 bg-muted/20 px-6 py-12 text-center">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                      <Trophy className="h-6 w-6" strokeWidth={1.5} aria-hidden />
+                  <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/90 bg-muted/20 px-4 py-8 text-center sm:py-10">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <Trophy className="h-5 w-5" strokeWidth={1.5} aria-hidden />
                     </div>
-                    <p className="mt-4 text-sm font-medium text-foreground">まだ大会がありません</p>
-                    <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                      大会を作成すると、ここに一覧表示され、公開ページやエントリー設定を進められます。
+                    <p className="mt-3 text-sm font-medium text-foreground">まだ大会がありません</p>
+                    <p className="mt-1 max-w-sm text-xs text-muted-foreground sm:text-sm">
+                      作成すると一覧に表示され、公開・エントリー設定に進めます。
                     </p>
                     {isOrgAdmin ? (
-                      <Button className="mt-6 gap-2" asChild>
+                      <Button size="sm" className="mt-4 gap-1.5" asChild>
                         <Link href={`/organizations/${organization.id}/competitions/create`}>
-                          <Plus className="h-4 w-4" aria-hidden />
+                          <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
                           大会を作成
                         </Link>
                       </Button>
@@ -660,27 +656,23 @@ export default async function OrganizationDetailPage({
           </TabsContent>
 
           {/* メンバータブ */}
-          <TabsContent value="members" className="space-y-6 pt-2">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-primary">
-                <Users className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-                <span className="text-sm font-medium">管理者・メンバー</span>
-              </div>
-              <h2 className="text-lg font-semibold text-foreground">団体へのアクセス</h2>
-              <p className="max-w-2xl text-sm text-muted-foreground">
-                主催団体の管理権限を持つユーザーの一覧です。招待やロール変更はここから行えます。
+          <TabsContent value="members" className="space-y-3 pt-1.5 sm:space-y-4 sm:pt-2">
+            <div className="space-y-0.5">
+              <h2 className="text-base font-semibold text-foreground sm:text-lg">メンバー</h2>
+              <p className="text-[11px] text-muted-foreground sm:text-xs">
+                招待・ロール変更は下の一覧から
               </p>
             </div>
             <Card className="overflow-hidden border-border/90 shadow-sm">
-              <CardHeader className="border-b border-border/60 bg-muted/15 px-4 py-4 sm:px-6">
-                <CardTitle className="text-base font-semibold">
-                  メンバー {organization.admins.length} 名
+              <CardHeader className="border-b border-border/60 bg-muted/15 px-3 py-2.5 sm:px-5 sm:py-3">
+                <CardTitle className="text-sm font-semibold sm:text-base">
+                  {organization.admins.length} 名
                 </CardTitle>
-                <CardDescription className="text-xs sm:text-sm">
-                  管理者は大会作成や設定変更が可能です。
+                <CardDescription className="text-[11px] sm:text-xs">
+                  管理者は大会作成・設定変更が可能です。
                 </CardDescription>
               </CardHeader>
-              <CardContent className="p-4 sm:p-6">
+              <CardContent className="p-3 sm:p-5">
                 <MemberManagementWrapper
                   organizationId={organization.id}
                   members={organization.admins}
@@ -691,12 +683,10 @@ export default async function OrganizationDetailPage({
             </Card>
           </TabsContent>
 
-          <TabsContent value="business" className="space-y-6 pt-2">
-            <div className="space-y-1">
-              <h2 className="text-lg font-semibold text-foreground">事業パネル</h2>
-              <p className="max-w-2xl text-sm text-muted-foreground">
-                収支や事業に関する情報をまとめて確認できます。
-              </p>
+          <TabsContent value="business" className="space-y-3 pt-1.5 sm:space-y-4 sm:pt-2">
+            <div className="space-y-0.5">
+              <h2 className="text-base font-semibold text-foreground sm:text-lg">事業パネル</h2>
+              <p className="text-[11px] text-muted-foreground sm:text-xs">収支・事業情報の確認</p>
             </div>
             <OrganizationBusinessPanelTabContent
               organizationId={organization.id}

@@ -1,4 +1,5 @@
 import type { CompetitionEntryStatus, EntryCheckoutSessionStatus } from "@prisma/client";
+import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
 
 type CheckoutRow = {
@@ -120,17 +121,21 @@ export function buildEntryCompletionReceipt(args: {
         ? `${competitionName} へのエントリーは成立しました。`
         : `${competitionName} のエントリー手続きが完了しました（入金確認中）。`;
 
+  const sessionStatus = sessionRecord?.status as EntryCheckoutSessionStatus | undefined;
   const showPaymentPendingBlock =
     entry.status !== "CANCELLED" &&
     entry.totalFee > 0 &&
-    sessionRecord?.status !== "COMPLETED";
+    !isEntryCheckoutPaidForEligibility(sessionStatus) &&
+    sessionStatus !== "DISPUTE_LOST";
 
   const pollerActive =
     entry.status !== "CANCELLED" && entry.totalFee > 0 && !entryState.businessEstablished;
 
   const stripeReceiptUrl =
-    entry.checkoutSessions.find((s) => s.status === "COMPLETED" && s.stripeReceiptUrl)?.stripeReceiptUrl ??
-    null;
+    entry.checkoutSessions.find(
+      (s) =>
+        isEntryCheckoutPaidForEligibility(s.status as EntryCheckoutSessionStatus) && s.stripeReceiptUrl
+    )?.stripeReceiptUrl ?? null;
 
   return {
     competitionName,
