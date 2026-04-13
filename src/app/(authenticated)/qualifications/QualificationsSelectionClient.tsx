@@ -280,7 +280,7 @@ export default function QualificationsSelectionClient({
       const ok = results.filter((r) => r.status === "fulfilled").length;
       const ng = results.filter((r) => r.status === "rejected");
       if (ok > 0) {
-        toast.success(`${ok}件を暫定紐付けしました（審査待ち）`);
+        toast.success(`${ok}件を暫定紐付けしました`);
         router.refresh();
       }
       if (ng.length > 0) {

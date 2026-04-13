@@ -232,6 +232,7 @@ export async function POST(req: NextRequest) {
         status: { in: ["PENDING", "APPROVED"] },
       },
       select: {
+        id: true,
         kind: true,
         status: true,
         expiryDate: true,
@@ -249,10 +250,7 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
-      return NextResponse.json(
-        { error: "既に申請済みです" },
-        { status: 400 }
-      );
+      // 旧データの PENDING は再送時にそのまま承認済みへ更新する（審査フロー廃止後の取りこぼし解消）
     }
 
     if (!isProvisionalLink && requestedKind === "BLS・WS") {
@@ -381,8 +379,36 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 資格申請作成 + アカウント（User）への JLA メンバーIDの紐付け
+    // 資格登録（承認不要・即時有効）+ アカウント（User）への JLA メンバーIDの紐付け
     const qualification = await prisma.$transaction(async (tx) => {
+      if (existingMatch?.status === "PENDING") {
+        const updated = await tx.qualification.update({
+          where: { id: existingMatch.id },
+          data: {
+            kind: requestedKind,
+            certNumber: effectiveCert,
+            issueDate: data.issueDate ? new Date(data.issueDate) : null,
+            expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
+            status: "APPROVED",
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                givenName: true,
+                familyName: true,
+              },
+            },
+          },
+        });
+        await tx.user.update({
+          where: { id: sess.userId },
+          data: { jlaMemberNumber: effectiveCert },
+        });
+        return updated;
+      }
+
       const created = await tx.qualification.create({
         data: {
           userId: sess.userId,
@@ -390,7 +416,7 @@ export async function POST(req: NextRequest) {
           certNumber: effectiveCert,
           issueDate: data.issueDate ? new Date(data.issueDate) : null,
           expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
-          status: "PENDING",
+          status: "APPROVED",
         },
         include: {
           user: {
@@ -418,7 +444,12 @@ export async function POST(req: NextRequest) {
         actorUserId: sess.userId,
         action: "QUALIFICATION_APPLY",
         target: `qualification:${qualification.id}`,
-        meta: { kind: requestedKind, certNumber: effectiveCert, provisionalLink: isProvisionalLink },
+        meta: {
+          kind: requestedKind,
+          certNumber: effectiveCert,
+          provisionalLink: isProvisionalLink,
+          autoApproved: true,
+        },
       },
     });
 

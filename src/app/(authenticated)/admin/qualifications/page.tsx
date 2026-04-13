@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import QualificationApprovalTable from '@/components/admin/QualificationApprovalTable';
 
 export const metadata: Metadata = {
-  title: '資格承認 | Bluvium Admin',
+  title: "資格の確認 | Bluvium Admin",
 };
 
 export default async function AdminQualificationsPage() {
@@ -34,10 +34,10 @@ export default async function AdminQualificationsPage() {
     );
   }
 
-  // PENDING 状態の資格を取得
+  // 有効以外（旧審査待ち・却下・期限切れ）。新規登録は即 APPROVED のため通常は件数少ない
   const pendingQualifications = await prisma.qualification.findMany({
     where: {
-      status: 'PENDING',
+      status: { in: ["PENDING", "REJECTED", "EXPIRED"] },
     },
     include: {
       user: {

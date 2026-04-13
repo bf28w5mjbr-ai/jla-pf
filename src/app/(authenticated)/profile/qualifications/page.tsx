@@ -209,7 +209,7 @@ export default async function ProfileQualificationsPage() {
             保有資格の管理
           </h1>
           <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            登録資格・保有資格・未取得の資格を一覧し、申請状況や講習への導線をまとめています。
+            登録資格・保有資格・未取得の資格を一覧し、登録状況や講習への導線をまとめています。
           </p>
         </div>
       </header>
@@ -224,7 +224,7 @@ export default async function ProfileQualificationsPage() {
           </div>
           <CardDescription className="space-y-1">
             <span className="block">
-              選手登録・BLS・WS・認定ライフセーバーの状況を確認できます。JLAメンバーIDはアカウントに1つだけ登録し、各資格の申請ではそのIDを使います（上の欄で登録済みなら申請ダイアログでの再入力は不要です）。
+              選手登録・BLS・WS・認定ライフセーバーの状況を確認できます。JLAメンバーIDはアカウントに1つだけ登録し、各資格の登録でもそのIDを使います（上の欄で登録済みならダイアログでの再入力は不要です）。
             </span>
             <span className="block text-muted-foreground">{CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP}</span>
           </CardDescription>
