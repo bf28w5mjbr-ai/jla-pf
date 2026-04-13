@@ -5,6 +5,7 @@ type SessionLike = {
   status: EntryCheckoutSessionStatus;
   completedAt: Date | null;
   createdAt: Date;
+  amount?: number;
 };
 
 /**

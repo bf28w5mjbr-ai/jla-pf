@@ -47,6 +47,7 @@ import {
 } from "@/lib/competitionUnderAgeSettings";
 import { meetsCompetitionEventAgeEligibility } from "@/lib/underAgeEventEligibility";
 import { resolveEffectiveUnderBandAllowListForEvent } from "@/lib/underBandAllowList";
+import { getStripeProcessingFeeBpsFromEnv } from "@/lib/stripeProcessingFee";
 
 type CompetitionEntryFormProps = ComponentProps<typeof CompetitionEntryForm>;
 
@@ -914,6 +915,7 @@ export default async function CompetitionEntryPage({
               }
             : null
         }
+        cardProcessingFeeBps={getStripeProcessingFeeBpsFromEnv()}
       />
     </div>
   );

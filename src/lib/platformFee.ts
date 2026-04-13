@@ -10,8 +10,9 @@ export function getPlatformFeeBps(): number {
 }
 
 /**
- * 決済総額（円）に対する PF 側 application_fee（円、整数）。
- * Connect 送金時に主催者へは totalYen - fee が振り込まれる想定。
+ * エントリー代のうち「参加費」部分（円）に対する PF 手数料（円、整数）。
+ * カード決済手数料の上乗せ行を別 line item にしている場合は、ここに渡すのは参加費のみ（手数料行を含めない）。
+ * Connect の `application_fee_amount` に「この値 + カード手数料上乗せ分」を足して渡す。
  */
 export function applicationFeeAmountYen(totalYen: number, bps = getPlatformFeeBps()): number {
   if (totalYen <= 0) return 0;

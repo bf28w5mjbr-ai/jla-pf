@@ -42,6 +42,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { calculateCompetitionEntryFee } from "@/lib/entryFee";
+import { stripeProcessingFeeSurchargeYenFromBps } from "@/lib/stripeProcessingFee";
 import { isTieredEntryFee, resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
 import { partitionUnderAgeBands } from "@/lib/competitionUnderAgeSystem";
 import type { EntryReceiptForClient } from "@/lib/entryCompletionReceipt";
@@ -184,6 +185,8 @@ type CompetitionEntryFormProps = {
   }>;
   /** アンダー別参加費の解決用（大会でアンダー制が有効なとき） */
   underAgeFeeBands?: { uThresholds: number[]; openEnabled: boolean } | null;
+  /** カード決済の上乗せ率（basis points）。サーバーの STRIPE_PROCESSING_FEE_BPS と一致 */
+  cardProcessingFeeBps?: number;
 };
 
 export default function CompetitionEntryForm({
@@ -211,6 +214,7 @@ export default function CompetitionEntryForm({
   userDateOfBirthISO = null,
   feeAgeCategories,
   underAgeFeeBands = null,
+  cardProcessingFeeBps = 360,
 }: CompetitionEntryFormProps) {
   const router = useRouter();
   const [showEstablishedEdit, setShowEstablishedEdit] = useState(false);
@@ -316,6 +320,15 @@ export default function CompetitionEntryForm({
     userAgeYearsAtCompetitionStart,
     userDobForFee,
   ]);
+
+  const estimatedProcessingFeeYen = useMemo(() => {
+    if (estimatedFee === null || estimatedFee <= 0) return 0;
+    return stripeProcessingFeeSurchargeYenFromBps(estimatedFee, cardProcessingFeeBps);
+  }, [estimatedFee, cardProcessingFeeBps]);
+  const estimatedTotalChargedYen =
+    estimatedFee !== null && estimatedFee > 0 ? estimatedFee + estimatedProcessingFeeYen : 0;
+  const processingFeePercentLabel = (cardProcessingFeeBps / 100).toFixed(1);
+
   const effectiveMaxSelectable = !allowMultipleEventEntries
     ? 1
     : typeof maxEventEntriesPerPerson === "number" && maxEventEntriesPerPerson > 0
@@ -774,13 +787,39 @@ export default function CompetitionEntryForm({
                   <dd className="mt-0.5 font-mono text-xs text-foreground">{entryReceipt.entryId}</dd>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 sm:col-span-2">
                 <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                <div>
-                  <dt className="text-xs font-medium text-muted-foreground">参加費</dt>
-                  <dd className="mt-0.5 font-semibold tabular-nums text-foreground">
-                    ¥{entryReceipt.totalFee.toLocaleString()}
-                  </dd>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div>
+                    <dt className="text-xs font-medium text-muted-foreground">参加費（大会設定）</dt>
+                    <dd className="mt-0.5 font-semibold tabular-nums text-foreground">
+                      ¥{entryReceipt.totalFee.toLocaleString()}
+                    </dd>
+                  </div>
+                  {entryReceipt.cardPaymentBreakdown &&
+                  entryReceipt.cardPaymentBreakdown.processingFeeYen > 0 ? (
+                    <>
+                      <div>
+                        <dt className="text-xs font-medium text-muted-foreground">
+                          決済手数料（カード等・
+                          {(
+                            (entryReceipt.cardProcessingFeeBps ?? cardProcessingFeeBps) /
+                            100
+                          ).toFixed(1)}
+                          %・お支払い者負担）
+                        </dt>
+                        <dd className="mt-0.5 font-semibold tabular-nums text-foreground">
+                          ¥{entryReceipt.cardPaymentBreakdown.processingFeeYen.toLocaleString()}
+                        </dd>
+                      </div>
+                      <div className="border-t border-border/50 pt-2">
+                        <dt className="text-xs font-medium text-muted-foreground">カード決済の合計</dt>
+                        <dd className="mt-0.5 text-base font-bold tabular-nums text-foreground">
+                          ¥{entryReceipt.cardPaymentBreakdown.totalChargedYen.toLocaleString()}
+                        </dd>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               </div>
               {entryReceipt.requireClubMembership ? (
@@ -1086,7 +1125,13 @@ export default function CompetitionEntryForm({
                   <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                     {estimatedFee != null && estimatedFee > 0 && !isSubmitDisabled ? (
                       <p className={cn(fieldHintClass("guided"), "sm:max-w-[14rem]")}>
-                        「決済へ進む」から外部の決済画面に進みます。決済完了後にエントリーが成立します。
+                        「決済へ進む」から外部の決済画面に進みます。
+                        {estimatedProcessingFeeYen > 0 ? (
+                          <>
+                            参加費に加え、決済手数料（{processingFeePercentLabel}%）がかかります。
+                          </>
+                        ) : null}
+                        決済完了後にエントリーが成立します。
                       </p>
                     ) : (
                       <span className="hidden sm:block sm:flex-1" />
@@ -1126,18 +1171,48 @@ export default function CompetitionEntryForm({
                       <div className="my-3 border-t border-border/60" />
                     </>
                   ) : null}
-                  <p className="text-sm tabular-nums">
+                  <div className="text-sm tabular-nums">
                     <span className="font-medium text-muted-foreground">お支払い概算</span>
-                    <span className="mt-1 block text-xl font-bold tracking-tight text-foreground">
-                      {estimatedFee === null ? (
-                        <span className="text-sm font-normal leading-snug text-muted-foreground">
-                          年齢帯別のため、プロフィールの生年月日が必要です
-                        </span>
-                      ) : (
-                        <>¥{formatCurrency(estimatedFee)}</>
-                      )}
-                    </span>
-                  </p>
+                    {estimatedFee === null ? (
+                      <span className="mt-1 block text-sm font-normal leading-snug text-muted-foreground">
+                        年齢帯別のため、プロフィールの生年月日が必要です
+                      </span>
+                    ) : estimatedFee <= 0 ? (
+                      <span className="mt-1 block text-xl font-bold tracking-tight text-foreground">
+                        ¥0
+                      </span>
+                    ) : (
+                      <div className="mt-2 space-y-2">
+                        <div className="flex items-baseline justify-between gap-2 text-xs text-muted-foreground">
+                          <span>参加費（大会）</span>
+                          <span className="font-medium tabular-nums text-foreground">
+                            ¥{formatCurrency(estimatedFee)}
+                          </span>
+                        </div>
+                        {estimatedProcessingFeeYen > 0 ? (
+                          <div className="flex items-baseline justify-between gap-2 text-xs text-muted-foreground">
+                            <span>決済手数料（{processingFeePercentLabel}%）</span>
+                            <span className="font-medium tabular-nums text-foreground">
+                              ¥{formatCurrency(estimatedProcessingFeeYen)}
+                            </span>
+                          </div>
+                        ) : null}
+                        <div className="border-t border-border/60 pt-2">
+                          <span className="text-[11px] font-medium text-muted-foreground">
+                            カード決済時の合計
+                          </span>
+                          <span className="mt-0.5 block text-xl font-bold tracking-tight text-foreground">
+                            ¥{formatCurrency(estimatedTotalChargedYen)}
+                          </span>
+                        </div>
+                        {estimatedProcessingFeeYen > 0 ? (
+                          <p className="text-[10px] leading-relaxed text-muted-foreground">
+                            上記の決済手数料はカード決済に伴う費用の目安としてお支払いいただきます（お支払い者負担）。
+                          </p>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="rounded-xl border border-border/80 bg-card p-4 text-foreground shadow-sm">

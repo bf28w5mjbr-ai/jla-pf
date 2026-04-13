@@ -12,6 +12,10 @@ import {
   STRIPE_CHECKOUT_CLIENT_FAILURE_MESSAGE,
 } from "@/lib/stripeCheckoutGuards";
 import { applicationFeeAmountYen } from "@/lib/platformFee";
+import {
+  getStripeProcessingFeeBpsFromEnv,
+  stripeProcessingFeeSurchargeYenFromBps,
+} from "@/lib/stripeProcessingFee";
 import { connectRequirementSkipped, paidEntryCheckoutBlockReason } from "@/lib/organizerBilling";
 import { refreshOrganizationStripeConnectFlags } from "@/lib/organizerStripeConnect";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
@@ -752,16 +756,29 @@ export async function POST(request: NextRequest, context: RouteContext) {
         select: { email: true },
       });
 
+      // 請求: 参加費 B +（Stripe カード手数料相当の上乗せ S）。PF は B のみに課す（8% 等・STRIPE_PLATFORM_FEE_BPS）。
+      // Connect: application_fee = PF(B) + S（S はプラットフォームが確保し、主催の取り分は B から PF を引いた水準に揃える）。
+      const processingFeeBps = getStripeProcessingFeeBpsFromEnv();
+      const processingFeeYen = stripeProcessingFeeSurchargeYenFromBps(totalFee, processingFeeBps);
+      const checkoutTotalYen = totalFee + processingFeeYen;
+      const platformFeeOnEntry = applicationFeeAmountYen(totalFee);
+      const applicationFeeWithProcessing =
+        platformFeeOnEntry + processingFeeYen;
+
       const entryCheckoutSession = await prisma.entryCheckoutSession.create({
         data: {
           competitionId,
           clubId: clubId as string,
           userId: session.userId,
-          amount: totalFee,
+          amount: checkoutTotalYen,
           entryId: result.entry.id,
           payload: {
             entryId: result.entry.id,
             competitionId,
+            entryFeeYen: totalFee,
+            processingFeeYen,
+            processingFeeBps,
+            checkoutTotalYen,
           },
         },
       });
@@ -773,16 +790,27 @@ export async function POST(request: NextRequest, context: RouteContext) {
         checkoutSession = await createPaymentCheckout({
           organizationId: competition.organizationId,
           userId: session.userId,
-          amount: totalFee,
+          amount: checkoutTotalYen,
           description: `${competition.name} エントリー費`,
+          lineItemSplit:
+            processingFeeYen > 0
+              ? {
+                  primaryProductName: `${competition.name} エントリー費`,
+                  entryYen: totalFee,
+                  processingFeeYen,
+                }
+              : undefined,
           customerEmail: entryUser?.email ?? null,
           destinationConnectAccountId: skipConnect ? null : orgBilling?.stripeConnectAccountId ?? null,
-          applicationFeeAmountYen: skipConnect ? null : applicationFeeAmountYen(totalFee),
+          applicationFeeAmountYen: skipConnect ? null : applicationFeeWithProcessing,
           metadata: {
             entryCheckoutSessionId: entryCheckoutSession.id,
             entryId: result.entry.id,
             competitionId,
             userId: session.userId,
+            entryFeeYen: String(totalFee),
+            processingFeeYen: String(processingFeeYen),
+            processingFeeBps: String(processingFeeBps),
           },
           successUrl: `${origin}/competitions/${competitionId}/entry?completed=1&entryId=${result.entry.id}&session_id={CHECKOUT_SESSION_ID}`,
           cancelUrl: `${origin}/competitions/${competitionId}/entry?payment=cancel&entryId=${result.entry.id}`,

@@ -18,8 +18,16 @@ const stripe = new Stripe(stripeSecretKey ?? "sk_test_missing_stripe_secret_key"
 export async function createPaymentCheckout(params: {
   organizationId: string;
   userId: string;
+  /** 請求合計（円）。lineItemSplit 指定時は entryYen + processingFeeYen と一致させる */
   amount: number;
   description?: string;
+  /** 参加費と決済手数料を分けて表示する（合計は amount と一致必須） */
+  lineItemSplit?: {
+    primaryProductName: string;
+    entryYen: number;
+    processingFeeYen: number;
+    processingProductName?: string;
+  };
   metadata?: Record<string, string>;
   successUrl: string;
   cancelUrl: string;
@@ -27,7 +35,10 @@ export async function createPaymentCheckout(params: {
   customerEmail?: string | null;
   /** Stripe Connect: エントリー代の送金先。指定時は applicationFeeAmountYen も渡す */
   destinationConnectAccountId?: string | null;
-  /** PF 手数料（円）。Connect 未使用時は無視 */
+  /**
+   * Connect の application_fee_amount（円）。未使用時は無視。
+   * 参加費+カード手数料の二行請求時は「参加費に対する PF 分 + カード手数料上乗せ分」の合計を渡す。
+   */
   applicationFeeAmountYen?: number | null;
 }) {
   const destination = params.destinationConnectAccountId?.trim() || null;
@@ -46,11 +57,42 @@ export async function createPaymentCheckout(params: {
         }
       : undefined;
 
-  const session = await stripe.checkout.sessions.create({
-    mode: "payment",
-    payment_method_types: ["card"],
-    payment_method_options: stripeCheckoutCardPaymentMethodOptions,
-    line_items: [
+  const split = params.lineItemSplit;
+  let lineItems: Stripe.Checkout.SessionCreateParams.LineItem[];
+  if (split && split.processingFeeYen > 0) {
+    const sum = split.entryYen + split.processingFeeYen;
+    if (sum !== params.amount) {
+      throw new Error(
+        `createPaymentCheckout: lineItemSplit entryYen+processingFeeYen (${sum}) must equal amount (${params.amount})`
+      );
+    }
+    const processingName =
+      split.processingProductName?.trim() ||
+      "決済手数料（カード決済等・お支払い者負担）";
+    lineItems = [
+      {
+        price_data: {
+          currency: "jpy",
+          product_data: {
+            name: split.primaryProductName || params.description || "お支払い",
+          },
+          unit_amount: split.entryYen,
+        },
+        quantity: 1,
+      },
+      {
+        price_data: {
+          currency: "jpy",
+          product_data: {
+            name: processingName,
+          },
+          unit_amount: split.processingFeeYen,
+        },
+        quantity: 1,
+      },
+    ];
+  } else {
+    lineItems = [
       {
         price_data: {
           currency: "jpy",
@@ -61,7 +103,14 @@ export async function createPaymentCheckout(params: {
         },
         quantity: 1,
       },
-    ],
+    ];
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "payment",
+    payment_method_types: ["card"],
+    payment_method_options: stripeCheckoutCardPaymentMethodOptions,
+    line_items: lineItems,
     ...(params.customerEmail ? { customer_email: params.customerEmail } : {}),
     metadata: params.metadata,
     success_url: params.successUrl,

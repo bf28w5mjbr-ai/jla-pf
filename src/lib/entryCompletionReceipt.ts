@@ -1,11 +1,14 @@
 import type { CompetitionEntryStatus, EntryCheckoutSessionStatus } from "@prisma/client";
 import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
+import { getStripeProcessingFeeBpsFromEnv } from "@/lib/stripeProcessingFee";
 
 type CheckoutRow = {
   status: string;
   stripeCheckoutSessionId: string | null;
   stripeReceiptUrl?: string | null;
+  /** Stripe 請求合計（参加費＋決済手数料上乗せがある場合を含む） */
+  amount: number;
   payload: unknown;
 };
 
@@ -37,6 +40,14 @@ export type EntryReceiptForClient = {
   eventOptions: EventRow[];
   /** Stripe が発行するホスト領収書（Charge.receipt_url）。カード決済で取得できた場合のみ */
   stripeReceiptUrl: string | null;
+  /** カード決済時の内訳（最新 Checkout レコードから推定） */
+  cardPaymentBreakdown?: {
+    entryFeeYen: number;
+    processingFeeYen: number;
+    totalChargedYen: number;
+  };
+  /** 表示用（決済手数料の率）。内訳があるときに付与 */
+  cardProcessingFeeBps?: number;
 };
 
 function snapshotShape(data: unknown): {
@@ -137,6 +148,23 @@ export function buildEntryCompletionReceipt(args: {
         isEntryCheckoutPaidForEligibility(s.status as EntryCheckoutSessionStatus) && s.stripeReceiptUrl
     )?.stripeReceiptUrl ?? null;
 
+  const latestForBreakdown = sessionRecord ?? entry.checkoutSessions[0];
+  const chargedYen =
+    typeof latestForBreakdown?.amount === "number" && Number.isFinite(latestForBreakdown.amount)
+      ? latestForBreakdown.amount
+      : entry.totalFee;
+  const cardPaymentBreakdown =
+    entry.totalFee > 0 && chargedYen > entry.totalFee
+      ? {
+          entryFeeYen: entry.totalFee,
+          processingFeeYen: chargedYen - entry.totalFee,
+          totalChargedYen: chargedYen,
+        }
+      : undefined;
+  const cardProcessingFeeBps = cardPaymentBreakdown
+    ? getStripeProcessingFeeBpsFromEnv()
+    : undefined;
+
   return {
     competitionName,
     blurb,
@@ -152,5 +180,7 @@ export function buildEntryCompletionReceipt(args: {
     notes: snap?.notes ?? null,
     eventOptions: events.map((e) => ({ id: e.id, name: e.name, sex: e.sex })),
     stripeReceiptUrl,
+    cardPaymentBreakdown,
+    cardProcessingFeeBps,
   };
 }

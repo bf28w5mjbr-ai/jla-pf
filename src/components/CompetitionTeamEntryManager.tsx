@@ -21,6 +21,7 @@ import { CheckCircle2, CreditCard, Droplets, Info, Plus, Trash2, Waves } from "l
 import { getTeamPaymentStatusLabel } from "@/lib/teamEntryPayments";
 import { resolveCompetitionEventCategoryScope } from "@/lib/competitionEventCategoryScope";
 import { cn } from "@/lib/utils";
+import { stripeProcessingFeeSurchargeYenFromBps } from "@/lib/stripeProcessingFee";
 
 type ClubOption = {
   id: string;
@@ -71,6 +72,8 @@ type Props = {
   >;
   /** 大会の種別（プール／オーシャン）。表示するチーム種目の区分を決めます */
   competitionCategory?: string | null;
+  /** カード決済の上乗せ率（basis points）。STRIPE_PROCESSING_FEE_BPS と一致 */
+  cardProcessingFeeBps?: number;
 };
 
 const sexLabel = (sex: TeamEvent["sex"]) => {
@@ -163,6 +166,7 @@ export default function CompetitionTeamEntryManager({
   entryWindowOpen,
   billingByClub = {},
   competitionCategory = null,
+  cardProcessingFeeBps = 360,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -200,6 +204,12 @@ export default function CompetitionTeamEntryManager({
   const billing = billingByClub[selectedClubId];
   const paymentQuery = searchParams.get("payment");
   const billingAmount = billing?.amount ?? estimatedFee;
+  const teamProcessingFeeYen = useMemo(
+    () => stripeProcessingFeeSurchargeYenFromBps(billingAmount, cardProcessingFeeBps),
+    [billingAmount, cardProcessingFeeBps]
+  );
+  const teamCardTotalYen = billingAmount + teamProcessingFeeYen;
+  const teamProcessingFeePercentLabel = (cardProcessingFeeBps / 100).toFixed(1);
   const isFreeTeamEntry = teamEntryFeePerTeam <= 0;
   const canStartPayment = Boolean(
     billing &&
@@ -710,11 +720,33 @@ export default function CompetitionTeamEntryManager({
                       <dd className="tabular-nums font-medium">¥{formatCurrency(estimatedFee)}</dd>
                     </div>
                     <div className="flex items-baseline justify-between gap-2 border-b border-border/50 pb-2">
-                      <dt className="text-muted-foreground">確定請求額</dt>
+                      <dt className="text-muted-foreground">参加費（請求額）</dt>
                       <dd className="tabular-nums font-semibold text-foreground">
                         ¥{formatCurrency(billingAmount)}
                       </dd>
                     </div>
+                    {teamProcessingFeeYen > 0 ? (
+                      <>
+                        <div className="flex items-baseline justify-between gap-2 border-b border-border/50 pb-2">
+                          <dt className="text-muted-foreground">
+                            決済手数料（{teamProcessingFeePercentLabel}%）
+                          </dt>
+                          <dd className="tabular-nums font-medium text-foreground">
+                            ¥{formatCurrency(teamProcessingFeeYen)}
+                          </dd>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-2 border-b border-border/50 pb-2">
+                          <dt className="font-medium text-foreground">カード決済時の合計</dt>
+                          <dd className="tabular-nums text-base font-bold text-foreground">
+                            ¥{formatCurrency(teamCardTotalYen)}
+                          </dd>
+                        </div>
+                        <p className="text-[10px] leading-relaxed text-muted-foreground">
+                          決済手数料はカード決済に伴う費用の目安です（お支払い者負担）。Stripe
+                          の画面では参加費と手数料が内訳表示されます。
+                        </p>
+                      </>
+                    ) : null}
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <dt className="text-muted-foreground">状態</dt>
                       <dd>

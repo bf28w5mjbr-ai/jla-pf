@@ -248,6 +248,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const format = new URL(request.url).searchParams.get("format");
 
     const latestCompletedCheckout = pickLatestPaidCheckoutForReceipt(entry.checkoutSessions);
+    const chargedYen =
+      latestCompletedCheckout && typeof latestCompletedCheckout.amount === "number"
+        ? latestCompletedCheckout.amount
+        : entry.totalFee;
     const issuedDate =
       latestCompletedCheckout?.completedAt ??
       latestCompletedCheckout?.createdAt ??
@@ -310,6 +314,34 @@ export async function GET(request: NextRequest, context: RouteContext) {
         clubName: entry.club?.name ?? null,
       });
 
+      const processingYen =
+        entry.totalFee > 0 && chargedYen > entry.totalFee ? chargedYen - entry.totalFee : 0;
+      const receiptItems =
+        entry.totalFee > 0 && processingYen > 0
+          ? [
+              {
+                description: `${itemDescription}（参加費）`,
+                quantity: 1,
+                unitPrice: entry.totalFee,
+                amount: entry.totalFee,
+              },
+              {
+                description: "決済手数料（カード決済等・お支払い者負担）",
+                quantity: 1,
+                unitPrice: processingYen,
+                amount: processingYen,
+              },
+            ]
+          : [
+              {
+                description: itemDescription,
+                quantity: 1,
+                unitPrice: entry.totalFee,
+                amount: entry.totalFee,
+              },
+            ];
+      const pdfTotalAmount = entry.totalFee > 0 ? chargedYen : 0;
+
       const pdfComponent = React.createElement(ReceiptPDF, {
         receiptNumber,
         issuedDate,
@@ -322,7 +354,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
         simplifyTotalsWhenNoTax: true,
         footerText:
           "本書は大会エントリー管理システム（Bluvium）により発行された、主催団体名義の領収書です。\n" +
-          "カード決済等をご利用の場合、決済代行会社（Stripe 等）の明細名で請求が表示されることがあります。",
+          "カード決済等をご利用の場合、決済代行会社（Stripe 等）の明細名で請求が表示されることがあります。\n" +
+          (processingYen > 0
+            ? "「決済手数料」はカード決済に伴う費用の目安としてお支払いいただいた金額です。"
+            : ""),
         issuer: {
           name: hostIssuerName,
           email: entry.competition.organization.email ?? "",
@@ -346,17 +381,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
             addressLine2: entry.user.addressLine2,
           }),
         },
-        items: [
-          {
-            description: itemDescription,
-            quantity: 1,
-            unitPrice: entry.totalFee,
-            amount: entry.totalFee,
-          },
-        ],
-        subtotal: entry.totalFee,
+        items: receiptItems,
+        subtotal: pdfTotalAmount,
         taxAmount: 0,
-        totalAmount: entry.totalFee,
+        totalAmount: pdfTotalAmount,
       });
 
       const pdfBuffer = await generatePdfBuffer(pdfComponent);
@@ -371,7 +399,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return NextResponse.json({
       receiptNumber,
       issuedDate,
-      amount: entry.totalFee,
+      amount: chargedYen,
+      entryFeeYen: entry.totalFee,
       competitionId: entry.competitionId,
       competitionName: entry.competition.name,
       stripeReceiptUrl: stripeHostedUrl,

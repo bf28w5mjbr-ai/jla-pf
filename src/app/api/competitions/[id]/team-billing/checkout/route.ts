@@ -6,6 +6,10 @@ import { absoluteAppUrl, appRoutes } from "@/lib/appRoutes";
 import { prisma } from "@/server/db";
 import { createPaymentCheckout } from "@/lib/stripe";
 import { applicationFeeAmountYen } from "@/lib/platformFee";
+import {
+  getStripeProcessingFeeBpsFromEnv,
+  stripeProcessingFeeSurchargeYenFromBps,
+} from "@/lib/stripeProcessingFee";
 import { connectRequirementSkipped, paidEntryCheckoutBlockReason } from "@/lib/organizerBilling";
 import { refreshOrganizationStripeConnectFlags } from "@/lib/organizerStripeConnect";
 import { buildTeamEntryPaymentOwnerId, parseTeamEntryPaymentMetadata } from "@/lib/teamEntryPayments";
@@ -155,14 +159,29 @@ export async function POST(request: NextRequest, context: RouteContext) {
       tab: "entry",
     });
     const skipConnect = connectRequirementSkipped();
+    const baseYen = payment.amount; // チーム参加費（カード手数料行を除く）
+    const processingFeeBps = getStripeProcessingFeeBpsFromEnv();
+    const processingFeeYen = stripeProcessingFeeSurchargeYenFromBps(baseYen, processingFeeBps);
+    const checkoutTotalYen = baseYen + processingFeeYen;
+    const platformFeeOnBase = applicationFeeAmountYen(baseYen); // PF は参加費ベースのみ
+    const applicationFeeWithProcessing = platformFeeOnBase + processingFeeYen;
+
     const checkoutSession = await createPaymentCheckout({
       organizationId: competition.organizationId,
       userId: session.userId,
-      amount: payment.amount,
+      amount: checkoutTotalYen,
       description: `チームエントリー費: ${competition.name} / ${membership.club.name}`,
+      lineItemSplit:
+        processingFeeYen > 0
+          ? {
+              primaryProductName: `チームエントリー費: ${competition.name} / ${membership.club.name}`,
+              entryYen: baseYen,
+              processingFeeYen,
+            }
+          : undefined,
       customerEmail: payer?.email ?? null,
       destinationConnectAccountId: skipConnect ? null : orgBilling?.stripeConnectAccountId ?? null,
-      applicationFeeAmountYen: skipConnect ? null : applicationFeeAmountYen(payment.amount),
+      applicationFeeAmountYen: skipConnect ? null : applicationFeeWithProcessing,
       successUrl: `${absoluteAppUrl(origin, entryHubPath)}&payment=success&session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${absoluteAppUrl(origin, entryHubPath)}&payment=cancel`,
       metadata: {
@@ -174,6 +193,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
         userId: session.userId,
         paymentId: payment.id,
         scope: "TEAM_ENTRY",
+        entryFeeYen: String(baseYen),
+        processingFeeYen: String(processingFeeYen),
+        processingFeeBps: String(processingFeeBps),
       },
     });
 

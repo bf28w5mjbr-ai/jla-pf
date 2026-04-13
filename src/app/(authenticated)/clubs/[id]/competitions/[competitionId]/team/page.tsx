@@ -19,6 +19,7 @@ import {
   getTeamMemberAssignmentWindowState,
 } from "@/lib/teamMemberAssignmentWindow";
 import { formatCompetitionEntryPeriodRangeJa } from "@/lib/datetimeLocal";
+import { getStripeProcessingFeeBpsFromEnv } from "@/lib/stripeProcessingFee";
 
 function parseRelayPositionNames(raw: unknown): string[] {
   if (!raw || !Array.isArray(raw)) return [];
@@ -480,6 +481,7 @@ export default async function ClubCompetitionTeamHubPage({
               entryWindowOpen={entryWindowOpen}
               billingByClub={billingByClub}
               competitionCategory={competition.category}
+              cardProcessingFeeBps={getStripeProcessingFeeBpsFromEnv()}
             />
           ) : null}
         </>
