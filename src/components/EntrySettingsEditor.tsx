@@ -313,6 +313,25 @@ function withOptionalAnnounce(
     : payload;
 }
 
+/** カテゴリ帯ドラフトの effect で、内容が同じなら setState しない（再レンダー抑制） */
+function bandCategoryDraftsEqual(
+  a: Record<string, string[]>,
+  b: Record<string, string[]>
+): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const id of bKeys) {
+    const ra = a[id];
+    const rb = b[id];
+    if (!ra || !rb || ra.length !== rb.length) return false;
+    for (let i = 0; i < ra.length; i++) {
+      if (ra[i] !== rb[i]) return false;
+    }
+  }
+  return true;
+}
+
 export default function EntrySettingsEditor({
   competitionId,
   focusSection,
@@ -920,32 +939,6 @@ export default function EntrySettingsEditor({
     }
   };
 
-  const handlePatchEventUnderAgeEligibility = async (event: Event, enabled: boolean) => {
-    try {
-      const response = await fetch(`/api/competitions/${competitionId}/events/${event.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ underAgeEligibilityEnabled: enabled }),
-      });
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(typeof err.message === "string" ? err.message : "更新に失敗しました");
-      }
-      const data = (await response.json()) as { events?: Event[] };
-      if (Array.isArray(data.events)) {
-        syncEvents(data.events);
-      }
-      toast.success(
-        enabled
-          ? "この種目グループでアンダー判定を有効にしました"
-          : "従来の生年月日／年齢のみで判定します"
-      );
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "更新に失敗しました");
-    }
-  };
-
   const clearEventTableBulkSaveStatus = (key: string) => {
     setEventTableBulkSaveStatus((prev) => {
       if (!prev[key]) return prev;
@@ -1003,63 +996,174 @@ export default function EntrySettingsEditor({
     () => ({})
   );
 
+  const ageCategoryUnderBandsFingerprint = ageCategories
+    .map((c) => `${c.id}\t${JSON.stringify(c.underBandKeysEnabled ?? null)}`)
+    .join("\n");
+  const masterBandKeysFingerprint = masterBandKeys.join("|");
+
   useEffect(() => {
     const keys = masterBandKeys;
-    setCategoryUnderBandDrafts(() => {
+    setCategoryUnderBandDrafts((prev) => {
       const next: Record<string, string[]> = {};
       for (const c of ageCategories) {
         const parsed = parseStoredUnderBandKeys(c.underBandKeysEnabled as unknown);
         next[c.id] = parsed === null ? [...keys] : keys.filter((k) => parsed.includes(k));
       }
-      return next;
+      return bandCategoryDraftsEqual(prev, next) ? prev : next;
     });
-  }, [ageCategories, masterBandKeys]);
+    // 参照の変わり目だけでは走らせない（親の再レンダーで配列が新しいだけのときの無駄を抑える）
+  }, [ageCategoryUnderBandsFingerprint, masterBandKeysFingerprint]);
 
-  const eventEffectiveBandSelection = (event: Event): string[] => {
-    if (!masterBandKeys.length) return [];
+  /** 種目カードの帯チェック用（レンダーごとの find 繰り返しを避ける） */
+  const eventBandSelectionByEventId = useMemo(() => {
     const allK = masterBandKeys;
-    const o = parseStoredUnderBandKeys(event.underBandKeysOverride as unknown);
-    if (o !== null) {
-      return allK.filter((k) => o.includes(k));
+    const map = new Map<string, string[]>();
+    if (!allK.length) return map;
+    const bandByCatId = new Map<string, string[] | null>();
+    for (const c of ageCategories) {
+      bandByCatId.set(c.id, parseStoredUnderBandKeys(c.underBandKeysEnabled as unknown));
     }
-    const cat = event.ageCategoryId ? ageCategories.find((x) => x.id === event.ageCategoryId) : null;
-    const tab = parseStoredUnderBandKeys(cat?.underBandKeysEnabled as unknown);
-    return tab === null ? [...allK] : allK.filter((k) => tab.includes(k));
-  };
+    for (const event of events) {
+      const o = parseStoredUnderBandKeys(event.underBandKeysOverride as unknown);
+      let sel: string[];
+      if (o !== null) {
+        sel = allK.filter((k) => o.includes(k));
+      } else if (!event.ageCategoryId) {
+        sel = [...allK];
+      } else {
+        const tab = bandByCatId.get(event.ageCategoryId) ?? null;
+        sel = tab === null ? [...allK] : allK.filter((k) => tab.includes(k));
+      }
+      map.set(event.id, sel);
+    }
+    return map;
+  }, [events, ageCategories, masterBandKeys]);
 
-  const handlePatchEventUnderBandOverride = async (event: Event, selectedKeys: string[]) => {
-    if (!initialData.underAgeSystemEnabled || !masterBandKeys.length) return;
-    if (selectedKeys.length === 0) {
-      toast.error("許可する帯を1つ以上選んでください");
-      return;
-    }
+  const [eventUnderAgeEligibilityDrafts, setEventUnderAgeEligibilityDrafts] = useState<
+    Record<string, boolean>
+  >({});
+  const [eventUnderBandSelectionDrafts, setEventUnderBandSelectionDrafts] = useState<
+    Record<string, string[]>
+  >({});
+  const [isSavingEventUnderAgeDrafts, setIsSavingEventUnderAgeDrafts] = useState(false);
+
+  const eventCardRepresentativesInScope = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          eventsInTabScope.map((e) => [`${e.category}:${e.type}:${e.name}`, e] as const)
+        ).values()
+      ),
+    [eventsInTabScope]
+  );
+
+  const serverUnderAgeEnabledByEventId = useMemo(
+    () =>
+      Object.fromEntries(
+        events.map((e) => [e.id, e.underAgeEligibilityEnabled !== false] as const)
+      ) as Record<string, boolean>,
+    [events]
+  );
+
+  const resolveTabBandSelection = (event: Event): string[] => {
     const allK = masterBandKeys;
+    if (!allK.length) return [];
     const cat = event.ageCategoryId ? ageCategories.find((c) => c.id === event.ageCategoryId) : null;
     const tabParsed = parseStoredUnderBandKeys(cat?.underBandKeysEnabled as unknown);
-    const tabSel = tabParsed === null ? allK : allK.filter((k) => tabParsed.includes(k));
-    const sameAsTab =
-      selectedKeys.length === tabSel.length && selectedKeys.every((k) => tabSel.includes(k));
-    const payload = sameAsTab ? null : selectedKeys;
+    return tabParsed === null ? allK : allK.filter((k) => tabParsed.includes(k));
+  };
+
+  const arraysEqual = (a: string[], b: string[]) =>
+    a.length === b.length && a.every((x, i) => x === b[i]);
+
+  const hasPendingEventUnderAgeChanges = useMemo(() => {
+    for (const event of eventCardRepresentativesInScope) {
+      const serverEnabled = serverUnderAgeEnabledByEventId[event.id] ?? true;
+      const draftEnabled =
+        eventUnderAgeEligibilityDrafts[event.id] ?? serverEnabled;
+      if (
+        Object.prototype.hasOwnProperty.call(eventUnderAgeEligibilityDrafts, event.id) &&
+        draftEnabled !== serverEnabled
+      ) {
+        return true;
+      }
+
+      const serverBands = eventBandSelectionByEventId.get(event.id) ?? [];
+      if (Object.prototype.hasOwnProperty.call(eventUnderBandSelectionDrafts, event.id)) {
+        const draftBands = eventUnderBandSelectionDrafts[event.id] ?? [];
+        if (!arraysEqual(draftBands, serverBands)) return true;
+      }
+    }
+    return false;
+  }, [
+    eventBandSelectionByEventId,
+    eventCardRepresentativesInScope,
+    eventUnderAgeEligibilityDrafts,
+    eventUnderBandSelectionDrafts,
+    serverUnderAgeEnabledByEventId,
+  ]);
+
+  const handleSaveEventUnderAgeDrafts = async () => {
+    if (!hasPendingEventUnderAgeChanges) return;
+    setIsSavingEventUnderAgeDrafts(true);
     try {
-      const response = await fetch(`/api/competitions/${competitionId}/events/${event.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ underBandKeysOverride: payload }),
-      });
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(typeof err.message === "string" ? err.message : "更新に失敗しました");
+      for (const event of eventCardRepresentativesInScope) {
+        const serverEnabled = serverUnderAgeEnabledByEventId[event.id] ?? true;
+        const draftEnabled =
+          eventUnderAgeEligibilityDrafts[event.id] ?? serverEnabled;
+        const hasEnabledDraft = Object.prototype.hasOwnProperty.call(
+          eventUnderAgeEligibilityDrafts,
+          event.id
+        );
+        const enabledChanged = hasEnabledDraft && draftEnabled !== serverEnabled;
+
+        const serverBands = eventBandSelectionByEventId.get(event.id) ?? [];
+        const hasBandDraft = Object.prototype.hasOwnProperty.call(
+          eventUnderBandSelectionDrafts,
+          event.id
+        );
+        const draftBands = hasBandDraft
+          ? eventUnderBandSelectionDrafts[event.id] ?? []
+          : serverBands;
+        const bandsChanged = hasBandDraft && !arraysEqual(draftBands, serverBands);
+
+        if (!enabledChanged && !bandsChanged) continue;
+        if (bandsChanged && draftBands.length === 0) {
+          throw new Error("許可する帯を1つ以上選んでください");
+        }
+
+        const payload: Record<string, unknown> = {};
+        if (enabledChanged) {
+          payload.underAgeEligibilityEnabled = draftEnabled;
+        }
+        if (bandsChanged) {
+          const tabSel = resolveTabBandSelection(event);
+          const isSameAsTab =
+            draftBands.length === tabSel.length &&
+            draftBands.every((k) => tabSel.includes(k));
+          payload.underBandKeysOverride = isSameAsTab ? null : draftBands;
+        }
+        if (Object.keys(payload).length === 0) continue;
+
+        const response = await fetch(`/api/competitions/${competitionId}/events/${event.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(typeof err.message === "string" ? err.message : "更新に失敗しました");
+        }
       }
-      const data = (await response.json()) as { events?: Event[] };
-      if (Array.isArray(data.events)) {
-        syncEvents(data.events);
-      }
-      toast.success(
-        payload === null ? "種目の帯をタブ既定に合わせました" : "この種目の許可帯を更新しました"
-      );
-      router.refresh();
+
+      await refreshEventsFromServer();
+      setEventUnderAgeEligibilityDrafts({});
+      setEventUnderBandSelectionDrafts({});
+      toast.success("種目ごとのアンダー設定を保存しました");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "更新に失敗しました");
+    } finally {
+      setIsSavingEventUnderAgeDrafts(false);
     }
   };
 
@@ -2906,8 +3010,16 @@ export default function EntrySettingsEditor({
               <input
                 type="checkbox"
                 className="h-3.5 w-3.5"
-                checked={event.underAgeEligibilityEnabled !== false}
-                onChange={(e) => void handlePatchEventUnderAgeEligibility(event, e.target.checked)}
+                checked={
+                  eventUnderAgeEligibilityDrafts[event.id] ??
+                  (event.underAgeEligibilityEnabled !== false)
+                }
+                onChange={(e) =>
+                  setEventUnderAgeEligibilityDrafts((prev) => ({
+                    ...prev,
+                    [event.id]: e.target.checked,
+                  }))
+                }
                 disabled={!canEdit}
               />
               <span>アンダー制で年齢判定（オフのときは下の生年月日／年齢）</span>
@@ -2916,14 +3028,17 @@ export default function EntrySettingsEditor({
 
           {initialData.underAgeSystemEnabled &&
           masterBandKeys.length > 0 &&
-          event.underAgeEligibilityEnabled !== false ? (
+          (eventUnderAgeEligibilityDrafts[event.id] ??
+            (event.underAgeEligibilityEnabled !== false)) ? (
             <div className="space-y-1.5 rounded-md border border-border/50 bg-muted/20 px-2 py-2">
               <p className="text-[10px] font-medium text-muted-foreground">
-                この種目でエントリー可能な帯（タップですぐ保存）
+                この種目でエントリー可能な帯
               </p>
               <div className="flex flex-wrap gap-x-3 gap-y-1">
                 {masterBandKeys.map((key) => {
-                  const sel = eventEffectiveBandSelection(event);
+                  const sel =
+                    eventUnderBandSelectionDrafts[event.id] ??
+                    (eventBandSelectionByEventId.get(event.id) ?? []);
                   return (
                     <label key={key} className="flex cursor-pointer items-center gap-1.5 text-[11px]">
                       <input
@@ -2934,11 +3049,11 @@ export default function EntrySettingsEditor({
                         onChange={(e) => {
                           const next = new Set(sel);
                           if (e.target.checked) next.add(key);
-                          else next.delete(key);
-                          void handlePatchEventUnderBandOverride(
-                            event,
-                            masterBandKeys.filter((k) => next.has(k))
-                          );
+                          else if (next.size > 1) next.delete(key);
+                          setEventUnderBandSelectionDrafts((prev) => ({
+                            ...prev,
+                            [event.id]: masterBandKeys.filter((k) => next.has(k)),
+                          }));
                         }}
                       />
                       <span>{key}</span>
@@ -2946,27 +3061,24 @@ export default function EntrySettingsEditor({
                   );
                 })}
               </div>
-              {event.underBandKeysOverride != null ? (
+              {(Object.prototype.hasOwnProperty.call(eventUnderBandSelectionDrafts, event.id)
+                ? eventUnderBandSelectionDrafts[event.id] ??
+                  (eventBandSelectionByEventId.get(event.id) ?? [])
+                : eventBandSelectionByEventId.get(event.id) ?? []
+              ).length > 0 ? (
                 <Button
                   type="button"
                   variant="link"
                   className="h-auto p-0 text-[10px] text-muted-foreground"
                   disabled={!canEdit}
                   onClick={() => {
-                    const cat = event.ageCategoryId
-                      ? ageCategories.find((x) => x.id === event.ageCategoryId)
-                      : null;
-                    const tabParsed = parseStoredUnderBandKeys(
-                      cat?.underBandKeysEnabled as unknown
-                    );
-                    const tabSel =
-                      tabParsed === null
-                        ? masterBandKeys
-                        : masterBandKeys.filter((k) => tabParsed.includes(k));
-                    void handlePatchEventUnderBandOverride(event, tabSel);
+                    setEventUnderBandSelectionDrafts((prev) => ({
+                      ...prev,
+                      [event.id]: resolveTabBandSelection(event),
+                    }));
                   }}
                 >
-                  タブ既定に合わせる（種目の上書きを解除）
+                  タブ既定に合わせる
                 </Button>
               ) : null}
             </div>
@@ -4364,6 +4476,41 @@ export default function EntrySettingsEditor({
               </section>
             </div>
           )}
+          {canEdit && initialData.underAgeSystemEnabled ? (
+            <div className="flex flex-col gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                <span className="font-semibold text-foreground">種目ごとのアンダー設定</span>
+                … チェック変更は一旦保留されます。「保存」でまとめて反映します。
+              </p>
+              <div className="flex items-center gap-2">
+                {hasPendingEventUnderAgeChanges ? (
+                  <span className="text-[10px] text-amber-700 dark:text-amber-300">未保存の変更あり</span>
+                ) : null}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-8 text-xs"
+                  disabled={isSavingEventUnderAgeDrafts || !hasPendingEventUnderAgeChanges}
+                  onClick={() => {
+                    setEventUnderAgeEligibilityDrafts({});
+                    setEventUnderBandSelectionDrafts({});
+                  }}
+                >
+                  変更を破棄
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 text-xs"
+                  disabled={isSavingEventUnderAgeDrafts || !hasPendingEventUnderAgeChanges}
+                  onClick={() => void handleSaveEventUnderAgeDrafts()}
+                >
+                  {isSavingEventUnderAgeDrafts ? "保存中…" : "アンダー設定を保存"}
+                </Button>
+              </div>
+            </div>
+          ) : null}
           {canEdit ? (
             <div className="flex flex-col gap-2 rounded-lg border border-primary/25 bg-primary/[0.06] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between dark:bg-primary/[0.08]">
               <p className="text-[11px] leading-snug text-muted-foreground">
