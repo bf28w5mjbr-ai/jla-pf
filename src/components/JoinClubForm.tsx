@@ -34,16 +34,16 @@ export default function JoinClubForm({ club }: JoinClubFormProps) {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || "参加申請に失敗しました");
+        toast.error(data.error || "参加に失敗しました");
         return;
       }
 
-      toast.success("参加申請を送信しました。クラブ管理者の承認をお待ちください。");
+      toast.success(data.message || "クラブに参加しました。");
       router.push(appRoutes.clubs.list());
       router.refresh();
     } catch (err) {
       console.error("Join club error:", err);
-      toast.error("参加申請に失敗しました");
+      toast.error("参加に失敗しました");
     } finally {
       setLoading(false);
     }
@@ -68,12 +68,11 @@ export default function JoinClubForm({ club }: JoinClubFormProps) {
 
             <div className="rounded-lg border border-orange-200 bg-orange-50 dark:bg-orange-900/20 dark:border-orange-800 p-4">
               <h3 className="text-sm font-semibold text-orange-900 dark:text-orange-100 mb-2">
-                📋 参加申請について
+                📋 参加について
               </h3>
               <ul className="text-xs text-orange-800 dark:text-orange-200 space-y-1 list-disc list-inside">
-                <li>クラブ管理者の承認が必要です</li>
-                <li>承認されるまで「申請中」状態となります</li>
-                <li>承認後、クラブの活動に参加できるようになります</li>
+                <li>参加確定後、すぐにメンバーとして扱われます</li>
+                <li>所属の解除はクラブ管理者がメンバー管理から行います</li>
               </ul>
             </div>
           </div>
@@ -90,7 +89,7 @@ export default function JoinClubForm({ club }: JoinClubFormProps) {
               キャンセル
             </Button>
             <Button type="submit" disabled={loading} className="flex-1">
-              {loading ? "申請中..." : "参加を申請"}
+              {loading ? "処理中..." : "このクラブに参加"}
             </Button>
           </div>
         </AutofillSyncForm>

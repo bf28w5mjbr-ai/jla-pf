@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
-    title: 'クラブ参加申請 | Bluvium',
+    title: "クラブ参加 | Bluvium",
   };
 }
 
@@ -38,17 +38,17 @@ export default async function JoinClubPage({ params }: { params: Promise<{ id: s
     redirect(appRoutes.clubs.list());
   }
 
-  // 既に参加申請しているかチェック
   const existingMembership = await prisma.membership.findUnique({
     where: {
       userId_clubId: {
         userId: sess.userId,
         clubId: id,
-      }
-    }
+      },
+    },
+    select: { status: true },
   });
 
-  if (existingMembership) {
+  if (existingMembership?.status === "APPROVED") {
     redirect(appRoutes.clubs.list());
   }
 

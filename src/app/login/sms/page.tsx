@@ -16,7 +16,9 @@ function SMSLoginContent() {
   const searchParams = useSearchParams();
   const redirectAfterLogin = safePostLoginPath(searchParams.get("redirect"));
   const [loading, setLoading] = useState(false);
-  const [phoneNumber, setPhoneNumber] = useState("");
+  const [email, setEmail] = useState("");
+  const [familyName, setFamilyName] = useState("");
+  const [givenName, setGivenName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [smsHeld, setSmsHeld] = useState(false);
 
@@ -58,7 +60,11 @@ function SMSLoginContent() {
       const res = await fetch("/api/auth/login/sms/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumber }),
+        body: JSON.stringify({
+          email: email.trim(),
+          familyName: familyName.trim(),
+          givenName: givenName.trim(),
+        }),
       });
 
       const data = await res.json();
@@ -71,7 +77,7 @@ function SMSLoginContent() {
       }
 
       toast.success("認証コードを送信しました");
-      const otpBase = `/login/sms/otp?sessionId=${data.sessionId}&phone=${encodeURIComponent(phoneNumber)}`;
+      const otpBase = `/login/sms/otp?sessionId=${encodeURIComponent(data.sessionId)}`;
       router.push(appendRedirectQuery(otpBase, redirectAfterLogin));
     } catch (err) {
       console.error("SMS login start error:", err);
@@ -87,7 +93,7 @@ function SMSLoginContent() {
     <AuthShell
       maxWidth="md"
       title="SMS認証ログイン"
-      subtitle="登録済みの携帯電話番号でログインします。"
+      subtitle="登録のメールアドレス・お名前で本人確認し、登録済みの携帯番号へ認証コードを送ります。"
       subtitleDensity="balanced"
     >
       <AuthPanel>
@@ -101,22 +107,51 @@ function SMSLoginContent() {
             </div>
           )}
           <div className="space-y-2">
-            <Label htmlFor="phoneNumber">携帯電話番号</Label>
+            <Label htmlFor="email">メールアドレス</Label>
             <Input
-              id="phoneNumber"
-              type="tel"
-              numericInput="integer"
-              placeholder="09012345678"
-              maxLength={11}
-              value={phoneNumber}
+              id="email"
+              type="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              value={email}
               onChange={(e) => {
-                setPhoneNumber(e.target.value);
+                setEmail(e.target.value);
                 if (error) setError(null);
               }}
               required
             />
-            <p className="text-xs text-muted-foreground">ハイフンなし11桁で入力してください</p>
           </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="familyName">姓</Label>
+              <Input
+                id="familyName"
+                autoComplete="family-name"
+                value={familyName}
+                onChange={(e) => {
+                  setFamilyName(e.target.value);
+                  if (error) setError(null);
+                }}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="givenName">名</Label>
+              <Input
+                id="givenName"
+                autoComplete="given-name"
+                value={givenName}
+                onChange={(e) => {
+                  setGivenName(e.target.value);
+                  if (error) setError(null);
+                }}
+                required
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            入力内容は登録時のプロフィール（漢字の氏名）と一致させてください。
+          </p>
 
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? "送信中..." : "認証コードを送信"}

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { isClubAdminRole } from "@/lib/roleScopes";
 
 const MEMBERSHIP_APPLICATIONS_PER_HOUR_LIMIT = 3;
 const MEMBERSHIP_REAPPLY_COOLDOWN_DAYS = 7;
@@ -52,12 +53,11 @@ async function ensureClubEstablished(
  * メンバーシップ申請の唯一の正
  * 重複チェック、トランザクション、監査ログをすべてここで管理
  * 
- * 用途: 以下の3つのAPIエンドポイントから呼び出される
+ * 用途: 以下などから呼び出される
  * - POST /api/memberships
- * - POST /api/clubs/[id]/join  
- * - POST /api/clubs/apply
- * 
- * (将来的に統廃合対象)
+ * - POST /api/clubs/[clubId]/join
+ *
+ * 参加は承認不要（即時 APPROVED）。却下後の再参加はクールダウンあり。
  */
 export async function applyForMembership(
   userId: string,
@@ -90,90 +90,82 @@ export async function applyForMembership(
             "ALREADY_MEMBER",
             "既にこのクラブに所属しています"
           );
-        } else if (existing.status === "PENDING") {
-          throw new MembershipApplicationError(
-            "ALREADY_PENDING",
-            "既に参加申請を送信済みです"
-          );
-        } else if (existing.status === "REJECTED") {
+        }
+        if (existing.status === "REJECTED") {
           const cooldownMs = MEMBERSHIP_REAPPLY_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
           const now = Date.now();
           if (existing.updatedAt && now - existing.updatedAt.getTime() < cooldownMs) {
             throw new MembershipApplicationError(
               "REJECTED_COOLDOWN",
-              `このクラブへの再申請は${MEMBERSHIP_REAPPLY_COOLDOWN_DAYS}日後に可能です`
+              `このクラブへの再参加は${MEMBERSHIP_REAPPLY_COOLDOWN_DAYS}日後に可能です`
             );
           }
         }
       }
 
-      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-      const recentApplications = await tx.membership.count({
-        where: {
-          userId,
-          createdAt: { gte: oneHourAgo },
-        },
-      });
+      const isRejoinOrPendingUpgrade =
+        existing?.status === "PENDING" || existing?.status === "REJECTED";
 
-      if (recentApplications >= MEMBERSHIP_APPLICATIONS_PER_HOUR_LIMIT) {
-        throw new MembershipApplicationError(
-          "RATE_LIMIT_EXCEEDED",
-          "申請回数が上限に達しました。しばらく時間をおいてから再度お試しください"
-        );
+      if (!isRejoinOrPendingUpgrade) {
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+        const recentApplications = await tx.membership.count({
+          where: {
+            userId,
+            createdAt: { gte: oneHourAgo },
+          },
+        });
+
+        if (recentApplications >= MEMBERSHIP_APPLICATIONS_PER_HOUR_LIMIT) {
+          throw new MembershipApplicationError(
+            "RATE_LIMIT_EXCEEDED",
+            "参加操作の回数が上限に達しました。しばらく時間をおいてから再度お試しください"
+          );
+        }
       }
 
-      const newMembership = existing?.status === "REJECTED"
-        ? await tx.membership.update({
-            where: { id: existing.id },
-            data: { status: "PENDING" },
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  email: true,
-                  familyName: true,
-                  givenName: true,
-                },
-              },
-              club: {
-                select: {
-                  id: true,
-                  name: true,
-                },
-              },
-            },
-          })
-        : await tx.membership.create({
-            data: {
-              userId,
-              clubId,
-              role: "MEMBER",
-              status: "PENDING",
-            },
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  email: true,
-                  familyName: true,
-                  givenName: true,
-                },
-              },
-              club: {
-                select: {
-                  id: true,
-                  name: true,
-                },
-              },
-            },
-          });
+      const includeUserClub = {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            familyName: true,
+            givenName: true,
+          },
+        },
+        club: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      } as const;
 
-      // 4. 監査ログ記録
+      const newMembership =
+        existing?.status === "PENDING" || existing?.status === "REJECTED"
+          ? await tx.membership.update({
+              where: { id: existing.id },
+              data: {
+                status: "APPROVED",
+                role: "MEMBER",
+              },
+              include: includeUserClub,
+            })
+          : await tx.membership.create({
+              data: {
+                userId,
+                clubId,
+                role: "MEMBER",
+                status: "APPROVED",
+              },
+              include: includeUserClub,
+            });
+
       await tx.auditLog.create({
         data: {
           actorUserId: userId,
           action: "MEMBERSHIP_APPLY",
           target: newMembership.id,
+          meta: { instantApproved: true },
         },
       });
 
@@ -183,7 +175,7 @@ export async function applyForMembership(
     return {
       success: true,
       membership,
-      message: `${membership.club.name}への参加申請を送信しました。承認をお待ちください。`,
+      message: `${membership.club.name}に参加しました。`,
     };
   } catch (error) {
     if (error instanceof MembershipApplicationError) {
@@ -233,13 +225,13 @@ export async function approveMembership(
           clubId,
           status: "APPROVED",
         },
-        select: { id: true },
+        select: { id: true, role: true },
       });
 
-      if (!approver) {
+      if (!approver || !isClubAdminRole(approver.role)) {
         throw new MembershipApplicationError(
           "UNAUTHORIZED",
-          "クラブの承認済みメンバーのみが承認できます"
+          "クラブ管理者のみが承認できます"
         );
       }
 
@@ -340,13 +332,13 @@ export async function rejectMembership(
           clubId,
           status: "APPROVED",
         },
-        select: { id: true },
+        select: { id: true, role: true },
       });
 
-      if (!rejecter) {
+      if (!rejecter || !isClubAdminRole(rejecter.role)) {
         throw new MembershipApplicationError(
           "UNAUTHORIZED",
-          "クラブの承認済みメンバーのみが拒否できます"
+          "クラブ管理者のみが拒否できます"
         );
       }
 
@@ -434,7 +426,7 @@ export async function rejectMembership(
 }
 
 /**
- * メンバーシップを削除（APPROVED のメンバーが脱退、または管理者が強制削除）
+ * メンバーシップを削除（クラブ管理者のみ。本人による自主退会は不可）
  */
 export async function deleteMembership(
   membershipId: string,
@@ -466,31 +458,19 @@ export async function deleteMembership(
         );
       }
 
-      // 2. 削除権限チェック
-      // ケース1: 自分のメンバーシップの脱退（本人申告）
-      // ケース2: 管理者が他人を強制削除（ADMIN権限）
-      let isAuthorized = false;
+      const requester = await tx.membership.findFirst({
+        where: {
+          userId: requestingUserId,
+          clubId,
+          status: "APPROVED",
+        },
+        select: { id: true, role: true },
+      });
 
-      if (requestingUserId === membership.userId) {
-        // 本人は常に脱退可能
-        isAuthorized = true;
-      } else {
-        // 管理者の権限確認
-        const requester = await tx.membership.findFirst({
-          where: {
-            userId: requestingUserId,
-            clubId,
-            status: "APPROVED",
-          },
-          select: { id: true },
-        });
-        isAuthorized = !!requester;
-      }
-
-      if (!isAuthorized) {
+      if (!requester || !isClubAdminRole(requester.role)) {
         throw new MembershipApplicationError(
           "UNAUTHORIZED",
-          "このメンバーシップを削除する権限がありません"
+          "クラブ管理者のみがメンバーを削除できます"
         );
       }
 
@@ -500,14 +480,14 @@ export async function deleteMembership(
       });
 
       // 4. 残りの管理者がいない場合はクラブを停止
-      const remainingAdmins = await tx.membership.count({
+      const remainingMembers = await tx.membership.count({
         where: {
           clubId,
           status: "APPROVED",
         },
       });
 
-      if (remainingAdmins === 0) {
+      if (remainingMembers === 0) {
         await tx.club.update({
           where: { id: clubId },
           data: { status: "SUSPENDED" },
@@ -518,10 +498,7 @@ export async function deleteMembership(
       await tx.auditLog.create({
         data: {
           actorUserId: requestingUserId,
-          action:
-            requestingUserId === membership.userId
-              ? "MEMBERSHIP_LEAVE"
-              : "MEMBERSHIP_REMOVE",
+          action: "MEMBERSHIP_REMOVE",
           target: "MEMBERSHIP",
           meta: JSON.stringify({
             targetUserId: membership.userId,

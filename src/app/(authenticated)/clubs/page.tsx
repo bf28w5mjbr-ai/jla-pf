@@ -22,21 +22,23 @@ export default async function ClubsPage() {
     select: {
       id: true,
       memberships: {
-        select: { clubId: true },
+        select: { clubId: true, status: true },
       },
     },
   });
 
   if (!user) redirect("/login");
 
-  const excludeClubIds = user.memberships.map((m) => m.clubId);
+  const excludeClubIds = user.memberships
+    .filter((m) => m.status === "APPROVED" || m.status === "PENDING")
+    .map((m) => m.clubId);
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <div className="border-b border-border pb-6">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">クラブ</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          クラブ名で検索し、参加申請を送れます。
+          クラブ名で検索し、参加できます。
         </p>
       </div>
       <ClubSearchList excludeClubIds={excludeClubIds} />

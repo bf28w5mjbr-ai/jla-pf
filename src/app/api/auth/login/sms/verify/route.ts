@@ -13,6 +13,7 @@ import { verifySmsOtpViaSupabase } from "@/lib/supabase/otp";
 import { onAuthLoginSuccess } from "@/lib/authLoginSuccess";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
+import { LoginSessionPurpose } from "@prisma/client";
 
 const VerifyLoginSchema = z.object({
   sessionId: z.string().cuid(),
@@ -31,6 +32,13 @@ export async function POST(req: NextRequest) {
     });
 
     if (!loginSession) {
+      return NextResponse.json(
+        { error: "セッションが見つかりません" },
+        { status: 404 }
+      );
+    }
+
+    if (loginSession.purpose !== LoginSessionPurpose.SMS_LOGIN) {
       return NextResponse.json(
         { error: "セッションが見つかりません" },
         { status: 404 }
@@ -82,10 +90,10 @@ export async function POST(req: NextRequest) {
 
     // 5. ユーザー取得
     const user = await prisma.user.findUnique({
-      where: { phoneNumber: loginSession.phoneNumber },
+      where: { id: loginSession.userId },
     });
 
-    if (!user) {
+    if (!user || user.deletedAt) {
       await prisma.loginSession.delete({ where: { id: loginSession.id } });
       return NextResponse.json(
         { error: "ユーザーが見つかりません" },

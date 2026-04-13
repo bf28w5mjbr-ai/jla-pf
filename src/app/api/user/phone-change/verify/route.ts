@@ -11,6 +11,7 @@ import { verifyOTP } from "@/lib/otp";
 import { sendSecurityNoticeSms } from "@/lib/sns";
 import { phoneToE164Loose } from "@/lib/phone";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { LoginSessionPurpose } from "@prisma/client";
 
 const PhoneChangeVerifySchema = z.object({
   phone: z.string().regex(/^0\d{9,10}$/),
@@ -33,8 +34,12 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const data = PhoneChangeVerifySchema.parse(body);
 
-    const session = await prisma.loginSession.findUnique({
-      where: { phoneNumber: data.phone },
+    const session = await prisma.loginSession.findFirst({
+      where: {
+        userId: sess.userId,
+        purpose: LoginSessionPurpose.PHONE_CHANGE,
+        phoneNumber: data.phone,
+      },
     });
 
     if (!session) {
@@ -46,7 +51,7 @@ export async function POST(req: NextRequest) {
 
     // OTP有効期限チェック
     if (session.otpExpiresAt < new Date()) {
-      await prisma.loginSession.delete({ where: { phoneNumber: data.phone } });
+      await prisma.loginSession.delete({ where: { id: session.id } });
       return NextResponse.json(
         { error: "確認コードの有効期限が切れました。最初からやり直してください。" },
         { status: 400 }
@@ -55,7 +60,7 @@ export async function POST(req: NextRequest) {
 
     // 試行回数チェック
     if (session.otpAttempts >= 5) {
-      await prisma.loginSession.delete({ where: { phoneNumber: data.phone } });
+      await prisma.loginSession.delete({ where: { id: session.id } });
       return NextResponse.json(
         { error: "試行回数の上限に達しました。最初からやり直してください。" },
         { status: 429 }
@@ -66,7 +71,7 @@ export async function POST(req: NextRequest) {
     const isValid = await verifyOTP(data.otp, session.otpHash);
     if (!isValid) {
       await prisma.loginSession.update({
-        where: { phoneNumber: data.phone },
+        where: { id: session.id },
         data: { otpAttempts: session.otpAttempts + 1 },
       });
 

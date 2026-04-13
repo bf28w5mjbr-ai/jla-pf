@@ -24,6 +24,7 @@ export default async function ClubJoinPage() {
       memberships: {
         select: {
           clubId: true,
+          status: true,
         },
       },
     },
@@ -31,8 +32,9 @@ export default async function ClubJoinPage() {
 
   if (!user) redirect("/login");
 
-  // 既に申請中または所属しているクラブIDのリスト
-  const excludeClubIds = user.memberships.map(m => m.clubId);
+  const excludeClubIds = user.memberships
+    .filter((m) => m.status === "APPROVED" || m.status === "PENDING")
+    .map((m) => m.clubId);
 
   return (
     

@@ -1,18 +1,17 @@
 // POST /api/auth/login/sms/start
-// SMS OTPログイン: 電話番号入力 → OTP送信
+// SMS OTPログイン: メール・氏名でユーザーを特定 → 登録電話へ OTP 送信
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/server/db";
-import { isValidJapaneseMobile, toE164 } from "@/lib/phone";
-import { normalizePhone } from "@/lib/normalize-kana";
-import { 
-  generateOTP, 
-  hashOTP, 
+import { isValidJapaneseMobile, phoneToE164Loose } from "@/lib/phone";
+import {
+  generateOTP,
+  hashOTP,
   getOTPExpiry,
   canResend,
-  getResendCooldown
+  getResendCooldown,
 } from "@/lib/otp";
 import { sendOTPviaSMS } from "@/lib/sns";
 import { smsLoginStartAllowed } from "@/lib/smsHoldPolicy";
@@ -27,13 +26,46 @@ import {
 } from "@/lib/loginThrottle";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
-
-const StartLoginSchema = z.object({
-  phoneNumber: z.string().min(10),
-  resend: z.boolean().optional(),
-});
+import { LoginSessionPurpose } from "@prisma/client";
 
 const RESEND_COOLDOWN = 60; // 60秒
+
+const CREDENTIALS_ERROR =
+  "メールアドレスまたはお名前が登録情報と一致しません。ご確認のうえ再度お試しください。";
+
+const StartLoginSchema = z
+  .object({
+    email: z.string().email().optional(),
+    familyName: z.string().min(1).optional(),
+    givenName: z.string().min(1).optional(),
+    resend: z.boolean().optional(),
+    sessionId: z.string().cuid().optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.resend && val.sessionId) return;
+    if (!val.email?.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        message: "メールアドレスを入力してください",
+        path: ["email"],
+      });
+    }
+    if (!val.familyName?.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        message: "姓を入力してください",
+        path: ["familyName"],
+      });
+    }
+    if (!val.givenName?.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        message: "名を入力してください",
+        path: ["givenName"],
+      });
+    }
+  });
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -58,34 +90,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. 電話番号バリデーション
-    if (!isValidJapaneseMobile(data.phoneNumber)) {
-      return NextResponse.json(
-        { error: "有効な日本国内の携帯電話番号を入力してください" },
-        { status: 400 }
-      );
-    }
-
-    const phoneE164 = toE164(data.phoneNumber);
-    const localPhone = normalizePhone(data.phoneNumber);
-
-    // 2. ユーザーの存在確認
-    const user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { phoneNumber: phoneE164 },
-          { phoneNumber: localPhone },
-        ],
-      },
-    });
-
-    if (!user) {
-      return NextResponse.json(
-        { error: "この電話番号は登録されていません。新規登録してください。" },
-        { status: 404 }
-      );
-    }
-
     const skipIpSlot = ip === "127.0.0.1" || ip === "::1";
     if (!skipIpSlot) {
       const slot = await tryConsumeRateSlot(
@@ -107,44 +111,142 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (user.phoneNumber !== phoneE164) {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { phoneNumber: phoneE164 },
+    if (data.resend && data.sessionId) {
+      let loginSession = await prisma.loginSession.findFirst({
+        where: {
+          id: data.sessionId,
+          purpose: LoginSessionPurpose.SMS_LOGIN,
+        },
+        include: { user: true },
       });
-    }
 
-    // 3. 既存のログインセッションチェック
-    let loginSession = await prisma.loginSession.findUnique({
-      where: { phoneNumber: phoneE164 },
-    });
+      if (!loginSession) {
+        return NextResponse.json(
+          { error: "セッションが見つかりません。最初からやり直してください。" },
+          { status: 404 }
+        );
+      }
 
-    // 4. 再送チェック
-    if (loginSession && data.resend) {
       if (!canResend(loginSession.lastSentAt, RESEND_COOLDOWN)) {
         const cooldown = getResendCooldown(loginSession.lastSentAt, RESEND_COOLDOWN);
         return NextResponse.json(
-          { 
+          {
             error: `再送信は${cooldown}秒後に可能です`,
-            cooldown 
+            cooldown,
           },
           { status: 429 }
         );
       }
+
+      const user = loginSession.user;
+      if (user.deletedAt) {
+        return NextResponse.json({ error: CREDENTIALS_ERROR }, { status: 404 });
+      }
+
+      const phoneE164 = phoneToE164Loose(user.phoneNumber);
+      if (!isValidJapaneseMobile(phoneE164)) {
+        return NextResponse.json(
+          {
+            error:
+              "登録されている電話番号がSMS認証に利用できません。プロフィールで携帯番号をご確認ください。",
+          },
+          { status: 400 }
+        );
+      }
+
+      const otp = generateOTP();
+      const otpHash = await hashOTP(otp);
+      const otpExpiresAt = getOTPExpiry();
+      const now = new Date();
+
+      loginSession = await prisma.loginSession.update({
+        where: { id: loginSession.id },
+        data: {
+          phoneNumber: phoneE164,
+          otpHash,
+          otpExpiresAt,
+          otpAttempts: 0,
+          lastSentAt: now,
+        },
+      });
+
+      if (isSupabaseSmsOtpChannelActive()) {
+        await ensureSupabasePhoneUser(phoneE164);
+        await sendSmsOtpViaSupabase(phoneE164);
+      } else {
+        await sendOTPviaSMS(phoneE164, otp);
+      }
+
+      if (user.phoneNumber !== phoneE164) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { phoneNumber: phoneE164 },
+        });
+      }
+
+      return NextResponse.json({
+        sessionId: loginSession.id,
+        message: "認証コードを再送信しました",
+      });
     }
 
-    // 5. OTP生成（現行の失敗回数管理との互換のため hash は維持）
+    const normalizedEmail = data.email!.trim().toLowerCase();
+    const familyName = data.familyName!.trim();
+    const givenName = data.givenName!.trim();
+
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (!user || user.deletedAt) {
+      return NextResponse.json({ error: CREDENTIALS_ERROR }, { status: 404 });
+    }
+
+    if (user.familyName.trim() !== familyName || user.givenName.trim() !== givenName) {
+      return NextResponse.json({ error: CREDENTIALS_ERROR }, { status: 404 });
+    }
+
+    const phoneE164 = phoneToE164Loose(user.phoneNumber);
+    if (!isValidJapaneseMobile(phoneE164)) {
+      return NextResponse.json(
+        {
+          error:
+            "登録されている電話番号がSMS認証に利用できません。プロフィールで携帯番号をご確認ください。",
+        },
+        { status: 400 }
+      );
+    }
+
+    let loginSession = await prisma.loginSession.findUnique({
+      where: {
+        userId_purpose: {
+          userId: user.id,
+          purpose: LoginSessionPurpose.SMS_LOGIN,
+        },
+      },
+    });
+
+    if (loginSession && !canResend(loginSession.lastSentAt, RESEND_COOLDOWN)) {
+      const cooldown = getResendCooldown(loginSession.lastSentAt, RESEND_COOLDOWN);
+      return NextResponse.json(
+        {
+          error: `再送信は${cooldown}秒後に可能です`,
+          cooldown,
+        },
+        { status: 429 }
+      );
+    }
+
     const otp = generateOTP();
     const otpHash = await hashOTP(otp);
-
-    // 6. LoginSession作成/更新
     const otpExpiresAt = getOTPExpiry();
     const now = new Date();
 
     if (loginSession) {
       loginSession = await prisma.loginSession.update({
-        where: { phoneNumber: phoneE164 },
+        where: { id: loginSession.id },
         data: {
+          phoneNumber: phoneE164,
           otpHash,
           otpExpiresAt,
           otpAttempts: 0,
@@ -154,6 +256,8 @@ export async function POST(req: NextRequest) {
     } else {
       loginSession = await prisma.loginSession.create({
         data: {
+          purpose: LoginSessionPurpose.SMS_LOGIN,
+          userId: user.id,
           phoneNumber: phoneE164,
           otpHash,
           otpExpiresAt,
@@ -162,7 +266,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 7. SMS送信（フラグON時はSupabase OTPへ切替。SKIP_SMS 時はアプリ内 OTP のみ）
     if (isSupabaseSmsOtpChannelActive()) {
       await ensureSupabasePhoneUser(phoneE164);
       await sendSmsOtpViaSupabase(phoneE164);
@@ -170,11 +273,17 @@ export async function POST(req: NextRequest) {
       await sendOTPviaSMS(phoneE164, otp);
     }
 
+    if (user.phoneNumber !== phoneE164) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { phoneNumber: phoneE164 },
+      });
+    }
+
     return NextResponse.json({
       sessionId: loginSession.id,
       message: "認証コードを送信しました",
     });
-
   } catch (error) {
     if (
       error instanceof Error &&

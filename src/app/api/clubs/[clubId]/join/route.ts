@@ -1,7 +1,7 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/server/db";
 import { verifySession } from "@/lib/auth";
+import { applyForMembership } from "@/lib/membershipService";
 
 export async function POST(
   request: NextRequest,
@@ -20,44 +20,28 @@ export async function POST(
       return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
     }
 
-    // クラブが存在するか確認
-    const club = await prisma.club.findUnique({
-      where: { id: clubId },
-    });
+    const result = await applyForMembership(session.userId, clubId);
 
-    if (!club) {
-      return NextResponse.json({ error: "クラブが見つかりません" }, { status: 404 });
-    }
-
-    // 既に参加申請しているかチェック
-    const existingMembership = await prisma.membership.findUnique({
-      where: {
-        userId_clubId: {
-          userId: session.userId,
-          clubId: clubId,
-        }
+    if (!result.success || !result.membership) {
+      const msg = result.message ?? "参加に失敗しました";
+      const code = result.error;
+      if (code === "CLUB_NOT_FOUND") {
+        return NextResponse.json({ error: msg }, { status: 404 });
       }
-    });
-
-    if (existingMembership) {
-      return NextResponse.json({ error: "既に参加申請済みです" }, { status: 400 });
+      if (code === "ALREADY_MEMBER") {
+        return NextResponse.json({ error: msg }, { status: 400 });
+      }
+      if (code === "RATE_LIMIT_EXCEEDED" || code === "REJECTED_COOLDOWN") {
+        return NextResponse.json({ error: msg }, { status: 429 });
+      }
+      return NextResponse.json({ error: msg }, { status: 400 });
     }
-
-    // メンバーシップを作成
-    const membership = await prisma.membership.create({
-      data: {
-        userId: session.userId,
-        clubId: clubId,
-        role: "MEMBER",
-        status: "PENDING", // 承認待ち
-      },
-    });
 
     return NextResponse.json({
-      message: "参加申請を送信しました",
+      message: result.message,
       membership: {
-        id: membership.id,
-        status: membership.status,
+        id: result.membership.id,
+        status: result.membership.status,
       },
     });
   } catch (error) {

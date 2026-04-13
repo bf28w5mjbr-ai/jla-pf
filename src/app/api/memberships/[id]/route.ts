@@ -195,20 +195,17 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
       );
     }
 
-    // 自分のメンバーシップか、クラブ管理者かをチェック
-    const isOwnMembership = membership.userId === sess.userId;
-    
-    const adminMembership = !isOwnMembership ? await prisma.membership.findFirst({
+    const adminMembership = await prisma.membership.findFirst({
       where: {
         userId: sess.userId,
         clubId: membership.clubId,
-        status: 'APPROVED',
+        status: "APPROVED",
       },
-    }) : null;
+    });
 
-    if (!isOwnMembership && (!adminMembership || !isClubAdminRole(adminMembership.role))) {
+    if (!adminMembership || !isClubAdminRole(adminMembership.role)) {
       return NextResponse.json(
-        { error: '権限がありません' },
+        { error: "クラブ管理者のみがメンバーを削除できます" },
         { status: 403 }
       );
     }

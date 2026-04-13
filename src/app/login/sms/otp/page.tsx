@@ -18,7 +18,6 @@ function OTPLoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("sessionId");
-  const phone = searchParams.get("phone");
   const redirectAfterLogin = safePostLoginPath(searchParams.get("redirect"));
 
   const [loading, setLoading] = useState(false);
@@ -75,13 +74,18 @@ function OTPLoginContent() {
   };
 
   const handleResend = async () => {
+    if (!sessionId) {
+      toast.error("セッションが見つかりません");
+      return;
+    }
+
     setResending(true);
 
     try {
       const res = await fetch("/api/auth/login/sms/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumber: phone, resend: true }),
+        body: JSON.stringify({ sessionId, resend: true }),
       });
 
       const data = await res.json();
@@ -109,10 +113,7 @@ function OTPLoginContent() {
     return null;
   }
 
-  const subtitle =
-    phone != null && phone !== ""
-      ? `${phone} に送信された6桁の認証コードを入力してください`
-      : "送信された6桁の認証コードを入力してください";
+  const subtitle = "登録の携帯番号宛に送信した6桁の認証コードを入力してください";
 
   return (
     <AuthShell maxWidth="md" title="認証コード入力" subtitle={subtitle} subtitleDensity="balanced">

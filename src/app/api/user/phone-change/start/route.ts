@@ -10,10 +10,8 @@ import { prisma } from "@/server/db";
 import { hashOTP } from "@/lib/otp";
 import { sendOTPviaSMS } from "@/lib/sns";
 import { isSmsOutboundHeld } from "@/lib/smsHoldPolicy";
-import { normalizePhone } from "@/lib/normalize-kana";
-import { toE164 } from "@/lib/phone";
-import { findUserByPhoneCandidates } from "@/lib/user-uniqueness";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { LoginSessionPurpose } from "@prisma/client";
 
 const PhoneChangeStartSchema = z.object({
   phone: z.string().regex(/^0\d{9,10}$/),
@@ -45,20 +43,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 電話番号の重複チェック
-    const existingUser = await findUserByPhoneCandidates([
-      data.phone,
-      normalizePhone(data.phone),
-      toE164(data.phone) ?? "",
-    ]);
-
-    if (existingUser && existingUser.id !== sess.userId) {
-      return NextResponse.json(
-        { error: "この電話番号は既に使用されています" },
-        { status: 400 }
-      );
-    }
-
     // セキュリティ設定の確認
     const user = await prisma.user.findUnique({
       where: { id: sess.userId },
@@ -74,18 +58,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 既存のセッションをクリーンアップ（60秒以上前のもの）
     await prisma.loginSession.deleteMany({
       where: {
-        phoneNumber: data.phone,
+        userId: sess.userId,
+        purpose: LoginSessionPurpose.PHONE_CHANGE,
         createdAt: { lt: new Date(Date.now() - 60_000) },
       },
     });
 
-    // レート制限チェック（60秒以内の再送信を防ぐ）
     const recentSession = await prisma.loginSession.findFirst({
       where: {
-        phoneNumber: data.phone,
+        userId: sess.userId,
+        purpose: LoginSessionPurpose.PHONE_CHANGE,
         createdAt: { gt: new Date(Date.now() - 60_000) },
       },
     });
@@ -104,6 +88,8 @@ export async function POST(req: NextRequest) {
     // セッション作成
     await prisma.loginSession.create({
       data: {
+        purpose: LoginSessionPurpose.PHONE_CHANGE,
+        userId: sess.userId,
         phoneNumber: data.phone,
         otpHash,
         otpAttempts: 0,

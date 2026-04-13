@@ -9,6 +9,7 @@ import type { MembershipRole, MembershipStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { z } from "zod";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
+import { applyForMembership } from "@/lib/membershipService";
 
 // GET /api/memberships - メンバーシップ一覧取得
 export async function GET(req: NextRequest) {
@@ -111,78 +112,24 @@ export async function POST(req: NextRequest) {
 
     const data = ApplyMembershipSchema.parse(body);
 
-    // クラブの存在確認
-    const club = await prisma.club.findUnique({
-      where: { id: data.clubId },
-    });
+    const result = await applyForMembership(sess.userId, data.clubId);
 
-    if (!club) {
-      return NextResponse.json(
-        { error: 'クラブが見つかりません' },
-        { status: 404 }
-      );
-    }
-
-    // 既存のメンバーシップ確認
-    const existing = await prisma.membership.findFirst({
-      where: {
-        userId: sess.userId,
-        clubId: data.clubId,
-        status: { in: ['PENDING', 'APPROVED'] },
-      },
-    });
-
-    if (existing) {
-      if (existing.status === 'APPROVED') {
-        return NextResponse.json(
-          { error: '既にクラブに所属しています' },
-          { status: 400 }
-        );
-      } else {
-        return NextResponse.json(
-          { error: '既に申請済みです' },
-          { status: 400 }
-        );
+    if (!result.success || !result.membership) {
+      const msg = result.message ?? "参加に失敗しました";
+      const code = result.error;
+      if (code === "CLUB_NOT_FOUND") {
+        return NextResponse.json({ error: msg }, { status: 404 });
       }
+      if (code === "ALREADY_MEMBER") {
+        return NextResponse.json({ error: msg }, { status: 400 });
+      }
+      if (code === "RATE_LIMIT_EXCEEDED" || code === "REJECTED_COOLDOWN") {
+        return NextResponse.json({ error: msg }, { status: 429 });
+      }
+      return NextResponse.json({ error: msg }, { status: 400 });
     }
 
-    // メンバーシップ申請作成
-    const membership = await prisma.membership.create({
-      data: {
-        userId: sess.userId,
-        clubId: data.clubId,
-        role: 'MEMBER',
-        status: 'PENDING',
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            givenName: true,
-            familyName: true,
-          },
-        },
-        club: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
-    });
-
-    // AuditLog 記録
-    await prisma.auditLog.create({
-      data: {
-        actorUserId: sess.userId,
-        action: 'MEMBERSHIP_APPLY',
-        target: `membership:${membership.id}`,
-        meta: { clubId: data.clubId },
-      },
-    });
-
-    return NextResponse.json(membership, { status: 201 });
+    return NextResponse.json(result.membership, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(zodErrorJsonBody(err, "validation_message_ja"), { status: 400 });

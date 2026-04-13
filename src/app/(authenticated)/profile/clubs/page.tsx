@@ -11,7 +11,7 @@ import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 
 export const metadata: Metadata = {
-  title: "クラブ検索・申請 | Bluvium",
+  title: "クラブ検索・参加 | Bluvium",
 };
 
 export default async function ProfileClubsPage() {
@@ -28,7 +28,7 @@ export default async function ProfileClubsPage() {
     select: {
       id: true,
       memberships: {
-        select: { clubId: true },
+        select: { clubId: true, status: true },
       },
     },
   });
@@ -37,15 +37,17 @@ export default async function ProfileClubsPage() {
     redirect("/login");
   }
 
-  const excludeClubIds = user.memberships.map((m) => m.clubId);
+  const excludeClubIds = user.memberships
+    .filter((m) => m.status === "APPROVED" || m.status === "PENDING")
+    .map((m) => m.clubId);
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <div className="flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">クラブ検索・申請</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">クラブ検索・参加</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            クラブ名で検索し、参加申請を送れます。新規にクラブを立ち上げる場合は「クラブを作成」から手続きできます。
+            クラブ名で検索して参加できます。新規にクラブを立ち上げる場合は「クラブを作成」から手続きできます。
           </p>
         </div>
         <Button asChild className="h-10 shrink-0 gap-1.5 self-start sm:self-auto">

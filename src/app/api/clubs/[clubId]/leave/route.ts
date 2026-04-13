@@ -16,21 +16,14 @@ export async function POST(
 
     const { clubId } = await context.params;
 
-    // 現在のユーザーのメンバーシップを取得
     const membership = await prisma.membership.findUnique({
       where: {
         userId_clubId: {
           userId: sess.userId,
           clubId: clubId,
-        }
+        },
       },
-      include: {
-        club: {
-          select: {
-            name: true,
-          }
-        }
-      }
+      select: { id: true },
     });
 
     if (!membership) {
@@ -40,16 +33,13 @@ export async function POST(
       );
     }
 
-    // メンバーシップを削除
-    await prisma.membership.delete({
-      where: {
-        id: membership.id,
-      }
-    });
-
-    return NextResponse.json({
-      message: `${membership.club.name}から退会しました`,
-    });
+    return NextResponse.json(
+      {
+        error:
+          "所属の解除はクラブ管理者がメンバー管理から行います。ご自身での退会操作はできません。",
+      },
+      { status: 403 }
+    );
   } catch (error) {
     return jsonInternalError500("POST api/clubs/[clubId]/leave/route.ts", error);
   }

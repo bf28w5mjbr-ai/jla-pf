@@ -37,7 +37,7 @@ model User {
   normalizedGivenName  String // 正規化済み（検索用）
   dateOfBirth          DateTime // 生年月日
   sex                  Sex // 性別（必須）
-  phoneNumber          String    @unique // E.164形式 +81... 必須
+  phoneNumber          String // E.164形式 +81... 必須（同一番号の複数アカウント可）
   phoneVerified        Boolean   @default(false)
   phoneVerifiedAt      DateTime?
   /// 最終ログイン（成功時更新・セキュリティ通知の判定に使用）
@@ -98,6 +98,7 @@ model User {
   teamEntryMembers     TeamEntryMember[]
   passkeyCredentials   PasskeyCredential[]
   passkeyChallenges    PasskeyChallenge[]
+  loginSessions        LoginSession[]
   recorderAssignments  CompetitionRecorderAssignment[] @relation("CompetitionRecorder")
   recorderAssignmentsGranted CompetitionRecorderAssignment[] @relation("CompetitionRecorderGrantor")
   dayCheckins          CompetitionDayCheckin[] @relation("CompetitionCheckinUser")
@@ -126,6 +127,7 @@ model User {
   @@unique([normalizedFamilyName, normalizedGivenName, dateOfBirth])
   @@index([dateOfBirth, normalizedFamilyName, normalizedGivenName])
   @@index([nfcTagId])
+  @@index([phoneNumber])
 }
 
 model PublicApiKey {
@@ -563,10 +565,18 @@ model LoginThrottleBucket {
   @@index([windowStart])
 }
 
+/// SMSログインまたは電話番号変更の OTP セッション（同一ユーザーは purpose ごとに1件まで）
+enum LoginSessionPurpose {
+  SMS_LOGIN
+  PHONE_CHANGE
+}
+
 model LoginSession {
   id String @id @default(cuid())
 
-  phoneNumber String @unique // E.164形式 +81...
+  purpose     LoginSessionPurpose
+  userId      String
+  phoneNumber String // SMS送信先（E.164 または国内形式。チャネルに合わせて保存）
 
   // OTP情報
   otpHash      String // bcryptハッシュ
@@ -579,6 +589,9 @@ model LoginSession {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, purpose])
   @@index([phoneNumber])
   @@index([otpExpiresAt])
 }

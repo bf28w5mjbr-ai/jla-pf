@@ -12,6 +12,9 @@ import { isClubAdminRole } from "@/lib/roleScopes";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import { resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
 import { partitionUnderBandsForCompetition } from "@/lib/competitionUnderAgeSettings";
+import { competitionHostDisplayName } from "@/lib/competitionHostDisplay";
+
+export const runtime = "nodejs";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -39,6 +42,22 @@ function formatAddress(address: {
     address.addressLine2,
   ].filter(Boolean);
   return parts.join(" ");
+}
+
+function formatIssuerAddressBlock(org: {
+  postalCode?: string | null;
+  prefecture?: string | null;
+  city?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  phoneNumber?: string | null;
+}) {
+  const addr = formatAddress(org);
+  const tel = org.phoneNumber?.trim();
+  if (!addr && !tel) return "";
+  if (!tel) return addr;
+  if (!addr) return `TEL ${tel}`;
+  return `${addr}　TEL ${tel}`;
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
@@ -87,6 +106,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         select: {
           id: true,
           name: true,
+          hostOrganizationName: true,
           startDate: true,
           entryFee: true,
           underAgeSystemEnabled: true,
@@ -105,6 +125,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
             select: {
               name: true,
               email: true,
+              phoneNumber: true,
               postalCode: true,
               prefecture: true,
               city: true,
@@ -249,10 +270,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
 
     if (format === "pdf") {
+      const hostIssuerName = competitionHostDisplayName({
+        hostOrganizationName: competition.hostOrganizationName,
+        organization: { name: competition.organization.name },
+      });
       const pdfComponent = React.createElement(ReceiptPDF, {
         receiptNumber,
         issuedDate,
-        subtitle: `${competition.organization.name} 名義（チームエントリー参加費）`,
+        subtitle: `${hostIssuerName} 名義（チームエントリー参加費）`,
         purposeLine: `但、${competition.name} のチーム種目参加申込に係るエントリー費として`,
         referenceLabel: "請求識別子",
         referenceValue: ownerId,
@@ -263,14 +288,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
           "本書は大会エントリー管理システム（Bluvium）により発行された、主催団体名義の領収書です。\n" +
           "カード決済等をご利用の場合、決済代行会社（Stripe 等）の明細名で請求が表示されることがあります。",
         issuer: {
-          name: competition.organization.name,
+          name: hostIssuerName,
           email: competition.organization.email ?? "",
-          address: formatAddress({
+          address: formatIssuerAddressBlock({
             postalCode: competition.organization.postalCode,
             prefecture: competition.organization.prefecture,
             city: competition.organization.city,
             addressLine1: competition.organization.addressLine1,
             addressLine2: competition.organization.addressLine2,
+            phoneNumber: competition.organization.phoneNumber,
           }),
         },
         recipient: {
@@ -304,7 +330,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return new NextResponse(new Uint8Array(pdfBuffer), {
         headers: {
           "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename=\"${receiptNumber}.pdf\"`,
+          "Content-Disposition": `inline; filename="${receiptNumber}.pdf"`,
         },
       });
     }

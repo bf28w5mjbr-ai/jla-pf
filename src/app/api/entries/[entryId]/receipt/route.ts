@@ -10,6 +10,10 @@ import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
 import { ReceiptPDF } from "@/components/pdf/ReceiptPDF";
 import { generatePdfBuffer } from "@/lib/pdf-helper";
 import { fetchStripeReceiptUrlForCheckoutSessionId } from "@/lib/stripeEntryReceiptUrl";
+import { competitionHostDisplayName } from "@/lib/competitionHostDisplay";
+import { pickLatestPaidCheckoutForReceipt } from "@/lib/entryReceiptCheckoutPick";
+
+export const runtime = "nodejs";
 
 type RouteContext = {
   params: Promise<{ entryId: string }>;
@@ -39,11 +43,95 @@ function formatAddress(address: {
   return parts.join(" ");
 }
 
+function formatIssuerAddressBlock(org: {
+  postalCode?: string | null;
+  prefecture?: string | null;
+  city?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  phoneNumber?: string | null;
+}) {
+  const addr = formatAddress(org);
+  const tel = org.phoneNumber?.trim();
+  if (!addr && !tel) return "";
+  if (!tel) return addr;
+  if (!addr) return `TEL ${tel}`;
+  return `${addr}　TEL ${tel}`;
+}
+
+function snapshotRecord(data: unknown): Record<string, unknown> | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  return data as Record<string, unknown>;
+}
+
+function collectIndividualEventNames(
+  items: { event: { name: string } | null }[],
+  snapshotData: unknown,
+  eventNameById: Map<string, string>
+): string[] {
+  const fromRows = items
+    .map((row) => row.event?.name?.trim())
+    .filter((n): n is string => Boolean(n));
+  if (fromRows.length > 0) return fromRows;
+
+  const snap = snapshotRecord(snapshotData);
+  const snapItems = snap && Array.isArray(snap.items) ? snap.items : [];
+  const names: string[] = [];
+  for (const row of snapItems) {
+    if (!row || typeof row !== "object") continue;
+    const eid = (row as Record<string, unknown>).eventId;
+    if (typeof eid !== "string" || !eid) continue;
+    const nm = eventNameById.get(eid)?.trim();
+    if (nm) names.push(nm);
+  }
+  return names;
+}
+
+function buildIndividualEntryPdfItemDescription(opts: {
+  competitionName: string;
+  totalFee: number;
+  snapshotData: unknown;
+  items: { event: { name: string } | null }[];
+  eventNameById: Map<string, string>;
+  clubName: string | null;
+}): string {
+  const base =
+    opts.totalFee > 0
+      ? `${opts.competitionName}／参加申込手数料（エントリー費）`
+      : `${opts.competitionName}／エントリー受付（参加費無料）`;
+  const bits: string[] = [];
+
+  const indiv = collectIndividualEventNames(opts.items, opts.snapshotData, opts.eventNameById);
+  if (indiv.length > 0) bits.push(`個人種目: ${indiv.join("、")}`);
+
+  const snap = snapshotRecord(opts.snapshotData);
+  const teamRaw = snap && Array.isArray(snap.teamEntries) ? snap.teamEntries : [];
+  const teamBits: string[] = [];
+  for (const row of teamRaw) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as Record<string, unknown>;
+    const eid = typeof r.eventId === "string" ? r.eventId : "";
+    const teamName = typeof r.teamName === "string" ? r.teamName.trim() : "";
+    const en = (eid && opts.eventNameById.get(eid)?.trim()) || "";
+    if (en && teamName) teamBits.push(`${en}（${teamName}）`);
+    else if (en) teamBits.push(en);
+  }
+  if (teamBits.length > 0) bits.push(`チーム種目: ${teamBits.join("、")}`);
+
+  const club = opts.clubName?.trim();
+  if (club) bits.push(`所属クラブ: ${club}`);
+
+  if (bits.length === 0) return base;
+  return `${base}（${bits.join("　")}）`;
+}
+
 type CheckoutForReceipt = {
   id: string;
   status: string;
   stripeCheckoutSessionId: string | null;
   stripeReceiptUrl: string | null;
+  completedAt: Date | null;
+  createdAt: Date;
 };
 
 /**
@@ -55,10 +143,15 @@ async function ensureStripeHostedReceiptUrl(
   const completed = checkoutSessions.filter((s) =>
     isEntryCheckoutPaidForEligibility(s.status as EntryCheckoutSessionStatus)
   );
-  const withUrl = completed.find((s) => s.stripeReceiptUrl);
+  const ordered = [...completed].sort((a, b) => {
+    const ta = (a.completedAt ?? a.createdAt).getTime();
+    const tb = (b.completedAt ?? b.createdAt).getTime();
+    return tb - ta;
+  });
+  const withUrl = ordered.find((s) => s.stripeReceiptUrl);
   if (withUrl?.stripeReceiptUrl) return withUrl.stripeReceiptUrl;
 
-  const withStripe = completed.find((s) => s.stripeCheckoutSessionId);
+  const withStripe = ordered.find((s) => s.stripeCheckoutSessionId);
   if (!withStripe?.stripeCheckoutSessionId) return null;
 
   try {
@@ -92,11 +185,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
       },
       include: {
         competition: {
-          include: {
+          select: {
+            id: true,
+            name: true,
+            hostOrganizationName: true,
             organization: {
               select: {
                 name: true,
                 email: true,
+                phoneNumber: true,
                 postalCode: true,
                 prefecture: true,
                 city: true,
@@ -104,8 +201,17 @@ export async function GET(request: NextRequest, context: RouteContext) {
                 addressLine2: true,
               },
             },
+            events: {
+              select: { id: true, name: true },
+            },
           },
         },
+        club: { select: { name: true } },
+        items: {
+          orderBy: { id: "asc" },
+          include: { event: { select: { name: true } } },
+        },
+        snapshot: { select: { data: true } },
         user: {
           select: {
             familyName: true,
@@ -141,9 +247,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     const format = new URL(request.url).searchParams.get("format");
 
-    const latestCompletedCheckout = entry.checkoutSessions.find((item) =>
-      isEntryCheckoutPaidForEligibility(item.status)
-    );
+    const latestCompletedCheckout = pickLatestPaidCheckoutForReceipt(entry.checkoutSessions);
     const issuedDate =
       latestCompletedCheckout?.completedAt ??
       latestCompletedCheckout?.createdAt ??
@@ -175,6 +279,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
               status: s.status,
               stripeCheckoutSessionId: s.stripeCheckoutSessionId,
               stripeReceiptUrl: s.stripeReceiptUrl,
+              completedAt: s.completedAt,
+              createdAt: s.createdAt,
             }))
           )
         : null;
@@ -190,10 +296,24 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
 
     if (format === "pdf") {
+      const hostIssuerName = competitionHostDisplayName({
+        hostOrganizationName: entry.competition.hostOrganizationName,
+        organization: { name: entry.competition.organization.name },
+      });
+      const eventNameById = new Map(entry.competition.events.map((e) => [e.id, e.name]));
+      const itemDescription = buildIndividualEntryPdfItemDescription({
+        competitionName: entry.competition.name,
+        totalFee: entry.totalFee,
+        snapshotData: entry.snapshot?.data,
+        items: entry.items,
+        eventNameById,
+        clubName: entry.club?.name ?? null,
+      });
+
       const pdfComponent = React.createElement(ReceiptPDF, {
         receiptNumber,
         issuedDate,
-        subtitle: `${entry.competition.organization.name} 名義（大会エントリー参加費）`,
+        subtitle: `${hostIssuerName} 名義（大会エントリー参加費）`,
         purposeLine: `但、${entry.competition.name} の参加申込に係るエントリー費として`,
         referenceLabel: "エントリーID",
         referenceValue: entry.id,
@@ -204,14 +324,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
           "本書は大会エントリー管理システム（Bluvium）により発行された、主催団体名義の領収書です。\n" +
           "カード決済等をご利用の場合、決済代行会社（Stripe 等）の明細名で請求が表示されることがあります。",
         issuer: {
-          name: entry.competition.organization.name,
+          name: hostIssuerName,
           email: entry.competition.organization.email ?? "",
-          address: formatAddress({
+          address: formatIssuerAddressBlock({
             postalCode: entry.competition.organization.postalCode,
             prefecture: entry.competition.organization.prefecture,
             city: entry.competition.organization.city,
             addressLine1: entry.competition.organization.addressLine1,
             addressLine2: entry.competition.organization.addressLine2,
+            phoneNumber: entry.competition.organization.phoneNumber,
           }),
         },
         recipient: {
@@ -227,10 +348,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         },
         items: [
           {
-            description:
-              entry.totalFee > 0
-                ? `${entry.competition.name}／参加申込手数料（エントリー費）`
-                : `${entry.competition.name}／エントリー受付（参加費無料）`,
+            description: itemDescription,
             quantity: 1,
             unitPrice: entry.totalFee,
             amount: entry.totalFee,
@@ -245,7 +363,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return new NextResponse(new Uint8Array(pdfBuffer), {
         headers: {
           "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename=\"${receiptNumber}.pdf\"`,
+          "Content-Disposition": `inline; filename="${receiptNumber}.pdf"`,
         },
       });
     }

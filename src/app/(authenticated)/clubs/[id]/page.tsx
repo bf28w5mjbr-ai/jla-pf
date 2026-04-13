@@ -12,11 +12,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataTable } from "@/components/ui/DataTable";
 import ClubLogoUpload from "@/components/ClubLogoUpload";
 import MemberActions from "@/components/MemberActions";
-import LeaveClubButton from "@/components/LeaveClubButton";
 import ClubAnnouncements from "@/components/ClubAnnouncements";
 import ClubActivities from "@/components/ClubActivities";
 import { isClubAdminRole } from "@/lib/roleScopes";
 import ClubRepresentativeSelector from "@/components/ClubRepresentativeSelector";
+import LeaveClubButton from "@/components/LeaveClubButton";
 import { resolveTeamAssignmentDeadline } from "@/lib/startListSettings";
 import { getTeamEntryMarshalAssignmentBlockedMap } from "@/lib/teamMemberAssignmentWindow";
 import {
@@ -673,7 +673,9 @@ export default async function ClubDetailPage({
                     <Link href={appRoutes.clubs.edit(club.id)}>クラブ情報を編集</Link>
                   </Button>
                 )}
-                {userMembership && <LeaveClubButton clubId={club.id} clubName={club.name} />}
+                {userMembership?.status === "APPROVED" ? (
+                  <LeaveClubButton clubId={club.id} clubName={club.name} />
+                ) : null}
               </div>
             </div>
           </div>
