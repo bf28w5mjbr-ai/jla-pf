@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { CreditCard } from "lucide-react";
+import { CreditCard, RefreshCw } from "lucide-react";
 
 type OrganizationStripeConnectPanelProps = {
   organizationId: string;
@@ -14,7 +15,58 @@ export default function OrganizationStripeConnectPanel({
   organizationId,
   chargesEnabled,
 }: OrganizationStripeConnectPanelProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [checkLoading, setCheckLoading] = useState(false);
+
+  const handleCheckStatus = async () => {
+    setCheckLoading(true);
+    try {
+      const res = await fetch(
+        `/api/organizations/${organizationId}/stripe-connect/status?sync=1`,
+        { credentials: "include" }
+      );
+      let data: {
+        error?: string;
+        issues?: string[];
+        paidEntryBlockReason?: string | null;
+        readyForPaidEntries?: boolean;
+        stripe?: { chargesEnabled?: boolean; currentlyDueCount?: number } | null;
+      } = {};
+      const ct = res.headers.get("content-type") ?? "";
+      if (ct.includes("application/json")) {
+        try {
+          data = (await res.json()) as typeof data;
+        } catch {
+          data = {};
+        }
+      }
+      if (!res.ok) {
+        toast.error(
+          typeof data.error === "string" && data.error.trim()
+            ? data.error.trim()
+            : "状態の取得に失敗しました"
+        );
+        return;
+      }
+      const lines = [...(data.issues ?? [])];
+      if (data.paidEntryBlockReason && !lines.includes(data.paidEntryBlockReason)) {
+        lines.unshift(data.paidEntryBlockReason);
+      }
+      const description = lines.filter(Boolean).join("\n") || "問題は検出されませんでした。";
+      if (data.readyForPaidEntries) {
+        toast.success("Stripe Connect の確認", { description });
+      } else {
+        toast.warning("Stripe Connect に要確認があります", { description });
+      }
+      router.refresh();
+    } catch (e) {
+      console.error(e);
+      toast.error("状態の取得に失敗しました");
+    } finally {
+      setCheckLoading(false);
+    }
+  };
 
   const handleConnect = async () => {
     setLoading(true);
@@ -75,17 +127,30 @@ export default function OrganizationStripeConnectPanel({
               : " 初回のみ Stripe の画面で事業者情報の登録が必要です。"}
           </p>
         </div>
-        {!chargesEnabled ? (
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
           <Button
             type="button"
-            onClick={handleConnect}
-            disabled={loading}
-            variant="secondary"
-            className="sm:min-w-[200px]"
+            onClick={handleCheckStatus}
+            disabled={checkLoading || loading}
+            variant="outline"
+            size="sm"
+            className="gap-1.5 sm:min-w-[200px]"
           >
-            {loading ? "接続処理中..." : "口座・本人確認を行う"}
+            <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${checkLoading ? "animate-spin" : ""}`} aria-hidden />
+            {checkLoading ? "確認中..." : "接続状態を確認"}
           </Button>
-        ) : null}
+          {!chargesEnabled ? (
+            <Button
+              type="button"
+              onClick={handleConnect}
+              disabled={loading || checkLoading}
+              variant="secondary"
+              className="sm:min-w-[200px]"
+            >
+              {loading ? "接続処理中..." : "口座・本人確認を行う"}
+            </Button>
+          ) : null}
+        </div>
       </div>
     </div>
   );

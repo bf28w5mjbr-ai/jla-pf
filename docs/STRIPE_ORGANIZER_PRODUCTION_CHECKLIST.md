@@ -87,10 +87,16 @@
 - Webhook 全般: `docs/TROUBLESHOOTING.md` の「Webhook が動作しない」。
 - Stripe API キー・Connect 無効: 主催の「口座・本人確認」API が 400/503 を返す場合、レスポンスの `error` メッセージとサーバーログを参照。
 
-## 5. 関連コード（参照用）
+## 5. Connect の状態確認（主催管理者）
+
+- 主催団体ページの **「接続状態を確認」**（`OrganizationStripeConnectPanel`）で、Stripe 実態を `sync=1` 付きで取得し DB と突き合わせる。
+- API: `GET /api/organizations/{orgId}/stripe-connect/status?sync=1`（主催 `OrgAdmin` のみ）。JSON に `stripe`（`charges_enabled` 等）、`paidEntryBlockReason`、`issues`、`readyForPaidEntries` が含まれる。
+
+## 6. 関連コード（参照用）
 
 - 正規オリジン: `src/lib/appBaseUrl.ts`（`stripeRedirectOrigin`）
 - 年額 Checkout: `src/app/api/organizations/[orgId]/onboarding/checkout/route.ts`
 - Connect Account Link: `src/app/api/organizations/[orgId]/stripe-connect/account-link/route.ts`
+- Connect 状態: `src/app/api/organizations/[orgId]/stripe-connect/status/route.ts`・`src/lib/organizerStripeConnect.ts`
 - 有料エントリーのブロック理由: `src/lib/organizerBilling.ts`（`paidEntryCheckoutBlockReason`）
 - Webhook: `src/app/api/webhooks/stripe/route.ts`
