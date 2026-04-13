@@ -1,27 +1,32 @@
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { Font } from "@react-pdf/renderer";
 
 let registered = false;
 
+const require = createRequire(import.meta.url);
+
 /** @react-pdf/font は src にファイルパス（文字列）を期待する。Buffer は不可。 */
 function resolveNotoWoffPath(filename: string): string {
-  // Turbopack が require.resolve を [project]/... のまま残すことがあるため process.cwd() で組み立てる。
-  const abs = path.join(
-    process.cwd(),
-    "node_modules",
-    "@fontsource",
-    "noto-sans-jp",
-    "files",
-    filename
-  );
+  // process.cwd() 依存だとサーバーの作業ディレクトリがアプリルートでないと 500 になる。
+  // パッケージ解決で @fontsource/noto-sans-jp の実体へ常に辿る。
+  let pkgRoot: string;
+  try {
+    pkgRoot = path.dirname(require.resolve("@fontsource/noto-sans-jp/package.json"));
+  } catch {
+    throw new Error(
+      "PDF用フォントパッケージが解決できません。@fontsource/noto-sans-jp が dependencies に含まれているか確認してください。"
+    );
+  }
+  const abs = path.join(pkgRoot, "files", filename);
   if (!existsSync(abs)) {
-    const msg =
+    throw new Error(
       "PDF用フォントが見つかりません: " +
-      abs +
-      "\n" +
-      "pnpm install を実行し、パッケージ @fontsource/noto-sans-jp が入っているか確認してください。";
-    throw new Error(msg);
+        abs +
+        "\n" +
+        "pnpm install を実行し、パッケージ @fontsource/noto-sans-jp が入っているか確認してください。"
+    );
   }
   return abs;
 }
