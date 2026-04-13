@@ -10,6 +10,10 @@ import { toast } from "sonner";
 import Link from "next/link";
 import { AuthPanel, AuthShell } from "@/components/auth/AuthShell";
 import { appendRedirectQuery, safePostLoginPath } from "@/lib/postLoginRedirect";
+import {
+  formatJaRemainingDuration,
+  parseRetryAfterSeconds,
+} from "@/lib/loginRetryCountdown";
 
 function SMSLoginContent() {
   const router = useRouter();
@@ -21,6 +25,17 @@ function SMSLoginContent() {
   const [givenName, setGivenName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [smsHeld, setSmsHeld] = useState(false);
+  const [smsRateRetryRemainingSec, setSmsRateRetryRemainingSec] = useState<number | null>(null);
+
+  const smsRateLimited = smsRateRetryRemainingSec != null && smsRateRetryRemainingSec > 0;
+
+  useEffect(() => {
+    if (!smsRateLimited) return;
+    const id = window.setInterval(() => {
+      setSmsRateRetryRemainingSec((s) => (s == null || s <= 1 ? null : s - 1));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [smsRateLimited]);
 
   useEffect(() => {
     fetch("/api/health")
@@ -67,17 +82,40 @@ function SMSLoginContent() {
         }),
       });
 
-      const data = await res.json();
+      const data = (await res.json()) as {
+        error?: string;
+        retryAfterSec?: unknown;
+        sessionId?: string;
+      };
 
       if (!res.ok) {
+        if (res.status === 429) {
+          const sec = parseRetryAfterSeconds(res, data);
+          if (sec != null) {
+            setSmsRateRetryRemainingSec(sec);
+            setError(null);
+            toast.error("SMS送信の上限に達しました", {
+              description: `再試行可能まであと ${formatJaRemainingDuration(sec)}`,
+            });
+            return;
+          }
+        }
         const errorMessage = data.error || "認証コード送信に失敗しました";
         setError(errorMessage);
         toast.error(errorMessage);
         return;
       }
 
+      const sessionId = data.sessionId;
+      if (typeof sessionId !== "string" || !sessionId.trim()) {
+        const errorMessage = "セッションの開始に失敗しました。もう一度お試しください。";
+        setError(errorMessage);
+        toast.error(errorMessage);
+        return;
+      }
+
       toast.success("認証コードを送信しました");
-      const otpBase = `/login/sms/otp?sessionId=${encodeURIComponent(data.sessionId)}`;
+      const otpBase = `/login/sms/otp?sessionId=${encodeURIComponent(sessionId)}`;
       router.push(appendRedirectQuery(otpBase, redirectAfterLogin));
     } catch (err) {
       console.error("SMS login start error:", err);
@@ -98,6 +136,21 @@ function SMSLoginContent() {
     >
       <AuthPanel>
         <AutofillSyncForm onSubmit={handleSubmit} className="space-y-4">
+          {smsRateLimited && smsRateRetryRemainingSec != null ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className="rounded-lg border border-amber-200/90 bg-amber-50 px-3 py-2.5 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/35 dark:text-amber-100"
+            >
+              <p className="font-medium">SMS 送信が一時的に制限されています。</p>
+              <p className="mt-1 text-amber-900/95 dark:text-amber-100/90">
+                再試行可能まであと{" "}
+                <span className="font-mono text-base font-semibold tabular-nums tracking-tight text-foreground">
+                  {formatJaRemainingDuration(smsRateRetryRemainingSec)}
+                </span>
+              </p>
+            </div>
+          ) : null}
           {error && (
             <div
               className="rounded-lg border border-red-200/80 bg-red-50 px-3 py-2.5 dark:border-red-900/50 dark:bg-red-950/40"
@@ -153,7 +206,7 @@ function SMSLoginContent() {
             入力内容は登録時のプロフィール（漢字の氏名）と一致させてください。
           </p>
 
-          <Button type="submit" className="w-full" disabled={loading}>
+          <Button type="submit" className="w-full" disabled={loading || smsRateLimited}>
             {loading ? "送信中..." : "認証コードを送信"}
           </Button>
 

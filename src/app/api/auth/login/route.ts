@@ -50,6 +50,7 @@ export async function POST(req: NextRequest) {
         {
           error:
             "ログイン試行回数が上限に達しました。しばらく時間をおいてから再度お試しください。",
+          retryAfterSec: emailBlocked.retryAfterSec,
         },
         {
           status: 429,
@@ -69,6 +70,7 @@ export async function POST(req: NextRequest) {
           {
             error:
               "ログイン試行回数が上限に達しました。しばらく時間をおいてから再度お試しください。",
+            retryAfterSec: ipBlocked.retryAfterSec,
           },
           {
             status: 429,

@@ -14,6 +14,10 @@ import { Input } from "@/components/ui/input";
 import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import { appendRedirectQuery, safePostLoginPath } from "@/lib/postLoginRedirect";
+import {
+  formatJaRemainingDuration,
+  parseRetryAfterSeconds,
+} from "@/lib/loginRetryCountdown";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -28,6 +32,8 @@ export default function LoginForm() {
   const [passkeyLoading, setPasskeyLoading] = useState(false);
   const [supportsPasskey, setSupportsPasskey] = useState(true);
   const [smsLoginAvailable, setSmsLoginAvailable] = useState<boolean | null>(null);
+  const [passwordRetryRemainingSec, setPasswordRetryRemainingSec] = useState<number | null>(null);
+  const [passkeyRetryRemainingSec, setPasskeyRetryRemainingSec] = useState<number | null>(null);
 
   const emailInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
@@ -43,6 +49,25 @@ export default function LoginForm() {
     if (typeof window === "undefined") return;
     setSupportsPasskey(!!window.PublicKeyCredential);
   }, []);
+
+  const passwordRateLimited = passwordRetryRemainingSec != null && passwordRetryRemainingSec > 0;
+  const passkeyRateLimited = passkeyRetryRemainingSec != null && passkeyRetryRemainingSec > 0;
+
+  useEffect(() => {
+    if (!passwordRateLimited) return;
+    const id = window.setInterval(() => {
+      setPasswordRetryRemainingSec((s) => (s == null || s <= 1 ? null : s - 1));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [passwordRateLimited]);
+
+  useEffect(() => {
+    if (!passkeyRateLimited) return;
+    const id = window.setInterval(() => {
+      setPasskeyRetryRemainingSec((s) => (s == null || s <= 1 ? null : s - 1));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [passkeyRateLimited]);
 
   useEffect(() => {
     fetch("/api/health")
@@ -73,7 +98,21 @@ export default function LoginForm() {
       });
 
       if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          retryAfterSec?: unknown;
+        };
+        if (res.status === 429) {
+          const sec = parseRetryAfterSeconds(res, data);
+          if (sec != null) {
+            setPasswordRetryRemainingSec(sec);
+            setError(null);
+            toast.error("ログイン試行の上限に達しました", {
+              description: `再試行可能まであと ${formatJaRemainingDuration(sec)}`,
+            });
+            return;
+          }
+        }
         const msg = data?.error ?? "ログインに失敗しました";
         setError(msg);
         toast.error("ログイン失敗", { description: msg });
@@ -85,6 +124,8 @@ export default function LoginForm() {
         return;
       }
 
+      setPasswordRetryRemainingSec(null);
+      setPasskeyRetryRemainingSec(null);
       toast.success("ログイン成功");
       router.replace(redirectAfterLogin ?? "/dashboard");
     } catch {
@@ -125,6 +166,17 @@ export default function LoginForm() {
       const options = await optionsRes.json();
 
       if (!optionsRes.ok) {
+        if (optionsRes.status === 429) {
+          const sec = parseRetryAfterSeconds(optionsRes, options);
+          if (sec != null) {
+            setPasskeyRetryRemainingSec(sec);
+            setError(null);
+            toast.error("パスキー操作の上限に達しました", {
+              description: `再試行可能まであと ${formatJaRemainingDuration(sec)}`,
+            });
+            return;
+          }
+        }
         const msg = options?.error ?? "パスキー認証を開始できませんでした";
         setError(msg);
         toast.error("パスキー認証失敗", { description: msg });
@@ -148,6 +200,8 @@ export default function LoginForm() {
         return;
       }
 
+      setPasswordRetryRemainingSec(null);
+      setPasskeyRetryRemainingSec(null);
       toast.success("パスキーでログインしました");
       router.replace(redirectAfterLogin ?? "/dashboard");
     } catch (err: unknown) {
@@ -171,6 +225,36 @@ export default function LoginForm() {
       subtitleDensity="balanced"
     >
       <AuthPanel>
+        {passwordRateLimited && passwordRetryRemainingSec != null ? (
+          <p
+            role="status"
+            aria-live="polite"
+            className="mb-4 rounded-lg border border-amber-200/90 bg-amber-50 px-3 py-2.5 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/35 dark:text-amber-100"
+          >
+            <span className="font-medium">ログイン試行の上限に達しています。</span>
+            <span className="mt-1 block text-amber-900/95 dark:text-amber-100/90">
+              再試行可能まであと{" "}
+              <span className="font-mono text-base font-semibold tabular-nums tracking-tight text-foreground">
+                {formatJaRemainingDuration(passwordRetryRemainingSec)}
+              </span>
+            </span>
+          </p>
+        ) : null}
+        {passkeyRateLimited && passkeyRetryRemainingSec != null ? (
+          <p
+            role="status"
+            aria-live="polite"
+            className="mb-4 rounded-lg border border-amber-200/90 bg-amber-50 px-3 py-2.5 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/35 dark:text-amber-100"
+          >
+            <span className="font-medium">パスキー認証の操作上限に達しています。</span>
+            <span className="mt-1 block text-amber-900/95 dark:text-amber-100/90">
+              再試行可能まであと{" "}
+              <span className="font-mono text-base font-semibold tabular-nums tracking-tight text-foreground">
+                {formatJaRemainingDuration(passkeyRetryRemainingSec)}
+              </span>
+            </span>
+          </p>
+        ) : null}
         {error && (
           <p
             ref={errorRef}
@@ -183,7 +267,11 @@ export default function LoginForm() {
           </p>
         )}
 
-        <AutofillSyncForm onSubmit={onSubmit} className="space-y-4" aria-busy={submitting}>
+        <AutofillSyncForm
+          onSubmit={onSubmit}
+          className="space-y-4"
+          aria-busy={submitting}
+        >
           <div className="space-y-1.5">
             <Label htmlFor="login-email">メールアドレス</Label>
             <Input
@@ -229,7 +317,12 @@ export default function LoginForm() {
             </p>
           </div>
 
-          <Button type="submit" className="w-full" disabled={submitting} aria-disabled={submitting}>
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={submitting || passwordRateLimited}
+            aria-disabled={submitting || passwordRateLimited}
+          >
             {submitting ? "ログイン中..." : "ログイン"}
           </Button>
 
@@ -238,7 +331,7 @@ export default function LoginForm() {
               type="button"
               variant="outline"
               onClick={onPasskeyLogin}
-              disabled={passkeyLoading || !supportsPasskey}
+              disabled={passkeyLoading || !supportsPasskey || passkeyRateLimited}
               className="w-full"
             >
               {passkeyLoading ? "パスキー認証中..." : "パスキーでログイン"}

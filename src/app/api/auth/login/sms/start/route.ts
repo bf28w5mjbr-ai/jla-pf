@@ -102,6 +102,7 @@ export async function POST(req: NextRequest) {
           {
             error:
               "短時間に SMS 送信が繰り返されました。しばらく時間をおいてから再度お試しください。",
+            retryAfterSec: slot.retryAfterSec,
           },
           {
             status: 429,
