@@ -68,10 +68,14 @@ export async function POST(
     }
     if (error instanceof Stripe.errors.StripeInvalidRequestError) {
       logApiError(ctx, error);
+      const stripeDetail = error.message?.trim();
       return NextResponse.json(
         {
           error:
             "Stripe Connect の設定を完了できませんでした。Stripe ダッシュボードで Connect が有効か、本番／テストモードがキーと一致しているか確認してください。",
+          /** ダッシュボード設定不備・モード不一致など、Stripe から返る具体的理由（英語のことが多い） */
+          stripeDetail: stripeDetail || undefined,
+          stripeCode: error.code ?? undefined,
         },
         { status: 400 }
       );

@@ -78,7 +78,7 @@ export default function OrganizationStripeConnectPanel({
           credentials: "include",
         }
       );
-      let data: { error?: string; url?: string } = {};
+      let data: { error?: string; url?: string; stripeDetail?: string; stripeCode?: string } = {};
       const ct = res.headers.get("content-type") ?? "";
       if (ct.includes("application/json")) {
         try {
@@ -88,7 +88,7 @@ export default function OrganizationStripeConnectPanel({
         }
       }
       if (!res.ok) {
-        const msg =
+        const base =
           typeof data.error === "string" && data.error.trim()
             ? data.error.trim()
             : res.status === 401
@@ -96,6 +96,11 @@ export default function OrganizationStripeConnectPanel({
               : res.status === 403
                 ? "この操作を行う権限がありません。"
                 : "Stripe の設定画面を開けませんでした";
+        const detail =
+          typeof data.stripeDetail === "string" && data.stripeDetail.trim()
+            ? `\n\nStripe からのメッセージ: ${data.stripeDetail.trim()}`
+            : "";
+        const msg = `${base}${detail}`;
         toast.error(msg);
         return;
       }
