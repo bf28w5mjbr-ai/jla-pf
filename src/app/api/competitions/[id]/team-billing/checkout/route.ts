@@ -1,4 +1,5 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { stripeRedirectOrigin } from "@/lib/appBaseUrl";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { absoluteAppUrl, appRoutes } from "@/lib/appRoutes";
@@ -149,7 +150,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       select: { email: true },
     });
 
-    const origin = new URL(request.url).origin;
+    const origin = stripeRedirectOrigin();
     const entryHubPath = appRoutes.clubs.competition.team(clubId, competitionId, {
       tab: "entry",
     });

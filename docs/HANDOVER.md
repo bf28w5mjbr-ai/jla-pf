@@ -58,6 +58,7 @@
 - Checkout セッション作成
 - `POST /api/webhooks/stripe` で署名検証・冪等処理
 - イベントは `StripeEvent` で重複耐性を持つ
+- 主催団体の本番確認: `docs/STRIPE_ORGANIZER_PRODUCTION_CHECKLIST.md`
 
 ### 監査
 
@@ -89,7 +90,7 @@ pnpm dev
 
 ## 9. 既知の課題
 
-- Stripe Connect による収益分配は未実装
+- 主催団体のエントリー代は **Stripe Connect Express（destination + application_fee）** で送金済み。本番チェックリストは `docs/STRIPE_ORGANIZER_PRODUCTION_CHECKLIST.md`
 - 返金業務フローの運用最終化が必要
 - E2E シナリオは拡張途中
 

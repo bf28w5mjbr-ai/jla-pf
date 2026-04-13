@@ -1,5 +1,5 @@
 import { jsonInternalError500, logApiError } from "@/lib/apiInternalError";
-import { getPublicAppUrl } from "@/lib/appBaseUrl";
+import { stripeRedirectOrigin } from "@/lib/appBaseUrl";
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { verifySession } from "@/lib/auth";
@@ -40,7 +40,7 @@ export async function POST(
     }
 
     const accountId = await ensureStripeExpressConnectAccount(organizationId);
-    const origin = getPublicAppUrl().replace(/\/$/, "");
+    const origin = stripeRedirectOrigin();
 
     const link = await stripe.accountLinks.create({
       account: accountId,

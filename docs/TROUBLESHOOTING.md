@@ -9,6 +9,7 @@
 - `stripe listen --forward-to localhost:3000/api/webhooks/stripe` で署名付きイベントを転送する。
 - `checkout.session.completed` が来ない場合、`Payment` と `EntryCheckoutSession` は更新されない。
 - Webhookイベント重複時は `StripeEvent` で冪等処理されるため、まず `stripe_events` の状態を確認する。
+- 主催団体の Connect 状態は `account.updated` でも更新する。購読漏れは `docs/STRIPE_ORGANIZER_PRODUCTION_CHECKLIST.md` を参照。
 
 ## チーム請求の決済ボタンが押せない
 - **エントリー期間中**: チームエントリーを保存して `Payment` ができているか、請求額が 0 円より大きいか確認（期間中は主催の確定なしで決済可）。

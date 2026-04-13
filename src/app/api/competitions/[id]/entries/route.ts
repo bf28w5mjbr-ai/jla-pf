@@ -1,4 +1,5 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { stripeRedirectOrigin } from "@/lib/appBaseUrl";
 import { NextRequest, NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { verifySession } from "@/lib/auth";
@@ -683,7 +684,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 totalFee: result.entry.totalFee,
                 checkoutSessions: [{ status: afterSync.status }],
               });
-              const completeUrl = `${new URL(request.url).origin}/competitions/${competitionId}/entry?completed=1&entryId=${result.entry.id}`;
+              const completeUrl = `${stripeRedirectOrigin()}/competitions/${competitionId}/entry?completed=1&entryId=${result.entry.id}`;
               return NextResponse.json({
                 message: userStatus.businessEstablished
                   ? "決済が確認できました。エントリーが成立しました。"
@@ -745,7 +746,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         },
       });
 
-      const origin = new URL(request.url).origin;
+      const origin = stripeRedirectOrigin();
       let checkoutSession: Stripe.Checkout.Session;
       const skipConnect = connectRequirementSkipped();
       try {
@@ -801,7 +802,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       });
     }
 
-    const completeUrl = `${new URL(request.url).origin}/competitions/${competitionId}/entry?completed=1&entryId=${result.entry.id}`;
+    const completeUrl = `${stripeRedirectOrigin()}/competitions/${competitionId}/entry?completed=1&entryId=${result.entry.id}`;
     const userStatus = getEntryUserFacingStatus({
       status: result.entry.status,
       totalFee: result.entry.totalFee,

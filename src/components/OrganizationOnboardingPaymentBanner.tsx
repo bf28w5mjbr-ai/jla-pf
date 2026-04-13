@@ -21,6 +21,7 @@ export default function OrganizationOnboardingPaymentBanner({
     try {
       const res = await fetch(`/api/organizations/${organizationId}/onboarding/checkout`, {
         method: "POST",
+        credentials: "include",
       });
       const data = await res.json();
       if (!res.ok) {

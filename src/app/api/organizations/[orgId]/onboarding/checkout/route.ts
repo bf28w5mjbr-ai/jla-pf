@@ -1,4 +1,5 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { stripeRedirectOrigin } from "@/lib/appBaseUrl";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
@@ -120,7 +121,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
       select: { email: true },
     });
 
-    const origin = new URL(req.url).origin;
+    const origin = stripeRedirectOrigin();
     let checkoutSession;
     try {
       checkoutSession = await createOrganizerSubscriptionCheckout({
