@@ -66,6 +66,16 @@ function withNonProdPoolTuning(url: string | undefined): string | undefined {
   }
 }
 
+/**
+ * `tsx` 等の短命 CLI 用。Transaction pooler（6543）に TCP で届かない環境では、
+ * Supabase ダッシュボードの **Direct connection**（`db.*.supabase.co:5432`）を `DATABASE_URL_UNPOOLED` に設定すると接続しやすい。
+ */
+export function datasourceUrlForScripts(): string | undefined {
+  const unpooled = process.env.DATABASE_URL_UNPOOLED?.trim();
+  if (unpooled) return unpooled;
+  return withNonProdPoolTuning(withSupabaseTransactionPooler(process.env.DATABASE_URL));
+}
+
 const datasourceUrl = withNonProdPoolTuning(
   withSupabaseTransactionPooler(process.env.DATABASE_URL)
 );

@@ -1,5 +1,11 @@
 # トラブルシューティング
 
+## Supabase に接続できない（`Can't reach database server`・pooler 6543）
+
+- プロジェクトが **Paused** になっていないか Supabase ダッシュボードで確認する。
+- **Transaction pooler**（`*.pooler.supabase.com:6543`）にローカルから届かない場合がある。ダッシュボードの **Connect** → **Database** で **Direct connection**（`db.*.supabase.co:5432`）の URI を `.env` の **`DATABASE_URL_UNPOOLED`** に入れる。`pnpm formalize:organization` など CLI は `DATABASE_URL_UNPOOLED` を優先する（`src/server/db.ts` の `datasourceUrlForScripts`）。
+- IPv6 まわりの問題のときは別回線・VPN オフを試す。
+
 ## Prisma migrate dev の警告
 **例**: `ClubStatus` / `OrgStatus` の enum から `ACTIVE` が削除される警告
 - 対応: DB 内に `ACTIVE` が残っていないことを確認してから migration を実行。
