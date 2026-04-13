@@ -27,6 +27,7 @@ import {
   partitionUnderBandsForCompetition,
 } from "@/lib/competitionUnderAgeSettings";
 import { meetsCompetitionEventAgeEligibility } from "@/lib/underAgeEventEligibility";
+import { resolveEffectiveUnderBandAllowListForEvent } from "@/lib/underBandAllowList";
 import {
   isTieredEntryFee,
   isTieredRequiredQualifications,
@@ -121,7 +122,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const competition = await prisma.competition.findUnique({
       where: { id: competitionId },
       include: {
-        events: true,
+        events: {
+          orderBy: { displayOrder: "asc" },
+          include: {
+            ageCategory: {
+              select: { id: true, underBandKeysEnabled: true },
+            },
+          },
+        },
         ageCategories: {
           orderBy: { displayOrder: "asc" },
           select: {
@@ -129,6 +137,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             displayOrder: true,
             eligibleBirthDateFrom: true,
             eligibleBirthDateTo: true,
+            underBandKeysEnabled: true,
           },
         },
         organization: {
@@ -359,6 +368,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
           competitionUnderAgeEnabled: competitionUsesUnderAgeSystem(competition),
           underPartition,
           eventUnderAgeEligibilityEnabled: event.underAgeEligibilityEnabled ?? true,
+          effectiveUnderBandAllowList: resolveEffectiveUnderBandAllowListForEvent({
+            underBandKeysOverride: event.underBandKeysOverride,
+            ageCategoryId: event.ageCategoryId,
+            categoryUnderBandKeysEnabled: event.ageCategory?.underBandKeysEnabled ?? null,
+          }),
           event,
           userDateOfBirth: user?.dateOfBirth ? new Date(user.dateOfBirth) : null,
           seasonalAgeYears: userAge,
@@ -394,6 +408,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
           competitionUnderAgeEnabled: competitionUsesUnderAgeSystem(competition),
           underPartition,
           eventUnderAgeEligibilityEnabled: event.underAgeEligibilityEnabled ?? true,
+          effectiveUnderBandAllowList: resolveEffectiveUnderBandAllowListForEvent({
+            underBandKeysOverride: event.underBandKeysOverride,
+            ageCategoryId: event.ageCategoryId,
+            categoryUnderBandKeysEnabled: event.ageCategory?.underBandKeysEnabled ?? null,
+          }),
           event,
           userDateOfBirth: user?.dateOfBirth ? new Date(user.dateOfBirth) : null,
           seasonalAgeYears: userAge,

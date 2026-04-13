@@ -19,6 +19,11 @@ import { syncStartListSettingsRoundTabsForEvent } from "@/lib/startListRoundCoun
 import { parseEligibleBirthDateInput } from "@/lib/eligibleBirthDateInput";
 import { eventBirthFieldsFromAgeCategory } from "@/lib/competitionAgeCategorySync";
 import { eventSiblingGroupWhere } from "@/lib/eventSiblingGroup";
+import {
+  competitionUsesUnderAgeSystem,
+  partitionUnderBandsForCompetition,
+} from "@/lib/competitionUnderAgeSettings";
+import { validateUnderBandKeysForPartition } from "@/lib/underBandAllowList";
 
 export async function DELETE(
   request: NextRequest,
@@ -253,6 +258,65 @@ export async function PATCH(
           ? "この種目グループでアンダー制による年齢判定を有効にしました。"
           : "この種目グループでは従来の生年月日／年齢のみで判定します。",
         events: updatedEventsUnder,
+      });
+    }
+
+    const onlyUnderBandKeysOverride =
+      rawKeys.length === 1 &&
+      Object.prototype.hasOwnProperty.call(raw, "underBandKeysOverride");
+    if (onlyUnderBandKeysOverride) {
+      if (!isAdmin) {
+        return NextResponse.json({ message: "権限がありません" }, { status: 403 });
+      }
+      const rawVal = raw.underBandKeysOverride;
+      if (rawVal !== null && !competitionUsesUnderAgeSystem(event.competition)) {
+        return NextResponse.json(
+          { message: "アンダー制が無効な大会では種目の帯上書きは設定できません" },
+          { status: 400 }
+        );
+      }
+      let stored: string[] | null;
+      if (rawVal === null) {
+        stored = null;
+      } else {
+        const partition = partitionUnderBandsForCompetition(event.competition);
+        if (!partition) {
+          return NextResponse.json(
+            { message: "アンダー帯を計算できません。大会の U しきい値を確認してください" },
+            { status: 400 }
+          );
+        }
+        const checked = validateUnderBandKeysForPartition(rawVal, partition);
+        if (!checked.ok) {
+          return NextResponse.json({ message: checked.message }, { status: 400 });
+        }
+        stored = checked.value;
+      }
+      const mutationStateBands = await loadCompetitionMutationState(competitionId);
+      try {
+        assertEventAgePatchAllowed(mutationStateBands);
+      } catch (e) {
+        if (e instanceof CompetitionEditForbiddenError) {
+          return NextResponse.json({ message: e.message }, { status: 400 });
+        }
+        throw e;
+      }
+      await prisma.event.updateMany({
+        where: eventSiblingGroupWhere(competitionId, event),
+        data: {
+          underBandKeysOverride: stored === null ? Prisma.DbNull : stored,
+        },
+      });
+      const updatedEventsBands = await prisma.event.findMany({
+        where: { competitionId },
+        orderBy: { displayOrder: "asc" },
+      });
+      return NextResponse.json({
+        message:
+          stored === null
+            ? "種目の帯設定をタブ既定に戻しました。"
+            : "この種目グループの許可帯を更新しました。",
+        events: updatedEventsBands,
       });
     }
 

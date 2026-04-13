@@ -1,4 +1,5 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { verifySession } from "@/lib/auth";
@@ -10,6 +11,11 @@ import {
 import { isOrgAdminRole } from "@/lib/roleScopes";
 import { parseEligibleBirthDateInput } from "@/lib/eligibleBirthDateInput";
 import { eventBirthFieldsFromAgeCategory } from "@/lib/competitionAgeCategorySync";
+import {
+  competitionUsesUnderAgeSystem,
+  partitionUnderBandsForCompetition,
+} from "@/lib/competitionUnderAgeSettings";
+import { validateUnderBandKeysForPartition } from "@/lib/underBandAllowList";
 
 type RouteContext = { params: Promise<{ id: string; categoryId: string }> };
 
@@ -51,7 +57,30 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       displayOrder?: unknown;
       eligibleBirthDateFrom?: unknown;
       eligibleBirthDateTo?: unknown;
+      underBandKeysEnabled?: unknown;
     };
+
+    let underBandKeysPatch: string[] | null | undefined;
+    if (Object.prototype.hasOwnProperty.call(body, "underBandKeysEnabled")) {
+      if (!competitionUsesUnderAgeSystem(row.competition)) {
+        return NextResponse.json(
+          { message: "アンダー制が無効な大会では帯の許可設定はできません" },
+          { status: 400 }
+        );
+      }
+      const partition = partitionUnderBandsForCompetition(row.competition);
+      if (!partition) {
+        return NextResponse.json(
+          { message: "アンダー帯を計算できません。大会の U しきい値を確認してください" },
+          { status: 400 }
+        );
+      }
+      const checked = validateUnderBandKeysForPartition(body.underBandKeysEnabled, partition);
+      if (!checked.ok) {
+        return NextResponse.json({ message: checked.message }, { status: 400 });
+      }
+      underBandKeysPatch = checked.value;
+    }
 
     const touchedBirthFrom = Object.prototype.hasOwnProperty.call(body, "eligibleBirthDateFrom");
     const touchedBirthTo = Object.prototype.hasOwnProperty.call(body, "eligibleBirthDateTo");
@@ -111,6 +140,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             ? { displayOrder: body.displayOrder }
             : {}),
           ...(datesPatching ? { eligibleBirthDateFrom: fromD, eligibleBirthDateTo: toD } : {}),
+          ...(underBandKeysPatch !== undefined
+            ? {
+                underBandKeysEnabled:
+                  underBandKeysPatch === null ? Prisma.DbNull : underBandKeysPatch,
+              }
+            : {}),
         },
       });
 

@@ -46,6 +46,7 @@ import {
   partitionUnderBandsForCompetition,
 } from "@/lib/competitionUnderAgeSettings";
 import { meetsCompetitionEventAgeEligibility } from "@/lib/underAgeEventEligibility";
+import { resolveEffectiveUnderBandAllowListForEvent } from "@/lib/underBandAllowList";
 
 type CompetitionEntryFormProps = ComponentProps<typeof CompetitionEntryForm>;
 
@@ -145,10 +146,16 @@ export default async function CompetitionEntryPage({
           displayOrder: true,
           eligibleBirthDateFrom: true,
           eligibleBirthDateTo: true,
+          underBandKeysEnabled: true,
         },
       },
       events: {
         orderBy: { displayOrder: "asc" },
+        include: {
+          ageCategory: {
+            select: { id: true, underBandKeysEnabled: true },
+          },
+        },
       },
     },
   });
@@ -476,6 +483,11 @@ export default async function CompetitionEntryPage({
         competitionUnderAgeEnabled: competitionUsesUnderAgeSystem(competition),
         underPartition,
         eventUnderAgeEligibilityEnabled: event.underAgeEligibilityEnabled ?? true,
+        effectiveUnderBandAllowList: resolveEffectiveUnderBandAllowListForEvent({
+          underBandKeysOverride: event.underBandKeysOverride,
+          ageCategoryId: event.ageCategoryId,
+          categoryUnderBandKeysEnabled: event.ageCategory?.underBandKeysEnabled ?? null,
+        }),
         event,
         userDateOfBirth: user?.dateOfBirth ? new Date(user.dateOfBirth) : null,
         seasonalAgeYears: userAge,

@@ -43,6 +43,7 @@ import {
   type AgeQualificationTier,
 } from "@/lib/competitionEntryAgeTiered";
 import { expectedUnderFeeTierKeys, partitionUnderAgeBands } from "@/lib/competitionUnderAgeSystem";
+import { parseStoredUnderBandKeys } from "@/lib/underBandAllowList";
 import {
   ENTRY_PLEDGE_TEXT_MAX_CHARS,
   wrapMarkdownBoldAroundSelection,
@@ -131,6 +132,8 @@ type Event = {
   ageCategoryId?: string | null;
   /** 大会でアンダー制が有効なとき、この種目でアンダーによる年齢判定を使う */
   underAgeEligibilityEnabled?: boolean;
+  /** null: タブの帯設定を継承。配列: 種目単位で上書き */
+  underBandKeysOverride?: string[] | null;
 };
 
 export type CompetitionAgeCategoryDraft = {
@@ -139,6 +142,8 @@ export type CompetitionAgeCategoryDraft = {
   displayOrder: number;
   eligibleBirthDateFrom: Date | string | null;
   eligibleBirthDateTo: Date | string | null;
+  /** null: マスタの全帯を許可。配列: 許可する帯キー */
+  underBandKeysEnabled?: string[] | null;
 };
 
 function buildCategoryFeeDraft(
@@ -570,15 +575,23 @@ export default function EntrySettingsEditor({
     initialData.underAgeSystemEnabled ?? false
   );
   const [underOpenEnabled, setUnderOpenEnabled] = useState(initialData.underAgeOpenEnabled ?? true);
-  const [underUThresholdsText, setUnderUThresholdsText] = useState(() =>
-    (initialData.underAgeUThresholds ?? []).join(", ")
+  const [underUThresholdRows, setUnderUThresholdRows] = useState<string[]>(() =>
+    [...(initialData.underAgeUThresholds ?? [])]
+      .filter((n) => typeof n === "number" && Number.isFinite(n))
+      .sort((a, b) => a - b)
+      .map((n) => String(n))
   );
   const [isUpdatingUnderAgeSettings, setIsUpdatingUnderAgeSettings] = useState(false);
 
   useEffect(() => {
     setUnderSystemEnabled(initialData.underAgeSystemEnabled ?? false);
     setUnderOpenEnabled(initialData.underAgeOpenEnabled ?? true);
-    setUnderUThresholdsText((initialData.underAgeUThresholds ?? []).join(", "));
+    setUnderUThresholdRows(
+      [...(initialData.underAgeUThresholds ?? [])]
+        .filter((n) => typeof n === "number" && Number.isFinite(n))
+        .sort((a, b) => a - b)
+        .map((n) => String(n))
+    );
   }, [
     initialData.underAgeOpenEnabled,
     initialData.underAgeSystemEnabled,
@@ -608,7 +621,7 @@ export default function EntrySettingsEditor({
       (initialAgeCategories ?? [])
         .map(
           (c) =>
-            `${c.id}\t${c.name}\t${toEligibleBirthDateInput(c.eligibleBirthDateFrom)}\t${toEligibleBirthDateInput(c.eligibleBirthDateTo)}`
+            `${c.id}\t${c.name}\t${toEligibleBirthDateInput(c.eligibleBirthDateFrom)}\t${toEligibleBirthDateInput(c.eligibleBirthDateTo)}\t${JSON.stringify(c.underBandKeysEnabled ?? null)}`
         )
         .join("\n"),
     [initialAgeCategories]
@@ -977,6 +990,78 @@ export default function EntrySettingsEditor({
     initialData.underAgeSystemEnabled,
     initialData.underAgeUThresholds,
   ]);
+
+  const masterBandKeys = useMemo(
+    () =>
+      initialData.underAgeSystemEnabled && underPartitionForEditors
+        ? expectedUnderFeeTierKeys(underPartitionForEditors)
+        : [],
+    [initialData.underAgeSystemEnabled, underPartitionForEditors]
+  );
+
+  const [categoryUnderBandDrafts, setCategoryUnderBandDrafts] = useState<Record<string, string[]>>(
+    () => ({})
+  );
+
+  useEffect(() => {
+    const keys = masterBandKeys;
+    setCategoryUnderBandDrafts(() => {
+      const next: Record<string, string[]> = {};
+      for (const c of ageCategories) {
+        const parsed = parseStoredUnderBandKeys(c.underBandKeysEnabled as unknown);
+        next[c.id] = parsed === null ? [...keys] : keys.filter((k) => parsed.includes(k));
+      }
+      return next;
+    });
+  }, [ageCategories, masterBandKeys]);
+
+  const eventEffectiveBandSelection = (event: Event): string[] => {
+    if (!masterBandKeys.length) return [];
+    const allK = masterBandKeys;
+    const o = parseStoredUnderBandKeys(event.underBandKeysOverride as unknown);
+    if (o !== null) {
+      return allK.filter((k) => o.includes(k));
+    }
+    const cat = event.ageCategoryId ? ageCategories.find((x) => x.id === event.ageCategoryId) : null;
+    const tab = parseStoredUnderBandKeys(cat?.underBandKeysEnabled as unknown);
+    return tab === null ? [...allK] : allK.filter((k) => tab.includes(k));
+  };
+
+  const handlePatchEventUnderBandOverride = async (event: Event, selectedKeys: string[]) => {
+    if (!initialData.underAgeSystemEnabled || !masterBandKeys.length) return;
+    if (selectedKeys.length === 0) {
+      toast.error("許可する帯を1つ以上選んでください");
+      return;
+    }
+    const allK = masterBandKeys;
+    const cat = event.ageCategoryId ? ageCategories.find((c) => c.id === event.ageCategoryId) : null;
+    const tabParsed = parseStoredUnderBandKeys(cat?.underBandKeysEnabled as unknown);
+    const tabSel = tabParsed === null ? allK : allK.filter((k) => tabParsed.includes(k));
+    const sameAsTab =
+      selectedKeys.length === tabSel.length && selectedKeys.every((k) => tabSel.includes(k));
+    const payload = sameAsTab ? null : selectedKeys;
+    try {
+      const response = await fetch(`/api/competitions/${competitionId}/events/${event.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ underBandKeysOverride: payload }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(typeof err.message === "string" ? err.message : "更新に失敗しました");
+      }
+      const data = (await response.json()) as { events?: Event[] };
+      if (Array.isArray(data.events)) {
+        syncEvents(data.events);
+      }
+      toast.success(
+        payload === null ? "種目の帯をタブ既定に合わせました" : "この種目の許可帯を更新しました"
+      );
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "更新に失敗しました");
+    }
+  };
 
   const selectedCategory: "POOL" | "OCEAN" =
     categoryScope === "OCEAN_ONLY" ? "OCEAN" : "POOL";
@@ -1388,8 +1473,7 @@ export default function EntrySettingsEditor({
   };
 
   const handleSaveUnderAgeSettings = async () => {
-    const parts = underUThresholdsText
-      .split(/[,、\s]+/)
+    const parts = underUThresholdRows
       .map((s) => s.trim())
       .filter(Boolean)
       .map((s) => parseInt(s, 10))
@@ -2493,6 +2577,15 @@ export default function EntrySettingsEditor({
       toast.error("生年月日の範囲は、開始・終了を両方入力するか、両方空にしてください");
       return;
     }
+    let underBandPayload: string[] | null | undefined;
+    if (initialData.underAgeSystemEnabled && masterBandKeys.length > 0) {
+      const sel = categoryUnderBandDrafts[categoryRowId] ?? masterBandKeys;
+      if (sel.length === 0) {
+        toast.error("このタブで許可する帯を1つ以上選んでください");
+        return;
+      }
+      underBandPayload = sel.length >= masterBandKeys.length ? null : sel;
+    }
     setAgeCatBusy(categoryRowId);
     try {
       const response = await fetch(
@@ -2504,6 +2597,7 @@ export default function EntrySettingsEditor({
             name: nameTrim,
             eligibleBirthDateFrom: fromTrim === "" ? null : fromTrim,
             eligibleBirthDateTo: toTrim === "" ? null : toTrim,
+            ...(underBandPayload !== undefined ? { underBandKeysEnabled: underBandPayload } : {}),
           }),
         }
       );
@@ -2576,6 +2670,17 @@ export default function EntrySettingsEditor({
     if (a && b) return `${a} 〜 ${b}`;
     return a ? `${a} 〜` : `〜 ${b}`;
   };
+
+  /** カテゴリ管理の下書き（YYYY-MM-DD 文字列）用。タブ表示を保存前の編集と一致させる */
+  const formatCatDraftRangeSubtitle = (from: string, to: string) => {
+    const a = from.trim();
+    const b = to.trim();
+    if (!a && !b) return "生年月日の制限なし";
+    if (a && b) return `${a} 〜 ${b}`;
+    return a ? `${a} 〜` : `〜 ${b}`;
+  };
+
+  const countDistinctEventNames = (list: Event[]) => new Map(list.map((e) => [e.name, e])).size;
 
   const handleDeleteAgeCategory = async (categoryRowId: string, label: string) => {
     if (!confirm(`年齢カテゴリ「${label}」を削除しますか？`)) return;
@@ -2807,6 +2912,64 @@ export default function EntrySettingsEditor({
               />
               <span>アンダー制で年齢判定（オフのときは下の生年月日／年齢）</span>
             </label>
+          ) : null}
+
+          {initialData.underAgeSystemEnabled &&
+          masterBandKeys.length > 0 &&
+          event.underAgeEligibilityEnabled !== false ? (
+            <div className="space-y-1.5 rounded-md border border-border/50 bg-muted/20 px-2 py-2">
+              <p className="text-[10px] font-medium text-muted-foreground">
+                この種目でエントリー可能な帯（タップですぐ保存）
+              </p>
+              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                {masterBandKeys.map((key) => {
+                  const sel = eventEffectiveBandSelection(event);
+                  return (
+                    <label key={key} className="flex cursor-pointer items-center gap-1.5 text-[11px]">
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5"
+                        checked={sel.includes(key)}
+                        disabled={!canEdit}
+                        onChange={(e) => {
+                          const next = new Set(sel);
+                          if (e.target.checked) next.add(key);
+                          else next.delete(key);
+                          void handlePatchEventUnderBandOverride(
+                            event,
+                            masterBandKeys.filter((k) => next.has(k))
+                          );
+                        }}
+                      />
+                      <span>{key}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              {event.underBandKeysOverride != null ? (
+                <Button
+                  type="button"
+                  variant="link"
+                  className="h-auto p-0 text-[10px] text-muted-foreground"
+                  disabled={!canEdit}
+                  onClick={() => {
+                    const cat = event.ageCategoryId
+                      ? ageCategories.find((x) => x.id === event.ageCategoryId)
+                      : null;
+                    const tabParsed = parseStoredUnderBandKeys(
+                      cat?.underBandKeysEnabled as unknown
+                    );
+                    const tabSel =
+                      tabParsed === null
+                        ? masterBandKeys
+                        : masterBandKeys.filter((k) => tabParsed.includes(k));
+                    void handlePatchEventUnderBandOverride(event, tabSel);
+                  }}
+                >
+                  タブ既定に合わせる（種目の上書きを解除）
+                </Button>
+              ) : null}
+            </div>
           ) : null}
 
           {linked ? (
@@ -3090,59 +3253,16 @@ export default function EntrySettingsEditor({
       <>
       <Card className="overflow-hidden">
         <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
-          <CardTitle className="text-base font-semibold">アンダー制（U・OPEN・年度年齢）</CardTitle>
-          <CardDescription className="text-xs">
-            有効にすると、種目の参加可否に生年月日の手入力範囲の代わりに「U-○」「OPEN」を使えます（年度年齢は4月2日始まりの年度・翌年4月1日時点の満年齢と一致）。OPEN をオフにすると最大 U より上はエントリー不可です。種目ごとのオンオフは種目設定カードで切り替えます。
+          <CardTitle className="text-base font-semibold">アンダー制について</CardTitle>
+          <CardDescription className="text-xs leading-relaxed">
+            U・OPEN の有効化、しきい値の追加、OPEN
+            の選択、タブ／種目ごとの「許可する帯」の編集は、
+            <span className="font-medium text-foreground">「種目・参加費」</span>
+            タブの先頭にある
+            <span className="font-medium text-foreground">アンダー制度設定</span>
+            と種目ブロックで行います。参加費・出場資格のアンダー区分も、そこで定まるマスタの帯に連動します。
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3 px-4 py-3">
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="h-4 w-4"
-              checked={underSystemEnabled}
-              onChange={(e) => setUnderSystemEnabled(e.target.checked)}
-              disabled={!canEdit || isUpdatingUnderAgeSettings}
-            />
-            <span>この大会でアンダー制を使う</span>
-          </label>
-          <div className="space-y-1.5">
-            <Label className="text-xs">U のしきい値（カンマ区切り・歳）</Label>
-            <Input
-              className="h-9 text-sm"
-              value={underUThresholdsText}
-              onChange={(e) => setUnderUThresholdsText(e.target.value)}
-              placeholder="例: 10, 15"
-              disabled={!canEdit || !underSystemEnabled || isUpdatingUnderAgeSettings}
-            />
-            <p className="text-[10px] text-muted-foreground">
-              空欄で OPEN のみ＝年齢制限なし。複数あるときは帯が重ならないよう分割されます。
-            </p>
-          </div>
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="h-4 w-4"
-              checked={underOpenEnabled}
-              onChange={(e) => setUnderOpenEnabled(e.target.checked)}
-              disabled={!canEdit || !underSystemEnabled || isUpdatingUnderAgeSettings}
-            />
-            <span>最大 U より上を OPEN とする</span>
-          </label>
-          {canEdit ? (
-            <div className="flex justify-end pt-0.5">
-              <Button
-                type="button"
-                size="sm"
-                className="h-8 w-full text-xs md:w-auto"
-                onClick={() => void handleSaveUnderAgeSettings()}
-                disabled={isUpdatingUnderAgeSettings}
-              >
-                {isUpdatingUnderAgeSettings ? "保存中…" : "アンダー制を保存"}
-              </Button>
-            </div>
-          ) : null}
-        </CardContent>
       </Card>
 
       <Card className="overflow-hidden">
@@ -3586,38 +3706,170 @@ export default function EntrySettingsEditor({
 
       {isSection("events") && (
       <>
+      <Card className="mb-4 overflow-hidden border-border/80">
+        <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-3 py-3 sm:px-4">
+          <CardTitle className="text-base font-semibold">アンダー制度設定</CardTitle>
+          <CardDescription className="text-xs leading-relaxed">
+            ここで大会全体の帯（U-○・OPEN）を定義します。下のタブでは、その帯のうちどれをそのタブでエントリー可能にするかを選びます。年度年齢は4月2日始まりの年度・翌年4月1日時点の満年齢です。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 px-3 py-3 sm:px-4">
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={underSystemEnabled}
+              onChange={(e) => setUnderSystemEnabled(e.target.checked)}
+              disabled={!canEdit || isUpdatingUnderAgeSettings}
+            />
+            <span>この大会でアンダー制を使う</span>
+          </label>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Label className="text-xs">U のしきい値（歳）</Label>
+              {canEdit && underSystemEnabled ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1 text-xs"
+                  onClick={() => setUnderUThresholdRows((prev) => [...prev, ""])}
+                  disabled={isUpdatingUnderAgeSettings}
+                >
+                  <Plus className="h-3.5 w-3.5" aria-hidden />
+                  しきい値を追加
+                </Button>
+              ) : null}
+            </div>
+            <div className="flex flex-col gap-2">
+              {underUThresholdRows.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground">
+                  行がない場合は OPEN のみ（他に U がないときは年齢無差別）として保存されます。
+                </p>
+              ) : null}
+              {underUThresholdRows.map((row, idx) => (
+                <div key={idx} className="flex max-w-xs items-center gap-2">
+                  <span className="w-6 text-center text-[10px] text-muted-foreground">{idx + 1}</span>
+                  <Input
+                    className="h-9 text-sm"
+                    inputMode="numeric"
+                    value={row}
+                    placeholder="例: 15"
+                    disabled={!canEdit || !underSystemEnabled || isUpdatingUnderAgeSettings}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setUnderUThresholdRows((prev) => {
+                        const next = [...prev];
+                        next[idx] = v;
+                        return next;
+                      });
+                    }}
+                  />
+                  {canEdit && underSystemEnabled ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0 text-muted-foreground"
+                      aria-label="この行を削除"
+                      onClick={() =>
+                        setUnderUThresholdRows((prev) => prev.filter((_, i) => i !== idx))
+                      }
+                      disabled={isUpdatingUnderAgeSettings}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              数値は保存時に重複除去・昇順に整列されます。複数あるときは帯が重ならないよう分割されます。
+            </p>
+          </div>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={underOpenEnabled}
+              onChange={(e) => setUnderOpenEnabled(e.target.checked)}
+              disabled={!canEdit || !underSystemEnabled || isUpdatingUnderAgeSettings}
+            />
+            <span>最大 U より上を OPEN とする（オフのときその年齢帯はエントリー不可）</span>
+          </label>
+          {canEdit ? (
+            <div className="flex justify-end pt-0.5">
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 w-full text-xs md:w-auto"
+                onClick={() => void handleSaveUnderAgeSettings()}
+                disabled={isUpdatingUnderAgeSettings}
+              >
+                {isUpdatingUnderAgeSettings ? "保存中…" : "アンダー制度を保存"}
+              </Button>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
       <div className="mb-3 space-y-2 rounded-lg border border-border/60 bg-muted/15 px-3 py-2.5 sm:px-4">
         <p className="text-[11px] leading-snug text-muted-foreground">
           年齢カテゴリごとに種目を設定します。タブが異なれば同名の種目も別種目として扱われます。
         </p>
         <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="年齢カテゴリ">
-          {ageCategories.map((c) => (
-            <Button
-              key={c.id}
-              type="button"
-              size="sm"
-              variant={eventScopeTabId === c.id ? "default" : "secondary"}
-              className="h-auto min-h-10 max-w-[14rem] flex-col items-stretch gap-0.5 px-2.5 py-1.5 text-left"
-              onClick={() => setEventScopeTabId(c.id)}
-            >
-              <span className="text-xs font-semibold leading-tight">{c.name}</span>
-              <span className="text-[10px] font-normal opacity-90">
-                {formatAgeCategoryRangeSubtitle(c)}
-              </span>
-            </Button>
-          ))}
-          {events.some((e) => e.ageCategoryId == null || e.ageCategoryId === "") ? (
-            <Button
-              type="button"
-              size="sm"
-              variant={eventScopeTabId === "__NONE__" ? "default" : "secondary"}
-              className="h-auto min-h-10 px-2.5 py-1.5 text-left"
-              onClick={() => setEventScopeTabId("__NONE__")}
-            >
-              <span className="text-xs font-semibold leading-tight">未分類</span>
-              <span className="block text-[10px] font-normal opacity-80">カテゴリ未設定</span>
-            </Button>
-          ) : null}
+          {ageCategories.map((c) => {
+            const d = catDrafts[c.id];
+            const tabTitle = d ? (d.name.trim() ? d.name.trim() : c.name) : c.name;
+            const tabRangeSubtitle = d
+              ? formatCatDraftRangeSubtitle(d.from, d.to)
+              : formatAgeCategoryRangeSubtitle(c);
+            const tabEventNameCount = countDistinctEventNames(
+              events.filter((e) => e.ageCategoryId === c.id)
+            );
+            return (
+              <Button
+                key={c.id}
+                type="button"
+                size="sm"
+                variant={eventScopeTabId === c.id ? "default" : "secondary"}
+                className="h-auto min-h-10 max-w-[14rem] flex-col items-stretch gap-0.5 px-2.5 py-1.5 text-left"
+                onClick={() => setEventScopeTabId(c.id)}
+              >
+                <span className="text-xs font-semibold leading-tight">{tabTitle}</span>
+                <span className="text-[10px] font-normal opacity-90">{tabRangeSubtitle}</span>
+                {tabEventNameCount > 0 ? (
+                  <span className="text-[10px] font-normal tabular-nums opacity-80">
+                    種目 {tabEventNameCount}
+                  </span>
+                ) : null}
+              </Button>
+            );
+          })}
+          {(() => {
+            const uncategorizedEvents = events.filter(
+              (e) => e.ageCategoryId == null || e.ageCategoryId === ""
+            );
+            if (uncategorizedEvents.length === 0) return null;
+            const uncategorizedNameCount = countDistinctEventNames(uncategorizedEvents);
+            return (
+              <Button
+                type="button"
+                size="sm"
+                variant={eventScopeTabId === "__NONE__" ? "default" : "secondary"}
+                className="h-auto min-h-10 px-2.5 py-1.5 text-left"
+                onClick={() => setEventScopeTabId("__NONE__")}
+              >
+                <span className="text-xs font-semibold leading-tight">未分類</span>
+                <span className="block text-[10px] font-normal opacity-80">カテゴリ未設定</span>
+                {uncategorizedNameCount > 0 ? (
+                  <span className="block text-[10px] font-normal tabular-nums opacity-80">
+                    種目 {uncategorizedNameCount}
+                  </span>
+                ) : null}
+              </Button>
+            );
+          })()}
           <Button
             type="button"
             size="sm"
@@ -4141,7 +4393,7 @@ export default function EntrySettingsEditor({
             <CardHeader className="space-y-1 border-b border-border bg-muted/15 px-3 py-3 sm:px-4">
               <CardTitle className="text-base font-semibold">年齢カテゴリ</CardTitle>
               <CardDescription className="text-xs leading-relaxed">
-                名前と「参加可能な生年月日」の範囲を定義します。各カテゴリのタブで追加した種目はこのカテゴリに紐づき、日付を保存するとその種目の生年月日制限が更新されます（エントリー成立後など、大会ルールで変更できない場合は保存できません）。
+                タブの表示名・生年月日範囲に加え、アンダー制が有効なときは「このタブでエントリー可能な帯」を選びます。各カテゴリのタブで追加した種目はこのカテゴリに紐づき、種目ごとに帯を上書きすることもできます。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 px-3 py-3 sm:px-4">
@@ -4244,6 +4496,48 @@ export default function EntrySettingsEditor({
                         <p className="text-[10px] text-muted-foreground">
                           両方空欄は生年月日による制限なし。範囲は両端を含みます。
                         </p>
+                        {initialData.underAgeSystemEnabled && masterBandKeys.length > 0 ? (
+                          <div className="space-y-1.5 rounded-md border border-border/60 bg-background/50 px-2.5 py-2">
+                            <p className="text-[10px] font-medium text-muted-foreground">
+                              このタブでエントリー可能な帯
+                            </p>
+                            <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+                              {masterBandKeys.map((key) => {
+                                const sel = categoryUnderBandDrafts[c.id] ?? masterBandKeys;
+                                const checked = sel.includes(key);
+                                return (
+                                  <label
+                                    key={key}
+                                    className="flex cursor-pointer items-center gap-1.5 text-[11px]"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className="h-3.5 w-3.5"
+                                      checked={checked}
+                                      disabled={!canEdit || busy}
+                                      onChange={(e) => {
+                                        const nextChecked = e.target.checked;
+                                        setCategoryUnderBandDrafts((prev) => {
+                                          const cur = new Set(prev[c.id] ?? masterBandKeys);
+                                          if (nextChecked) cur.add(key);
+                                          else cur.delete(key);
+                                          return {
+                                            ...prev,
+                                            [c.id]: masterBandKeys.filter((k) => cur.has(k)),
+                                          };
+                                        });
+                                      }}
+                                    />
+                                    <span>{key}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                            <p className="text-[10px] text-muted-foreground">
+                              すべてオンで保存すると、マスタの全帯を許可（制限なし）として保存されます。
+                            </p>
+                          </div>
+                        ) : null}
                       </li>
                     );
                   })}

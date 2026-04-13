@@ -1571,6 +1571,8 @@ model CompetitionAgeCategory {
   displayOrder   Int      @default(0)
   eligibleBirthDateFrom DateTime? @db.Date
   eligibleBirthDateTo   DateTime? @db.Date
+  /// アンダー制ON時、このタブで許可する帯キー（"U-10","OPEN" 等の JSON 配列）。null はマスタの全帯を許可
+  underBandKeysEnabled Json?
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
   events      Event[]
@@ -1615,6 +1617,8 @@ model Event {
   maxTeamEntriesPerClub    Int?
   /// 大会でアンダー制が有効なとき、この種目でアンダー判定を使うか（false は従来の生年月日／年齢のみ）。
   underAgeEligibilityEnabled Boolean @default(true)
+  /// null: タブ（年齢カテゴリ）の underBandKeysEnabled を継承。JSON 配列で種目単位に上書き
+  underBandKeysOverride Json?
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
   ageCategory CompetitionAgeCategory? @relation(fields: [ageCategoryId], references: [id], onDelete: Restrict)
