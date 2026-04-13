@@ -72,7 +72,9 @@ export default async function AccountAdminPage({
 
   const [pendingQualificationCount, userCount, clubCount, applyingClubCount, associations, hostOrganizations] =
     await prisma.$transaction([
-      prisma.qualification.count({ where: { status: "PENDING" } }),
+      prisma.qualification.count({
+        where: { status: { in: ["PENDING", "REJECTED", "EXPIRED"] } },
+      }),
       prisma.user.count(),
       prisma.club.count(),
       prisma.club.count({ where: { status: "APPLYING" } }),

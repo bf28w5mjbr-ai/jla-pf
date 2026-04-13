@@ -89,7 +89,7 @@ export default function QualificationRegisterButton({
         throw new Error(data.error || "資格登録に失敗しました");
       }
 
-      toast.success("資格登録を申請しました");
+      toast.success("資格を登録しました");
       setDialogOpen(false);
       setJlaMemberNumber(normalizeJlaMemberNumber(defaultJlaMemberNumber ?? ""));
       router.refresh();
@@ -114,21 +114,21 @@ export default function QualificationRegisterButton({
     >
       <DialogTrigger asChild>
         <Button size="sm" disabled={isRegistering}>
-          登録申請
+          登録
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>資格の登録申請</DialogTitle>
+          <DialogTitle>資格の登録</DialogTitle>
           <DialogDescription>
             {hasProfileCert ? (
               <>
-                「{item.name ?? item.kind}」を、アカウントに登録済みのJLAメンバーIDで申請します。メンバーIDは資格ごとではなくアカウントに1つだけ紐づきます。
+                「{item.name ?? item.kind}」を、アカウントに登録済みのJLAメンバーIDで登録します。メンバーIDは資格ごとではなくアカウントに1つだけ紐づきます。
               </>
             ) : (
               <>
-                「{item.name ?? item.kind}」の申請にあたり、日本ライフセービング協会が発行した
-                JLAメンバーIDを入力してください。入力後はアカウントに保存され、以降の申請でも同じIDが使われます。
+                「{item.name ?? item.kind}」を登録するにあたり、日本ライフセービング協会が発行した
+                JLAメンバーIDを入力してください。入力後はアカウントに保存され、以降の登録でも同じIDが使われます。
               </>
             )}
           </DialogDescription>
@@ -166,7 +166,7 @@ export default function QualificationRegisterButton({
             キャンセル
           </Button>
           <Button type="button" onClick={submitRegistration} disabled={isRegistering}>
-            {isRegistering ? "申請中..." : "申請する"}
+            {isRegistering ? "登録中..." : "登録する"}
           </Button>
         </DialogFooter>
       </DialogContent>

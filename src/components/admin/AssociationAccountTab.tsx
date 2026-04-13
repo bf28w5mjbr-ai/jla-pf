@@ -72,7 +72,7 @@ export default function AssociationAccountTab({
           <span className="text-sm font-medium">協会</span>
         </div>
         <p className="text-sm leading-relaxed text-muted-foreground">
-          資格審査・クラブ指標、管轄協会と管理者の一覧です。
+          資格・クラブ指標、管轄協会と管理者の一覧です。
         </p>
       </div>
 
@@ -87,13 +87,13 @@ export default function AssociationAccountTab({
         </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
-            title="資格申請（保留）"
+            title="資格（要手動確認）"
             value={pendingQualificationCount}
-            hint="承認待ちの資格件数"
+            hint="却下・期限切れなど一覧で確認する件数（新規登録は即時有効）"
             icon={ClipboardList}
             href="/admin/qualifications"
             accent="amber"
-            emphasize
+            emphasize={pendingQualificationCount > 0}
           />
           <StatCard
             title="会員数"
@@ -132,8 +132,8 @@ export default function AssociationAccountTab({
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <QuickLinkCard
-            title="資格の承認・却下"
-            description="保留中の資格申請を審査し、承認または却下します。"
+            title="資格レコードの確認"
+            description="却下・期限切れなどの整理が必要な場合に一覧します。新規の保有資格は承認なしで有効になります。"
             href="/admin/qualifications"
             icon={Award}
           />

@@ -45,7 +45,7 @@ export default function QualificationApprovalTable({ qualifications: initialQual
 
       if (!res.ok) {
         const data = await res.json();
-        alert(data.error || '承認に失敗しました');
+        alert(data.error || "有効化に失敗しました");
         return;
       }
 
@@ -54,7 +54,7 @@ export default function QualificationApprovalTable({ qualifications: initialQual
       router.refresh();
     } catch (error) {
       console.error('Approve error:', error);
-      alert('承認処理中にエラーが発生しました');
+      alert("有効化処理中にエラーが発生しました");
     } finally {
       setProcessing(null);
     }
@@ -101,8 +101,10 @@ export default function QualificationApprovalTable({ qualifications: initialQual
     return (
       <Card>
         <CardHeader>
-          <CardTitle>承認待ちの資格</CardTitle>
-          <CardDescription>現在承認待ちの資格はありません</CardDescription>
+          <CardTitle>資格レコードの確認</CardTitle>
+          <CardDescription>
+            新規の保有資格は承認なしで有効になります。審査待ち・却下・期限切れのレコードはありません。
+          </CardDescription>
         </CardHeader>
       </Card>
     );
@@ -111,8 +113,11 @@ export default function QualificationApprovalTable({ qualifications: initialQual
   return (
     <Card>
       <CardHeader>
-        <CardTitle>承認待ちの資格</CardTitle>
-        <CardDescription>{qualifications.length} 件の承認待ちがあります</CardDescription>
+        <CardTitle>資格レコードの確認</CardTitle>
+        <CardDescription>
+          {qualifications.length}{" "}
+          件（審査待ち・却下・期限切れ）。必要に応じて有効化または却下してください。
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <Table>
@@ -124,7 +129,8 @@ export default function QualificationApprovalTable({ qualifications: initialQual
               <TableHead>認定番号</TableHead>
               <TableHead>発行日</TableHead>
               <TableHead>有効期限</TableHead>
-              <TableHead>申請日</TableHead>
+              <TableHead>状態</TableHead>
+              <TableHead>登録日</TableHead>
               <TableHead>操作</TableHead>
             </TableRow>
           </TableHeader>
@@ -142,6 +148,17 @@ export default function QualificationApprovalTable({ qualifications: initialQual
                 <TableCell>{formatDate(qual.issueDate)}</TableCell>
                 <TableCell>{formatDate(qual.expiryDate)}</TableCell>
                 <TableCell>
+                  <Badge variant="secondary">
+                    {qual.status === "PENDING"
+                      ? "審査待ち"
+                      : qual.status === "REJECTED"
+                        ? "却下"
+                        : qual.status === "EXPIRED"
+                          ? "期限切れ"
+                          : qual.status}
+                  </Badge>
+                </TableCell>
+                <TableCell>
                   {new Date(qual.createdAt).toLocaleDateString('ja-JP')}
                 </TableCell>
                 <TableCell>
@@ -156,7 +173,7 @@ export default function QualificationApprovalTable({ qualifications: initialQual
                       ) : (
                         <>
                           <CheckCircle2 className="h-4 w-4 mr-1" />
-                          承認
+                          有効化
                         </>
                       )}
                     </Button>
@@ -164,7 +181,7 @@ export default function QualificationApprovalTable({ qualifications: initialQual
                       size="sm"
                       variant="destructive"
                       onClick={() => handleReject(qual.id)}
-                      disabled={processing === qual.id}
+                      disabled={processing === qual.id || qual.status !== "PENDING"}
                     >
                       {processing === qual.id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />

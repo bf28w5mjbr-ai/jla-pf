@@ -57,7 +57,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
   }
 }
 
-// PATCH /api/qualifications/[id] - 資格更新（承認・却下）
+// PATCH /api/qualifications/[id] - 資格更新（有効化・却下・期限切れなど）
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
   try {
     const jar = await cookies();

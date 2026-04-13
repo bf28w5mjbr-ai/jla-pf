@@ -463,7 +463,7 @@ model Qualification {
   certNumber    String?
   issueDate     DateTime?
   expiryDate    DateTime?
-  status        QualificationStatus @default(PENDING)
+  status        QualificationStatus @default(APPROVED)
   attachmentUrl String?
 
   // Relations
