@@ -310,11 +310,18 @@ export default function LoginForm() {
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
-            <p className={fieldHintClass("guided")}>
-              {smsLoginAvailable === false
-                ? "パスワードを忘れた場合はアカウント回復手段の整備までサポート窓口へお問い合わせください。"
-                : "パスワードを忘れた場合は、下の「SMS認証でログイン」から登録済みの携帯番号でログインできます。"}
-            </p>
+            <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+              <p className={fieldHintClass("guided")}>
+                {smsLoginAvailable === false
+                  ? "パスワードを忘れた場合はパスキーでログインするか、案内ページ・お問い合わせをご利用ください（この環境では SMS ログインはありません）。"
+                  : "パスワードを忘れた場合は SMS またはパスキーでもログインできます。"}
+              </p>
+              <Button variant="link" className="h-auto shrink-0 justify-start p-0 text-sm font-medium" asChild>
+                <Link href={appendRedirectQuery("/login/forgot-password", redirectAfterLogin)}>
+                  パスワードをお忘れの方
+                </Link>
+              </Button>
+            </div>
           </div>
 
           <Button
