@@ -1,12 +1,8 @@
 import { Metadata } from "next";
-import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { Plus } from "lucide-react";
 
-import { appRoutes } from "@/lib/appRoutes";
 import ClubSearchList from "@/components/ClubSearchList";
-import { Button } from "@/components/ui/button";
 import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 
@@ -47,15 +43,9 @@ export default async function ProfileClubsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">クラブ検索・参加</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            クラブ名で検索して参加できます。新規にクラブを立ち上げる場合は「クラブを作成」から手続きできます。
+            クラブ名で検索して参加できます。
           </p>
         </div>
-        <Button asChild className="h-10 shrink-0 gap-1.5 self-start sm:self-auto">
-          <Link href={appRoutes.clubs.create()}>
-            <Plus className="h-4 w-4" aria-hidden />
-            クラブを作成
-          </Link>
-        </Button>
       </div>
       <ClubSearchList excludeClubIds={excludeClubIds} />
     </div>

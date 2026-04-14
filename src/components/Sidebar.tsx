@@ -174,11 +174,6 @@ export default function Sidebar({
 
   const bottomMenuItems: MenuItem[] = [
     {
-      label: "クラブを作成",
-      href: appRoutes.clubs.create(),
-      icon: <PlusCircle className="h-4 w-4 shrink-0 opacity-90" strokeWidth={1.75} aria-hidden />,
-    },
-    {
       label: "大会主催団体を作成",
       href: "/organizations/create",
       icon: <PlusCircle className="h-4 w-4 shrink-0 opacity-90" strokeWidth={1.75} aria-hidden />,

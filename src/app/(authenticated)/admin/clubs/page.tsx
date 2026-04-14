@@ -40,6 +40,13 @@ export default async function AdminClubsPage() {
           email: true,
         }
       },
+      representativeUser: {
+        select: {
+          familyName: true,
+          givenName: true,
+          email: true,
+        },
+      },
       _count: {
         select: {
           memberships: true,
@@ -66,14 +73,28 @@ export default async function AdminClubsPage() {
               className: "font-medium text-gray-900 dark:text-gray-100",
             },
             {
+              header: "代表者",
+              accessor: (c) =>
+                c.representativeUser
+                  ? `${c.representativeUser.familyName} ${c.representativeUser.givenName}`
+                  : c.representativeFamilyName && c.representativeGivenName
+                    ? `${c.representativeFamilyName} ${c.representativeGivenName}`
+                    : "-",
+              className: "text-gray-600 dark:text-gray-400",
+            },
+            {
               header: "作成者",
               accessor: (c) => c.creator ? `${c.creator.familyName} ${c.creator.givenName}` : '不明',
               className: "text-gray-600 dark:text-gray-400",
             },
             {
-              header: "メール",
-              accessor: (c) => c.creator?.email || '-',
-              className: "text-gray-600 dark:text-gray-400 font-mono text-sm",
+              header: "連絡先メール",
+              accessor: (c) => (
+                <div className="space-y-0.5 font-mono text-sm text-gray-600 dark:text-gray-400">
+                  <p>作成者: {c.creator?.email || "-"}</p>
+                  <p>代表者: {c.representativeUser?.email || "-"}</p>
+                </div>
+              ),
             },
             {
               header: "メンバー数",

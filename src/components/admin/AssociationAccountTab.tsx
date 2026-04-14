@@ -107,6 +107,7 @@ export default function AssociationAccountTab({
             value={clubCount}
             hint="登録クラブ総数"
             icon={Building2}
+            href="/admin/clubs"
             accent="emerald"
           />
           <StatCard

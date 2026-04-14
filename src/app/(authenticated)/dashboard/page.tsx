@@ -223,7 +223,7 @@ export default async function DashboardPage() {
           ダッシュボード
         </h1>
         <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-          プロフィール・エントリー・クラブ申請の状況をひと目で確認できます。
+          プロフィール・エントリー・所属クラブの状況をひと目で確認できます。
         </p>
       </header>
 
