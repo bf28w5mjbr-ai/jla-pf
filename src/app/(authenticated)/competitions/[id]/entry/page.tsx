@@ -555,7 +555,9 @@ export default async function CompetitionEntryPage({
     );
   }
   const canManageTeamEntries = memberships.some((membership) => isClubAdminRole(membership.role));
-  const firstAdminMembership = memberships.find((m) => isClubAdminRole(m.role));
+  const teamAdminMemberships = [...memberships]
+    .filter((m) => isClubAdminRole(m.role))
+    .sort((a, b) => a.club.name.localeCompare(b.club.name, "ja"));
   const teamAssignmentWindow = await getTeamMemberAssignmentWindowState(
     prisma,
     competition.id,
@@ -865,32 +867,56 @@ export default async function CompetitionEntryPage({
             </div>
             {canManageTeamEntries ? (
               isTeamAssignmentWindowOpen ? (
-                <Button variant="outline" size="sm" className="h-9 w-full shrink-0 px-4 text-xs sm:w-auto" asChild>
-                  <Link
-                    href={
-                      firstAdminMembership
-                        ? appRoutes.clubs.competition.team(firstAdminMembership.club.id, competition.id, {
+                teamAdminMemberships.length > 0 ? (
+                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+                    {teamAdminMemberships.map((m) => (
+                      <Button
+                        key={m.club.id}
+                        variant="outline"
+                        size="sm"
+                        className="h-9 w-full shrink-0 px-4 text-xs sm:w-auto"
+                        asChild
+                      >
+                        <Link
+                          href={appRoutes.clubs.competition.team(m.club.id, competition.id, {
                             tab: "assignment",
-                          })
-                        : appRoutes.competitions.legacyTeamAssignment(competition.id)
-                    }
-                  >
-                    メンバー割当へ
-                  </Link>
-                </Button>
+                          })}
+                        >
+                          メンバー割当（{m.club.name}）
+                        </Link>
+                      </Button>
+                    ))}
+                  </div>
+                ) : (
+                  <Button variant="outline" size="sm" className="h-9 w-full shrink-0 px-4 text-xs sm:w-auto" asChild>
+                    <Link href={appRoutes.competitions.legacyTeamAssignment(competition.id)}>
+                      メンバー割当へ
+                    </Link>
+                  </Button>
+                )
+              ) : teamAdminMemberships.length > 0 ? (
+                <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+                  {teamAdminMemberships.map((m) => (
+                    <Button
+                      key={m.club.id}
+                      variant="outline"
+                      size="sm"
+                      className="h-9 w-full shrink-0 px-4 text-xs sm:w-auto"
+                      asChild
+                    >
+                      <Link
+                        href={appRoutes.clubs.competition.team(m.club.id, competition.id, {
+                          tab: "entry",
+                        })}
+                      >
+                        チーム管理（{m.club.name}）
+                      </Link>
+                    </Button>
+                  ))}
+                </div>
               ) : (
                 <Button variant="outline" size="sm" className="h-9 w-full shrink-0 px-4 text-xs sm:w-auto" asChild>
-                  <Link
-                    href={
-                      firstAdminMembership
-                        ? appRoutes.clubs.competition.team(firstAdminMembership.club.id, competition.id, {
-                            tab: "entry",
-                          })
-                        : appRoutes.competitions.legacyTeamEntry(competition.id)
-                    }
-                  >
-                    チーム管理へ
-                  </Link>
+                  <Link href={appRoutes.competitions.legacyTeamEntry(competition.id)}>チーム管理へ</Link>
                 </Button>
               )
             ) : null}

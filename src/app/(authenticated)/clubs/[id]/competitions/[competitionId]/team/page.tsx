@@ -114,11 +114,11 @@ export default async function ClubCompetitionTeamHubPage({
     redirect("/login");
   }
 
-  const membership = await prisma.membership.findFirst({
+  const adminMemberships = await prisma.membership.findMany({
     where: {
       userId: session.userId,
-      clubId,
       status: "APPROVED",
+      role: "ADMIN",
     },
     include: {
       club: {
@@ -131,11 +131,15 @@ export default async function ClubCompetitionTeamHubPage({
     },
   });
 
-  if (!membership || !isClubAdminRole(membership.role)) {
+  const membership = adminMemberships.find((m) => m.clubId === clubId);
+  if (!membership) {
     notFound();
   }
 
-  const adminClubs = [membership.club];
+  const adminClubs = [...adminMemberships]
+    .sort((a, b) => a.club.name.localeCompare(b.club.name, "ja"))
+    .map((m) => m.club);
+  const adminClubIds = adminClubs.map((c) => c.id);
 
   const competition = await prisma.competition.findUnique({
     where: { id: competitionId },
@@ -166,7 +170,7 @@ export default async function ClubCompetitionTeamHubPage({
   const teamEntriesFull = await prisma.teamEntry.findMany({
     where: {
       competitionId: competition.id,
-      clubId: membership.club.id,
+      clubId: { in: adminClubIds },
     },
     include: {
       event: {
@@ -185,7 +189,7 @@ export default async function ClubCompetitionTeamHubPage({
         },
       },
     },
-    orderBy: [{ eventId: "asc" }, { createdAt: "asc" }],
+    orderBy: [{ clubId: "asc" }, { eventId: "asc" }, { createdAt: "asc" }],
   });
 
   const teamEntriesForHistory = teamEntriesFull.map((e) => ({
@@ -196,10 +200,13 @@ export default async function ClubCompetitionTeamHubPage({
     updatedAt: e.updatedAt,
   }));
 
+  const teamPaymentOwnerIds = adminClubIds.map((id) =>
+    buildTeamEntryPaymentOwnerId(competition.id, id)
+  );
   const teamPayments = await prisma.payment.findMany({
     where: {
       ownerType: "CLUB",
-      ownerId: buildTeamEntryPaymentOwnerId(competition.id, membership.club.id),
+      ownerId: { in: teamPaymentOwnerIds },
       type: "COMPETITION_ENTRY_FEE",
     },
     select: {
@@ -215,7 +222,7 @@ export default async function ClubCompetitionTeamHubPage({
   const eligibleEntries = await prisma.competitionEntry.findMany({
     where: {
       competitionId: competition.id,
-      clubId: membership.club.id,
+      clubId: { in: adminClubIds },
       status: "SUBMITTED",
     },
     include: {
@@ -236,40 +243,57 @@ export default async function ClubCompetitionTeamHubPage({
       : null;
   const teamEntryFeePerTeam = entryFee?.teamEntryFeePerTeam ?? 0;
 
-  const initialEntriesByClub = {
-    [membership.club.id]: teamEntriesFull.map((entry) => ({
-      id: entry.id,
-      eventId: entry.eventId,
-      teamName: entry.teamName,
-    })),
-  };
+  const initialEntriesByClub = Object.fromEntries(
+    adminClubIds.map((cid) => [
+      cid,
+      teamEntriesFull
+        .filter((entry) => entry.clubId === cid)
+        .map((entry) => ({
+          id: entry.id,
+          eventId: entry.eventId,
+          teamName: entry.teamName,
+        })),
+    ])
+  ) as Record<string, { id: string; eventId: string; teamName: string }[]>;
 
   const now = new Date();
   const entryStart = competition.entryStartDate ? new Date(competition.entryStartDate) : null;
   const entryEnd = competition.entryEndDate ? new Date(competition.entryEndDate) : null;
   const entryWindowOpen = entryStart && entryEnd ? now >= entryStart && now <= entryEnd : false;
 
-  const billingByClub = (() => {
-    const payment = teamPayments.find(
-      (item) => item.ownerId === buildTeamEntryPaymentOwnerId(competition.id, membership.club.id)
-    );
-    return {
-      [membership.club.id]: payment
-        ? {
-            id: payment.id,
-            status: payment.status,
-            amount: payment.amount,
-            stripeCheckoutSessionId: payment.stripeCheckoutSessionId,
-            finalizedAt:
-              payment.metadata &&
-              typeof payment.metadata === "object" &&
-              typeof (payment.metadata as { finalizedAt?: unknown }).finalizedAt === "string"
-                ? ((payment.metadata as { finalizedAt?: string }).finalizedAt ?? null)
-                : null,
-          }
-        : undefined,
-    };
-  })();
+  const billingByClub = Object.fromEntries(
+    adminClubIds.map((cid) => {
+      const ownerId = buildTeamEntryPaymentOwnerId(competition.id, cid);
+      const payment = teamPayments.find((item) => item.ownerId === ownerId);
+      return [
+        cid,
+        payment
+          ? {
+              id: payment.id,
+              status: payment.status,
+              amount: payment.amount,
+              stripeCheckoutSessionId: payment.stripeCheckoutSessionId,
+              finalizedAt:
+                payment.metadata &&
+                typeof payment.metadata === "object" &&
+                typeof (payment.metadata as { finalizedAt?: unknown }).finalizedAt === "string"
+                  ? ((payment.metadata as { finalizedAt?: string }).finalizedAt ?? null)
+                  : null,
+            }
+          : undefined,
+      ];
+    })
+  ) as Record<
+    string,
+    | {
+        id: string;
+        status: string;
+        amount: number;
+        stripeCheckoutSessionId: string | null;
+        finalizedAt: string | null;
+      }
+    | undefined
+  >;
 
   const entryWindowLabel =
     !entryStart || !entryEnd
@@ -288,59 +312,83 @@ export default async function ClubCompetitionTeamHubPage({
 
   const club = membership.club;
 
-  const assignmentsByClub = {
-    [club.id]: teamEntriesFull.map((entry) => {
-      const slotCount = resolveTeamRelaySlotCount(entry.event.teamRelayPositionCount, entry.members);
-      const memberSlots = buildMemberSlotsFromDb(entry.members, slotCount);
-      return {
-        teamEntryId: entry.id,
-        eventName: entry.event.name,
-        sexLabel:
-          entry.event.sex === "MALE"
-            ? "男子"
-            : entry.event.sex === "FEMALE"
-              ? "女子"
-              : "混合",
-        teamName: entry.teamName,
-        memberUserIds: entry.members.map((member) => member.userId),
-        relayPositionCount: entry.event.teamRelayPositionCount ?? null,
-        relayPositionLabels: parseRelayPositionNames(entry.event.teamRelayPositionNames),
-        memberSlots,
-      };
-    }),
-  };
+  const assignmentsByClub = Object.fromEntries(
+    adminClubIds.map((cid) => [
+      cid,
+      teamEntriesFull
+        .filter((entry) => entry.clubId === cid)
+        .map((entry) => {
+          const slotCount = resolveTeamRelaySlotCount(entry.event.teamRelayPositionCount, entry.members);
+          const memberSlots = buildMemberSlotsFromDb(entry.members, slotCount);
+          return {
+            teamEntryId: entry.id,
+            eventName: entry.event.name,
+            sexLabel:
+              entry.event.sex === "MALE"
+                ? "男子"
+                : entry.event.sex === "FEMALE"
+                  ? "女子"
+                  : "混合",
+            teamName: entry.teamName,
+            memberUserIds: entry.members.map((member) => member.userId),
+            relayPositionCount: entry.event.teamRelayPositionCount ?? null,
+            relayPositionLabels: parseRelayPositionNames(entry.event.teamRelayPositionNames),
+            memberSlots,
+          };
+        }),
+    ])
+  );
 
-  const eligibleMembersByClub = {
-    [club.id]: eligibleEntries.map((entry) => ({
-      userId: entry.user.id,
-      name: `${entry.user.familyName} ${entry.user.givenName}`,
-    })),
-  };
+  const eligibleMembersByClub = Object.fromEntries(
+    adminClubIds.map((cid) => [
+      cid,
+      eligibleEntries
+        .filter((entry) => entry.clubId === cid)
+        .map((entry) => ({
+          userId: entry.user.id,
+          name: `${entry.user.familyName} ${entry.user.givenName}`,
+        })),
+    ])
+  );
 
-  const prepaidSlots = await prisma.clubCompetitionPrepaidIndividualSlot.findMany({
+  const prepaidSlotsAll = await prisma.clubCompetitionPrepaidIndividualSlot.findMany({
     where: {
       competitionId: competition.id,
-      clubId: membership.club.id,
+      clubId: { in: adminClubIds },
       status: {
         in: ["PENDING_CLUB_CHECKOUT", "ACTIVE_WAIVER", "DEFERRED_POST_CLOSE"],
       },
     },
-    select: { coveredUserId: true },
-    orderBy: { createdAt: "asc" },
+    select: { clubId: true, coveredUserId: true },
+    orderBy: [{ clubId: "asc" }, { createdAt: "asc" }],
   });
-  const initialPrepaidIndividualUserIds = prepaidSlots.map((s) => s.coveredUserId);
 
-  const prepaidMemberships = await prisma.membership.findMany({
-    where: { clubId: membership.club.id, status: "APPROVED" },
+  const prepaidMembershipsAll = await prisma.membership.findMany({
+    where: { clubId: { in: adminClubIds }, status: "APPROVED" },
     include: {
       user: { select: { id: true, familyName: true, givenName: true } },
     },
-    orderBy: [{ user: { familyName: "asc" } }, { user: { givenName: "asc" } }],
+    orderBy: [{ clubId: "asc" }, { user: { familyName: "asc" } }, { user: { givenName: "asc" } }],
   });
-  const prepaidMemberOptions = prepaidMemberships.map((m) => ({
-    userId: m.user.id,
-    name: `${m.user.familyName} ${m.user.givenName}`,
-  }));
+
+  const initialPrepaidIndividualUserIdsByClub = Object.fromEntries(
+    adminClubIds.map((cid) => [
+      cid,
+      prepaidSlotsAll.filter((s) => s.clubId === cid).map((s) => s.coveredUserId),
+    ])
+  ) as Record<string, string[]>;
+
+  const prepaidMemberOptionsByClub = Object.fromEntries(
+    adminClubIds.map((cid) => [
+      cid,
+      prepaidMembershipsAll
+        .filter((m) => m.clubId === cid)
+        .map((m) => ({
+          userId: m.user.id,
+          name: `${m.user.familyName} ${m.user.givenName}`,
+        })),
+    ])
+  ) as Record<string, { userId: string; name: string }[]>;
 
   const clubIndividualEntryBillingTiming = resolveClubIndividualEntryBillingTiming(
     competition.entryFee
@@ -390,12 +438,19 @@ export default async function ClubCompetitionTeamHubPage({
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             チーム種目（{club.name}）
+            {adminClubs.length > 1 ? " · 他クラブも選択可" : ""}
           </p>
           <h1 className="mt-1 text-balance text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             {competition.name}
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
             エントリー・請求・履歴とメンバー割当を、この大会のチーム種目向けにまとめています。
+            {adminClubs.length > 1 ? (
+              <>
+                {" "}
+                管理者権限のあるクラブが複数ある場合は、下の「対象クラブ」から切り替えてそれぞれ操作できます。
+              </>
+            ) : null}
           </p>
         </div>
 
@@ -497,8 +552,8 @@ export default async function ClubCompetitionTeamHubPage({
           {entryWindowOpen ? (
             <CompetitionTeamEntryManager
               competitionId={competition.id}
-              hasSavedTeamEntries={teamEntriesFull.length > 0}
               clubs={adminClubs}
+              initialSelectedClubId={clubId}
               teamEvents={competition.events.map((event) => ({
                 id: event.id,
                 name: event.name,
@@ -513,8 +568,8 @@ export default async function ClubCompetitionTeamHubPage({
               competitionCategory={competition.category}
               cardProcessingFeeBps={getStripeProcessingFeeBpsFromEnv()}
               clubIndividualEntryBillingTiming={clubIndividualEntryBillingTiming}
-              prepaidMemberOptions={prepaidMemberOptions}
-              initialPrepaidIndividualUserIds={initialPrepaidIndividualUserIds}
+              prepaidMemberOptionsByClub={prepaidMemberOptionsByClub}
+              initialPrepaidIndividualUserIdsByClub={initialPrepaidIndividualUserIdsByClub}
             />
           ) : null}
         </>

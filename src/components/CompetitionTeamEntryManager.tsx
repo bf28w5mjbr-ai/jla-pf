@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { appRoutes } from "@/lib/appRoutes";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -56,9 +56,9 @@ type DraftTeamEntry = {
 
 type Props = {
   competitionId: string;
-  /** サーバーに保存済みのチームがある（履歴パネル表示と連動） */
-  hasSavedTeamEntries?: boolean;
   clubs: ClubOption[];
+  /** URL のクラブなど、初期表示で選ぶクラブ（管理者が複数クラブを持つ場合） */
+  initialSelectedClubId?: string;
   teamEvents: TeamEvent[];
   initialEntriesByClub: Record<string, ExistingTeamEntry[]>;
   teamEntryFeePerTeam: number;
@@ -78,10 +78,10 @@ type Props = {
   cardProcessingFeeBps?: number;
   /** 個人分のクラブ請求タイミング（参加費 JSON から算出） */
   clubIndividualEntryBillingTiming?: ClubIndividualEntryBillingTiming;
-  /** クラブによる個人エントリーで指定可能なメンバー */
-  prepaidMemberOptions?: { userId: string; name: string }[];
-  /** 保存済みのクラブによる個人エントリー対象ユーザー */
-  initialPrepaidIndividualUserIds?: string[];
+  /** クラブ別: クラブによる個人エントリーで指定可能なメンバー */
+  prepaidMemberOptionsByClub?: Record<string, { userId: string; name: string }[]>;
+  /** クラブ別: 保存済みのクラブによる個人エントリー対象ユーザー */
+  initialPrepaidIndividualUserIdsByClub?: Record<string, string[]>;
 };
 
 const sexLabel = (sex: TeamEvent["sex"]) => {
@@ -166,8 +166,8 @@ function normalizeTeamNamesForEvent(
 
 export default function CompetitionTeamEntryManager({
   competitionId,
-  hasSavedTeamEntries = false,
   clubs,
+  initialSelectedClubId,
   teamEvents,
   initialEntriesByClub,
   teamEntryFeePerTeam,
@@ -176,22 +176,49 @@ export default function CompetitionTeamEntryManager({
   competitionCategory = null,
   cardProcessingFeeBps = 360,
   clubIndividualEntryBillingTiming = "INSTANT_PREPAID",
-  prepaidMemberOptions = [],
-  initialPrepaidIndividualUserIds = [],
+  prepaidMemberOptionsByClub = {},
+  initialPrepaidIndividualUserIdsByClub = {},
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [selectedClubId, setSelectedClubId] = useState(clubs[0]?.id ?? "");
+  const [selectedClubId, setSelectedClubId] = useState(() => {
+    if (initialSelectedClubId && clubs.some((c) => c.id === initialSelectedClubId)) {
+      return initialSelectedClubId;
+    }
+    return clubs[0]?.id ?? "";
+  });
   const [entriesByClub, setEntriesByClub] = useState<Record<string, DraftTeamEntry[]>>(() =>
     Object.fromEntries(clubs.map((club) => [club.id, toDraftEntries(initialEntriesByClub[club.id] ?? [])]))
   );
   const [isSaving, setIsSaving] = useState(false);
   const [isStartingPayment, setIsStartingPayment] = useState(false);
-  const [prepaidEnabled, setPrepaidEnabled] = useState(initialPrepaidIndividualUserIds.length > 0);
-  const [prepaidUserIds, setPrepaidUserIds] = useState<string[]>(() =>
-    initialPrepaidIndividualUserIds.length > 0
-      ? [...initialPrepaidIndividualUserIds]
-      : [""]
+
+  const [prepaidEnabled, setPrepaidEnabled] = useState(() => {
+    const cid =
+      initialSelectedClubId && clubs.some((c) => c.id === initialSelectedClubId)
+        ? initialSelectedClubId
+        : clubs[0]?.id ?? "";
+    const ids = initialPrepaidIndividualUserIdsByClub[cid] ?? [];
+    return ids.length > 0;
+  });
+  const [prepaidUserIds, setPrepaidUserIds] = useState<string[]>(() => {
+    const cid =
+      initialSelectedClubId && clubs.some((c) => c.id === initialSelectedClubId)
+        ? initialSelectedClubId
+        : clubs[0]?.id ?? "";
+    const ids = initialPrepaidIndividualUserIdsByClub[cid] ?? [];
+    return ids.length > 0 ? [...ids] : [""];
+  });
+
+  useEffect(() => {
+    const ids = initialPrepaidIndividualUserIdsByClub[selectedClubId] ?? [];
+    setPrepaidEnabled(ids.length > 0);
+    setPrepaidUserIds(ids.length > 0 ? [...ids] : [""]);
+  }, [selectedClubId, initialPrepaidIndividualUserIdsByClub]);
+
+  const prepaidMemberOptions = useMemo(
+    () => prepaidMemberOptionsByClub[selectedClubId] ?? [],
+    [prepaidMemberOptionsByClub, selectedClubId]
   );
 
   const eventCategoryScope = resolveCompetitionEventCategoryScope(competitionCategory);
@@ -210,6 +237,10 @@ export default function CompetitionTeamEntryManager({
   const selectedClubEntries = useMemo(
     () => entriesByClub[selectedClubId] ?? [],
     [entriesByClub, selectedClubId]
+  );
+  const hasSavedForSelectedClub = useMemo(
+    () => selectedClubEntries.some((e) => e.persistedId),
+    [selectedClubEntries]
   );
   const entriesForScope = useMemo(
     () => selectedClubEntries.filter((entry) => scopedEventIdSet.has(entry.eventId)),
@@ -555,7 +586,7 @@ export default function CompetitionTeamEntryManager({
       <CardHeader className="space-y-3 border-b border-border bg-muted/15">
         <div className="flex flex-wrap items-center gap-2">
           <CardTitle className="text-base font-semibold">登録内容の編集</CardTitle>
-          {hasSavedTeamEntries ? (
+          {hasSavedForSelectedClub ? (
             <Badge
               variant="outline"
               className="border-emerald-200 bg-emerald-50/90 font-normal text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/45 dark:text-emerald-100"
@@ -564,7 +595,7 @@ export default function CompetitionTeamEntryManager({
             </Badge>
           ) : null}
         </div>
-        {hasSavedTeamEntries ? (
+        {hasSavedForSelectedClub ? (
           <p className="text-[11px] leading-relaxed text-muted-foreground">
             登録済みの一覧は上の「エントリー履歴」で確認できます。
           </p>
@@ -752,18 +783,27 @@ export default function CompetitionTeamEntryManager({
               <Label htmlFor="club-select" className="text-sm font-medium">
                 対象クラブ
               </Label>
-              <Select value={selectedClubId} onValueChange={setSelectedClubId}>
-                <SelectTrigger id="club-select" className="h-11 w-full max-w-md">
-                  <SelectValue placeholder="クラブを選択" />
-                </SelectTrigger>
-                <SelectContent>
-                  {clubs.map((club) => (
-                    <SelectItem key={club.id} value={club.id}>
-                      {club.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {clubs.length > 1 ? (
+                <Select value={selectedClubId} onValueChange={setSelectedClubId}>
+                  <SelectTrigger id="club-select" className="h-11 w-full max-w-md">
+                    <SelectValue placeholder="クラブを選択" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clubs.map((club) => (
+                      <SelectItem key={club.id} value={club.id}>
+                        {club.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <p
+                  id="club-select"
+                  className="flex h-11 w-full max-w-md items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-foreground"
+                >
+                  {selectedClubName || "—"}
+                </p>
+              )}
             </div>
 
             {!entryWindowOpen && (

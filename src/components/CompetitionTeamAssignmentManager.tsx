@@ -108,6 +108,10 @@ export default function CompetitionTeamAssignmentManager({
     () => eligibleMembersByClub[selectedClubId] ?? [],
     [eligibleMembersByClub, selectedClubId]
   );
+  const selectedClubLabel = useMemo(
+    () => clubs.find((c) => c.id === selectedClubId)?.name ?? "",
+    [clubs, selectedClubId]
+  );
 
   const hasEditableTeam = useMemo(
     () =>
@@ -285,18 +289,27 @@ export default function CompetitionTeamAssignmentManager({
                   <Building2 className="h-4 w-4 text-muted-foreground" aria-hidden />
                   対象クラブ
                 </Label>
-                <Select value={selectedClubId} onValueChange={setSelectedClubId}>
-                  <SelectTrigger id="assignment-club-select" className="h-11 w-full">
-                    <SelectValue placeholder="クラブを選択" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {clubs.map((club) => (
-                      <SelectItem key={club.id} value={club.id}>
-                        {club.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {clubs.length > 1 ? (
+                  <Select value={selectedClubId} onValueChange={setSelectedClubId}>
+                    <SelectTrigger id="assignment-club-select" className="h-11 w-full">
+                      <SelectValue placeholder="クラブを選択" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clubs.map((club) => (
+                        <SelectItem key={club.id} value={club.id}>
+                          {club.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p
+                    id="assignment-club-select"
+                    className="flex h-11 w-full items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-foreground"
+                  >
+                    {selectedClubLabel || "—"}
+                  </p>
+                )}
               </div>
               {eligibleMembers.length > 0 && currentAssignments.length > 0 ? (
                 <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-[12rem] sm:items-end">
