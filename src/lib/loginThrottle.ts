@@ -21,6 +21,14 @@ export const PASSKEY_AUTH_OPTIONS_IP_WINDOW_MS = 60 * 60 * 1000;
 export const REGISTRATION_START_IP_MAX = 25;
 export const REGISTRATION_START_IP_WINDOW_MS = 60 * 60 * 1000;
 
+/** パスワード再設定メール依頼: IP あたり（1 時間） */
+export const PASSWORD_RESET_REQUEST_IP_MAX = 20;
+export const PASSWORD_RESET_REQUEST_IP_WINDOW_MS = 60 * 60 * 1000;
+
+/** パスワード再設定メール送信: メールアドレスあたり（1 時間） */
+export const PASSWORD_RESET_SEND_EMAIL_MAX = 5;
+export const PASSWORD_RESET_SEND_EMAIL_WINDOW_MS = 60 * 60 * 1000;
+
 export function throttleKeyPasswordEmail(email: string): string {
   const h = createHash("sha256")
     .update(email.trim().toLowerCase(), "utf8")
@@ -42,6 +50,17 @@ export function throttleKeyPasskeyAuthOptionsIp(ip: string): string {
 
 export function throttleKeyRegistrationStartIp(ip: string): string {
   return `regstart:ip:${ip}`;
+}
+
+export function throttleKeyPasswordResetIp(ip: string): string {
+  return `pwdreset:ip:${ip}`;
+}
+
+export function throttleKeyPasswordResetEmail(email: string): string {
+  const h = createHash("sha256")
+    .update(email.trim().toLowerCase(), "utf8")
+    .digest("hex");
+  return `pwdreset:email:${h}`;
 }
 
 export async function isThrottleBlocked(

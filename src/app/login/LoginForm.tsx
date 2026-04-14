@@ -313,8 +313,8 @@ export default function LoginForm() {
             <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
               <p className={fieldHintClass("guided")}>
                 {smsLoginAvailable === false
-                  ? "パスワードを忘れた場合はパスキーでログインするか、案内ページ・お問い合わせをご利用ください（この環境では SMS ログインはありません）。"
-                  : "パスワードを忘れた場合は SMS またはパスキーでもログインできます。"}
+                  ? "パスワードを忘れた場合は案内ページからメールで再設定するか、パスキー・お問い合わせをご利用ください（この環境では SMS ログインはありません）。"
+                  : "パスワードを忘れた場合は案内ページからメールで再設定するか、SMS・パスキーでもログインできます。"}
               </p>
               <Button variant="link" className="h-auto shrink-0 justify-start p-0 text-sm font-medium" asChild>
                 <Link href={appendRedirectQuery("/login/forgot-password", redirectAfterLogin)}>

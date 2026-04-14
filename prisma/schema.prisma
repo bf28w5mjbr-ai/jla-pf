@@ -99,6 +99,7 @@ model User {
   passkeyCredentials   PasskeyCredential[]
   passkeyChallenges    PasskeyChallenge[]
   loginSessions        LoginSession[]
+  passwordResetTokens  PasswordResetToken[]
   recorderAssignments  CompetitionRecorderAssignment[] @relation("CompetitionRecorder")
   recorderAssignmentsGranted CompetitionRecorderAssignment[] @relation("CompetitionRecorderGrantor")
   dayCheckins          CompetitionDayCheckin[] @relation("CompetitionCheckinUser")
@@ -594,6 +595,22 @@ model LoginSession {
   @@unique([userId, purpose])
   @@index([phoneNumber])
   @@index([otpExpiresAt])
+}
+
+/// メールリンクによるパスワード再設定（ワンタイム・有効期限付き）
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model AuditLog {
