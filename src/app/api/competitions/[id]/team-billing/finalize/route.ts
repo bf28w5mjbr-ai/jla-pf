@@ -7,6 +7,8 @@ import { buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import { resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
 import { partitionUnderBandsForCompetition } from "@/lib/competitionUnderAgeSettings";
+import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
+import { sumDeferredUnpaidIndividualEntryFeesYen } from "@/lib/clubPrepaidIndividualSlots";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -83,8 +85,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
       teamCounts.set(entry.clubId, (teamCounts.get(entry.clubId) ?? 0) + 1);
     });
 
+    const deferredClubRows = await prisma.clubCompetitionPrepaidIndividualSlot.findMany({
+      where: {
+        competitionId,
+        status: "DEFERRED_POST_CLOSE",
+        ...(clubId ? { clubId } : {}),
+      },
+      select: { clubId: true },
+      distinct: ["clubId"],
+    });
+    const deferredClubIds = deferredClubRows.map((r) => r.clubId);
+    const targetClubIds = Array.from(
+      new Set<string>([...teamCounts.keys(), ...deferredClubIds])
+    );
+
     const finalizedAt = now.toISOString();
-    const targetClubIds = Array.from(teamCounts.keys());
 
     if (targetClubIds.length === 0) {
       return NextResponse.json({
@@ -92,6 +107,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
         finalizedCount: 0,
       });
     }
+
+    const clubIndividualBillingTiming = resolveClubIndividualEntryBillingTiming(
+      competition.entryFee
+    );
 
     await prisma.$transaction(async (tx) => {
       const feeUser = await tx.user.findUnique({
@@ -114,6 +133,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
       for (const targetClubId of targetClubIds) {
         const teamCount = teamCounts.get(targetClubId) ?? 0;
+        const deferredIndividualSubtotalYen = await sumDeferredUnpaidIndividualEntryFeesYen(tx, {
+          competitionId,
+          clubId: targetClubId,
+        });
         const ownerId = buildTeamEntryPaymentOwnerId(competitionId, targetClubId);
 
         const existingPayment = await tx.payment.findUnique({
@@ -140,7 +163,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           }
         }
 
-        const amount = teamCount * teamEntryFeePerTeam;
+        const amount = teamCount * teamEntryFeePerTeam + deferredIndividualSubtotalYen;
 
         if (amount <= 0) {
           await tx.payment.deleteMany({
@@ -180,6 +203,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
               clubId: targetClubId,
               teamCount,
               unitPrice: teamEntryFeePerTeam,
+              deferredIndividualSubtotalYen,
+              clubIndividualBillingTiming,
               finalizedAt,
               finalizedByUserId: session.userId,
             },
@@ -194,6 +219,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
               clubId: targetClubId,
               teamCount,
               unitPrice: teamEntryFeePerTeam,
+              deferredIndividualSubtotalYen,
+              clubIndividualBillingTiming,
               finalizedAt,
               finalizedByUserId: session.userId,
             },

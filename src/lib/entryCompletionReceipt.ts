@@ -16,6 +16,7 @@ type EntryRow = {
   id: string;
   status: string;
   totalFee: number;
+  clubIndividualFeePaidAt?: Date | null;
   items: { eventId: string; entryTime: string | null }[];
   snapshot: { data: unknown } | null;
   checkoutSessions: CheckoutRow[];
@@ -85,6 +86,7 @@ export function buildEntryCompletionReceipt(args: {
     checkoutSessions: entry.checkoutSessions.map((s) => ({
       status: s.status as EntryCheckoutSessionStatus,
     })),
+    clubIndividualFeePaidAt: entry.clubIndividualFeePaidAt ?? null,
   });
 
   const payload =
@@ -98,6 +100,7 @@ export function buildEntryCompletionReceipt(args: {
     checkoutSessions: sessionRecord
       ? [{ status: sessionRecord.status as EntryCheckoutSessionStatus }]
       : [],
+    clubIndividualFeePaidAt: entry.clubIndividualFeePaidAt ?? null,
   });
 
   let statusRow: EntryReceiptForClient["statusRow"];
@@ -133,9 +136,11 @@ export function buildEntryCompletionReceipt(args: {
         : `${competitionName} のエントリー手続きが完了しました（入金確認中）。`;
 
   const sessionStatus = sessionRecord?.status as EntryCheckoutSessionStatus | undefined;
+  const clubBulkPaid = Boolean(entry.clubIndividualFeePaidAt);
   const showPaymentPendingBlock =
     entry.status !== "CANCELLED" &&
     entry.totalFee > 0 &&
+    !clubBulkPaid &&
     !isEntryCheckoutPaidForEligibility(sessionStatus) &&
     sessionStatus !== "DISPUTE_LOST";
 

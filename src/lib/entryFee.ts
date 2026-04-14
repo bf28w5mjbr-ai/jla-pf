@@ -8,6 +8,10 @@ export type CompetitionEntryFeeConfig = {
   individualEntryFee?: number;
   teamEntryFeePerTeam?: number;
   baseFee?: number;
+  /** クラブによる個人エントリー先払いの請求タイミング（未設定時は resolveClubIndividualEntryBillingTiming で自動判定） */
+  clubIndividualBilling?: "instant" | "post_close";
+  /** 真のときは個人種目数に比例して料金が変わる想定とし締切後請求側に分類（計算式は entryFee 側で拡張） */
+  individualEntryFeePerEvent?: boolean;
   /** 年齢帯別（大会開催日基準の満年齢）。非空配列のとき年齢帯別として解釈 */
   ageFeeTiers?: Array<{
     minAge: number;

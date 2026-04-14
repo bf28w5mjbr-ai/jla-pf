@@ -20,6 +20,7 @@ import {
 } from "@/lib/teamMemberAssignmentWindow";
 import { formatCompetitionEntryPeriodRangeJa } from "@/lib/datetimeLocal";
 import { getStripeProcessingFeeBpsFromEnv } from "@/lib/stripeProcessingFee";
+import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
 
 function parseRelayPositionNames(raw: unknown): string[] {
   if (!raw || !Array.isArray(raw)) return [];
@@ -316,6 +317,35 @@ export default async function ClubCompetitionTeamHubPage({
     })),
   };
 
+  const prepaidSlots = await prisma.clubCompetitionPrepaidIndividualSlot.findMany({
+    where: {
+      competitionId: competition.id,
+      clubId: membership.club.id,
+      status: {
+        in: ["PENDING_CLUB_CHECKOUT", "ACTIVE_WAIVER", "DEFERRED_POST_CLOSE"],
+      },
+    },
+    select: { coveredUserId: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const initialPrepaidIndividualUserIds = prepaidSlots.map((s) => s.coveredUserId);
+
+  const prepaidMemberships = await prisma.membership.findMany({
+    where: { clubId: membership.club.id, status: "APPROVED" },
+    include: {
+      user: { select: { id: true, familyName: true, givenName: true } },
+    },
+    orderBy: [{ user: { familyName: "asc" } }, { user: { givenName: "asc" } }],
+  });
+  const prepaidMemberOptions = prepaidMemberships.map((m) => ({
+    userId: m.user.id,
+    name: `${m.user.familyName} ${m.user.givenName}`,
+  }));
+
+  const clubIndividualEntryBillingTiming = resolveClubIndividualEntryBillingTiming(
+    competition.entryFee
+  );
+
   const teamAssignmentWindow = await getTeamMemberAssignmentWindowState(
     prisma,
     competition.id,
@@ -482,6 +512,9 @@ export default async function ClubCompetitionTeamHubPage({
               billingByClub={billingByClub}
               competitionCategory={competition.category}
               cardProcessingFeeBps={getStripeProcessingFeeBpsFromEnv()}
+              clubIndividualEntryBillingTiming={clubIndividualEntryBillingTiming}
+              prepaidMemberOptions={prepaidMemberOptions}
+              initialPrepaidIndividualUserIds={initialPrepaidIndividualUserIds}
             />
           ) : null}
         </>

@@ -17,7 +17,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { CheckCircle2, CreditCard, Droplets, Info, Plus, Trash2, Waves } from "lucide-react";
+import { CheckCircle2, CreditCard, Droplets, Info, Plus, Trash2, Users, Waves } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import type { ClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
 import { getTeamPaymentStatusLabel } from "@/lib/teamEntryPayments";
 import { resolveCompetitionEventCategoryScope } from "@/lib/competitionEventCategoryScope";
 import { cn } from "@/lib/utils";
@@ -74,6 +76,12 @@ type Props = {
   competitionCategory?: string | null;
   /** カード決済の上乗せ率（basis points）。STRIPE_PROCESSING_FEE_BPS と一致 */
   cardProcessingFeeBps?: number;
+  /** 個人分のクラブ請求タイミング（参加費 JSON から算出） */
+  clubIndividualEntryBillingTiming?: ClubIndividualEntryBillingTiming;
+  /** クラブによる個人エントリーで指定可能なメンバー */
+  prepaidMemberOptions?: { userId: string; name: string }[];
+  /** 保存済みのクラブによる個人エントリー対象ユーザー */
+  initialPrepaidIndividualUserIds?: string[];
 };
 
 const sexLabel = (sex: TeamEvent["sex"]) => {
@@ -167,6 +175,9 @@ export default function CompetitionTeamEntryManager({
   billingByClub = {},
   competitionCategory = null,
   cardProcessingFeeBps = 360,
+  clubIndividualEntryBillingTiming = "INSTANT_PREPAID",
+  prepaidMemberOptions = [],
+  initialPrepaidIndividualUserIds = [],
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -176,6 +187,12 @@ export default function CompetitionTeamEntryManager({
   );
   const [isSaving, setIsSaving] = useState(false);
   const [isStartingPayment, setIsStartingPayment] = useState(false);
+  const [prepaidEnabled, setPrepaidEnabled] = useState(initialPrepaidIndividualUserIds.length > 0);
+  const [prepaidUserIds, setPrepaidUserIds] = useState<string[]>(() =>
+    initialPrepaidIndividualUserIds.length > 0
+      ? [...initialPrepaidIndividualUserIds]
+      : [""]
+  );
 
   const eventCategoryScope = resolveCompetitionEventCategoryScope(competitionCategory);
   const scopedTeamEvents = useMemo(() => {
@@ -273,6 +290,20 @@ export default function CompetitionTeamEntryManager({
     });
   };
 
+  const setPrepaidUserAt = (index: number, userId: string) => {
+    setPrepaidUserIds((prev) => {
+      const next = [...prev];
+      next[index] = userId === "__none__" ? "" : userId;
+      return next;
+    });
+  };
+
+  const addPrepaidRow = () => setPrepaidUserIds((prev) => [...prev, ""]);
+
+  const removePrepaidRow = (index: number) => {
+    setPrepaidUserIds((prev) => (prev.length <= 1 ? [""] : prev.filter((_, i) => i !== index)));
+  };
+
   const handleSave = async () => {
     if (!selectedClubId) {
       toast.error("クラブを選択してください");
@@ -283,6 +314,14 @@ export default function CompetitionTeamEntryManager({
     if (invalidEntry) {
       toast.error("チーム名を入力してください");
       return;
+    }
+
+    if (prepaidEnabled) {
+      const chosen = [...new Set(prepaidUserIds.map((id) => id.trim()).filter(Boolean))];
+      if (chosen.length === 0) {
+        toast.error("クラブによる個人エントリーを利用する場合は、メンバーを1名以上選択してください");
+        return;
+      }
     }
 
     setIsSaving(true);
@@ -298,6 +337,9 @@ export default function CompetitionTeamEntryManager({
             eventId: entry.eventId,
             teamName: entry.teamName.trim(),
           })),
+          prepaidIndividualUserIds: prepaidEnabled
+            ? [...new Set(prepaidUserIds.map((id) => id.trim()).filter(Boolean))]
+            : [],
         }),
       });
 
@@ -590,6 +632,118 @@ export default function CompetitionTeamEntryManager({
               </p>
             )}
           </div>
+        </div>
+
+        <div className="rounded-lg border border-border/80 bg-muted/20 px-4 py-4">
+          <div className="flex flex-wrap items-start gap-3">
+            <Checkbox
+              id="club-prepaid-individual"
+              checked={prepaidEnabled}
+              onCheckedChange={(v) => {
+                const on = Boolean(v);
+                setPrepaidEnabled(on);
+                if (!on) {
+                  setPrepaidUserIds([""]);
+                } else if (prepaidUserIds.length === 0 || (prepaidUserIds.length === 1 && !prepaidUserIds[0])) {
+                  setPrepaidUserIds([""]);
+                }
+              }}
+              disabled={!entryWindowOpen}
+              className="mt-1"
+            />
+            <div className="min-w-0 flex-1 space-y-1">
+              <Label htmlFor="club-prepaid-individual" className="text-sm font-medium text-foreground">
+                クラブによる個人エントリー
+              </Label>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {clubIndividualEntryBillingTiming === "POST_CLOSE_INVOICE" ? (
+                  <>
+                    指定したメンバーは<strong className="font-medium text-foreground">本人のエントリーでカード決済を省略</strong>
+                    し、エントリー締切後に主催者が確定した請求でクラブがまとめて支払います（チーム参加費と合算）。
+                  </>
+                ) : (
+                  <>
+                    指定したメンバー分の個人参加費を<strong className="font-medium text-foreground">チーム請求に上乗せ</strong>
+                    します。先にチーム請求を支払うと、本人は個人エントリー画面で参加費が相殺されます。
+                  </>
+                )}
+              </p>
+              {clubIndividualEntryBillingTiming === "POST_CLOSE_INVOICE" ? (
+                <Badge variant="outline" className="mt-1 font-normal">
+                  個人分: 締切後請求
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="mt-1 font-normal">
+                  個人分: 先払い（チーム決済に含む）
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          {prepaidEnabled ? (
+            prepaidMemberOptions.length === 0 ? (
+              <p className="mt-3 text-xs text-muted-foreground">
+                承認済みクラブメンバーがいないため、ここからは指定できません。
+              </p>
+            ) : (
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <Users className="h-3.5 w-3.5" aria-hidden />
+                  対象メンバー（枠ごとに選択）
+                </div>
+                <ul className="space-y-2">
+                  {prepaidUserIds.map((uid, idx) => (
+                    <li
+                      key={`prepaid-slot-${idx}`}
+                      className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-background/80 p-2"
+                    >
+                      <span className="w-6 text-center text-xs tabular-nums text-muted-foreground">
+                        {idx + 1}
+                      </span>
+                      <Select
+                        value={uid ? uid : "__none__"}
+                        onValueChange={(v) => setPrepaidUserAt(idx, v)}
+                        disabled={!entryWindowOpen}
+                      >
+                        <SelectTrigger className="h-9 w-[min(100%,16rem)]">
+                          <SelectValue placeholder="メンバーを選択" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">未選択</SelectItem>
+                          {prepaidMemberOptions.map((m) => (
+                            <SelectItem key={m.userId} value={m.userId}>
+                              {m.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 text-xs text-destructive"
+                        onClick={() => removePrepaidRow(idx)}
+                        disabled={!entryWindowOpen}
+                      >
+                        削除
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1 text-xs"
+                  onClick={addPrepaidRow}
+                  disabled={!entryWindowOpen}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  枠を追加
+                </Button>
+              </div>
+            )
+          ) : null}
         </div>
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_min(100%,340px)] lg:items-start">

@@ -10,11 +10,14 @@ type EntryLike = {
   status: CompetitionEntryStatus;
   totalFee: number;
   checkoutSessions?: CheckoutLike[];
+  /** クラブ一括請求で個人分が支払済みになった日時（Stripe 個人 Checkout なしで成立） */
+  clubIndividualFeePaidAt?: Date | null;
 };
 
 export function isEntryEstablished(entry: EntryLike): boolean {
   if (entry.status !== "SUBMITTED") return false;
   if (entry.totalFee <= 0) return true;
+  if (entry.clubIndividualFeePaidAt) return true;
   const sessions = entry.checkoutSessions ?? [];
   if (sessions.some((s) => s.status === "DISPUTE_LOST")) return false;
   return sessions.some((s) => isEntryCheckoutPaidForEligibility(s.status));
@@ -29,6 +32,9 @@ export function getEntryUserFacingStatus(entry: EntryLike): {
   }
   if (entry.totalFee <= 0) {
     return { businessEstablished: true, userLabel: "エントリー成立" };
+  }
+  if (entry.clubIndividualFeePaidAt) {
+    return { businessEstablished: true, userLabel: "決済完了（クラブ一括）" };
   }
   const sessions = entry.checkoutSessions ?? [];
   if (sessions.some((s) => s.status === "DISPUTE_LOST")) {

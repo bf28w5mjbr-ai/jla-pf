@@ -472,7 +472,7 @@ export default async function CompetitionEntryPage({
 
   const eligibleEvents = competition.events.filter((event) => {
     if (!isCompetitionEligible) return false;
-    if (event.type !== "INDIVIDUAL") return false;
+    if (event.type !== "INDIVIDUAL" && event.type !== "TEAM") return false;
 
     const isMixedEvent = event.sex === "OTHER";
     if (!isMixedEvent && userSex !== "OTHER" && event.sex !== userSex) {
@@ -599,13 +599,36 @@ export default async function CompetitionEntryPage({
               .filter((item) => item.eventId)
           : [],
         paymentStatus:
-          isEntryCheckoutPaidForEligibility(latestCheckout?.status) || existingEntry.totalFee === 0
+          isEntryCheckoutPaidForEligibility(latestCheckout?.status) ||
+          existingEntry.totalFee === 0 ||
+          Boolean(existingEntry.clubIndividualFeePaidAt)
             ? ("PAID" as const)
             : ("UNPAID" as const),
       }
     : null;
 
-  const checkoutPaidLike = isEntryCheckoutPaidForEligibility(latestCheckout?.status);
+  const clubIndividualBulkPaid = Boolean(existingEntry?.clubIndividualFeePaidAt);
+  const checkoutPaidLike =
+    isEntryCheckoutPaidForEligibility(latestCheckout?.status) ||
+    clubIndividualBulkPaid;
+
+  const deferredClubPaySlot =
+    existingEntry?.clubId &&
+    existingEntry.status === "SUBMITTED" &&
+    existingEntry.totalFee > 0
+      ? await prisma.clubCompetitionPrepaidIndividualSlot.findFirst({
+          where: {
+            competitionId: competition.id,
+            clubId: existingEntry.clubId,
+            coveredUserId: session.userId,
+            status: "DEFERRED_POST_CLOSE",
+          },
+          select: { id: true },
+        })
+      : null;
+  const clubBulkSettlementPending = Boolean(
+    deferredClubPaySlot && !clubIndividualBulkPaid && !checkoutPaidLike
+  );
   const awaitingDbPaymentConfirmation = Boolean(
     existingEntry &&
       existingEntry.status === "SUBMITTED" &&
@@ -624,6 +647,7 @@ export default async function CompetitionEntryPage({
     existingEntry.status === "SUBMITTED" &&
     existingEntry.totalFee > 0 &&
     !checkoutPaidLike &&
+    !clubIndividualBulkPaid &&
     latestCheckout?.status !== "DISPUTE_LOST"
   ) {
     const stripeSessionId = latestCheckout?.stripeCheckoutSessionId;
@@ -647,6 +671,9 @@ export default async function CompetitionEntryPage({
       entryPaymentPhase = "awaiting_payment";
     }
   }
+  if (clubBulkSettlementPending) {
+    entryPaymentPhase = null;
+  }
 
   const entryCancelled = existingEntry?.status === "CANCELLED";
 
@@ -655,6 +682,7 @@ export default async function CompetitionEntryPage({
         status: existingEntry.status,
         totalFee: existingEntry.totalFee,
         checkoutSessions: existingEntry.checkoutSessions.map((s) => ({ status: s.status })),
+        clubIndividualFeePaidAt: existingEntry.clubIndividualFeePaidAt,
       })
     : null;
 
@@ -707,6 +735,7 @@ export default async function CompetitionEntryPage({
           id: existingEntry.id,
           status: existingEntry.status,
           totalFee: existingEntry.totalFee,
+          clubIndividualFeePaidAt: existingEntry.clubIndividualFeePaidAt,
           items: existingEntry.items,
           snapshot: existingEntry.snapshot,
           checkoutSessions: existingEntry.checkoutSessions,
@@ -865,6 +894,17 @@ export default async function CompetitionEntryPage({
                 </Button>
               )
             ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {clubBulkSettlementPending ? (
+        <Card className="border-sky-200/80 bg-sky-50/60 dark:border-sky-900/50 dark:bg-sky-950/25">
+          <CardContent className="px-4 py-3 text-sm leading-relaxed text-sky-950 dark:text-sky-100">
+            <p className="font-medium text-foreground">個人参加費はクラブ一括請求（締切後）の対象です</p>
+            <p className="mt-1.5 text-muted-foreground">
+              カード決済は不要です。エントリー締切後に主催者が請求を確定し、クラブがチーム参加費とあわせて支払うとエントリーが成立します。それまでは内容の変更はできません。
+            </p>
           </CardContent>
         </Card>
       ) : null}

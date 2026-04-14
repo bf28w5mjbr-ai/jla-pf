@@ -125,6 +125,13 @@
 - `PUT /api/competitions/[id]/entry-settings`
 - `PUT /api/competitions/[id]/entry-fee`
 
+### 大会：エントリー / チーム請求（クラブ一括個人分を含む）
+- `POST /api/competitions/[id]/entries`（`clubIndividualFeePaidAt`・クラブ先払い枠／締切後一括の扱い。詳細は `route.ts`）
+- `PUT /api/competitions/[id]/team-entries`（任意 `prepaidIndividualUserIds: string[]` でクラブによる個人エントリー対象を保存し、請求額に反映）
+- `POST /api/competitions/[id]/team-billing/checkout`
+- `POST /api/competitions/[id]/team-billing/finalize`（チーム件数に加え、締切後モードの未払い個人エントリー分を請求額へ集計）
+- `GET /api/competitions/[id]/team-billing/receipt`
+
 ### 大会：イベント
 - `GET /api/competitions/[id]/events`
 - `POST /api/competitions/[id]/events`

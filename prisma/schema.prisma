@@ -120,6 +120,7 @@ model User {
   technicalOfficialInvitesSent      CompetitionTechnicalOfficialInvitation[] @relation("TechnicalOfficialInviter")
   technicalOfficialInvitesReceived  CompetitionTechnicalOfficialInvitation[] @relation("TechnicalOfficialInvitee")
   technicalOfficialAssignments      CompetitionTechnicalOfficialAssignment[]
+  clubPrepaidIndividualSlotsCovered ClubCompetitionPrepaidIndividualSlot[] @relation("ClubPrepaidSlotCoveredUser")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -331,6 +332,7 @@ model Club {
   teamEntries          TeamEntry[]
   technicalOfficialInvitations CompetitionTechnicalOfficialInvitation[]
   technicalOfficialAssignments CompetitionTechnicalOfficialAssignment[]
+  clubPrepaidIndividualSlots ClubCompetitionPrepaidIndividualSlot[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -944,6 +946,42 @@ model EntryCheckoutSession {
   @@index([stripePaymentIntentId])
 }
 
+/// クラブが大会で特定メンバーの個人参加費を肩代わりする枠（先払い or 締切後請求）
+enum ClubPrepaidIndividualSlotStatus {
+  /// チーム請求の Checkout 完了待ち（先払いモード）
+  PENDING_CLUB_CHECKOUT
+  /// 先払い済み・本人エントリーで individual 分を相殺可能
+  ACTIVE_WAIVER
+  /// 締切後のクラブ請求に回す（本人は個人 Checkout をスキップ）
+  DEFERRED_POST_CLOSE
+  /// 先払い枠を消費済み
+  CONSUMED
+  CANCELLED
+}
+
+model ClubCompetitionPrepaidIndividualSlot {
+  id            String @id @default(cuid())
+  competitionId String
+  clubId        String
+  coveredUserId String
+  status        ClubPrepaidIndividualSlotStatus @default(PENDING_CLUB_CHECKOUT)
+  /// チームエントリー費の Payment.id（Checkout metadata と突合）
+  clubPaymentId String?
+  consumedAt    DateTime?
+  consumedByEntryId String? @unique
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  club        Club        @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  coveredUser User        @relation("ClubPrepaidSlotCoveredUser", fields: [coveredUserId], references: [id], onDelete: Cascade)
+  consumedByEntry CompetitionEntry? @relation("ClubPrepaidSlotConsumedEntry", fields: [consumedByEntryId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([competitionId, clubId, status])
+  @@index([coveredUserId, competitionId])
+}
+
 model CompetitionEntry {
   id            String                 @id @default(cuid())
   competitionId String
@@ -952,6 +990,8 @@ model CompetitionEntry {
   status        CompetitionEntryStatus @default(SUBMITTED)
   totalFee      Int
   paymentId     String?
+  /// クラブ一括（締切後請求含む）で個人参加費が清算された日時
+  clubIndividualFeePaidAt DateTime?
   /// 誓約に同意した日時（エントリー送信日時と同一運用）
   pledgeAcceptedAt   DateTime?
   /// 同意時点の誓約文（Markdown）
@@ -963,6 +1003,7 @@ model CompetitionEntry {
   snapshot    EntrySnapshot?
   items       EntryItem[]
   checkoutSessions EntryCheckoutSession[]
+  clubPrepaidSlotConsumed ClubCompetitionPrepaidIndividualSlot? @relation("ClubPrepaidSlotConsumedEntry")
   officialResultRows OfficialResultRow[]
   participantStatuses CompetitionParticipantStatus[]
   resultDraftRows     CompetitionResultDraftRow[]
@@ -1374,6 +1415,7 @@ model Competition {
   technicalOfficialInvitations CompetitionTechnicalOfficialInvitation[]
   technicalOfficialAssignments CompetitionTechnicalOfficialAssignment[]
   typeApplications             CompetitionTypeApplication[]
+  clubPrepaidIndividualSlots   ClubCompetitionPrepaidIndividualSlot[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

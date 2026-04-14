@@ -7,6 +7,8 @@ export function parseTeamEntryPaymentMetadata(value: unknown): {
   finalizedByUserId: string | null;
   teamCount: number | null;
   unitPrice: number | null;
+  prepaidIndividualSubtotalYen: number | null;
+  clubIndividualBillingTiming: string | null;
 } {
   if (!value || typeof value !== "object") {
     return {
@@ -14,16 +16,25 @@ export function parseTeamEntryPaymentMetadata(value: unknown): {
       finalizedByUserId: null,
       teamCount: null,
       unitPrice: null,
+      prepaidIndividualSubtotalYen: null,
+      clubIndividualBillingTiming: null,
     };
   }
 
   const record = value as Record<string, unknown>;
+  const prepaidRaw = record.prepaidIndividualSubtotalYen;
   return {
     finalizedAt: typeof record.finalizedAt === "string" ? record.finalizedAt : null,
     finalizedByUserId:
       typeof record.finalizedByUserId === "string" ? record.finalizedByUserId : null,
     teamCount: typeof record.teamCount === "number" ? record.teamCount : null,
     unitPrice: typeof record.unitPrice === "number" ? record.unitPrice : null,
+    prepaidIndividualSubtotalYen:
+      typeof prepaidRaw === "number" && Number.isFinite(prepaidRaw) ? prepaidRaw : null,
+    clubIndividualBillingTiming:
+      typeof record.clubIndividualBillingTiming === "string"
+        ? record.clubIndividualBillingTiming
+        : null,
   };
 }
 

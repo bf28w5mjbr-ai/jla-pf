@@ -52,6 +52,9 @@
 
 ## 4. 実装上の判定ポイント
 
+- チームエントリー更新（`PUT /api/competitions/[id]/team-entries`）: 当該クラブの `Membership` が **承認済み**かつ **`ADMIN` 相当（代表・副代表等）** のユーザーのみ（`isClubAdminRole`）。
+- チーム請求の確定・決済: 主催の `OrgAdmin`（管理者）またはクラブ管理者が操作できる範囲は各 `route.ts` のガードに従う。
+
 - 共通ガード: `src/lib/accessControl.ts`
   - `requirePfAdmin()`
   - `requireAssociationAdmin()`

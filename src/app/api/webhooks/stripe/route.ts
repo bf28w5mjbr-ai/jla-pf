@@ -7,6 +7,7 @@ import { safeServerErrorLog } from "@/lib/safeServerLog";
 import type Stripe from "stripe";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { applyClubTeamAndPrepaidStripeSideEffects } from "@/lib/clubPrepaidIndividualSlots";
 import { stripe } from "@/lib/stripe";
 import { logAuditAction } from "@/lib/auditLog";
 import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
@@ -296,6 +297,9 @@ export async function POST(req: NextRequest) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         await updatePaymentByCheckoutSession(session);
+        if (typeof session.metadata?.paymentId === "string" && session.metadata.paymentId.length > 0) {
+          await applyClubTeamAndPrepaidStripeSideEffects(prisma, session.metadata.paymentId);
+        }
         await finalizeOrganizerSubscriptionCheckoutSession(session);
         const paymentIntentId = extractPaymentIntentId(session.payment_intent);
         const conditions: Prisma.PaymentWhereInput[] = [];
@@ -339,6 +343,9 @@ export async function POST(req: NextRequest) {
       case "checkout.session.async_payment_succeeded": {
         const session = event.data.object as Stripe.Checkout.Session;
         await updatePaymentByCheckoutSession(session);
+        if (typeof session.metadata?.paymentId === "string" && session.metadata.paymentId.length > 0) {
+          await applyClubTeamAndPrepaidStripeSideEffects(prisma, session.metadata.paymentId);
+        }
         await finalizeOrganizerSubscriptionCheckoutSession(session);
         const paymentIntentId = extractPaymentIntentId(session.payment_intent);
         const conditions: Prisma.PaymentWhereInput[] = [];

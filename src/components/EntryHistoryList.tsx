@@ -47,6 +47,7 @@ export default function EntryHistoryList({ entries, context = "personal", clubNa
                 status: entry.status,
                 totalFee: entry.totalFee,
                 checkoutSessions: entry.checkoutSessions.map((s) => ({ status: s.status })),
+                clubIndividualFeePaidAt: entry.clubIndividualFeePaidAt,
               });
               const hasOpenDispute = entry.checkoutSessions.some((s) => s.status === "DISPUTED");
               const paymentStatus =

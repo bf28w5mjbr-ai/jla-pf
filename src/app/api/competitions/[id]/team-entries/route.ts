@@ -12,6 +12,11 @@ import {
   resolveEntryFeeUnits,
 } from "@/lib/competitionEntryAgeTiered";
 import { partitionUnderBandsForCompetition } from "@/lib/competitionUnderAgeSettings";
+import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
+import {
+  replaceClubPrepaidSlotsForSave,
+  sumInstantPrepaidIndividualsYen,
+} from "@/lib/clubPrepaidIndividualSlots";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -29,7 +34,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     }
 
     const body = await request.json();
-    const { clubId, teams } = body ?? {};
+    const { clubId, teams, prepaidIndividualUserIds: rawPrepaidIds } = body ?? {};
 
     if (!clubId || typeof clubId !== "string") {
       return NextResponse.json({ message: "クラブを選択してください" }, { status: 400 });
@@ -37,6 +42,24 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     if (!Array.isArray(teams)) {
       return NextResponse.json({ message: "チーム情報が不正です" }, { status: 400 });
+    }
+
+    const prepaidIndividualUserIds = Array.isArray(rawPrepaidIds)
+      ? [
+          ...new Set(
+            rawPrepaidIds
+              .filter((x: unknown): x is string => typeof x === "string")
+              .map((id) => id.trim())
+              .filter(Boolean)
+          ),
+        ]
+      : [];
+
+    if (prepaidIndividualUserIds.length > 200) {
+      return NextResponse.json(
+        { message: "クラブによる個人エントリーの人数が多すぎます" },
+        { status: 400 }
+      );
     }
 
     const membership = await prisma.membership.findFirst({
@@ -179,6 +202,25 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     const teamEntryFeePerTeam = feeUnits.teamUnit;
 
+    if (prepaidIndividualUserIds.length > 0) {
+      const memberRows = await prisma.membership.findMany({
+        where: {
+          clubId,
+          userId: { in: prepaidIndividualUserIds },
+          status: "APPROVED",
+        },
+        select: { userId: true },
+      });
+      if (memberRows.length !== prepaidIndividualUserIds.length) {
+        return NextResponse.json(
+          { message: "クラブによる個人エントリーには、このクラブの承認済みメンバーのみ指定できます" },
+          { status: 400 }
+        );
+      }
+    }
+
+    const clubIndividualBillingTiming = resolveClubIndividualEntryBillingTiming(competition.entryFee);
+
     await prisma.$transaction(async (tx) => {
       await tx.teamEntry.deleteMany({
         where: {
@@ -198,10 +240,27 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         });
       }
 
-      const totalAmount = normalizedTeams.length * teamEntryFeePerTeam;
+      const prepaidSubtotalYen = await sumInstantPrepaidIndividualsYen(tx, {
+        startDate: new Date(competition.startDate),
+        entryFee: competition.entryFee,
+        underAge: {
+          underAgeSystemEnabled: competition.underAgeSystemEnabled,
+          underAgeUThresholds: competition.underAgeUThresholds,
+          underAgeOpenEnabled: competition.underAgeOpenEnabled,
+        },
+        ageCategories: competition.ageCategories,
+        coveredUserIds: prepaidIndividualUserIds,
+      });
+
+      const teamTotalYen = normalizedTeams.length * teamEntryFeePerTeam;
+      const totalAmount = teamTotalYen + prepaidSubtotalYen;
       const paymentOwnerId = buildTeamEntryPaymentOwnerId(competitionId, clubId);
 
-      if (normalizedTeams.length === 0 || totalAmount <= 0) {
+      if (
+        normalizedTeams.length === 0 &&
+        prepaidIndividualUserIds.length > 0 &&
+        clubIndividualBillingTiming === "POST_CLOSE_INVOICE"
+      ) {
         await tx.payment.deleteMany({
           where: {
             ownerType: "CLUB",
@@ -209,8 +268,46 @@ export async function PUT(request: NextRequest, context: RouteContext) {
             type: "COMPETITION_ENTRY_FEE",
           },
         });
+        await tx.clubCompetitionPrepaidIndividualSlot.deleteMany({
+          where: {
+            competitionId,
+            clubId,
+            status: {
+              in: ["PENDING_CLUB_CHECKOUT", "ACTIVE_WAIVER", "DEFERRED_POST_CLOSE"],
+            },
+            consumedByEntryId: null,
+          },
+        });
+        await replaceClubPrepaidSlotsForSave(tx, {
+          competitionId,
+          clubId,
+          prepaidIndividualUserIds,
+          billingTiming: clubIndividualBillingTiming,
+        });
+      } else if (normalizedTeams.length === 0 && prepaidIndividualUserIds.length === 0) {
+        await tx.payment.deleteMany({
+          where: {
+            ownerType: "CLUB",
+            ownerId: paymentOwnerId,
+            type: "COMPETITION_ENTRY_FEE",
+          },
+        });
+        await tx.clubCompetitionPrepaidIndividualSlot.deleteMany({
+          where: { competitionId, clubId },
+        });
+      } else if (totalAmount <= 0 && prepaidIndividualUserIds.length === 0) {
+        await tx.payment.deleteMany({
+          where: {
+            ownerType: "CLUB",
+            ownerId: paymentOwnerId,
+            type: "COMPETITION_ENTRY_FEE",
+          },
+        });
+        await tx.clubCompetitionPrepaidIndividualSlot.deleteMany({
+          where: { competitionId, clubId },
+        });
       } else {
-        await tx.payment.upsert({
+        const payment = await tx.payment.upsert({
           where: {
             ownerType_ownerId_type: {
               ownerType: "CLUB",
@@ -224,28 +321,53 @@ export async function PUT(request: NextRequest, context: RouteContext) {
             type: "COMPETITION_ENTRY_FEE",
             userId: session.userId,
             status: "PENDING",
-            amount: totalAmount,
+            amount: Math.max(0, totalAmount),
             metadata: {
               scope: "TEAM_ENTRY",
               competitionId,
               clubId,
               teamCount: normalizedTeams.length,
               unitPrice: teamEntryFeePerTeam,
+              prepaidIndividualSubtotalYen: prepaidSubtotalYen,
+              clubIndividualBillingTiming,
             },
           },
           update: {
             userId: session.userId,
             status: "PENDING",
-            amount: totalAmount,
+            amount: Math.max(0, totalAmount),
             metadata: {
               scope: "TEAM_ENTRY",
               competitionId,
               clubId,
               teamCount: normalizedTeams.length,
               unitPrice: teamEntryFeePerTeam,
+              prepaidIndividualSubtotalYen: prepaidSubtotalYen,
+              clubIndividualBillingTiming,
             },
           },
         });
+
+        if (prepaidIndividualUserIds.length > 0) {
+          await replaceClubPrepaidSlotsForSave(tx, {
+            competitionId,
+            clubId,
+            prepaidIndividualUserIds,
+            billingTiming: clubIndividualBillingTiming,
+            paymentId: payment.id,
+          });
+        } else {
+          await tx.clubCompetitionPrepaidIndividualSlot.deleteMany({
+            where: {
+              competitionId,
+              clubId,
+              status: {
+                in: ["PENDING_CLUB_CHECKOUT", "ACTIVE_WAIVER", "DEFERRED_POST_CLOSE"],
+              },
+              consumedByEntryId: null,
+            },
+          });
+        }
       }
     });
 

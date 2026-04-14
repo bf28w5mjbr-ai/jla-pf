@@ -40,6 +40,7 @@ import {
   resolveEntryFeeUnits,
   resolveRequiredQualificationsForAge,
 } from "@/lib/competitionEntryAgeTiered";
+import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -465,7 +466,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const totalFee = calculateCompetitionEntryFee(
+    const baseEntryFee = calculateCompetitionEntryFee(
       competition.entryFee as CompetitionEntryFeeConfig | number | null,
       {
         individualCount: entryItemsData.length,
@@ -478,6 +479,55 @@ export async function POST(request: NextRequest, context: RouteContext) {
         underFeePartition: underPartition ?? null,
       }
     );
+
+    const clubIndividualBillingTiming = resolveClubIndividualEntryBillingTiming(
+      competition.entryFee
+    );
+    let totalFee = baseEntryFee;
+    let skipIndividualCheckoutForDeferred = false;
+    let waiverSlotIdToConsume: string | null = null;
+
+    if (totalFee > 0 && typeof clubId === "string") {
+      const deferredSlot = await prisma.clubCompetitionPrepaidIndividualSlot.findFirst({
+        where: {
+          competitionId,
+          clubId,
+          coveredUserId: session.userId,
+          status: "DEFERRED_POST_CLOSE",
+        },
+        select: { id: true },
+      });
+      if (deferredSlot && clubIndividualBillingTiming === "POST_CLOSE_INVOICE") {
+        skipIndividualCheckoutForDeferred = true;
+      }
+
+      const instantWaiverSlot = await prisma.clubCompetitionPrepaidIndividualSlot.findFirst({
+        where: {
+          competitionId,
+          clubId,
+          coveredUserId: session.userId,
+          status: "ACTIVE_WAIVER",
+          consumedByEntryId: null,
+        },
+        select: { id: true },
+      });
+      if (
+        instantWaiverSlot &&
+        clubIndividualBillingTiming === "INSTANT_PREPAID" &&
+        entryItemsData.length > 0 &&
+        teamEntriesData.length === 0 &&
+        !feeUnits.ageTierMissing
+      ) {
+        const individualPortion = entryItemsData.length > 0 ? feeUnits.individualUnit : 0;
+        const nextFee = Math.max(0, baseEntryFee - individualPortion);
+        if (nextFee < baseEntryFee) {
+          totalFee = nextFee;
+          if (totalFee === 0) {
+            waiverSlotIdToConsume = instantWaiverSlot.id;
+          }
+        }
+      }
+    }
 
     if (totalFee > 0 && (!clubId || typeof clubId !== "string")) {
       return NextResponse.json(
@@ -641,6 +691,26 @@ export async function POST(request: NextRequest, context: RouteContext) {
         }
       }
 
+      if (waiverSlotIdToConsume) {
+        const consumed = await tx.clubCompetitionPrepaidIndividualSlot.updateMany({
+          where: {
+            id: waiverSlotIdToConsume,
+            status: "ACTIVE_WAIVER",
+            consumedByEntryId: null,
+          },
+          data: {
+            status: "CONSUMED",
+            consumedAt: new Date(),
+            consumedByEntryId: entry.id,
+          },
+        });
+        if (consumed.count === 0) {
+          throw new Error(
+            "クラブ先払い枠の利用に失敗しました。ページを更新してから再度お試しください。"
+          );
+        }
+      }
+
       return {
         entry,
         wasUpdate: Boolean(existingEntry),
@@ -656,7 +726,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       select: { status: true },
     });
 
-    if (totalFee > 0 && !latestCompletedCheckout) {
+    if (totalFee > 0 && !latestCompletedCheckout && !skipIndividualCheckoutForDeferred) {
       await refreshOrganizationStripeConnectFlags(competition.organizationId);
       const orgBilling = await prisma.organization.findUnique({
         where: { id: competition.organizationId },
@@ -707,6 +777,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 status: result.entry.status,
                 totalFee: result.entry.totalFee,
                 checkoutSessions: [{ status: afterSync.status }],
+                clubIndividualFeePaidAt: result.entry.clubIndividualFeePaidAt,
               });
               const completeUrl = `${stripeRedirectOrigin()}/competitions/${competitionId}/entry?completed=1&entryId=${result.entry.id}`;
               return NextResponse.json({
@@ -857,6 +928,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       checkoutSessions: latestCompletedCheckout
         ? [{ status: latestCompletedCheckout.status }]
         : [],
+      clubIndividualFeePaidAt: result.entry.clubIndividualFeePaidAt,
     });
 
     if (userStatus.businessEstablished) {
