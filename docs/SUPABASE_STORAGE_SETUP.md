@@ -9,6 +9,10 @@
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_STORAGE_BUCKET`（例: `public-assets`）
 
+### 相対パス `/uploads/...` の表示（本番）
+
+Vercel 等では `public/uploads` がデプロイに含まれないため、DB に `/uploads/competitions/...` のまま残っている画像は 404 になります。`next.config` の **rewrite** で、本番（`VERCEL=1`）かつ上記 URL・バケットが揃っているとき、`/uploads/competitions|organizations|clubs/` を Supabase Storage の公開 URLへプロキシします。Vercel 以外の本番で同様に有効にする場合は `PUBLIC_UPLOADS_STORAGE_REWRITE=1` を設定してください。
+
 ## 2) バケット作成（SQL Editor）
 
 ```sql

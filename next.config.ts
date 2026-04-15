@@ -1,6 +1,17 @@
 import type { NextConfig } from "next";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseUrlForRewrites = (
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  process.env.SUPABASE_URL ||
+  ""
+).trim();
+const supabaseStorageBucketForRewrites = (
+  process.env.SUPABASE_STORAGE_BUCKET ||
+  process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET ||
+  ""
+).trim();
+
 let supabaseHostname: string | null = null;
 if (supabaseUrl) {
   try {
@@ -8,6 +19,29 @@ if (supabaseUrl) {
   } catch {
     supabaseHostname = null;
   }
+}
+
+/**
+ * 本番（Vercel）では `public/uploads` が無いため、DB に残った `/uploads/...` が 404 になる。
+ * Supabase Storage の公開オブジェクトへプロキシする（ローカル next dev では既定オフ）。
+ */
+function buildSupabasePublicUploadRewrites(): { source: string; destination: string }[] {
+  const enable =
+    Boolean(supabaseUrlForRewrites && supabaseStorageBucketForRewrites) &&
+    (process.env.VERCEL === "1" || process.env.PUBLIC_UPLOADS_STORAGE_REWRITE === "1");
+  if (!enable) return [];
+  let origin: string;
+  try {
+    origin = new URL(supabaseUrlForRewrites).origin;
+  } catch {
+    return [];
+  }
+  const bucket = supabaseStorageBucketForRewrites;
+  const dirs = ["competitions", "organizations", "clubs"] as const;
+  return dirs.map((dir) => ({
+    source: `/uploads/${dir}/:path*`,
+    destination: `${origin}/storage/v1/object/public/${bucket}/${dir}/:path*`,
+  }));
 }
 
 function buildContentSecurityPolicy(): string {
@@ -107,6 +141,9 @@ const nextConfig: NextConfig = {
         headers: securityHeaders,
       },
     ];
+  },
+  async rewrites() {
+    return buildSupabasePublicUploadRewrites();
   },
   async redirects() {
     return [
