@@ -1,3 +1,8 @@
+import {
+  inferSupabasePublicUrlFromRelativePublicUploadPath,
+  normalizeStoredPublicUploadUrl,
+} from "./publicUploadSupabaseInfer";
+
 export type RelationLogo = { name: string; logoUrl: string };
 
 /** 表示用 src（推定 URL 含む）。削除 API 等は常に `logoUrl`（DB 保存値）を使う */
@@ -68,60 +73,7 @@ export function normalizeRelationLogos(value: unknown): RelationLogo[] {
 
 /** 保存値の揺れ（前後空白・二重エンコード・先頭スラ抜け）を吸収（削除キー整合のため一箇所で正規化） */
 export function normalizeStoredRelationLogoUrl(logoUrl: string): string {
-  let t = logoUrl.trim();
-  if (!t) return t;
-  if (t.startsWith("//")) t = `https:${t}`;
-  if ((t.startsWith("http%3A") || t.startsWith("https%3A")) && t.includes("%")) {
-    try {
-      t = decodeURIComponent(t);
-    } catch {
-      /* keep */
-    }
-  }
-  if (!t.startsWith("/") && t.startsWith("uploads/competitions/")) {
-    t = `/${t}`;
-  }
-  return t;
-}
-
-function getSupabaseProjectUrlForRelationLogos(): string | null {
-  const pub = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  if (pub) return pub.replace(/\/$/, "");
-  const srv = process.env.SUPABASE_URL?.trim();
-  if (srv) return srv.replace(/\/$/, "");
-  return null;
-}
-
-function getStorageBucketForRelationLogos(): string | null {
-  return (
-    process.env.SUPABASE_STORAGE_BUCKET?.trim() ||
-    process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET?.trim() ||
-    null
-  );
-}
-
-/**
- * 相対パス `/uploads/competitions/<file>` を Supabase の公開 URL に変換できるときだけ推定する。
- * DB が相対のまま・実体が Storage にあるケース（本番サーバレス等）で表示を直す。
- * ローカル専用ファイルのみのときは RELATION_LOGOS_INFER_SUPABASE=0 で無効化。
- */
-function shouldInferSupabasePublicUrlForRelativeUploads(): boolean {
-  if (process.env.RELATION_LOGOS_INFER_SUPABASE === "0") return false;
-  if (process.env.RELATION_LOGOS_INFER_SUPABASE === "1") return true;
-  return Boolean(getSupabaseProjectUrlForRelationLogos() && getStorageBucketForRelationLogos());
-}
-
-function inferSupabasePublicUrlFromRelativeCompetitionLogoPath(logoUrl: string): string | null {
-  if (!shouldInferSupabasePublicUrlForRelativeUploads()) return null;
-  const base = getSupabaseProjectUrlForRelationLogos();
-  const bucket = getStorageBucketForRelationLogos();
-  if (!base || !bucket) return null;
-  if (!logoUrl.startsWith("/uploads/competitions/")) return null;
-  const fileName = logoUrl.slice("/uploads/competitions/".length);
-  if (!fileName || fileName.includes("..") || fileName.includes("/") || fileName.includes("\\")) {
-    return null;
-  }
-  return `${base}/storage/v1/object/public/${bucket}/competitions/${fileName}`;
+  return normalizeStoredPublicUploadUrl(logoUrl);
 }
 
 function isPrehydratedRelationLogoViews(value: unknown): value is RelationLogoView[] {
@@ -145,7 +97,7 @@ export function relationLogosWithDisplaySrc(value: unknown): RelationLogoView[] 
   const rows = normalizeRelationLogos(value);
   return rows.map((row) => {
     const logoUrl = normalizeStoredRelationLogoUrl(row.logoUrl);
-    const inferred = inferSupabasePublicUrlFromRelativeCompetitionLogoPath(logoUrl);
+    const inferred = inferSupabasePublicUrlFromRelativePublicUploadPath(logoUrl);
     return {
       name: row.name,
       logoUrl,

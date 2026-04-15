@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   BadgeCheck,
@@ -46,6 +46,8 @@ import { ensureStartListSnapshotIfEligible } from "@/lib/startListSnapshot";
 import { parseTechnicalOfficialTiers } from "@/lib/technicalOfficialRules";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
 import DayOpsUnlockBanner from "@/components/DayOpsUnlockBanner";
+import CompetitionPublicPageTabs from "@/components/public/CompetitionPublicPageTabs";
+import { cn } from "@/lib/utils";
 import {
   CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP,
   parseAgeCategoryFeeTiers,
@@ -352,14 +354,20 @@ export default async function CompetitionDetailPage({
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusBadgeClass = (status: string) => {
     switch (status) {
-      case "PUBLISHED": return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400";
-      case "DRAFT": return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400";
-      case "ONGOING": return "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400";
-      case "COMPLETED": return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400";
-      case "CANCELLED": return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
-      default: return "bg-gray-100 text-gray-800";
+      case "PUBLISHED":
+        return "border-transparent bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400";
+      case "DRAFT":
+        return "border-transparent bg-muted text-muted-foreground";
+      case "ONGOING":
+        return "border-transparent bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400";
+      case "COMPLETED":
+        return "border-transparent bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400";
+      case "CANCELLED":
+        return "border-transparent bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
+      default:
+        return "border-transparent bg-muted text-muted-foreground";
     }
   };
   const now = new Date();
@@ -428,27 +436,31 @@ export default async function CompetitionDetailPage({
     }
   }
 
+  const signInRedirectPath = `/login?redirect=${encodeURIComponent(appRoutes.competitions.root(id))}`;
+
   return (
-    <div className="app-page mx-auto w-full max-w-6xl space-y-4 px-4 py-4 sm:px-6 lg:px-8">
-      <Card className="overflow-hidden border-border/80 shadow-sm">
+    <div className="app-page mx-auto w-full max-w-6xl space-y-5 px-4 py-5 sm:space-y-6 sm:px-6 sm:py-6 lg:px-8">
+      <Card className="overflow-hidden border-border/80 shadow-md ring-1 ring-border/40">
         <CardContent className="space-y-0 p-0">
-          <div className="bg-gradient-to-br from-primary/[0.06] via-background to-background px-3 py-3.5 sm:px-5 sm:py-4">
+          <div className="bg-gradient-to-br from-primary/[0.07] via-background to-muted/15 px-3 py-4 sm:px-6 sm:py-5">
             <div className="min-w-0 space-y-2">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                <h1 className="text-balance text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                <h1 className="text-balance text-xl font-bold tracking-tight text-foreground sm:text-2xl lg:text-3xl">
                   {competition.name}
                 </h1>
-                <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                  <span
-                    className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold ${getStatusColor(competition.status)}`}
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={cn("rounded-md px-2 py-0.5 text-[11px] font-semibold", getStatusBadgeClass(competition.status))}
                   >
                     {getStatusLabel(competition.status)}
-                  </span>
-                  <span
-                    className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold ${entryPeriodBadgeClass}`}
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className={cn("rounded-md px-2 py-0.5 text-[11px] font-semibold", entryPeriodBadgeClass)}
                   >
                     {entryPeriodLabel}
-                  </span>
+                  </Badge>
                 </div>
               </div>
               {competition.nameKana ? (
@@ -456,8 +468,8 @@ export default async function CompetitionDetailPage({
               ) : null}
             </div>
 
-            <div className="mt-3 rounded-lg border border-border/60 bg-background/80 p-2.5 shadow-sm backdrop-blur-sm sm:p-3">
-              <div className="grid gap-2 text-sm">
+            <div className="mt-4 rounded-xl border border-border/70 bg-card/90 p-3 shadow-sm backdrop-blur-sm sm:p-4">
+              <div className="grid gap-3 text-sm">
                 <div className="flex min-w-0 items-start gap-2">
                   <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
                   <div className="min-w-0 leading-snug">
@@ -498,19 +510,19 @@ export default async function CompetitionDetailPage({
           </div>
 
           {showEntryLinks ? (
-            <div className="border-t border-border px-3 py-3 sm:px-5 sm:py-4">
-              <div className="overflow-hidden rounded-xl border border-primary/15 bg-gradient-to-br from-primary/[0.06] via-background to-muted/25 shadow-sm">
-                <div className="flex gap-3 p-3 sm:gap-4 sm:p-4">
+            <div className="border-t border-border/80 bg-muted/10 px-3 py-4 sm:px-6 sm:py-5">
+              <div className="overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-br from-primary/[0.07] via-background to-muted/30 shadow-sm ring-1 ring-primary/5">
+                <div className="flex gap-3 p-3 sm:gap-4 sm:p-5">
                   <div
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary sm:h-11 sm:w-11"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary shadow-inner sm:h-12 sm:w-12"
                     aria-hidden
                   >
-                    <ClipboardList className="h-5 w-5 sm:h-[1.35rem] sm:w-[1.35rem]" />
+                    <ClipboardList className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={1.75} />
                   </div>
                   <div className="min-w-0 flex-1 space-y-3">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
-                        <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                        <h2 className="text-base font-semibold tracking-tight text-foreground">
                           エントリー
                         </h2>
                         {entryStart && entryEnd ? (
@@ -547,6 +559,16 @@ export default async function CompetitionDetailPage({
                         </span>
                       ) : null}
                     </div>
+
+                    {!sessionUserId ? (
+                      <p className="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground sm:text-xs">
+                        エントリー申込・お支払いには
+                        <Link href={signInRedirectPath} className="font-medium text-primary underline-offset-4 hover:underline">
+                          ログイン
+                        </Link>
+                        が必要です。未登録の方はログイン画面からアカウント作成へ進めます。
+                      </p>
+                    ) : null}
 
                     <div
                       className={`grid gap-2 ${
@@ -626,23 +648,9 @@ export default async function CompetitionDetailPage({
         </CardContent>
       </Card>
 
-      <Tabs defaultValue={activeTab} className="w-full">
-        <TabsList className="h-auto w-full flex-wrap justify-start gap-1 rounded-xl border border-border/80 bg-muted/30 p-1">
-          <TabsTrigger
-            value="overview"
-            className="h-8 rounded-lg px-3 text-xs font-medium data-[state=active]:shadow-sm"
-          >
-            大会ページ
-          </TabsTrigger>
-          <TabsTrigger
-            value="start-list"
-            className="h-8 rounded-lg px-3 text-xs font-medium data-[state=active]:shadow-sm"
-          >
-            スタートリスト
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview" className="mt-4 space-y-3 sm:space-y-4">
+      <CompetitionPublicPageTabs
+        competitionId={id}
+        overview={
           <div className="space-y-4">
         {/* 参加情報 */}
         {(competition.events.length > 0 ||
@@ -652,6 +660,9 @@ export default async function CompetitionDetailPage({
           <Card className="border-border/80 shadow-sm">
             <CardHeader className="border-b border-border/80 bg-muted/20 px-4 py-3 sm:px-5">
               <CardTitle className="text-base font-semibold tracking-tight">参加情報</CardTitle>
+              <p className="mt-1 text-[11px] leading-snug text-muted-foreground sm:text-xs">
+                種目・参加費・参加資格・対象者など、エントリー前にご確認ください。
+              </p>
             </CardHeader>
             <CardContent className="p-0 sm:p-0">
               <div className="divide-y divide-border">
@@ -857,9 +868,9 @@ export default async function CompetitionDetailPage({
 
         <CompetitionPublicGallery photos={competition.galleryPhotos} />
           </div>
-        </TabsContent>
-
-        <TabsContent value="start-list" className="mt-2 space-y-3">
+        }
+        startList={
+          <>
           <DayOpsUnlockBanner
             competitionId={competition.id}
             passphraseConfigured={dayOpsUnlockConfigured}
@@ -886,8 +897,9 @@ export default async function CompetitionDetailPage({
               })),
             }}
           />
-        </TabsContent>
-      </Tabs>
+          </>
+        }
+      />
     </div>
   );
 }

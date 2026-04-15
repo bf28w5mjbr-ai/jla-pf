@@ -9,6 +9,7 @@ import {
   fallbackLogoAnalysisForUrl,
   type LogoImageAnalysis,
 } from "@/lib/logoImageAnalysis";
+import { publicUploadDisplaySrc } from "@/lib/publicUploadSupabaseInfer";
 
 type Props = {
   logoUrl: string | null | undefined;
@@ -76,7 +77,7 @@ export function OrganizationLogoImage({
     getServerPrefersDarkSnapshot,
   );
 
-  const url = logoUrl?.trim() ?? "";
+  const url = publicUploadDisplaySrc(logoUrl);
 
   const probeAndAnalyze = useCallback(
     (displayImg: HTMLImageElement) => {
