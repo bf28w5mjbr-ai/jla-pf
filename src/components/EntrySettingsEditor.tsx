@@ -32,8 +32,13 @@ import {
   PUBLISHED_ENTRY_PERIOD_SHORTEN_FORBIDDEN_MESSAGE,
 } from "@/lib/autoEntryChangeAnnouncement";
 import {
+  applyEntryQualificationToggleWithCertifiedMacro,
   buildQualificationRelaxAnnouncementFromConfigs,
   CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP,
+  deriveEntryQualificationOptionsFromTemplates,
+  ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
+  getCertifiedLifesaverUpperQualifications,
+  normalizeEntryRequiredQualifications,
   parseAgeCategoryFeeTiers,
   parseAgeFeeTiers,
   parseAgeQualificationTiers,
@@ -251,6 +256,7 @@ type EntrySettingsEditorProps = {
   };
   initialEvents?: Event[];
   initialAgeCategories?: CompetitionAgeCategoryDraft[];
+  qualificationTemplates?: { id: string; name: string; kind: string | null }[];
   canEdit: boolean;
   /** 保存成功後に親へ通知（エントリー設定の一覧へ戻す等） */
   onSuccessfulSectionSave?: () => void;
@@ -322,6 +328,7 @@ export default function EntrySettingsEditor({
   initialData,
   initialEvents = [],
   initialAgeCategories = [],
+  qualificationTemplates = [],
   canEdit,
   onSuccessfulSectionSave,
   onEventsChange,
@@ -429,18 +436,29 @@ export default function EntrySettingsEditor({
     initialData.participantEligibilityText ?? ""
   );
 
-  // 出場に必要な資格（3種のみ）
-  const allowedQualificationOptions = [
-    "選手登録",
-    "BLS・WS",
-    "認定ライフセーバー",
-  ] as const;
+  // 出場に必要な資格（テンプレート由来 + 認定LSマクロ）
+  const allowedQualificationOptions = useMemo(
+    () => deriveEntryQualificationOptionsFromTemplates(qualificationTemplates),
+    [qualificationTemplates]
+  );
+  const allowedQualificationSet = useMemo(
+    () => new Set(allowedQualificationOptions),
+    [allowedQualificationOptions]
+  );
+  const certifiedLifesaverUpperQualifications = useMemo(
+    () => getCertifiedLifesaverUpperQualifications(allowedQualificationOptions),
+    [allowedQualificationOptions]
+  );
   const [requiredQualifications, setRequiredQualifications] = useState<string[]>(
-    Array.isArray(initialData.requiredQualifications)
-      ? (initialData.requiredQualifications as unknown[])
-          .map((x) => (typeof x === "string" ? x.trim() : ""))
-          .filter(Boolean)
-      : []
+    normalizeEntryRequiredQualifications(
+      Array.isArray(initialData.requiredQualifications)
+        ? (initialData.requiredQualifications as unknown[])
+        : [],
+      {
+        allowedQualifications: allowedQualificationSet,
+        expandCertifiedLifesaverMacro: true,
+      }
+    )
   );
   const [isUpdatingQualifications, setIsUpdatingQualifications] = useState(false);
   
@@ -523,9 +541,13 @@ export default function EntrySettingsEditor({
     return m;
   });
 
-  const initialParsedQualTiers = parseAgeQualificationTiers(initialData.requiredQualifications);
+  const initialParsedQualTiers = parseAgeQualificationTiers(
+    initialData.requiredQualifications,
+    allowedQualificationSet
+  );
   const initialParsedUnderQualTiers = parseUnderQualificationTiers(
-    initialData.requiredQualifications
+    initialData.requiredQualifications,
+    allowedQualificationSet
   );
   const [qualPricingMode, setQualPricingMode] = useState<"flat" | "byAge" | "byUnder">(() => {
     if (initialParsedUnderQualTiers?.length) return "byUnder";
@@ -548,11 +570,15 @@ export default function EntrySettingsEditor({
         id: mkTierRowId(),
         minAge: "0",
         maxAge: "",
-        qualifications: Array.isArray(initialData.requiredQualifications)
-          ? (initialData.requiredQualifications as string[])
-              .map((x) => (typeof x === "string" ? x.trim() : ""))
-              .filter(Boolean)
-          : [],
+        qualifications: normalizeEntryRequiredQualifications(
+          Array.isArray(initialData.requiredQualifications)
+            ? (initialData.requiredQualifications as unknown[])
+            : [],
+          {
+            allowedQualifications: allowedQualificationSet,
+            expandCertifiedLifesaverMacro: true,
+          }
+        ),
       },
     ];
   });
@@ -1827,23 +1853,22 @@ export default function EntrySettingsEditor({
   };
 
   const toggleQualification = (value: string) => {
-    if (requiredQualifications.includes(value)) {
-      setRequiredQualifications(requiredQualifications.filter((q) => q !== value));
-    } else {
-      setRequiredQualifications([...requiredQualifications, value]);
-    }
+    setRequiredQualifications((current) =>
+      applyEntryQualificationToggleWithCertifiedMacro(current, value, allowedQualificationOptions)
+    );
   };
 
   const toggleQualInTier = (rowId: string, option: string) => {
     setAgeQualFormRows((rows) =>
       rows.map((r) => {
         if (r.id !== rowId) return r;
-        const has = r.qualifications.includes(option);
         return {
           ...r,
-          qualifications: has
-            ? r.qualifications.filter((q) => q !== option)
-            : [...r.qualifications, option],
+          qualifications: applyEntryQualificationToggleWithCertifiedMacro(
+            r.qualifications,
+            option,
+            allowedQualificationOptions
+          ),
         };
       })
     );
@@ -1852,10 +1877,13 @@ export default function EntrySettingsEditor({
   const toggleQualInUnderTier = (tierKey: string, option: string) => {
     setUnderQualDraft((prev) => {
       const cur = prev[tierKey] ?? [];
-      const has = cur.includes(option);
       return {
         ...prev,
-        [tierKey]: has ? cur.filter((q) => q !== option) : [...cur, option],
+        [tierKey]: applyEntryQualificationToggleWithCertifiedMacro(
+          cur,
+          option,
+          allowedQualificationOptions
+        ),
       };
     });
   };
@@ -1894,7 +1922,10 @@ export default function EntrySettingsEditor({
               return {
                 minAge,
                 maxAge,
-                requiredQualifications: row.qualifications,
+                requiredQualifications: normalizeEntryRequiredQualifications(row.qualifications, {
+                  allowedQualifications: allowedQualificationSet,
+                  expandCertifiedLifesaverMacro: true,
+                }),
               };
             }),
           }
@@ -1903,11 +1934,20 @@ export default function EntrySettingsEditor({
               underQualificationTiers: expectedUnderFeeTierKeys(underPartitionForEditors).map(
                 (k) => ({
                   tierKey: k,
-                  requiredQualifications: underQualDraft[k] ?? [],
+                  requiredQualifications: normalizeEntryRequiredQualifications(
+                    underQualDraft[k] ?? [],
+                    {
+                      allowedQualifications: allowedQualificationSet,
+                      expandCertifiedLifesaverMacro: true,
+                    }
+                  ),
                 })
               ),
             }
-          : requiredQualifications;
+          : normalizeEntryRequiredQualifications(requiredQualifications, {
+              allowedQualifications: allowedQualificationSet,
+              expandCertifiedLifesaverMacro: true,
+            });
 
     setIsUpdatingQualifications(true);
 
@@ -1930,7 +1970,12 @@ export default function EntrySettingsEditor({
                   nextStored as { underQualificationTiers: { tierKey: string; requiredQualifications: string[] }[] }
                 ).underQualificationTiers,
               }
-            : { requiredQualifications };
+            : {
+                requiredQualifications: normalizeEntryRequiredQualifications(requiredQualifications, {
+                  allowedQualifications: allowedQualificationSet,
+                  expandCertifiedLifesaverMacro: true,
+                }),
+              };
       const response = await fetch(
         `/api/competitions/${competitionId}/entry-qualifications`,
         {
@@ -1949,7 +1994,12 @@ export default function EntrySettingsEditor({
 
       const data = await response.json();
       if (Array.isArray(data.requiredQualifications)) {
-        setRequiredQualifications(data.requiredQualifications);
+        setRequiredQualifications(
+          normalizeEntryRequiredQualifications(data.requiredQualifications, {
+            allowedQualifications: allowedQualificationSet,
+            expandCertifiedLifesaverMacro: true,
+          })
+        );
       }
 
       toast.success("出場に必要な資格を更新しました");
@@ -3405,10 +3455,18 @@ export default function EntrySettingsEditor({
           <CardTitle className="text-base font-semibold">出場に必要な資格</CardTitle>
           <CardDescription className="space-y-1 text-xs">
             <span className="block">未選択の場合は資格不要です。</span>
+            <span className="block text-muted-foreground">
+              資格候補は資格テンプレートから自動反映されます。
+            </span>
             <span className="block text-muted-foreground">{CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP}</span>
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 px-4 py-3">
+          {allowedQualificationOptions.length === 0 ? (
+            <div className="rounded-md border border-dashed border-border/80 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              資格テンプレートが未登録のため、参加資格を設定できません。
+            </div>
+          ) : null}
           <div className="space-y-3">
             <div className="flex flex-wrap gap-3 text-xs">
               <label className="flex cursor-pointer items-center gap-2">
@@ -3447,6 +3505,12 @@ export default function EntrySettingsEditor({
                 ? "大会でアンダー制を有効にし、U/OPEN を保存してから設定してください。区分キーは料金（アンダー区分別）と一致します。"
                 : "年齢は大会の「年齢・所属クラブ」で設定した範囲（開催日時点の満年齢）に合わせて帯を分けてください。帯が重なると保存できません。"}
             </p>
+            {certifiedLifesaverUpperQualifications.length > 0 ? (
+              <p className="text-[11px] text-muted-foreground">
+                「{ENTRY_REQUIRED_CERTIFIED_LIFESAVER}」を選択すると、上位資格（
+                {certifiedLifesaverUpperQualifications.join(" / ")}）が一括で選択されます。
+              </p>
+            ) : null}
 
             {qualPricingMode === "flat" ? (
               <div className="space-y-2">

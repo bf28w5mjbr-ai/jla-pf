@@ -37,6 +37,7 @@ type Props = {
   initialData: EntrySettingsEditorProps["initialData"];
   initialEvents: NonNullable<EntrySettingsEditorProps["initialEvents"]>;
   initialAgeCategories?: EntrySettingsEditorProps["initialAgeCategories"];
+  qualificationTemplates?: EntrySettingsEditorProps["qualificationTemplates"];
   /** 種目・参加費コピー用（同一団体内の他大会） */
   siblingCompetitionsForCopy?: SiblingCompetitionOption[];
   /** エントリー0件のときのみコピー可 */
@@ -67,6 +68,7 @@ function CompetitionEntrySettingsEditorInner({
   initialData,
   initialEvents,
   initialAgeCategories,
+  qualificationTemplates,
   siblingCompetitionsForCopy = [],
   copyEntrySettingsAllowed,
   copyEntrySettingsBlockedReason = null,
@@ -364,6 +366,7 @@ function CompetitionEntrySettingsEditorInner({
           initialData={initialData}
           initialEvents={overviewEvents}
           initialAgeCategories={initialAgeCategories}
+          qualificationTemplates={qualificationTemplates}
           canEdit={canEdit}
           onSuccessfulSectionSave={() => setEditingSection(null)}
           onEventsChange={setOverviewEvents}

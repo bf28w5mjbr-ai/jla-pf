@@ -9,12 +9,146 @@ import {
   partitionUnderAgeBands,
   resolveUnderTierKeyForSeasonalAge,
 } from "@/lib/competitionUnderAgeSystem";
+import { normalizeQualificationKind } from "@/lib/qualificationTemplateRules";
 
 export const ALLOWED_ENTRY_REQUIRED_QUALIFICATIONS = [
   "選手登録",
   "BLS・WS",
   "認定ライフセーバー",
 ] as const;
+export const ENTRY_REQUIRED_CERTIFIED_LIFESAVER = "認定ライフセーバー";
+
+export type EntryQualificationTemplateOption = {
+  id?: string;
+  name: string;
+  kind?: string | null;
+};
+
+const CERTIFIED_LIFESAVER_UPPER_KEYWORDS = [
+  "ベーシックサーフライフセーバー",
+  "basicsurflifesaver",
+  "poollifeguard",
+  "プールライフガード",
+  "irbcrew",
+  "irbdriver",
+  "irbクルー",
+  "irbドライバー",
+  "リーダー",
+  "leader",
+];
+
+function toAllowedSet(
+  allowedQualifications?: ReadonlySet<string> | readonly string[] | null
+): Set<string> | null {
+  if (!allowedQualifications) return null;
+  if (Array.isArray(allowedQualifications)) {
+    return new Set(
+      allowedQualifications.map((item) => normalizeQualificationToken(item)).filter((item) => item.length > 0)
+    );
+  }
+  return new Set(
+    Array.from(allowedQualifications.values())
+      .map((item) => normalizeQualificationToken(item))
+      .filter((item) => item.length > 0)
+  );
+}
+
+export function isCertifiedLifesaverUpperQualification(value: string): boolean {
+  const normalized = normalizeQualificationKind(value);
+  if (!normalized) return false;
+  return CERTIFIED_LIFESAVER_UPPER_KEYWORDS.some((keyword) =>
+    normalized.includes(normalizeQualificationKind(keyword))
+  );
+}
+
+export function getCertifiedLifesaverUpperQualifications(options: readonly string[]): string[] {
+  return options.filter(
+    (option) =>
+      option !== ENTRY_REQUIRED_CERTIFIED_LIFESAVER &&
+      isCertifiedLifesaverUpperQualification(option)
+  );
+}
+
+export function deriveEntryQualificationOptionsFromTemplates(
+  templates: EntryQualificationTemplateOption[]
+): string[] {
+  const normalizedTemplates = templates
+    .map((template) => (template.name || template.kind || "").trim())
+    .filter((item) => item.length > 0);
+  const unique = Array.from(new Set(normalizedTemplates));
+  return [ENTRY_REQUIRED_CERTIFIED_LIFESAVER, ...unique];
+}
+
+export function normalizeEntryRequiredQualifications(
+  values: unknown[],
+  options?: {
+    allowedQualifications?: ReadonlySet<string> | readonly string[] | null;
+    expandCertifiedLifesaverMacro?: boolean;
+  }
+): string[] {
+  const allowed = toAllowedSet(options?.allowedQualifications);
+  const expandMacro = options?.expandCertifiedLifesaverMacro ?? false;
+  const list = Array.from(
+    new Set(
+      values
+        .map(normalizeQualificationToken)
+        .filter((value) => value.length > 0 && (!allowed || allowed.has(value)))
+    )
+  );
+  if (!expandMacro || !list.includes(ENTRY_REQUIRED_CERTIFIED_LIFESAVER)) {
+    return list;
+  }
+  const upper = Array.from(allowed ?? []).filter((q) => isCertifiedLifesaverUpperQualification(q));
+  return Array.from(new Set([...list, ...upper]));
+}
+
+export function applyEntryQualificationToggleWithCertifiedMacro(
+  current: readonly string[],
+  toggled: string,
+  options: readonly string[]
+): string[] {
+  const normalizedCurrent = Array.from(
+    new Set(current.map(normalizeQualificationToken).filter((item) => item.length > 0))
+  );
+  const nextSet = new Set(normalizedCurrent);
+  if (nextSet.has(toggled)) {
+    nextSet.delete(toggled);
+  } else {
+    nextSet.add(toggled);
+  }
+
+  const upper = getCertifiedLifesaverUpperQualifications(options);
+  const hasMacro = nextSet.has(ENTRY_REQUIRED_CERTIFIED_LIFESAVER);
+
+  if (toggled === ENTRY_REQUIRED_CERTIFIED_LIFESAVER) {
+    if (hasMacro) {
+      for (const item of upper) nextSet.add(item);
+    } else {
+      for (const item of upper) nextSet.delete(item);
+    }
+  } else if (upper.includes(toggled) && hasMacro) {
+    const allUpperSelected = upper.every((item) => nextSet.has(item));
+    if (!allUpperSelected) {
+      nextSet.delete(ENTRY_REQUIRED_CERTIFIED_LIFESAVER);
+    }
+  } else if (!hasMacro && upper.length > 0) {
+    const allUpperSelected = upper.every((item) => nextSet.has(item));
+    if (allUpperSelected) {
+      nextSet.add(ENTRY_REQUIRED_CERTIFIED_LIFESAVER);
+    }
+  }
+
+  return Array.from(nextSet);
+}
+
+export function compactCertifiedLifesaverExpandedQualifications(values: readonly string[]): string[] {
+  const list = Array.from(new Set(values.map(normalizeQualificationToken).filter((item) => item.length > 0)));
+  if (!list.includes(ENTRY_REQUIRED_CERTIFIED_LIFESAVER)) return list;
+  return list.filter(
+    (item) =>
+      item === ENTRY_REQUIRED_CERTIFIED_LIFESAVER || !isCertifiedLifesaverUpperQualification(item)
+  );
+}
 
 export type AgeFeeTier = {
   minAge: number;
@@ -299,20 +433,25 @@ export function normalizeQualificationToken(item: unknown): string {
   return typeof item === "string" ? item.trim() : "";
 }
 
-export function parseFlatRequiredQualifications(raw: unknown): string[] {
+export function parseFlatRequiredQualifications(
+  raw: unknown,
+  allowedQualifications?: ReadonlySet<string> | readonly string[] | null
+): string[] {
   if (!Array.isArray(raw)) return [];
-  const xs = raw
-    .map(normalizeQualificationToken)
-    .filter((s) => s.length > 0);
-  return Array.from(new Set(xs));
+  return normalizeEntryRequiredQualifications(raw, {
+    allowedQualifications,
+    expandCertifiedLifesaverMacro: true,
+  });
 }
 
-export function parseAgeQualificationTiers(raw: unknown): AgeQualificationTier[] | null {
+export function parseAgeQualificationTiers(
+  raw: unknown,
+  allowedQualifications?: ReadonlySet<string> | readonly string[] | null
+): AgeQualificationTier[] | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
   const arr = o.ageQualificationTiers;
   if (!Array.isArray(arr) || arr.length === 0) return null;
-  const allowed = new Set<string>(ALLOWED_ENTRY_REQUIRED_QUALIFICATIONS);
   const out: AgeQualificationTier[] = [];
   for (const item of arr) {
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
@@ -328,24 +467,23 @@ export function parseAgeQualificationTiers(raw: unknown): AgeQualificationTier[]
     if (maxAge !== null && (!Number.isFinite(maxAge) || maxAge < minAge)) continue;
     const qualsRaw = t.requiredQualifications;
     if (!Array.isArray(qualsRaw)) continue;
-    const requiredQualifications = Array.from(
-      new Set(
-        qualsRaw
-          .map(normalizeQualificationToken)
-          .filter((s) => s.length > 0 && allowed.has(s))
-      )
-    );
+    const requiredQualifications = normalizeEntryRequiredQualifications(qualsRaw, {
+      allowedQualifications,
+      expandCertifiedLifesaverMacro: true,
+    });
     out.push({ minAge, maxAge, requiredQualifications });
   }
   return out.length > 0 ? sortAgeTiers(out) : null;
 }
 
-export function parseUnderQualificationTiers(raw: unknown): UnderQualificationTier[] | null {
+export function parseUnderQualificationTiers(
+  raw: unknown,
+  allowedQualifications?: ReadonlySet<string> | readonly string[] | null
+): UnderQualificationTier[] | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
   const arr = o.underQualificationTiers;
   if (!Array.isArray(arr) || arr.length === 0) return null;
-  const allowed = new Set<string>(ALLOWED_ENTRY_REQUIRED_QUALIFICATIONS);
   const out: UnderQualificationTier[] = [];
   for (const item of arr) {
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
@@ -353,13 +491,10 @@ export function parseUnderQualificationTiers(raw: unknown): UnderQualificationTi
     const tierKey = typeof t.tierKey === "string" ? t.tierKey.trim() : "";
     const qualsRaw = t.requiredQualifications;
     if (!Array.isArray(qualsRaw)) continue;
-    const requiredQualifications = Array.from(
-      new Set(
-        qualsRaw
-          .map(normalizeQualificationToken)
-          .filter((s) => s.length > 0 && allowed.has(s))
-      )
-    );
+    const requiredQualifications = normalizeEntryRequiredQualifications(qualsRaw, {
+      allowedQualifications,
+      expandCertifiedLifesaverMacro: true,
+    });
     if (!tierKey) continue;
     out.push({ tierKey, requiredQualifications });
   }
@@ -388,13 +523,17 @@ export function resolveRequiredQualificationsForAge(
     if (!row) {
       return { list: [], tiered: true, tierMissing: true };
     }
-    return { list: row.requiredQualifications, tiered: true, tierMissing: false };
+    return {
+      list: compactCertifiedLifesaverExpandedQualifications(row.requiredQualifications),
+      tiered: true,
+      tierMissing: false,
+    };
   }
 
   const tiers = parseAgeQualificationTiers(raw);
   if (!tiers) {
     return {
-      list: parseFlatRequiredQualifications(raw),
+      list: compactCertifiedLifesaverExpandedQualifications(parseFlatRequiredQualifications(raw)),
       tiered: false,
       tierMissing: false,
     };
@@ -406,7 +545,11 @@ export function resolveRequiredQualificationsForAge(
   if (!t) {
     return { list: [], tiered: true, tierMissing: true };
   }
-  return { list: t.requiredQualifications, tiered: true, tierMissing: false };
+  return {
+    list: compactCertifiedLifesaverExpandedQualifications(t.requiredQualifications),
+    tiered: true,
+    tierMissing: false,
+  };
 }
 
 /** 一覧表示用: フラット配列と年齢帯別オブジェクトの両方から一意な資格ラベルを集約 */
@@ -417,7 +560,7 @@ export function unionRequiredQualifications(raw: unknown): string[] {
     for (const t of under) {
       for (const q of t.requiredQualifications) set.add(q);
     }
-    return Array.from(set);
+    return compactCertifiedLifesaverExpandedQualifications(Array.from(set));
   }
   const tiers = parseAgeQualificationTiers(raw);
   if (!tiers) return parseFlatRequiredQualifications(raw);
@@ -425,7 +568,7 @@ export function unionRequiredQualifications(raw: unknown): string[] {
   for (const t of tiers) {
     for (const q of t.requiredQualifications) set.add(q);
   }
-  return Array.from(set);
+  return compactCertifiedLifesaverExpandedQualifications(Array.from(set));
 }
 
 function requiredQualsAtAgeForCompare(
@@ -635,12 +778,16 @@ export function entryFeeReadinessOk(
 
 /** 参加資格で「認定ライフセーバー」を選んだときの共通注釈（管理画面・マイページ・公開ページ） */
 export const CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP =
-  "「認定ライフセーバー」は、ウォーターセーフティ・BLS・選手登録に相当する条件（本アプリでは「BLS・WS」や選手登録の指定に含めます）の代替ではなく、それらとは別に必要とする上位資格を指します。";
+  "「認定ライフセーバー」を選択すると、上位資格（例: ベーシック・サーフライフセーバー / プールライフガード / IRBクルー・ドライバー / リーダー資格）を一括で設定できます。判定時は、これら上位資格のいずれかを保有していれば要件を満たします。";
 
 export function requiredQualificationsMentionCertifiedLifesaver(raw: unknown): boolean {
   const tiered = parseAgeQualificationTiers(raw);
   if (tiered?.length) {
-    return tiered.some((t) => t.requiredQualifications.includes("認定ライフセーバー"));
+    return tiered.some((t) =>
+      compactCertifiedLifesaverExpandedQualifications(t.requiredQualifications).includes(
+        ENTRY_REQUIRED_CERTIFIED_LIFESAVER
+      )
+    );
   }
-  return unionRequiredQualifications(raw).includes("認定ライフセーバー");
+  return unionRequiredQualifications(raw).includes(ENTRY_REQUIRED_CERTIFIED_LIFESAVER);
 }

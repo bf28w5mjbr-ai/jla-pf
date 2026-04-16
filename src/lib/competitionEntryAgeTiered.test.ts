@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { partitionUnderAgeBands } from "./competitionUnderAgeSystem";
 import {
+  applyEntryQualificationToggleWithCertifiedMacro,
+  compactCertifiedLifesaverExpandedQualifications,
+  deriveEntryQualificationOptionsFromTemplates,
+  ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
   isQualificationRelaxedMulti,
   isQualificationTighteningMulti,
+  normalizeEntryRequiredQualifications,
   parseAgeCategoryFeeTiers,
   parseAgeFeeTiers,
   parseUnderFeeTiers,
@@ -179,5 +184,85 @@ describe("competitionEntryAgeTiered", () => {
     };
     const closed = partitionUnderAgeBands([15, 10], false);
     expect(resolveRequiredQualificationsForAge(raw, 16, { underPartition: closed }).tierMissing).toBe(true);
+  });
+
+  it("テンプレート由来の資格候補に認定LSマクロを先頭追加する", () => {
+    const options = deriveEntryQualificationOptionsFromTemplates([
+      { id: "t1", name: "ベーシック・サーフライフセーバー", kind: "ベーシック・サーフライフセーバー" },
+      { id: "t2", name: "IRBクルー", kind: "IRBクルー" },
+      { id: "t3", name: "IRBクルー", kind: "IRBクルー" },
+    ]);
+    expect(options[0]).toBe(ENTRY_REQUIRED_CERTIFIED_LIFESAVER);
+    expect(options).toEqual([
+      ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
+      "ベーシック・サーフライフセーバー",
+      "IRBクルー",
+    ]);
+  });
+
+  it("認定LSマクロ選択で上位資格を展開保存できる", () => {
+    const options = [
+      ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
+      "ベーシック・サーフライフセーバー",
+      "プールライフガード",
+      "IRBクルー",
+    ];
+    const expanded = normalizeEntryRequiredQualifications([ENTRY_REQUIRED_CERTIFIED_LIFESAVER], {
+      allowedQualifications: new Set(options),
+      expandCertifiedLifesaverMacro: true,
+    });
+    expect(expanded).toEqual([
+      ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
+      "ベーシック・サーフライフセーバー",
+      "プールライフガード",
+      "IRBクルー",
+    ]);
+    expect(compactCertifiedLifesaverExpandedQualifications(expanded)).toEqual([
+      ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
+    ]);
+  });
+
+  it("認定LSマクロがある場合は上位資格を評価集合から圧縮する", () => {
+    const raw = [
+      ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
+      "ベーシック・サーフライフセーバー",
+      "IRBクルー",
+    ];
+    expect(resolveRequiredQualificationsForAge(raw, 20).list).toEqual([
+      ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
+    ]);
+  });
+
+  it("認定LSトグルで上位資格を一括選択・解除できる", () => {
+    const options = [
+      ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
+      "ベーシック・サーフライフセーバー",
+      "プールライフガード",
+      "IRBクルー",
+    ];
+    const selected = applyEntryQualificationToggleWithCertifiedMacro([], ENTRY_REQUIRED_CERTIFIED_LIFESAVER, options);
+    expect(selected).toEqual([
+      ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
+      "ベーシック・サーフライフセーバー",
+      "プールライフガード",
+      "IRBクルー",
+    ]);
+    const removed = applyEntryQualificationToggleWithCertifiedMacro(
+      selected,
+      ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
+      options
+    );
+    expect(removed).toEqual([]);
+  });
+
+  it("テンプレート外資格は正規化で除外できる", () => {
+    const normalized = normalizeEntryRequiredQualifications(
+      ["認定ライフセーバー", "IRBクルー", "未知の資格"],
+      {
+        allowedQualifications: new Set(["認定ライフセーバー", "IRBクルー"]),
+        expandCertifiedLifesaverMacro: true,
+      }
+    );
+    expect(normalized).toEqual(["認定ライフセーバー", "IRBクルー"]);
   });
 });

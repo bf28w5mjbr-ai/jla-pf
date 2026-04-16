@@ -503,6 +503,11 @@ export default async function CompetitionDetailPage({
               eligibleBirthDateTo: c.eligibleBirthDateTo,
               underBandKeysEnabled: c.underBandKeysEnabled as string[] | null | undefined,
             }))}
+            qualificationTemplates={qualificationTemplates.map((template) => ({
+              id: template.id,
+              name: template.name,
+              kind: template.kind,
+            }))}
           />
 
           {/* 大会説明 */}

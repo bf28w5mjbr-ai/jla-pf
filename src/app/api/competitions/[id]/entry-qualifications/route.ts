@@ -10,7 +10,8 @@ import {
   loadCompetitionMutationState,
 } from "@/lib/competitionPublishedEditRules";
 import {
-  ALLOWED_ENTRY_REQUIRED_QUALIFICATIONS,
+  deriveEntryQualificationOptionsFromTemplates,
+  normalizeEntryRequiredQualifications,
   parseUnderQualificationTiers,
   validateAgeQualificationTiersCoverCompetitionRange,
   validateAgeTiersNoOverlap,
@@ -22,8 +23,10 @@ import { isOrgAdminRole } from "@/lib/roleScopes";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-function normalizeTierList(items: unknown[]): AgeQualificationTier[] {
-  const allowed = new Set<string>(ALLOWED_ENTRY_REQUIRED_QUALIFICATIONS);
+function normalizeTierList(
+  items: unknown[],
+  allowedQualifications: ReadonlySet<string>
+): AgeQualificationTier[] {
   const out: AgeQualificationTier[] = [];
   for (const item of items) {
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
@@ -39,13 +42,10 @@ function normalizeTierList(items: unknown[]): AgeQualificationTier[] {
     if (maxAge !== null && (!Number.isFinite(maxAge) || maxAge < minAge)) continue;
     const qualsRaw = t.requiredQualifications;
     if (!Array.isArray(qualsRaw)) continue;
-    const requiredQualifications = Array.from(
-      new Set(
-        qualsRaw
-          .map((x) => (typeof x === "string" ? x.trim() : ""))
-          .filter((s) => s.length > 0 && allowed.has(s))
-      )
-    );
+    const requiredQualifications = normalizeEntryRequiredQualifications(qualsRaw, {
+      allowedQualifications,
+      expandCertifiedLifesaverMacro: true,
+    });
     out.push({ minAge, maxAge, requiredQualifications });
   }
   return out;
@@ -95,6 +95,14 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       );
     }
 
+    const qualificationTemplates = await prisma.qualificationTemplate.findMany({
+      orderBy: [{ name: "asc" }, { kind: "asc" }],
+      select: { id: true, name: true, kind: true },
+    });
+    const allowedQualificationSet = new Set(
+      deriveEntryQualificationOptionsFromTemplates(qualificationTemplates)
+    );
+
     const body = (await request.json().catch(() => ({}))) as {
       requiredQualifications?: unknown;
       ageQualificationTiers?: unknown;
@@ -123,7 +131,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         );
       }
       const fake = { underQualificationTiers };
-      const tiers = parseUnderQualificationTiers(fake);
+      const tiers = parseUnderQualificationTiers(fake, allowedQualificationSet);
       if (!tiers?.length) {
         return NextResponse.json(
           { message: "アンダー区分を1件以上、正しい形式で指定してください" },
@@ -138,7 +146,15 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       if (uErr) {
         return NextResponse.json({ message: uErr }, { status: 400 });
       }
-      stored = { underQualificationTiers: tiers };
+      stored = {
+        underQualificationTiers: tiers.map((tier) => ({
+          ...tier,
+          requiredQualifications: normalizeEntryRequiredQualifications(tier.requiredQualifications, {
+            allowedQualifications: allowedQualificationSet,
+            expandCertifiedLifesaverMacro: true,
+          }),
+        })),
+      };
     } else if (ageQualificationTiers !== undefined) {
       if (!Array.isArray(ageQualificationTiers)) {
         return NextResponse.json(
@@ -146,7 +162,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
           { status: 400 }
         );
       }
-      const tiers = normalizeTierList(ageQualificationTiers);
+      const tiers = normalizeTierList(ageQualificationTiers, allowedQualificationSet);
       if (tiers.length === 0) {
         return NextResponse.json(
           { message: "年齢帯を1件以上指定してください" },
@@ -177,16 +193,21 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       const normalizedQualifications = requiredQualifications
         .map((item) => (typeof item === "string" ? item.trim() : ""))
         .filter((item) => item.length > 0);
+      const uniqueQualifications = normalizeEntryRequiredQualifications(
+        normalizedQualifications,
+        {
+          allowedQualifications: allowedQualificationSet,
+          expandCertifiedLifesaverMacro: true,
+        }
+      );
 
-      const uniqueQualifications = Array.from(new Set(normalizedQualifications));
-
-      const hasInvalid = uniqueQualifications.some(
-        (item) => !ALLOWED_ENTRY_REQUIRED_QUALIFICATIONS.includes(item as (typeof ALLOWED_ENTRY_REQUIRED_QUALIFICATIONS)[number])
+      const hasInvalid = normalizedQualifications.some(
+        (item) => !allowedQualificationSet.has(item)
       );
 
       if (hasInvalid) {
         return NextResponse.json(
-          { message: "必要資格は「選手登録」「BLS・WS」「認定ライフセーバー」のみ設定できます" },
+          { message: "必要資格は資格テンプレートに登録された項目のみ設定できます" },
           { status: 400 }
         );
       }
