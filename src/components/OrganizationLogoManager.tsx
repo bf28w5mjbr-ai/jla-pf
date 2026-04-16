@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { isValidOrganizationLogoUrl } from "@/lib/organizationLogo";
 import { OrganizationLogoImage } from "@/components/OrganizationLogoImage";
+import { downscaleRasterLogoFileIfLarge, fetchWithConnectionRetry } from "@/lib/browserUploadHelpers";
 import { cn } from "@/lib/utils";
 
 interface OrganizationLogoManagerProps {
@@ -59,20 +60,28 @@ export default function OrganizationLogoManager({
 
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
+      const uploadFile = await downscaleRasterLogoFileIfLarge(file);
 
-      const response = await fetch(`/api/organizations/${organizationId}/logo/upload`, {
-        method: "POST",
-        body: formData,
-      });
+      const formData = new FormData();
+      formData.append("file", uploadFile);
+
+      const response = await fetchWithConnectionRetry(
+        `/api/organizations/${organizationId}/logo/upload`,
+        {
+          method: "POST",
+          body: formData,
+        },
+        { attempts: 4, baseDelayMs: 600 },
+      );
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "アップロードに失敗しました");
+        const data = await response.json().catch(() => ({}));
+        throw new Error(
+          typeof data.error === "string" ? data.error : "アップロードに失敗しました",
+        );
       }
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       setPreview(data.logoUrl);
       setUrlDraft("");
 
@@ -80,7 +89,13 @@ export default function OrganizationLogoManager({
       router.refresh();
     } catch (error) {
       console.error("Upload error:", error);
-      toast.error(error instanceof Error ? error.message : "ロゴのアップロードに失敗しました");
+      const message =
+        error instanceof TypeError
+          ? "通信がタイムアウトまたは切断されました。回線を確認のうえ、しばらくしてから再度お試しください。"
+          : error instanceof Error
+            ? error.message
+            : "ロゴのアップロードに失敗しました";
+      toast.error(message);
       setPreview(currentLogoUrl || null);
     } finally {
       setUploading(false);
