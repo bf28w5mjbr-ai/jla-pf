@@ -15,7 +15,9 @@ export const config = {
   matcher: [
     /*
      * 静的アセット等を除外（公式ドキュメントの matcher に準拠）
+     * `/api` は独自 Cookie 認証が多く、ここで Supabase の getUser を毎回走らせると
+     * アップロード等の POST が遅延・不安定になりやすいため除外する。
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

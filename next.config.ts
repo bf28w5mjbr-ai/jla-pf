@@ -49,6 +49,8 @@ function buildContentSecurityPolicy(): string {
   if (supabaseHostname) {
     connect.push(`https://${supabaseHostname}`, `wss://${supabaseHostname}`);
   }
+  /* Storage 直アップロード等: ビルド時 URL と実リクエスト先がずれるケースへの保険 */
+  connect.push("https://*.supabase.co", "wss://*.supabase.co");
   connect.push(
     "https://api.stripe.com",
     "https://r.stripe.com",

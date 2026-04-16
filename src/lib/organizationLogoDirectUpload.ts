@@ -7,6 +7,18 @@ export type DirectOrganizationLogoUploadResult =
   | { kind: "reject"; message: string }
   | { kind: "multipart" };
 
+const SESSION_FETCH_ATTEMPTS = 4;
+const SESSION_FETCH_BASE_MS = 500;
+
+/** {@link tryJsonBase64OrganizationLogoUpload} と API の `MAX_JSON_BODY_DECODED_BYTES` に合わせる */
+export const ORGANIZATION_LOGO_JSON_UPLOAD_MAX_BYTES = 3 * 1024 * 1024;
+
+const resilientFetch: typeof fetch = (input, init) =>
+  fetchWithConnectionRetry(input, init, {
+    attempts: SESSION_FETCH_ATTEMPTS,
+    baseDelayMs: SESSION_FETCH_BASE_MS,
+  });
+
 /**
  * 画像バイナリを自サイト API に載せず Supabase Storage へ直送し、確定は小さな JSON のみ自サイトに返す。
  * 失敗時は従来の multipart アップロードへフォールバックできるよう {@link kind} `"multipart"` を返す。
@@ -30,7 +42,7 @@ export async function tryDirectOrganizationLogoUpload(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileName: file.name }),
       },
-      { attempts: 2, baseDelayMs: 400 },
+      { attempts: SESSION_FETCH_ATTEMPTS, baseDelayMs: SESSION_FETCH_BASE_MS },
     );
   } catch {
     return { kind: "multipart" };
@@ -58,12 +70,13 @@ export async function tryDirectOrganizationLogoUpload(
     path?: string;
     token?: string;
     bucket?: string;
+    signedUrl?: string;
   } | null;
   if (!session?.path || !session.token || !session.bucket) {
     return { kind: "multipart" };
   }
 
-  const supabase = createClient(url, key);
+  const supabase = createClient(url, key, { global: { fetch: resilientFetch } });
   const contentType =
     file.type && file.type !== "application/octet-stream"
       ? file.type
@@ -77,7 +90,7 @@ export async function tryDirectOrganizationLogoUpload(
     });
 
   if (upErr) {
-    console.error("uploadToSignedUrl:", upErr);
+    console.error("uploadToSignedUrl:", upErr, session.signedUrl ? "(signedUrl あり)" : "");
     return { kind: "multipart" };
   }
 
@@ -90,7 +103,7 @@ export async function tryDirectOrganizationLogoUpload(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: session.path }),
       },
-      { attempts: 2, baseDelayMs: 400 },
+      { attempts: SESSION_FETCH_ATTEMPTS, baseDelayMs: SESSION_FETCH_BASE_MS },
     );
   } catch {
     return { kind: "multipart" };
@@ -121,4 +134,70 @@ export async function tryDirectOrganizationLogoUpload(
   }
 
   return { kind: "success", logoUrl: done.logoUrl };
+}
+
+export type JsonBase64LogoUploadResult =
+  | { kind: "success"; logoUrl: string }
+  | { kind: "skip" }
+  | { kind: "reject"; message: string };
+
+/**
+ * multipart が通らない回線向け。application/json の単一フィールドで送る（3MB 以下のみ）。
+ */
+export async function tryJsonBase64OrganizationLogoUpload(
+  organizationId: string,
+  file: File,
+): Promise<JsonBase64LogoUploadResult> {
+  if (file.size > ORGANIZATION_LOGO_JSON_UPLOAD_MAX_BYTES) {
+    return { kind: "skip" };
+  }
+
+  const fileBase64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const s = reader.result as string;
+      if (s.startsWith("data:")) {
+        const i = s.indexOf(",");
+        resolve(i >= 0 ? s.slice(i + 1) : s);
+      } else {
+        resolve(s);
+      }
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
+
+  let res: Response;
+  try {
+    res = await fetchWithConnectionRetry(
+      `/api/organizations/${organizationId}/logo/upload-json`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileBase64 }),
+      },
+      { attempts: SESSION_FETCH_ATTEMPTS, baseDelayMs: SESSION_FETCH_BASE_MS },
+    );
+  } catch {
+    return { kind: "skip" };
+  }
+
+  if (res.status === 400 || res.status === 413) {
+    const data = (await res.json().catch(() => ({}))) as { error?: unknown };
+    return {
+      kind: "reject",
+      message: typeof data.error === "string" ? data.error : "画像をアップロードできませんでした",
+    };
+  }
+
+  if (!res.ok) {
+    return { kind: "skip" };
+  }
+
+  const data = (await res.json().catch(() => null)) as { logoUrl?: string } | null;
+  if (!data?.logoUrl) {
+    return { kind: "skip" };
+  }
+
+  return { kind: "success", logoUrl: data.logoUrl };
 }

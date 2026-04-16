@@ -74,6 +74,8 @@ export async function POST(
       path: data.path,
       token: data.token,
       bucket,
+      /** クライアントが SDK 外で PUT する場合に利用可（主経路は path + token） */
+      signedUrl: data.signedUrl,
     });
   } catch (error) {
     return jsonInternalError500("POST api/organizations/[orgId]/logo/upload-session/route.ts", error);

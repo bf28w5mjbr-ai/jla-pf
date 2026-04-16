@@ -9,7 +9,10 @@ import { Input } from "@/components/ui/input";
 import { isValidOrganizationLogoUrl } from "@/lib/organizationLogo";
 import { OrganizationLogoImage } from "@/components/OrganizationLogoImage";
 import { downscaleRasterLogoFileIfLarge, fetchWithConnectionRetry } from "@/lib/browserUploadHelpers";
-import { tryDirectOrganizationLogoUpload } from "@/lib/organizationLogoDirectUpload";
+import {
+  tryDirectOrganizationLogoUpload,
+  tryJsonBase64OrganizationLogoUpload,
+} from "@/lib/organizationLogoDirectUpload";
 import { cn } from "@/lib/utils";
 
 interface OrganizationLogoManagerProps {
@@ -72,29 +75,37 @@ export default function OrganizationLogoManager({
       if (direct.kind === "success") {
         logoUrl = direct.logoUrl;
       } else {
-        const formData = new FormData();
-        formData.append("file", uploadFile);
-
-        const response = await fetchWithConnectionRetry(
-          `/api/organizations/${organizationId}/logo/upload`,
-          {
-            method: "POST",
-            body: formData,
-          },
-          { attempts: 4, baseDelayMs: 600 },
-        );
-
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(
-            typeof data.error === "string" ? data.error : "アップロードに失敗しました",
-          );
+        const jsonTry = await tryJsonBase64OrganizationLogoUpload(organizationId, uploadFile);
+        if (jsonTry.kind === "reject") {
+          throw new Error(jsonTry.message);
         }
+        if (jsonTry.kind === "success") {
+          logoUrl = jsonTry.logoUrl;
+        } else {
+          const formData = new FormData();
+          formData.append("file", uploadFile);
 
-        const data = await response.json().catch(() => ({}));
-        logoUrl = typeof data.logoUrl === "string" ? data.logoUrl : null;
-        if (!logoUrl) {
-          throw new Error("アップロードに失敗しました");
+          const response = await fetchWithConnectionRetry(
+            `/api/organizations/${organizationId}/logo/upload`,
+            {
+              method: "POST",
+              body: formData,
+            },
+            { attempts: 4, baseDelayMs: 600 },
+          );
+
+          if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(
+              typeof data.error === "string" ? data.error : "アップロードに失敗しました",
+            );
+          }
+
+          const data = await response.json().catch(() => ({}));
+          logoUrl = typeof data.logoUrl === "string" ? data.logoUrl : null;
+          if (!logoUrl) {
+            throw new Error("アップロードに失敗しました");
+          }
         }
       }
 
