@@ -4,11 +4,11 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
+import type { ClubStatus, Prisma } from "@prisma/client";
 import { Building2, CheckCircle2, Clock3, Search, ShieldX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import ClubApprovalActions from '@/components/ClubApprovalActions';
 
@@ -52,8 +52,15 @@ export default async function AdminClubsPage({
   const sp = await searchParams;
   const searchKeyword = sp.q?.trim() ?? "";
   const statusFilter = (sp.status ?? "").trim().toUpperCase();
-  const validStatusSet = new Set(["APPLYING", "JLA_APPROVED", "APPROVED", "SUSPENDED"]);
-  const selectedStatus = validStatusSet.has(statusFilter) ? statusFilter : "";
+  const validStatusSet: ReadonlySet<ClubStatus> = new Set([
+    "APPLYING",
+    "JLA_APPROVED",
+    "APPROVED",
+    "SUSPENDED",
+  ]);
+  const selectedStatus: ClubStatus | "" = validStatusSet.has(statusFilter as ClubStatus)
+    ? (statusFilter as ClubStatus)
+    : "";
 
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
@@ -71,7 +78,7 @@ export default async function AdminClubsPage({
     redirect("/dashboard");
   }
 
-  const whereClause = {
+  const whereClause: Prisma.ClubWhereInput = {
     ...(selectedStatus ? { status: selectedStatus } : {}),
     ...(searchKeyword
       ? {
@@ -132,11 +139,11 @@ export default async function AdminClubsPage({
           <form className="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem_auto_auto]">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-              <Input
+              <input
                 name="q"
                 defaultValue={searchKeyword}
                 placeholder="クラブID・クラブ名・代表者名/メール・作成者メールで検索"
-                className="pl-9"
+                className="flex h-10 w-full rounded-lg border border-input bg-background py-2 pl-9 pr-3 text-sm shadow-sm ring-offset-background transition-[color,background-color,border-color,box-shadow] placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               />
             </div>
             <select
