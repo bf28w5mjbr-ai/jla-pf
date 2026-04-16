@@ -15,7 +15,13 @@ import {
   COMPETITION_RELATION_LOGO_MAX_BYTES,
   validateAndNormalizeCompetitionRelationLogoBuffer,
 } from "@/lib/uploadValidation";
-import { normalizeRelationLogos, relationLogosWithDisplaySrc } from "@/lib/relationLogos";
+import { normalizeRelationLogos } from "@/lib/relationLogos";
+import {
+  appendCompetitionRelationLogo,
+  parseCompetitionRelationLogoType,
+  relationLogoDisplayName,
+  requireCompetitionLogoAdmin,
+} from "@/lib/competitionRelationLogoUploadServer";
 
 /** file-type / fs 利用のため Node ランタイムを明示 */
 export const runtime = "nodejs";
@@ -28,60 +34,25 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const token = request.cookies.get("session")?.value;
-    const session = token ? await verifySession(token) : null;
-
-    if (!session?.userId) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
-    }
-
-    // 大会情報を取得
-    const competition = await prisma.competition.findUnique({
-      where: { id },
-      include: {
-        organization: {
-          include: {
-            admins: {
-              where: { userId: session.userId },
-            },
-          },
-        },
-      },
-    });
-
-    if (!competition) {
-      return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });
-    }
-
-    // 権限確認（管理者のみ）
-    if (!hasOrgAdminAccess(competition.organization.admins)) {
-      return NextResponse.json(
-        { error: "編集権限がありません" },
-        { status: 403 }
-      );
-    }
+    const auth = await requireCompetitionLogoAdmin(request, id);
+    if (!auth.ok) return auth.response;
 
     const formData = await request.formData();
     const fileEntry = formData.get("file");
-    const typeRaw = formData.get("type");
+    const typeRaw = parseCompetitionRelationLogoType(formData.get("type"));
     const nameRaw = formData.get("name");
-    const type = typeof typeRaw === "string" ? typeRaw : "";
-    const nameTrimmed = typeof nameRaw === "string" ? nameRaw.trim() : "";
 
     if (!(fileEntry instanceof File)) {
       return NextResponse.json({ error: "ファイルが必要です" }, { status: 400 });
     }
     const file = fileEntry;
 
-    if (!type || (type !== "cooperator" && type !== "grant")) {
+    if (!typeRaw) {
       return NextResponse.json({ error: "無効なタイプです" }, { status: 400 });
     }
+    const type = typeRaw;
 
-    const displayName =
-      nameTrimmed ||
-      file.name
-        .replace(/\.[^/.]+$/u, "")
-        .trim();
+    const displayName = relationLogoDisplayName(nameRaw, file.name);
     if (!displayName) {
       return NextResponse.json({ error: "名前が必要です（表示名を入力するか、拡張子付きのファイル名にしてください）" }, { status: 400 });
     }
@@ -139,28 +110,16 @@ export async function POST(
       logoUrl = relativeLogoUrl;
     }
 
-    // 既存のロゴデータを取得
-    const field = type === "cooperator" ? "cooperatorsLogos" : "grantsLogos";
-    const currentLogos = normalizeRelationLogos(
-      type === "cooperator" ? competition.cooperatorsLogos : competition.grantsLogos,
-    );
-
-    // 新しいロゴを追加
-    const updatedLogos = [...currentLogos, { name: displayName, logoUrl }];
-
-    // データベースを更新
-    await prisma.competition.update({
-      where: { id },
-      data: {
-        [field]: updatedLogos,
-      },
+    const saved = await appendCompetitionRelationLogo({
+      competitionId: id,
+      type,
+      displayName,
+      logoUrl,
     });
 
     return NextResponse.json({
       message: "ロゴをアップロードしました",
-      logoUrl,
-      name: displayName,
-      logos: relationLogosWithDisplaySrc(updatedLogos),
+      ...saved,
     });
   } catch (error) {
     return jsonInternalError500("POST api/competitions/[id]/relations/logo/route.ts", error);

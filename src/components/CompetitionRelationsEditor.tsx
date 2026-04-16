@@ -11,6 +11,12 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Edit, Save, X, Trash2, Plus, ImageIcon } from "lucide-react";
 import { relationLogosWithDisplaySrc, type RelationLogoView } from "@/lib/relationLogos";
+import { downscaleRasterLogoFileIfLarge, fetchWithConnectionRetry } from "@/lib/browserUploadHelpers";
+import {
+  tryDirectCompetitionRelationLogoUpload,
+  tryJsonCompetitionRelationLogoUpload,
+  type CompetitionRelationLogoUploadResponse,
+} from "@/lib/competitionRelationLogoDirectUpload";
 
 function RelationLogoCard({
   logo,
@@ -191,26 +197,65 @@ export default function CompetitionRelationsEditor({
         setUploadingGrant(true);
       }
 
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("type", type);
-      formData.append("name", displayName);
-
-      const response = await fetch(`/api/competitions/${competitionId}/relations/logo`, {
-        method: "POST",
-        body: formData,
+      const snapshot = new File([await file.arrayBuffer()], file.name, {
+        type: file.type || "application/octet-stream",
+        lastModified: file.lastModified,
       });
+      const uploadFile = await downscaleRasterLogoFileIfLarge(snapshot);
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "アップロードに失敗しました");
+      const direct = await tryDirectCompetitionRelationLogoUpload(
+        competitionId,
+        type,
+        uploadFile,
+        displayName,
+      );
+      if (direct.kind === "reject") {
+        throw new Error(direct.message);
       }
 
-      const data = (await response.json()) as {
-        logos?: unknown;
-        logoUrl?: string;
-        name?: string;
-      };
+      let data: CompetitionRelationLogoUploadResponse | null = null;
+      if (direct.kind === "success") {
+        data = direct.data;
+      } else {
+        const jsonTry = await tryJsonCompetitionRelationLogoUpload(
+          competitionId,
+          type,
+          uploadFile,
+          displayName,
+        );
+        if (jsonTry.kind === "reject") {
+          throw new Error(jsonTry.message);
+        }
+        if (jsonTry.kind === "success") {
+          data = jsonTry.data;
+        } else {
+          const formData = new FormData();
+          formData.append("file", uploadFile);
+          formData.append("type", type);
+          formData.append("name", displayName);
+
+          const response = await fetchWithConnectionRetry(
+            `/api/competitions/${competitionId}/relations/logo`,
+            {
+              method: "POST",
+              body: formData,
+            },
+            { attempts: 4, baseDelayMs: 600 },
+          );
+
+          if (!response.ok) {
+            const e = await response.json().catch(() => ({}));
+            throw new Error(
+              typeof e.error === "string" ? e.error : "アップロードに失敗しました",
+            );
+          }
+          data = (await response.json()) as CompetitionRelationLogoUploadResponse;
+        }
+      }
+      if (!data) {
+        throw new Error("アップロードに失敗しました");
+      }
+
       if (type === "cooperator") {
         if (Array.isArray(data.logos)) {
           setCooperatorLogosOverride(relationLogosWithDisplaySrc(data.logos));
