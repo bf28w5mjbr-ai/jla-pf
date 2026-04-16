@@ -891,6 +891,8 @@ export default async function CompetitionDetailPage({
                 sex: event.sex,
                 type: event.type,
                 displayOrder: event.displayOrder,
+                ageCategoryId: event.ageCategory?.id ?? null,
+                ageCategoryName: event.ageCategory?.name ?? null,
                 scheduledStartAt: event.scheduledStartAt,
                 scheduledEndAt: event.scheduledEndAt,
                 startListRoundCount: event.startListRoundCount,

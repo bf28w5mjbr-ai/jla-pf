@@ -24,7 +24,13 @@ type Props = {
   competitionName: string;
   /** DB 上のスタートリストスナップショットの記録日時（表示は常にライブ） */
   archiveRecordedAtIso: string | null;
-  event: { id: string; name: string; sex: string; type: "INDIVIDUAL" | "TEAM" };
+  event: {
+    id: string;
+    name: string;
+    sex: string;
+    type: "INDIVIDUAL" | "TEAM";
+    ageCategoryName?: string | null;
+  };
   scheduleLabel?: string | null;
   individuals: StartListIndividualInput[];
   teams: StartListTeamInput[];
@@ -154,6 +160,9 @@ export default function CompetitionStartListEventBlock({
               </span>
               <span className="min-w-0 truncate">{competitionName}</span>
             </p>
+            {event.ageCategoryName ? (
+              <p className="text-xs text-muted-foreground">カテゴリ: {event.ageCategoryName}</p>
+            ) : null}
             {scheduleLabel ? (
               <p className="text-xs font-medium text-foreground">進行予定: {scheduleLabel}</p>
             ) : null}

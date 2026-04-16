@@ -62,6 +62,7 @@ type EventRow = {
   name: string;
   sex: string;
   type: "INDIVIDUAL" | "TEAM";
+  ageCategoryName?: string | null;
 };
 
 type Props = {
@@ -994,6 +995,9 @@ export default function StartListEventUnifiedCard({
               </span>
               <span className="min-w-0 truncate">{competitionName}</span>
             </p>
+            {event.ageCategoryName ? (
+              <p className="text-xs text-muted-foreground">カテゴリ: {event.ageCategoryName}</p>
+            ) : null}
             {scheduleLabel ? (
               <p className="text-xs font-medium text-foreground">進行予定: {scheduleLabel}</p>
             ) : null}

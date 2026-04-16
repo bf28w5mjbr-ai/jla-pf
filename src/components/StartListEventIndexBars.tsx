@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Clock, GripVertical } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,12 @@ import {
   isInstantWithinCompetitionEventSchedule,
 } from "@/lib/eventScheduleWithinCompetition";
 import { cn } from "@/lib/utils";
+import {
+  START_LIST_UNCATEGORIZED_KEY,
+  buildStartListAgeCategoryTabs,
+  filterEventsByStartListAgeCategory,
+  mergeReorderedEventsByIds,
+} from "@/lib/startListAgeCategoryTabs";
 
 export type StartListEventBarItem = {
   id: string;
@@ -24,6 +31,8 @@ export type StartListEventBarItem = {
   sex: string;
   type: "INDIVIDUAL" | "TEAM";
   displayOrder: number;
+  ageCategoryId?: string | null;
+  ageCategoryName?: string | null;
   scheduledStartAt?: Date | string | null;
   scheduledEndAt?: Date | string | null;
   /** スタートリストのラウンド数（全ラウンド） */
@@ -141,6 +150,7 @@ export default function StartListEventIndexBars({
   const [staggerBase, setStaggerBase] = useState("");
   const [staggerMinutes, setStaggerMinutes] = useState("15");
   const [bulkApplying, setBulkApplying] = useState(false);
+  const [activeCategoryTab, setActiveCategoryTab] = useState<string>("");
 
   const { sortedFromServer, serverSyncKey } = useMemo(() => {
     const sorted = sortEvents(events);
@@ -177,6 +187,28 @@ export default function StartListEventIndexBars({
     // 配列参照を依存にすると React 19 で依存配列の長さが種目数に連動することがあるため、文字列キーのみ使う
     // eslint-disable-next-line react-hooks/exhaustive-deps -- serverSyncKey に表示順・開始時刻の実体が含まれる
   }, [serverSyncKey]);
+
+  const ageCategoryTabs = useMemo(() => buildStartListAgeCategoryTabs(order), [order]);
+  const resolvedActiveCategoryTab = useMemo(() => {
+    if (activeCategoryTab && ageCategoryTabs.some((tab) => tab.key === activeCategoryTab)) {
+      return activeCategoryTab;
+    }
+    return ageCategoryTabs[0]?.key ?? "";
+  }, [activeCategoryTab, ageCategoryTabs]);
+  const visibleOrder = useMemo(
+    () => filterEventsByStartListAgeCategory(order, resolvedActiveCategoryTab),
+    [order, resolvedActiveCategoryTab]
+  );
+  const hasCategoryTabs = ageCategoryTabs.length > 1;
+  const activeCategoryLabel =
+    ageCategoryTabs.find((tab) => tab.key === resolvedActiveCategoryTab)?.label ??
+    (resolvedActiveCategoryTab === START_LIST_UNCATEGORIZED_KEY ? "未分類" : "");
+
+  useEffect(() => {
+    if (!activeCategoryTab && ageCategoryTabs[0]?.key) {
+      setActiveCategoryTab(ageCategoryTabs[0].key);
+    }
+  }, [activeCategoryTab, ageCategoryTabs]);
 
   const persistOrder = async (nextOrder: StartListEventBarItem[], successMessage?: string) => {
     setReorderSaving(true);
@@ -279,7 +311,14 @@ export default function StartListEventIndexBars({
       }
 
       if (canReorder && autoSortAfterSaveStart && apiEvents?.length) {
-        const nextSorted = sortByStartTimeOrder(mergedOrder, mergedStarts);
+        const sortedVisible = sortByStartTimeOrder(
+          filterEventsByStartListAgeCategory(mergedOrder, resolvedActiveCategoryTab),
+          mergedStarts
+        );
+        const nextSorted = mergeReorderedEventsByIds(
+          mergedOrder,
+          sortedVisible.map((event) => event.id)
+        );
         const changed = !nextSorted.every((e, i) => e.id === order[i]?.id);
         if (changed) {
           setOrder(nextSorted);
@@ -319,15 +358,15 @@ export default function StartListEventIndexBars({
     }
 
     const slots: { id: string; at: Date }[] = [];
-    for (let i = 0; i < order.length; i++) {
+    for (let i = 0; i < visibleOrder.length; i++) {
       const at = new Date(base.getTime() + i * step * 60_000);
       if (!isInstantWithinCompetitionEventSchedule(at, compStart, compEnd)) {
         toast.error(
-          `「${order[i]?.name ?? ""}」の時刻が開催期間外になります（${i + 1}件目）。間隔または開始を見直してください。`
+          `「${visibleOrder[i]?.name ?? ""}」の時刻が開催期間外になります（${i + 1}件目）。間隔または開始を見直してください。`
         );
         return;
       }
-      slots.push({ id: order[i]!.id, at });
+      slots.push({ id: visibleOrder[i]!.id, at });
     }
 
     setBulkApplying(true);
@@ -357,7 +396,14 @@ export default function StartListEventIndexBars({
       });
 
       if (canReorder && autoSortAfterSaveStart) {
-        const nextSorted = sortByStartTimeOrder(mergedOrder, nextStarts);
+        const sortedVisible = sortByStartTimeOrder(
+          filterEventsByStartListAgeCategory(mergedOrder, resolvedActiveCategoryTab),
+          nextStarts
+        );
+        const nextSorted = mergeReorderedEventsByIds(
+          mergedOrder,
+          sortedVisible.map((event) => event.id)
+        );
         const changed = !nextSorted.every((e, i) => e.id === order[i]?.id);
         if (changed) {
           setOrder(nextSorted);
@@ -380,30 +426,32 @@ export default function StartListEventIndexBars({
       setDragId(null);
       return;
     }
-    const next = [...order];
-    const fi = next.findIndex((x) => x.id === dragId);
-    const ti = next.findIndex((x) => x.id === targetId);
+    const nextVisible = [...visibleOrder];
+    const fi = nextVisible.findIndex((x) => x.id === dragId);
+    const ti = nextVisible.findIndex((x) => x.id === targetId);
     if (fi < 0 || ti < 0) {
       setDragId(null);
       return;
     }
-    const [item] = next.splice(fi, 1);
-    next.splice(ti, 0, item);
+    const [item] = nextVisible.splice(fi, 1);
+    nextVisible.splice(ti, 0, item);
+    const next = mergeReorderedEventsByIds(order, nextVisible.map((event) => event.id));
     setOrder(next);
     setDragId(null);
     void persistOrder(next);
   };
 
   const handleSortByStartTime = () => {
-    const hasComparable = order.some((e) =>
+    const hasComparable = visibleOrder.some((e) =>
       Number.isFinite(effectiveStartMsForSort(e, starts))
     );
     if (!hasComparable) {
       toast.info("開始時刻が入力または保存されている種目がありません");
       return;
     }
-    const next = sortByStartTimeOrder(order, starts);
-    const unchanged = next.every((e, i) => e.id === order[i]?.id);
+    const sortedVisible = sortByStartTimeOrder(visibleOrder, starts);
+    const next = mergeReorderedEventsByIds(order, sortedVisible.map((event) => event.id));
+    const unchanged = sortedVisible.every((e, i) => e.id === visibleOrder[i]?.id);
     if (unchanged) {
       toast.info("すでに開始時刻順です");
       return;
@@ -487,6 +535,21 @@ export default function StartListEventIndexBars({
           ) : null}
         </div>
         <p className="text-[10px] leading-snug text-muted-foreground">{hintCompact}</p>
+        {hasCategoryTabs ? (
+          <Tabs value={resolvedActiveCategoryTab} onValueChange={setActiveCategoryTab} className="mt-1">
+            <TabsList className="h-auto min-h-8 w-full flex-wrap justify-start gap-1 rounded-md border border-border/70 bg-background/80 p-1">
+              {ageCategoryTabs.map((tab) => (
+                <TabsTrigger
+                  key={tab.key}
+                  value={tab.key}
+                  className="h-7 rounded-md px-2 text-[11px] data-[state=active]:shadow-sm"
+                >
+                  {tab.label} ({tab.count})
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        ) : null}
       </CardHeader>
       <CardContent className="p-0">
         {canEditSchedule ? (
@@ -540,8 +603,13 @@ export default function StartListEventIndexBars({
             </div>
           </details>
         ) : null}
+        {activeCategoryLabel ? (
+          <p className="border-b border-border/50 px-2.5 py-1 text-[10px] text-muted-foreground">
+            表示カテゴリ: {activeCategoryLabel}
+          </p>
+        ) : null}
         <ul className="divide-y divide-border/50">
-          {order.map((event) => {
+          {visibleOrder.map((event) => {
             const scheduleText = canEditSchedule
               ? null
               : formatEventStartJa(event.scheduledStartAt);
@@ -600,6 +668,7 @@ export default function StartListEventIndexBars({
                     <span className="shrink-0 text-[10px] text-muted-foreground">
                       {sexLabel(event.sex)}
                       {event.type === "TEAM" ? " · 団体" : " · 個人"}
+                      {event.ageCategoryName ? ` · ${event.ageCategoryName}` : ""}
                     </span>
                   </Link>
                 </div>

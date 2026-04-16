@@ -12,6 +12,8 @@ type Props = {
       sex: string;
       type: "INDIVIDUAL" | "TEAM";
       displayOrder: number;
+      ageCategoryId?: string | null;
+      ageCategoryName?: string | null;
       scheduledStartAt?: Date | null;
       scheduledEndAt?: Date | null;
       startListRoundCount?: number;

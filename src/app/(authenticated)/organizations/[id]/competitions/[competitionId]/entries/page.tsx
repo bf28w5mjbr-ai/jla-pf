@@ -87,6 +87,10 @@ export default async function CompetitionEntriesPage({
           name: true,
           sex: true,
           type: true,
+          ageCategoryId: true,
+          ageCategory: {
+            select: { id: true, name: true },
+          },
         },
         orderBy: { displayOrder: "asc" },
       },

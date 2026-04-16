@@ -63,6 +63,9 @@ const getStartListEventDetail = cache(async (competitionId: string, eventId: str
       marshalStartedAt: true,
       scheduledStartAt: true,
       scheduledEndAt: true,
+      ageCategory: {
+        select: { id: true, name: true },
+      },
     },
   });
 });
@@ -356,6 +359,7 @@ export default async function CompetitionEventStartListPage({
             name: event.name,
             sex: event.sex,
             type: event.type,
+            ageCategoryName: event.ageCategory?.name ?? null,
           }}
           allEventIds={allEventIds}
           initialSettings={competition.startListSettings}
@@ -388,6 +392,7 @@ export default async function CompetitionEventStartListPage({
             name: event.name,
             sex: event.sex,
             type: event.type,
+            ageCategoryName: event.ageCategory?.name ?? null,
           }}
           individuals={individuals}
           teams={teams}

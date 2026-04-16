@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   buildStartListSettingsPayload,
   parseStartListSettings,
@@ -10,12 +11,18 @@ import {
 } from "@/lib/startListSettings";
 import { defaultResultRoundLabelJa } from "@/lib/resultRoundLabels";
 import { secondaryClubLabelForTeamRow } from "@/lib/startListTeamDisplay";
+import {
+  buildStartListAgeCategoryTabs,
+  filterEventsByStartListAgeCategory,
+} from "@/lib/startListAgeCategoryTabs";
 
 type EventInfo = {
   id: string;
   name: string;
   sex?: string | null;
   type: "INDIVIDUAL" | "TEAM";
+  ageCategoryId?: string | null;
+  ageCategory?: { id: string; name: string } | null;
 };
 
 type IndividualEntry = {
@@ -117,6 +124,28 @@ export default function StartListConfigurator({
       return next;
     }
   );
+  const ageCategoryTabs = useMemo(
+    () =>
+      buildStartListAgeCategoryTabs(
+        events.map((event) => ({
+          id: event.id,
+          ageCategoryId: event.ageCategoryId ?? null,
+          ageCategoryName: event.ageCategory?.name ?? null,
+        }))
+      ),
+    [events]
+  );
+  const [activeCategoryTab, setActiveCategoryTab] = useState<string>(() => ageCategoryTabs[0]?.key ?? "");
+  const resolvedActiveCategoryTab = useMemo(() => {
+    if (activeCategoryTab && ageCategoryTabs.some((tab) => tab.key === activeCategoryTab)) {
+      return activeCategoryTab;
+    }
+    return ageCategoryTabs[0]?.key ?? "";
+  }, [activeCategoryTab, ageCategoryTabs]);
+  const visibleEvents = useMemo(
+    () => filterEventsByStartListAgeCategory(events, resolvedActiveCategoryTab),
+    [events, resolvedActiveCategoryTab]
+  );
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -198,7 +227,22 @@ export default function StartListConfigurator({
         </div>
       ) : (
         <div className="space-y-4">
-          {events.map((event) => {
+          {ageCategoryTabs.length > 1 ? (
+            <Tabs value={resolvedActiveCategoryTab} onValueChange={setActiveCategoryTab}>
+              <TabsList className="h-auto min-h-8 w-full flex-wrap justify-start gap-1 rounded-md border border-gray-200 bg-white p-1 dark:border-gray-700 dark:bg-gray-950">
+                {ageCategoryTabs.map((tab) => (
+                  <TabsTrigger
+                    key={tab.key}
+                    value={tab.key}
+                    className="h-7 rounded-md px-2 text-[11px] data-[state=active]:shadow-sm"
+                  >
+                    {tab.label} ({tab.count})
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          ) : null}
+          {visibleEvents.map((event) => {
             const isTeam = event.type === "TEAM";
             const individualItems = individualByEvent[event.id] ?? [];
             const teamItems = teamByEvent[event.id] ?? [];
@@ -241,6 +285,7 @@ export default function StartListConfigurator({
                     </p>
                     <p className="text-xs text-gray-500">
                       {isTeam ? "チーム" : "個人"} / 合計 {total} 件
+                      {event.ageCategory?.name ? ` / ${event.ageCategory.name}` : ""}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-4">
