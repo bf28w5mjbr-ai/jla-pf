@@ -10,6 +10,8 @@ import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { canUseSupabaseStorage, uploadPublicAsset } from "@/lib/supabase/storage";
 import { validateCompetitionAttachmentBuffer } from "@/lib/uploadValidation";
 
+export const maxDuration = 60;
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

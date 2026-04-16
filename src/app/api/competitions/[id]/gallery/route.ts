@@ -13,6 +13,8 @@ import { validateRasterImageBuffer } from "@/lib/uploadValidation";
 const MAX_GALLERY_PHOTOS = 60;
 const MAX_BYTES = 8 * 1024 * 1024;
 
+export const maxDuration = 60;
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

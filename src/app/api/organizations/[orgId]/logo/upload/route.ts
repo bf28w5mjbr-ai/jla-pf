@@ -9,6 +9,9 @@ import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { canUseSupabaseStorage, uploadPublicAsset } from "@/lib/supabase/storage";
 import { validateOrganizationLogoBuffer } from "@/lib/uploadValidation";
 
+/** 画像検証・Supabase 転送で既定の短い上限を超えやすい（Vercel 等） */
+export const maxDuration = 60;
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ orgId: string }> }

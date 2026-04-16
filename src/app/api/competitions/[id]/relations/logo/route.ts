@@ -20,6 +20,8 @@ import { normalizeRelationLogos, relationLogosWithDisplaySrc } from "@/lib/relat
 /** file-type / fs 利用のため Node ランタイムを明示 */
 export const runtime = "nodejs";
 
+export const maxDuration = 60;
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

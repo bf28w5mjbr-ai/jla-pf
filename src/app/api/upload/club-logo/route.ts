@@ -9,6 +9,8 @@ import { requireClubAdmin } from "@/lib/accessControl";
 import { canUseSupabaseStorage, uploadPublicAsset } from "@/lib/supabase/storage";
 import { validateRasterImageBuffer } from "@/lib/uploadValidation";
 
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   try {
     // セッション確認

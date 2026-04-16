@@ -13,6 +13,8 @@ import {
 } from "@/lib/supabase/storage";
 import { validateRasterImageBuffer } from "@/lib/uploadValidation";
 
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   try {
     const cookieStore = await cookies();

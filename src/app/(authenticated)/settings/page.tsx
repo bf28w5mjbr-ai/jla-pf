@@ -12,6 +12,7 @@ import {
   Shield,
   Smartphone,
   UserRound,
+  Users,
 } from "lucide-react";
 import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
@@ -280,6 +281,15 @@ export default async function SettingsPage() {
                 </dd>
               </div>
             </dl>
+
+            <div className="mt-6 rounded-2xl border border-border/80 bg-muted/20 p-2">
+              <SettingsNavRow
+                href="/profile/clubs"
+                icon={Users}
+                title="クラブを探して参加"
+                description="公開クラブを検索し、新しいクラブへ参加申請できます"
+              />
+            </div>
           </CardContent>
         </Card>
 
