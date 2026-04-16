@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface ClubApprovalActionsProps {
   clubId: string;
@@ -50,65 +52,82 @@ export default function ClubApprovalActions({ clubId, currentStatus }: ClubAppro
     <div className="flex gap-2 flex-wrap">
       {currentStatus === 'APPLYING' && (
         <>
-          <button
+          <Button
             onClick={() => handleUpdateStatus('JLA_APPROVED')}
             disabled={loading}
-            className="text-xs px-2 py-1 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            size="sm"
+            className="h-8 bg-orange-600 text-xs text-white hover:bg-orange-700"
           >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
             承認
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => handleUpdateStatus('SUSPENDED')}
             disabled={loading}
-            className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            size="sm"
+            variant="destructive"
+            className="h-8 text-xs"
           >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
             拒否
-          </button>
+          </Button>
         </>
       )}
       {currentStatus === 'JLA_APPROVED' && (
         <>
-          <button
+          <Button
             onClick={() => handleUpdateStatus('APPROVED')}
             disabled={loading}
-            className="text-xs px-2 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            size="sm"
+            className="h-8 bg-emerald-600 text-xs text-white hover:bg-emerald-700"
           >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
             正式化
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => handleUpdateStatus('SUSPENDED')}
             disabled={loading}
-            className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            size="sm"
+            variant="destructive"
+            className="h-8 text-xs"
           >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
             停止
-          </button>
+          </Button>
         </>
       )}
       {currentStatus === 'APPROVED' && (
-        <button
+        <Button
           onClick={() => handleUpdateStatus('SUSPENDED')}
           disabled={loading}
-          className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          size="sm"
+          variant="destructive"
+          className="h-8 text-xs"
         >
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
           停止
-        </button>
+        </Button>
       )}
       {currentStatus === 'SUSPENDED' && (
         <>
-          <button
+          <Button
             onClick={() => handleUpdateStatus('APPLYING')}
             disabled={loading}
-            className="text-xs px-2 py-1 rounded bg-yellow-600 text-white hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            size="sm"
+            className="h-8 bg-yellow-600 text-xs text-white hover:bg-yellow-700"
           >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
             申請中に戻す
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => handleUpdateStatus('JLA_APPROVED')}
             disabled={loading}
-            className="text-xs px-2 py-1 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            size="sm"
+            className="h-8 bg-orange-600 text-xs text-white hover:bg-orange-700"
           >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
             承認
-          </button>
+          </Button>
         </>
       )}
     </div>
