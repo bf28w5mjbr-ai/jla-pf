@@ -24,6 +24,23 @@ interface OrganizationLogoManagerProps {
 
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 
+function formatLogoUploadError(error: unknown): string {
+  if (error instanceof TypeError) {
+    return "通信がタイムアウトまたは切断されました。回線を確認のうえ、しばらくしてから再度お試しください。";
+  }
+  if (
+    error instanceof DOMException &&
+    (error.name === "NotReadableError" ||
+      /could not be read|permission problems/i.test(error.message))
+  ) {
+    return "ファイルを読み取れませんでした。ほかのアプリで開いている場合は閉じるか、クラウド同期の完了後にもう一度お試しください。";
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return "ロゴのアップロードに失敗しました";
+}
+
 export default function OrganizationLogoManager({
   organizationId,
   currentLogoUrl,
@@ -43,24 +60,57 @@ export default function OrganizationLogoManager({
   }, [currentLogoUrl]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const picked = e.target.files?.[0];
+    if (!picked) return;
 
-    if (file.size > MAX_UPLOAD_BYTES) {
+    if (picked.size > MAX_UPLOAD_BYTES) {
       toast.error("ファイルサイズは8MB以下にしてください");
       return;
     }
 
-    if (!file.type.startsWith("image/") && !file.name.toLowerCase().endsWith(".svg")) {
+    if (!picked.type.startsWith("image/") && !picked.name.toLowerCase().endsWith(".svg")) {
       toast.error("画像ファイルを選択してください");
       return;
     }
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setPreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    /*
+     * input を finally で空にすると、未完了の FileReader が参照する File が無効化され
+     * 「The requested file could not be read…」になることがある。
+     * 先にバイト列をコピーした File で以降の処理を行う。
+     */
+    let file: File;
+    try {
+      file = new File([await picked.arrayBuffer()], picked.name, {
+        type: picked.type || "application/octet-stream",
+        lastModified: picked.lastModified,
+      });
+    } catch (err) {
+      console.error("Logo file snapshot:", err);
+      toast.error(formatLogoUploadError(err));
+      e.target.value = "";
+      return;
+    }
+
+    try {
+      const previewDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (typeof reader.result === "string") {
+            resolve(reader.result);
+          } else {
+            reject(new DOMException("プレビューを読み込めませんでした", "NotReadableError"));
+          }
+        };
+        reader.onerror = () => reject(reader.error ?? new Error("プレビューを読み込めませんでした"));
+        reader.readAsDataURL(file);
+      });
+      setPreview(previewDataUrl);
+    } catch (err) {
+      console.error("Logo preview:", err);
+      toast.error(formatLogoUploadError(err));
+      e.target.value = "";
+      return;
+    }
 
     setUploading(true);
     try {
@@ -116,13 +166,7 @@ export default function OrganizationLogoManager({
       router.refresh();
     } catch (error) {
       console.error("Upload error:", error);
-      const message =
-        error instanceof TypeError
-          ? "通信がタイムアウトまたは切断されました。回線を確認のうえ、しばらくしてから再度お試しください。"
-          : error instanceof Error
-            ? error.message
-            : "ロゴのアップロードに失敗しました";
-      toast.error(message);
+      toast.error(formatLogoUploadError(error));
       setPreview(currentLogoUrl || null);
     } finally {
       setUploading(false);
