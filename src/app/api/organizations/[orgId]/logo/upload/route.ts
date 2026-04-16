@@ -1,11 +1,10 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
-import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import { requireOrgAdminForLogoUpload } from "@/lib/organizationLogoUploadServer";
 import { canUseSupabaseStorage, uploadPublicAsset } from "@/lib/supabase/storage";
 import { validateOrganizationLogoBuffer } from "@/lib/uploadValidation";
 
@@ -19,36 +18,9 @@ export async function POST(
   try {
     const { orgId } = await params;
 
-    // セッション確認
-    const token = request.cookies.get("session")?.value;
-    const session = token ? await verifySession(token) : null;
-
-    if (!session?.userId) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
-    }
-
-    // 団体とユーザーの権限を確認
-    const organization = await prisma.organization.findUnique({
-      where: { id: orgId },
-      include: {
-        admins: {
-          where: { userId: session.userId },
-        },
-      },
-    });
-
-    if (!organization) {
-      return NextResponse.json(
-        { error: "団体が見つかりません" },
-        { status: 404 }
-      );
-    }
-
-    if (!hasOrgAdminAccess(organization.admins)) {
-      return NextResponse.json(
-        { error: "ロゴをアップロードする権限がありません" },
-        { status: 403 }
-      );
+    const auth = await requireOrgAdminForLogoUpload(request, orgId);
+    if (!auth.ok) {
+      return auth.response;
     }
 
     // FormDataからファイルを取得

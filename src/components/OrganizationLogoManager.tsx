@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { isValidOrganizationLogoUrl } from "@/lib/organizationLogo";
 import { OrganizationLogoImage } from "@/components/OrganizationLogoImage";
 import { downscaleRasterLogoFileIfLarge, fetchWithConnectionRetry } from "@/lib/browserUploadHelpers";
+import { tryDirectOrganizationLogoUpload } from "@/lib/organizationLogoDirectUpload";
 import { cn } from "@/lib/utils";
 
 interface OrganizationLogoManagerProps {
@@ -62,27 +63,42 @@ export default function OrganizationLogoManager({
     try {
       const uploadFile = await downscaleRasterLogoFileIfLarge(file);
 
-      const formData = new FormData();
-      formData.append("file", uploadFile);
-
-      const response = await fetchWithConnectionRetry(
-        `/api/organizations/${organizationId}/logo/upload`,
-        {
-          method: "POST",
-          body: formData,
-        },
-        { attempts: 4, baseDelayMs: 600 },
-      );
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(
-          typeof data.error === "string" ? data.error : "アップロードに失敗しました",
-        );
+      const direct = await tryDirectOrganizationLogoUpload(organizationId, uploadFile);
+      if (direct.kind === "reject") {
+        throw new Error(direct.message);
       }
 
-      const data = await response.json().catch(() => ({}));
-      setPreview(data.logoUrl);
+      let logoUrl: string | null = null;
+      if (direct.kind === "success") {
+        logoUrl = direct.logoUrl;
+      } else {
+        const formData = new FormData();
+        formData.append("file", uploadFile);
+
+        const response = await fetchWithConnectionRetry(
+          `/api/organizations/${organizationId}/logo/upload`,
+          {
+            method: "POST",
+            body: formData,
+          },
+          { attempts: 4, baseDelayMs: 600 },
+        );
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(
+            typeof data.error === "string" ? data.error : "アップロードに失敗しました",
+          );
+        }
+
+        const data = await response.json().catch(() => ({}));
+        logoUrl = typeof data.logoUrl === "string" ? data.logoUrl : null;
+        if (!logoUrl) {
+          throw new Error("アップロードに失敗しました");
+        }
+      }
+
+      setPreview(logoUrl);
       setUrlDraft("");
 
       toast.success("団体ロゴを更新しました");
