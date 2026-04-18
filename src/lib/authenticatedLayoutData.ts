@@ -1,8 +1,12 @@
 import { cache } from "react";
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/server/db";
 
-/** 認証レイアウト用: 1 リクエスト内・同一 userId での重複クエリを防ぐ */
-export const getAuthenticatedLayoutUser = cache(async (userId: string) => {
+type AuthenticatedLayoutUser = Awaited<
+  ReturnType<typeof loadAuthenticatedLayoutUserFromDb>
+>;
+
+async function loadAuthenticatedLayoutUserFromDb(userId: string) {
   return prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -46,4 +50,33 @@ export const getAuthenticatedLayoutUser = cache(async (userId: string) => {
       },
     },
   });
+}
+
+const getAuthenticatedLayoutUserCrossRequestCache = unstable_cache(
+  async (userId: string): Promise<AuthenticatedLayoutUser> => {
+    return loadAuthenticatedLayoutUserFromDb(userId);
+  },
+  ["authenticated-layout-user"],
+  {
+    revalidate: 30,
+  }
+);
+
+/** 認証レイアウト用: リクエスト内重複防止 + 短時間の横断キャッシュ */
+export const getAuthenticatedLayoutUser = cache(async (userId: string) => {
+  return getAuthenticatedLayoutUserCrossRequestCache(userId);
+});
+
+const getUnreadNotificationCountCrossRequestCache = unstable_cache(
+  async (userId: string) =>
+    prisma.notification.count({
+      where: { userId, read: false },
+    }),
+  ["sidebar-unread-notification-count"],
+  { revalidate: 15 }
+);
+
+/** サイドバー未読バッジ用（最大約15秒の表示遅れで DB 負荷を下げる） */
+export const getCachedUnreadNotificationCount = cache(async (userId: string) => {
+  return getUnreadNotificationCountCrossRequestCache(userId);
 });

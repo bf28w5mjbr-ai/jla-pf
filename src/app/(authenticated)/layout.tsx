@@ -1,11 +1,14 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { verifySessionCached } from "@/lib/auth";
-import { getAuthenticatedLayoutUser } from "@/lib/authenticatedLayoutData";
+import {
+  getAuthenticatedLayoutUser,
+  getCachedUnreadNotificationCount,
+} from "@/lib/authenticatedLayoutData";
+import { GlobalNotificationBell } from "@/components/GlobalNotificationBell";
 import Sidebar from "@/components/Sidebar";
 import React from "react";
 import { isClubAdminRole } from "@/lib/roleScopes";
-import { prisma } from "@/server/db";
 
 export default async function AuthenticatedLayout({
   children,
@@ -33,12 +36,7 @@ export default async function AuthenticatedLayout({
     .map((r) => r.organization)
     .sort((a, b) => a.name.localeCompare(b.name, "ja"));
 
-  const unreadNotificationCount = await prisma.notification.count({
-    where: {
-      userId: session.userId,
-      read: false,
-    },
-  });
+  const unreadNotificationCount = await getCachedUnreadNotificationCount(session.userId);
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -48,9 +46,9 @@ export default async function AuthenticatedLayout({
         isAssociationAdmin={isAssociationAdmin}
         organizations={userOrganizations}
         managedClubs={user.memberships.map((membership) => membership.club)}
-        unreadNotificationCount={unreadNotificationCount}
       />
-      <main className="app-main-canvas min-h-screen min-w-0 flex-1 pb-[var(--safe-area-bottom)] pl-[var(--safe-area-left)] pr-[var(--safe-area-right)] pt-[calc(var(--safe-area-top)+4rem)] lg:pt-[var(--safe-area-top)]">
+      <GlobalNotificationBell unreadCount={unreadNotificationCount} />
+      <main className="app-main-canvas min-h-screen min-w-0 flex-1 pb-[var(--safe-area-bottom)] pl-[var(--safe-area-left)] pr-[max(1rem,calc(var(--safe-area-right)+3.5rem))] pt-[calc(var(--safe-area-top)+4rem)] lg:pt-[var(--safe-area-top)]">
         {children}
       </main>
     </div>

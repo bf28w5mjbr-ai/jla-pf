@@ -222,47 +222,177 @@ export async function listClubAdminTechnicalOfficialAlerts(
     select: { clubId: true, club: { select: { name: true } } },
   });
 
-  const alerts: ClubAdminTechnicalOfficialAlert[] = [];
+  if (adminMemberships.length === 0) return [];
+
+  const clubIds = adminMemberships.map((m) => m.clubId);
+  const clubNameById = new Map(adminMemberships.map((m) => [m.clubId, m.club.name]));
+
+  const [allInd, allTeam] = await Promise.all([
+    prisma.competitionEntry.findMany({
+      where: { clubId: { in: clubIds }, status: { not: "CANCELLED" } },
+      select: { clubId: true, competitionId: true },
+      distinct: ["clubId", "competitionId"],
+    }),
+    prisma.teamEntry.findMany({
+      where: { clubId: { in: clubIds } },
+      select: { clubId: true, competitionId: true },
+      distinct: ["clubId", "competitionId"],
+    }),
+  ]);
+
+  const competitionsByClub = new Map<string, Set<string>>();
+  for (const m of adminMemberships) {
+    competitionsByClub.set(m.clubId, new Set());
+  }
+  for (const r of allInd) {
+    if (!r.clubId) continue;
+    competitionsByClub.get(r.clubId)?.add(r.competitionId);
+  }
+  for (const r of allTeam) {
+    competitionsByClub.get(r.clubId)?.add(r.competitionId);
+  }
+
+  const allCompetitionIds = new Set<string>();
+  for (const set of competitionsByClub.values()) {
+    for (const cid of set) allCompetitionIds.add(cid);
+  }
+  if (allCompetitionIds.size === 0) return [];
+
+  const competitions = await prisma.competition.findMany({
+    where: { id: { in: [...allCompetitionIds] } },
+    select: {
+      id: true,
+      name: true,
+      officialRecruitmentEnabled: true,
+      technicalOfficialRecruitmentEnabled: true,
+      officialQualificationFilterEnabled: true,
+      technicalOfficialTiers: true,
+    },
+  });
+  const compById = new Map(competitions.map((c) => [c.id, c]));
+
+  type Pair = { competitionId: string; clubId: string };
+  const pairKey = (p: Pair) => `${p.competitionId}:${p.clubId}`;
+  const pairs: Pair[] = [];
+  const seenPairs = new Set<string>();
 
   for (const m of adminMemberships) {
-    const [indEntries, teamEntries] = await Promise.all([
-      prisma.competitionEntry.findMany({
-        where: { clubId: m.clubId, status: { not: "CANCELLED" } },
-        select: { competitionId: true },
-        distinct: ["competitionId"],
-      }),
-      prisma.teamEntry.findMany({
-        where: { clubId: m.clubId },
-        select: { competitionId: true },
-        distinct: ["competitionId"],
-      }),
-    ]);
-    const cids = new Set<string>();
-    for (const r of indEntries) cids.add(r.competitionId);
-    for (const r of teamEntries) cids.add(r.competitionId);
-
-    if (cids.size === 0) continue;
-
-    const nameRows = await prisma.competition.findMany({
-      where: { id: { in: [...cids] } },
-      select: { id: true, name: true },
-    });
-    const nameById = new Map(nameRows.map((r) => [r.id, r.name]));
-
-    for (const competitionId of cids) {
-      const st = await getTechnicalOfficialStatusForClub(prisma, competitionId, m.clubId);
-      if (!st?.configured || st.shortage <= 0) continue;
-
-      alerts.push({
-        clubId: m.clubId,
-        clubName: m.club.name,
-        competitionId,
-        competitionName: nameById.get(competitionId) ?? competitionId,
-        shortage: st.shortage,
-        required: st.required,
-        assigned: st.assigned,
-      });
+    for (const competitionId of competitionsByClub.get(m.clubId) ?? []) {
+      const comp = compById.get(competitionId);
+      if (!comp?.officialRecruitmentEnabled || !comp.technicalOfficialRecruitmentEnabled) continue;
+      const tiers = parseTechnicalOfficialTiers(comp.technicalOfficialTiers);
+      if (tiers.length === 0) continue;
+      const pk = pairKey({ competitionId, clubId: m.clubId });
+      if (seenPairs.has(pk)) continue;
+      seenPairs.add(pk);
+      pairs.push({ competitionId, clubId: m.clubId });
     }
+  }
+
+  if (pairs.length === 0) return [];
+
+  const PAIR_CHUNK = 50;
+  const pairChunks: Pair[][] = [];
+  for (let i = 0; i < pairs.length; i += PAIR_CHUNK) {
+    pairChunks.push(pairs.slice(i, i + PAIR_CHUNK));
+  }
+
+  const [entryGroupParts, assignmentParts] = await Promise.all([
+    Promise.all(
+      pairChunks.map((part) =>
+        prisma.competitionEntry.groupBy({
+          by: ["competitionId", "clubId"],
+          where: {
+            status: { not: "CANCELLED" },
+            clubId: { not: null },
+            OR: part.map((p) => ({ competitionId: p.competitionId, clubId: p.clubId })),
+          },
+          _count: { _all: true },
+        })
+      )
+    ),
+    Promise.all(
+      pairChunks.map((part) =>
+        prisma.competitionTechnicalOfficialAssignment.findMany({
+          where: { OR: part.map((p) => ({ competitionId: p.competitionId, clubId: p.clubId })) },
+          select: {
+            competitionId: true,
+            clubId: true,
+            user: {
+              select: {
+                qualifications: {
+                  select: { kind: true, status: true, expiryDate: true },
+                },
+              },
+            },
+          },
+        })
+      )
+    ),
+  ]);
+
+  const entryGroups = entryGroupParts.flat();
+  const assignments = assignmentParts.flat();
+
+  const entryCountByPair = new Map<string, number>();
+  for (const g of entryGroups) {
+    if (g.clubId === null) continue;
+    entryCountByPair.set(pairKey({ competitionId: g.competitionId, clubId: g.clubId }), g._count._all);
+  }
+
+  type AssignmentRow = (typeof assignments)[number];
+  const assignmentsByPair = new Map<string, AssignmentRow[]>();
+  for (const a of assignments) {
+    const k = pairKey({ competitionId: a.competitionId, clubId: a.clubId });
+    let bucket = assignmentsByPair.get(k);
+    if (!bucket) {
+      bucket = [];
+      assignmentsByPair.set(k, bucket);
+    }
+    bucket.push(a);
+  }
+
+  const alerts: ClubAdminTechnicalOfficialAlert[] = [];
+
+  for (const p of pairs) {
+    const comp = compById.get(p.competitionId);
+    if (!comp) continue;
+    const tiers = parseTechnicalOfficialTiers(comp.technicalOfficialTiers);
+    if (tiers.length === 0) continue;
+
+    const k = pairKey(p);
+    const entryCount = entryCountByPair.get(k) ?? 0;
+    const required = requiredTechnicalOfficialCount(entryCount, tiers);
+    if (required <= 0) continue;
+
+    const requireQualificationFilter = Boolean(comp.officialQualificationFilterEnabled);
+    const assignRows = assignmentsByPair.get(k) ?? [];
+    let assigned = 0;
+    for (const a of assignRows) {
+      const ok = requireQualificationFilter
+        ? hasRequiredOfficialQualifications(
+            a.user.qualifications.map((q) => ({
+              kind: q.kind,
+              status: q.status,
+              expiryDate: q.expiryDate,
+            }))
+          )
+        : true;
+      if (ok) assigned += 1;
+    }
+
+    const shortage = Math.max(0, required - assigned);
+    if (shortage <= 0) continue;
+
+    alerts.push({
+      clubId: p.clubId,
+      clubName: clubNameById.get(p.clubId) ?? p.clubId,
+      competitionId: p.competitionId,
+      competitionName: comp.name,
+      shortage,
+      required,
+      assigned,
+    });
   }
 
   return alerts.sort((a, b) => a.competitionName.localeCompare(b.competitionName, "ja"));
