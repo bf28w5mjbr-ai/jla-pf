@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { verifySession } from "@/lib/auth";
 import { requireClubAdmin } from "@/lib/accessControl";
+import { notifyClubAnnouncementPublished } from "@/lib/announcementNotification";
 
 // お知らせ一覧取得
 export async function GET(
@@ -36,9 +37,14 @@ export async function GET(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    const isAdmin = membership.role === "ADMIN";
+
     // お知らせ一覧を取得（ピン留め優先、その後は新しい順）
     const announcements = await prisma.clubAnnouncement.findMany({
-      where: { clubId },
+      where: {
+        clubId,
+        ...(isAdmin ? {} : { publishedAt: { not: null } }),
+      },
       include: {
         author: {
           select: {
@@ -50,6 +56,7 @@ export async function GET(
       },
       orderBy: [
         { isPinned: "desc" },
+        { publishedAt: "desc" },
         { createdAt: "desc" },
       ],
     });
@@ -90,7 +97,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { title, content, isPinned } = body;
+    const { title, content, isPinned, isPublished } = body;
 
     if (!title?.trim() || !content?.trim()) {
       return NextResponse.json(
@@ -106,6 +113,7 @@ export async function POST(
         title: title.trim(),
         content: content.trim(),
         isPinned: isPinned ?? false,
+        publishedAt: isPublished === false ? null : new Date(),
       },
       include: {
         author: {
@@ -117,6 +125,16 @@ export async function POST(
         },
       },
     });
+
+    if (announcement.publishedAt) {
+      await notifyClubAnnouncementPublished({
+        announcementId: announcement.id,
+        clubId,
+        title: announcement.title,
+        content: announcement.content,
+        authorId: session.userId,
+      });
+    }
 
     return NextResponse.json(announcement);
   } catch (error) {

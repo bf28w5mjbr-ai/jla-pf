@@ -110,6 +110,7 @@ export default async function CompetitionEventStartListPage({
         id: true,
         name: true,
         status: true,
+        dayOpsAccessSecretHash: true,
         startListSettings: true,
         organization: {
           select: {
@@ -135,11 +136,7 @@ export default async function CompetitionEventStartListPage({
     notFound();
   }
 
-  const dayOpsMeta = await prisma.competition.findUnique({
-    where: { id: competitionId },
-    select: { dayOpsAccessSecretHash: true },
-  });
-  const dayOpsUnlockConfigured = Boolean(dayOpsMeta?.dayOpsAccessSecretHash);
+  const dayOpsUnlockConfigured = Boolean(competition.dayOpsAccessSecretHash);
   const hasDayOpsUnlock = await verifyDayOpsUnlockFromCookies(competitionId);
 
   const isOrgAdmin = hasOrgAdminAccess(competition.organization.admins);

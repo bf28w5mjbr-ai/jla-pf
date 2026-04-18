@@ -674,6 +674,8 @@ model ClubAnnouncement {
   title    String
   content  String  @db.Text
   isPinned Boolean @default(false)
+  /// null=下書き、値あり=公開済み
+  publishedAt DateTime?
 
   // Relations
   club   Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
@@ -684,6 +686,7 @@ model ClubAnnouncement {
 
   @@index([clubId, createdAt])
   @@index([clubId, isPinned])
+  @@index([clubId, publishedAt])
 }
 
 model ClubActivityRecord {

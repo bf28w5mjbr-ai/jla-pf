@@ -5,6 +5,7 @@ import { getAuthenticatedLayoutUser } from "@/lib/authenticatedLayoutData";
 import Sidebar from "@/components/Sidebar";
 import React from "react";
 import { isClubAdminRole } from "@/lib/roleScopes";
+import { prisma } from "@/server/db";
 
 export default async function AuthenticatedLayout({
   children,
@@ -32,6 +33,13 @@ export default async function AuthenticatedLayout({
     .map((r) => r.organization)
     .sort((a, b) => a.name.localeCompare(b.name, "ja"));
 
+  const unreadNotificationCount = await prisma.notification.count({
+    where: {
+      userId: session.userId,
+      read: false,
+    },
+  });
+
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar
@@ -40,6 +48,7 @@ export default async function AuthenticatedLayout({
         isAssociationAdmin={isAssociationAdmin}
         organizations={userOrganizations}
         managedClubs={user.memberships.map((membership) => membership.club)}
+        unreadNotificationCount={unreadNotificationCount}
       />
       <main className="app-main-canvas min-h-screen min-w-0 flex-1 pb-[var(--safe-area-bottom)] pl-[var(--safe-area-left)] pr-[var(--safe-area-right)] pt-[calc(var(--safe-area-top)+4rem)] lg:pt-[var(--safe-area-top)]">
         {children}

@@ -4,8 +4,9 @@ import { prisma } from "@/server/db";
 import { verifySession } from "@/lib/auth";
 import { requireClubAdmin } from "@/lib/accessControl";
 import { isClubAdminRole } from "@/lib/roleScopes";
+import { notifyClubAnnouncementPublished } from "@/lib/announcementNotification";
 
-// ピン留めトグル
+// お知らせ更新（タイトル・本文・公開状態・ピン留め）
 export async function PUT(
   request: NextRequest,
   context: { params: Promise<{ clubId: string; announcementId: string }> }
@@ -47,10 +48,44 @@ export async function PUT(
       );
     }
 
-    // ピン留め状態をトグル
+    const body = (await request.json().catch(() => ({}))) as {
+      title?: unknown;
+      content?: unknown;
+      isPinned?: unknown;
+      isPublished?: unknown;
+    };
+    const title = typeof body.title === "string" ? body.title.trim() : undefined;
+    const content = typeof body.content === "string" ? body.content.trim() : undefined;
+    const hasPinned = typeof body.isPinned === "boolean";
+    const hasPublished = typeof body.isPublished === "boolean";
+
+    if (title !== undefined && title.length === 0) {
+      return NextResponse.json({ error: "Title is required" }, { status: 400 });
+    }
+    if (content !== undefined && content.length === 0) {
+      return NextResponse.json({ error: "Content is required" }, { status: 400 });
+    }
+
+    const noExplicitChanges =
+      title === undefined && content === undefined && !hasPinned && !hasPublished;
+
+    const nextIsPinned =
+      hasPinned && typeof body.isPinned === "boolean"
+        ? body.isPinned
+        : noExplicitChanges
+          ? !announcement.isPinned
+          : undefined;
+
     const updated = await prisma.clubAnnouncement.update({
       where: { id: announcementId },
-      data: { isPinned: !announcement.isPinned },
+      data: {
+        ...(title !== undefined ? { title } : {}),
+        ...(content !== undefined ? { content } : {}),
+        ...(nextIsPinned !== undefined ? { isPinned: nextIsPinned } : {}),
+        ...(hasPublished
+          ? { publishedAt: body.isPublished ? announcement.publishedAt ?? new Date() : null }
+          : {}),
+      },
       include: {
         author: {
           select: {
@@ -61,6 +96,16 @@ export async function PUT(
         },
       },
     });
+
+    if (!announcement.publishedAt && updated.publishedAt) {
+      await notifyClubAnnouncementPublished({
+        announcementId: updated.id,
+        clubId,
+        title: updated.title,
+        content: updated.content,
+        authorId: updated.authorId,
+      });
+    }
 
     return NextResponse.json(updated);
   } catch (error) {

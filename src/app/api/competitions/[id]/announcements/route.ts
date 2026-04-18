@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import { notifyCompetitionAnnouncementPublished } from "@/lib/announcementNotification";
 
 export async function POST(
   request: NextRequest,
@@ -19,7 +20,14 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { title, content } = await request.json();
+    const body = (await request.json().catch(() => ({}))) as {
+      title?: unknown;
+      content?: unknown;
+      isPublished?: unknown;
+    };
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    const content = typeof body.content === "string" ? body.content.trim() : "";
+    const isPublished = typeof body.isPublished === "boolean" ? body.isPublished : true;
 
     if (!title || !content) {
       return NextResponse.json(
@@ -59,9 +67,18 @@ export async function POST(
         competitionId: id,
         title,
         content,
-        publishedAt: new Date(), // 即座に公開
+        publishedAt: isPublished ? new Date() : null,
       },
     });
+
+    if (announcement.publishedAt) {
+      await notifyCompetitionAnnouncementPublished({
+        announcementId: announcement.id,
+        competitionId: id,
+        title: announcement.title,
+        content: announcement.content,
+      });
+    }
 
     return NextResponse.json(announcement);
   } catch (error) {

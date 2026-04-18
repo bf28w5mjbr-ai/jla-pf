@@ -35,3 +35,32 @@ export async function createNotification(params: {
 
   return notification;
 }
+
+export async function createNotificationIfAbsent(params: {
+  userId: string;
+  category: 'GENERAL' | 'CLUB' | 'COMPETITION' | 'PAYMENT' | 'SYSTEM';
+  type: string;
+  title: string;
+  body: string;
+  relatedId?: string;
+  linkUrl?: string;
+}) {
+  if (!params.relatedId) {
+    return createNotification(params);
+  }
+
+  const existing = await prisma.notification.findFirst({
+    where: {
+      userId: params.userId,
+      type: params.type,
+      relatedId: params.relatedId,
+    },
+    select: { id: true },
+  });
+
+  if (existing) {
+    return null;
+  }
+
+  return createNotification(params);
+}

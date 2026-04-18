@@ -15,12 +15,14 @@ import { isPfAdminRole } from "@/lib/governancePolicy";
 import { cn } from "@/lib/utils";
 import {
   Award,
+  Bell,
   BookOpen,
   Building2,
   ChevronDown,
   Landmark,
   LayoutDashboard,
   Menu,
+  Megaphone,
   PlusCircle,
   Shield,
   Trophy,
@@ -47,6 +49,7 @@ interface SidebarProps {
   isAssociationAdmin?: boolean;
   organizations?: Organization[];
   managedClubs?: Organization[];
+  unreadNotificationCount?: number;
 }
 
 const navLinkClass = (active: boolean) =>
@@ -97,6 +100,7 @@ export default function Sidebar({
   isAssociationAdmin,
   organizations = [],
   managedClubs = [],
+  unreadNotificationCount = 0,
 }: SidebarProps = {}) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
@@ -129,6 +133,12 @@ export default function Sidebar({
       condition: isPfAdmin,
       icon: <Shield className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />,
     },
+    {
+      label: "通知配信",
+      href: "/admin/notifications",
+      condition: isPfAdmin,
+      icon: <Megaphone className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />,
+    },
   ];
 
   const coreMenuItems: MenuItem[] = [
@@ -147,6 +157,11 @@ export default function Sidebar({
       href: "/lessons",
       condition: SHOW_PROFILE_QUALIFICATIONS_MANAGEMENT_NAV,
       icon: <BookOpen className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />,
+    },
+    {
+      label: "通知",
+      href: "/profile/notifications",
+      icon: <Bell className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />,
     },
     {
       label: "保有資格",
@@ -174,6 +189,11 @@ export default function Sidebar({
 
   const bottomMenuItems: MenuItem[] = [
     {
+      label: "クラブを作成",
+      href: appRoutes.clubs.create(),
+      icon: <PlusCircle className="h-4 w-4 shrink-0 opacity-90" strokeWidth={1.75} aria-hidden />,
+    },
+    {
       label: "大会主催団体を作成",
       href: "/organizations/create",
       icon: <PlusCircle className="h-4 w-4 shrink-0 opacity-90" strokeWidth={1.75} aria-hidden />,
@@ -189,6 +209,11 @@ export default function Sidebar({
     >
       <span className={navIconWrap(active)}>{item.icon}</span>
       <span className="min-w-0 truncate">{item.label}</span>
+      {item.label === "通知" && unreadNotificationCount > 0 ? (
+        <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-primary/10 px-1.5 text-[10px] font-semibold tabular-nums text-primary">
+          {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+        </span>
+      ) : null}
     </Link>
   );
 

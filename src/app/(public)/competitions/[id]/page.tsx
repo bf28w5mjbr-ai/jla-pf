@@ -84,6 +84,9 @@ export default async function CompetitionDetailPage({
 }) {
   const { id } = await params;
   const { tab } = await searchParams;
+  const requestedTab = tab ?? "overview";
+  const activeTab =
+    requestedTab === "overview" || requestedTab === "start-list" ? requestedTab : "overview";
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
   const session = await verifySessionCached(token);
@@ -146,11 +149,7 @@ export default async function CompetitionDetailPage({
     notFound();
   }
 
-  const dayOpsMeta = await prisma.competition.findUnique({
-    where: { id },
-    select: { dayOpsAccessSecretHash: true },
-  });
-  const dayOpsUnlockConfigured = Boolean(dayOpsMeta?.dayOpsAccessSecretHash);
+  const dayOpsUnlockConfigured = Boolean(competition.dayOpsAccessSecretHash);
   const hasDayOpsUnlock = await verifyDayOpsUnlockFromCookies(id);
 
   const isOrgAdmin = hasOrgAdminAccess(competition.organization.admins);
@@ -164,7 +163,10 @@ export default async function CompetitionDetailPage({
     notFound();
   }
 
-  const teamEntryMemberships = sessionUserId
+  const hasIndividualEvents = competition.events.some((e) => e.type === "INDIVIDUAL");
+  const hasTeamEvents = competition.events.some((e) => e.type === "TEAM");
+
+  const teamEntryMemberships = sessionUserId && hasTeamEvents
     ? await prisma.membership.findMany({
         where: { userId: sessionUserId, status: "APPROVED" },
         include: { club: { select: { id: true, name: true } } },
@@ -392,14 +394,14 @@ export default async function CompetitionDetailPage({
           ? "bg-muted text-muted-foreground"
           : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
 
-  const hasIndividualEvents = competition.events.some((e) => e.type === "INDIVIDUAL");
-  const hasTeamEvents = competition.events.some((e) => e.type === "TEAM");
-
-  const participationEventSections = buildParticipationEventSections(
-    competition.events,
-    competition.ageCategories
-  );
-  const technicalOfficialTiers = parseTechnicalOfficialTiers(competition.technicalOfficialTiers);
+  const participationEventSections =
+    activeTab === "overview"
+      ? buildParticipationEventSections(competition.events, competition.ageCategories)
+      : [];
+  const technicalOfficialTiers =
+    activeTab === "overview"
+      ? parseTechnicalOfficialTiers(competition.technicalOfficialTiers)
+      : [];
   const showTechnicalOfficialPublicBlock =
     (competition.officialRecruitmentEnabled ?? true) &&
     (competition.technicalOfficialRecruitmentEnabled ?? true) &&
@@ -417,13 +419,13 @@ export default async function CompetitionDetailPage({
   const showOfficialEntryButton = showEntryLinks && isOfficialRecruitmentOn;
   const entryButtonCount =
     (hasIndividualEvents ? 1 : 0) + (hasTeamEvents ? 1 : 0) + (showOfficialEntryButton ? 1 : 0);
-  const entryFeeDisplay = renderEntryFeeForCategories(competition.entryFee, {
-    hasIndividualEvents,
-    hasTeamEvents,
-  });
-  const requestedTab = tab ?? "overview";
-  const activeTab =
-    requestedTab === "overview" || requestedTab === "start-list" ? requestedTab : "overview";
+  const entryFeeDisplay =
+    activeTab === "overview"
+      ? renderEntryFeeForCategories(competition.entryFee, {
+          hasIndividualEvents,
+          hasTeamEvents,
+        })
+      : null;
 
   const withLoginRedirect = (path: string) =>
     sessionUserId ? path : `/login?redirect=${encodeURIComponent(path)}`;
@@ -651,7 +653,8 @@ export default async function CompetitionDetailPage({
       <CompetitionPublicPageTabs
         competitionId={id}
         overview={
-          <div className="space-y-4">
+          activeTab === "overview" ? (
+            <div className="space-y-4">
         {/* 参加情報 */}
         {(competition.events.length > 0 ||
           competition.maxParticipants ||
@@ -868,9 +871,11 @@ export default async function CompetitionDetailPage({
 
         <CompetitionPublicGallery photos={competition.galleryPhotos} />
           </div>
+          ) : null
         }
         startList={
-          <>
+          activeTab === "start-list" ? (
+            <>
           <DayOpsUnlockBanner
             competitionId={competition.id}
             passphraseConfigured={dayOpsUnlockConfigured}
@@ -899,7 +904,8 @@ export default async function CompetitionDetailPage({
               })),
             }}
           />
-          </>
+            </>
+          ) : null
         }
       />
     </div>
