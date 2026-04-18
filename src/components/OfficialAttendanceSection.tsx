@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { isWebNfcSupported, startMarshalNfcScanSession } from "@/lib/marshalWebNfc";
+import { isNfcScanSupportedSync, startNfcScanSession } from "@/lib/nfc/nfcScanSession";
 
 type AttendanceMember = {
   userId: string;
@@ -52,7 +52,7 @@ export default function OfficialAttendanceSection({
   const [nfcListening, setNfcListening] = useState(false);
   const nfcAbortRef = useRef<AbortController | null>(null);
 
-  const webNfcSupported = useMemo(() => isWebNfcSupported(), []);
+  const nfcAutoReadSupported = useMemo(() => isNfcScanSupportedSync(), []);
 
   const load = async (date?: string) => {
     setLoading(true);
@@ -81,7 +81,7 @@ export default function OfficialAttendanceSection({
   }, [organizationId, competitionId]);
 
   useEffect(() => {
-    if (!confirmMode || !webNfcSupported) {
+    if (!confirmMode || !nfcAutoReadSupported) {
       nfcAbortRef.current?.abort();
       nfcAbortRef.current = null;
       setNfcListening(false);
@@ -92,7 +92,7 @@ export default function OfficialAttendanceSection({
       nfcAbortRef.current = null;
       setNfcListening(false);
     };
-  }, [confirmMode, webNfcSupported]);
+  }, [confirmMode, nfcAutoReadSupported]);
 
   const toggleAttendance = async (userId: string, checked: boolean) => {
     if (!activeDate) return;
@@ -153,24 +153,32 @@ export default function OfficialAttendanceSection({
   };
 
   const startNfcListening = async () => {
-    if (!webNfcSupported) {
-      toast.error("このブラウザはNFC読取に対応していません");
+    if (!nfcAutoReadSupported) {
+      toast.error("この環境ではNFCの自動読取に対応していません");
       return;
     }
     nfcAbortRef.current?.abort();
     const ac = new AbortController();
     nfcAbortRef.current = ac;
     try {
-      await startMarshalNfcScanSession(ac.signal, (serial) => {
-        void postNfc(serial);
-      });
+      await startNfcScanSession(
+        {
+          signal: ac.signal,
+          iosSessionType: "tag",
+          invalidateAfterFirstRead: false,
+          alertMessage: "NFCタグをかざして出席登録",
+        },
+        (serial) => {
+          void postNfc(serial);
+        }
+      );
       if (!ac.signal.aborted) {
         setNfcListening(true);
       }
     } catch (error) {
       setNfcListening(false);
       if (error instanceof Error && error.message.includes("対応していません")) {
-        toast.error("このブラウザはNFC読取に対応していません");
+        toast.error("この環境ではNFCの自動読取に対応していません");
         return;
       }
       toast.error("NFC読取を開始できませんでした");
@@ -248,9 +256,9 @@ export default function OfficialAttendanceSection({
                     {nfcListening ? "NFC待受中（停止）" : "NFC待受開始"}
                   </Button>
                 </div>
-                {!webNfcSupported ? (
+                {!nfcAutoReadSupported ? (
                   <p className="text-xs text-muted-foreground">
-                    この端末はWeb NFC非対応です。下の手入力でNFCタグIDを登録してください。
+                    この環境では端末のNFC自動読取が使えません。下の手入力でNFCタグIDを登録してください。
                   </p>
                 ) : null}
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end">

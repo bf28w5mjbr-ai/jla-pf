@@ -49,6 +49,9 @@ importers:
       '@capacitor/status-bar':
         specifier: ^8.0.1
         version: 8.0.1(@capacitor/core@8.2.0)
+      '@capgo/capacitor-nfc':
+        specifier: ^8.0.22
+        version: 8.0.22(@capacitor/core@8.2.0)
       '@fontsource/noto-sans-jp':
         specifier: 5.2.5
         version: 5.2.5
@@ -553,6 +556,11 @@ packages:
 
   '@capacitor/status-bar@8.0.1':
     resolution: {integrity: sha512-OR59dlbwvmrV5dKsC9lvwv48QaGbqcbSTBpk+9/WXWxXYSdXXdzJZU9p8oyNPAkuJhCdnSa3XmU43fZRPBJJ5w==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
+
+  '@capgo/capacitor-nfc@8.0.22':
+    resolution: {integrity: sha512-oqPSsCumr08Ka22MhmPWvmp6EAFb0/Km9CvyQl6NYNOOqDoSHcQ2Clsu+zoQUM2qEeYKbez8HcVt74s9/xaMUA==}
     peerDependencies:
       '@capacitor/core': '>=8.0.0'
 
@@ -6667,6 +6675,10 @@ snapshots:
       '@capacitor/core': 8.2.0
 
   '@capacitor/status-bar@8.0.1(@capacitor/core@8.2.0)':
+    dependencies:
+      '@capacitor/core': 8.2.0
+
+  '@capgo/capacitor-nfc@8.0.22(@capacitor/core@8.2.0)':
     dependencies:
       '@capacitor/core': 8.2.0
 

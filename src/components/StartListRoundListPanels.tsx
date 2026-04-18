@@ -45,7 +45,7 @@ import {
   isDayOpsTerminalParticipantStatus,
   resolveHeatLaneDayOpsDisplayStatus,
 } from "@/lib/dayOpsParticipantStatusDisplay";
-import { isWebNfcSupported, startMarshalNfcScanSession } from "@/lib/marshalWebNfc";
+import { isNfcScanSupportedSync, startNfcScanSession } from "@/lib/nfc/nfcScanSession";
 import { secondaryClubLabelForTeamRow } from "@/lib/startListTeamDisplay";
 import { cn } from "@/lib/utils";
 
@@ -1060,7 +1060,7 @@ export function LiveRoundContent({
       setNfcResultInline("idle");
       return;
     }
-    if (!isWebNfcSupported()) {
+    if (!isNfcScanSupportedSync()) {
       stopResultNfcInline();
       setNfcResultInline("unsupported");
       return;
@@ -1071,9 +1071,17 @@ export function LiveRoundContent({
     setNfcResultInline("idle");
     void (async () => {
       try {
-        await startMarshalNfcScanSession(ac.signal, (tag) => {
-          void processResultNfcTag(tag);
-        });
+        await startNfcScanSession(
+          {
+            signal: ac.signal,
+            iosSessionType: "tag",
+            invalidateAfterFirstRead: false,
+            alertMessage: "NFCタグをかざしてリザルト記録",
+          },
+          (tag) => {
+            void processResultNfcTag(tag);
+          }
+        );
         if (!ac.signal.aborted) {
           setNfcResultInline("listening");
         }
@@ -1101,7 +1109,7 @@ export function LiveRoundContent({
       setNfcMarshalInline("idle");
       return;
     }
-    if (!isWebNfcSupported()) {
+    if (!isNfcScanSupportedSync()) {
       stopMarshalNfcInline();
       setNfcMarshalInline("unsupported");
       return;
@@ -1112,9 +1120,17 @@ export function LiveRoundContent({
     setNfcMarshalInline("idle");
     void (async () => {
       try {
-        await startMarshalNfcScanSession(ac.signal, (tag) => {
-          void processMarshalNfcTag(tag);
-        });
+        await startNfcScanSession(
+          {
+            signal: ac.signal,
+            iosSessionType: "tag",
+            invalidateAfterFirstRead: false,
+            alertMessage: "NFCタグをかざしてマーシャル記録",
+          },
+          (tag) => {
+            void processMarshalNfcTag(tag);
+          }
+        );
         if (!ac.signal.aborted) {
           setNfcMarshalInline("listening");
         }
@@ -1150,7 +1166,7 @@ export function LiveRoundContent({
       setNfcMarshalInline("idle");
       return;
     }
-    if (!isWebNfcSupported()) {
+    if (!isNfcScanSupportedSync()) {
       setNfcMarshalInline("unsupported");
       return;
     }
@@ -1202,7 +1218,7 @@ export function LiveRoundContent({
       setNfcResultInline("idle");
       return;
     }
-    if (!isWebNfcSupported()) {
+    if (!isNfcScanSupportedSync()) {
       setNfcResultInline("unsupported");
       return;
     }

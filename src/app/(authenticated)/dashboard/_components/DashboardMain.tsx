@@ -2,7 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   ArrowRight,
-  Bell,
   Briefcase,
   ClipboardList,
   LayoutDashboard,
@@ -14,7 +13,6 @@ import {
   Users,
 } from "lucide-react";
 import { appRoutes } from "@/lib/appRoutes";
-import { getCachedUnreadNotificationCount } from "@/lib/authenticatedLayoutData";
 import { prisma } from "@/server/db";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -45,8 +43,7 @@ type OfficialAttendanceAggRow = {
 };
 
 export async function DashboardMain({ userId }: { userId: string }) {
-  const [user, entries, attendancePreview, attendanceAggRows, unreadNotificationCount] =
-    await Promise.all([
+  const [user, entries, attendancePreview, attendanceAggRows] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -57,7 +54,6 @@ export async function DashboardMain({ userId }: { userId: string }) {
         familyNameKana: true,
         givenNameKana: true,
         phoneNumber: true,
-        phoneVerified: true,
         dateOfBirth: true,
         jlaMemberNumber: true,
         nfcTagId: true,
@@ -166,7 +162,6 @@ export async function DashboardMain({ userId }: { userId: string }) {
       INNER JOIN "Competition" co ON co.id = a."competitionId"
       WHERE a."userId" = ${userId}
     `,
-    getCachedUnreadNotificationCount(userId),
   ]);
 
   if (!user) redirect("/login");
@@ -246,56 +241,6 @@ export async function DashboardMain({ userId }: { userId: string }) {
           プロフィール・エントリー・所属クラブの状況をひと目で確認できます。
         </p>
       </header>
-
-      <Card className="overflow-hidden border-border/90 shadow-sm">
-        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-          <div className="flex min-w-0 items-start gap-3">
-            <span
-              className={cn(
-                "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors",
-                unreadNotificationCount > 0
-                  ? "bg-primary/15 text-primary"
-                  : "bg-muted/50 text-muted-foreground"
-              )}
-            >
-              <Bell className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-            </span>
-            <div className="min-w-0 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-base font-semibold tracking-tight text-foreground">通知</h2>
-                {unreadNotificationCount > 0 ? (
-                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-primary/10 px-1.5 text-[10px] font-semibold tabular-nums text-primary">
-                    {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted-foreground">未読はありません</span>
-                )}
-              </div>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                大会やクラブからのお知らせは受信箱で確認できます。
-              </p>
-            </div>
-          </div>
-          <Button className="w-full shrink-0 gap-2 sm:w-auto" asChild>
-            <Link href="/profile/notifications">
-              受信箱を開く
-              <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
-
-      {!user.phoneVerified && (
-        <div
-          role="status"
-          className="rounded-lg border border-amber-200/90 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/35 dark:text-amber-100"
-        >
-          <p className="font-medium">携帯電話番号のSMS確認が未完了です</p>
-          <p className="mt-1 text-xs leading-relaxed opacity-90">
-            メールでの仮登録が完了しています。SMSが再開されたあと、設定の電話番号からSMS確認付きの変更フローで完了できます。
-          </p>
-        </div>
-      )}
 
       {/* プロフィール */}
       <Card padding="none" className="overflow-hidden border-border/90 shadow-sm">

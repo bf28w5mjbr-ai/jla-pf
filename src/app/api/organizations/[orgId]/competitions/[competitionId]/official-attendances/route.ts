@@ -6,6 +6,7 @@ import { verifySession } from "@/lib/auth";
 import { requireOrgAdmin } from "@/lib/accessControl";
 import { prisma } from "@/server/db";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { normalizeNfcTagId } from "@/lib/nfc/normalizeNfcTagId";
 
 type ManualBody = {
   mode: "manual";
@@ -21,13 +22,6 @@ type NfcBody = {
 };
 
 type PostBody = ManualBody | NfcBody;
-
-function normalizeTag(value: string): string {
-  return value
-    .trim()
-    .toUpperCase()
-    .replace(/[\s\-:]/g, "");
-}
 
 function parseDateOnly(dateStr: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
@@ -216,7 +210,7 @@ export async function POST(
 
     if (body.mode === "nfc") {
       const nfcTagIdRaw = typeof body.nfcTagId === "string" ? body.nfcTagId : "";
-      const nfcTagId = normalizeTag(nfcTagIdRaw);
+      const nfcTagId = normalizeNfcTagId(nfcTagIdRaw);
       if (!nfcTagId) {
         return NextResponse.json({ error: "NFCタグが不正です" }, { status: 400 });
       }

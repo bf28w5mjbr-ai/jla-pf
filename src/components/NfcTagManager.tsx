@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { isNfcScanSupportedSync, scanFirstNfcTag } from "@/lib/nfc/nfcScanSession";
 
 type Props = {
   initialNfcTagId: string | null;
@@ -14,33 +15,32 @@ export default function NfcTagManager({ initialNfcTagId }: Props) {
   const [isSaving, setIsSaving] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
-  const supportsWebNfc =
-    typeof window !== "undefined" &&
-    "NDEFReader" in window;
+  const scanAbortRef = useRef<AbortController | null>(null);
+
+  const supportsNfcScan = isNfcScanSupportedSync();
 
   const handleScan = async () => {
+    scanAbortRef.current?.abort();
+    const ac = new AbortController();
+    scanAbortRef.current = ac;
+    setIsScanning(true);
     try {
-      const NDEFReaderCtor = (window as Window & { NDEFReader?: new () => { scan: () => Promise<void>; addEventListener: (type: string, listener: (event: { serialNumber?: string }) => void) => void } }).NDEFReader;
-      if (!NDEFReaderCtor) {
-        throw new Error("このブラウザはNFC読取に対応していません");
-      }
-      setIsScanning(true);
-      const reader = new NDEFReaderCtor();
-      await reader.scan();
       toast.info("NFCタグを端末にかざしてください");
-      reader.addEventListener("reading", (event) => {
-        const serial = (event.serialNumber || "").trim();
-        if (!serial) {
-          toast.error("タグIDを読み取れませんでした");
-          return;
-        }
-        setNfcTagId(serial);
-        toast.success(`NFCタグを読み取りました: ${serial}`);
-        setIsScanning(false);
+      const canonical = await scanFirstNfcTag({
+        signal: ac.signal,
+        alertMessage: "NFCタグを端末にかざしてください",
+        iosSessionType: "tag",
       });
+      setNfcTagId(canonical);
+      toast.success(`NFCタグを読み取りました: ${canonical}`);
     } catch (error) {
-      setIsScanning(false);
+      if (error instanceof Error && error.message === "NFC読取を中止しました") {
+        return;
+      }
       toast.error(error instanceof Error ? error.message : "NFC読取に失敗しました");
+    } finally {
+      setIsScanning(false);
+      scanAbortRef.current = null;
     }
   };
 
@@ -95,7 +95,7 @@ export default function NfcTagManager({ initialNfcTagId }: Props) {
         <Button onClick={handleSave} disabled={isSaving || nfcTagId.trim().length === 0}>
           {isSaving ? "保存中..." : "NFCタグを保存"}
         </Button>
-        <Button variant="outline" onClick={handleScan} disabled={isScanning || !supportsWebNfc}>
+        <Button variant="outline" onClick={handleScan} disabled={isScanning || !supportsNfcScan}>
           {isScanning ? "読取待機中..." : "端末でNFC読取"}
         </Button>
         <Button variant="outline" onClick={handleRemove} disabled={isRemoving || nfcTagId.trim().length === 0}>
@@ -103,7 +103,8 @@ export default function NfcTagManager({ initialNfcTagId }: Props) {
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        NFC非対応端末（iOS/Safariなど）では、タグに印字された番号を直接入力して保存できます。重複IDは登録できません。
+        ブラウザが NFC 非対応の場合は、タグに印字された番号を直接入力して保存できます。Bluvium のモバイルアプリ（iOS/Android）では端末の NFC で読み取れます。重複 ID
+        は登録できません。
       </p>
     </div>
   );

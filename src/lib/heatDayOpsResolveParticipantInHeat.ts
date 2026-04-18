@@ -7,6 +7,7 @@ import {
   resolveMarshalSlotInHeat,
   type MarshalParticipantRef,
 } from "@/lib/heatMarshalFromSnapshot";
+import { normalizeNfcTagId } from "@/lib/nfc/normalizeNfcTagId";
 
 export type HeatDayOpsResolveBody =
   | {
@@ -18,13 +19,6 @@ export type HeatDayOpsResolveBody =
       teamMemberUserId?: string;
     }
   | { mode: "nfc"; nfcTagId: string };
-
-function normalizeTag(value: string) {
-  return value
-    .trim()
-    .toUpperCase()
-    .replace(/[\s\-:]/g, "");
-}
 
 export type HeatDayOpsResolvedSlot = {
   target: MarshalParticipantRef;
@@ -109,7 +103,7 @@ export async function resolveParticipantInHeatForDayOps(opts: {
     return { ok: true, data: { target, slot: resolved } };
   }
 
-  const nfcTagId = normalizeTag(body.nfcTagId);
+  const nfcTagId = normalizeNfcTagId(body.nfcTagId);
   const user = await prisma.user.findFirst({
     where: { nfcTagId },
     select: { id: true, familyName: true, givenName: true },

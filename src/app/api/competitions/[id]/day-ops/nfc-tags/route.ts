@@ -6,6 +6,7 @@ import { prisma } from "@/server/db";
 import { getOrgAdminContextForCompetition } from "@/lib/dayOpsAccess";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
+import { normalizeNfcTagId } from "@/lib/nfc/normalizeNfcTagId";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -16,13 +17,6 @@ const payloadSchema = z.object({
   nfcTagId: z.string().trim().min(1).max(128),
   reason: z.string().trim().min(1).max(200),
 });
-
-function normalizeTag(value: string) {
-  return value
-    .trim()
-    .toUpperCase()
-    .replace(/[\s\-:]/g, "");
-}
 
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
@@ -43,7 +37,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json(zodFlattenJsonBody(parsed.error), { status: 400 });
     }
     const { userId, reason } = parsed.data;
-    const nfcTagId = normalizeTag(parsed.data.nfcTagId);
+    const nfcTagId = normalizeNfcTagId(parsed.data.nfcTagId);
 
     const [targetUser, entryCount, teamMemberCount] = await Promise.all([
       prisma.user.findUnique({

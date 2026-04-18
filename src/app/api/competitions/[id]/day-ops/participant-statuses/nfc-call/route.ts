@@ -13,6 +13,7 @@ import {
   resolveParticipantMarshalHeat,
 } from "@/lib/heatMarshalGate";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
+import { normalizeNfcTagId } from "@/lib/nfc/normalizeNfcTagId";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -25,13 +26,6 @@ const payloadSchema = z.object({
   reason: z.string().trim().max(200).optional(),
   marshalRound: z.enum(["HEAT", "SEMI", "FINAL"]).optional(),
 });
-
-function normalizeTag(value: string) {
-  return value
-    .trim()
-    .toUpperCase()
-    .replace(/[\s\-:]/g, "");
-}
 
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
@@ -46,7 +40,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const { eventId, status } = parsed.data;
     const marshalRound: ResultRound = parsed.data.marshalRound ?? "HEAT";
-    const nfcTagId = normalizeTag(parsed.data.nfcTagId);
+    const nfcTagId = normalizeNfcTagId(parsed.data.nfcTagId);
     const nextStatus = status ?? "CALLED";
     const reason = parsed.data.reason?.trim() || "NFC召集処理";
     const [event, user] = await Promise.all([

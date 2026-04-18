@@ -51,5 +51,7 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<key>NFCReaderUsageDescription</key>
+	<string>大会運用のため、NFCタグを読み取ります。</string>
 </dict>
 </plist>

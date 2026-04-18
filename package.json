@@ -51,6 +51,7 @@
     "@capacitor/push-notifications": "^8.0.2",
     "@capacitor/splash-screen": "^8.0.1",
     "@capacitor/status-bar": "^8.0.1",
+    "@capgo/capacitor-nfc": "^8.0.22",
     "@fontsource/noto-sans-jp": "5.2.5",
     "@prisma/client": "6.19.2",
     "@radix-ui/react-alert-dialog": "^1.1.15",

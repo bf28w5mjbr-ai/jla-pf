@@ -4,6 +4,7 @@ import { z } from "zod";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
+import { normalizeNfcTagId } from "@/lib/nfc/normalizeNfcTagId";
 
 const updateSchema = z.object({
   nfcTagId: z
@@ -12,14 +13,6 @@ const updateSchema = z.object({
     .min(1, "NFCタグIDを入力してください")
     .max(128, "NFCタグIDは128文字以内で入力してください"),
 });
-
-function normalizeTag(value: string) {
-  // iOS/Android/Reader機器で表記揺れしやすい区切り文字と大小文字を吸収する。
-  return value
-    .trim()
-    .toUpperCase()
-    .replace(/[\s\-:]/g, "");
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -57,7 +50,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
-    const nfcTagId = normalizeTag(parsed.data.nfcTagId);
+    const nfcTagId = normalizeNfcTagId(parsed.data.nfcTagId);
     const existing = await prisma.user.findFirst({
       where: {
         nfcTagId,

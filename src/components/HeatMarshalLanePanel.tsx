@@ -9,7 +9,7 @@ import {
   isDayOpsTerminalParticipantStatus,
 } from "@/lib/dayOpsParticipantStatusDisplay";
 import { postHeatMarshalComplete } from "@/lib/heatMarshalApi";
-import { isWebNfcSupported, startMarshalNfcScanSession } from "@/lib/marshalWebNfc";
+import { isNfcScanSupportedSync, startNfcScanSession } from "@/lib/nfc/nfcScanSession";
 import { cn } from "@/lib/utils";
 import {
   AlertDialog,
@@ -161,7 +161,7 @@ export function HeatMarshalLanePanel({
       setNfcDialogStatus("idle");
       return;
     }
-    if (!isWebNfcSupported()) {
+    if (!isNfcScanSupportedSync()) {
       setNfcDialogStatus("unsupported");
       return;
     }
@@ -172,28 +172,36 @@ export function HeatMarshalLanePanel({
     const heatIndex = heat.heatIndex;
     void (async () => {
       try {
-        await startMarshalNfcScanSession(ac.signal, (serial) => {
-          void (async () => {
-            if (marshalBlockedRef.current) return;
-            if (!serial.trim()) {
-              toast.error("タグIDを読み取れませんでした");
-              return;
-            }
-            setMarshalPendingKey("nfc-auto");
-            try {
-              await runHeatMarshalComplete({
-                mode: "nfc",
-                heatIndex,
-                nfcTagId: serial,
-              });
-              toast.success("NFCでマーシャル記録しました");
-            } catch (error) {
-              toast.error(error instanceof Error ? error.message : "NFCマーシャルに失敗しました");
-            } finally {
-              setMarshalPendingKey(null);
-            }
-          })();
-        });
+        await startNfcScanSession(
+          {
+            signal: ac.signal,
+            iosSessionType: "tag",
+            invalidateAfterFirstRead: false,
+            alertMessage: "NFCタグをかざしてマーシャル記録",
+          },
+          (serial) => {
+            void (async () => {
+              if (marshalBlockedRef.current) return;
+              if (!serial.trim()) {
+                toast.error("タグIDを読み取れませんでした");
+                return;
+              }
+              setMarshalPendingKey("nfc-auto");
+              try {
+                await runHeatMarshalComplete({
+                  mode: "nfc",
+                  heatIndex,
+                  nfcTagId: serial,
+                });
+                toast.success("NFCでマーシャル記録しました");
+              } catch (error) {
+                toast.error(error instanceof Error ? error.message : "NFCマーシャルに失敗しました");
+              } finally {
+                setMarshalPendingKey(null);
+              }
+            })();
+          }
+        );
         if (!ac.signal.aborted) {
           setNfcDialogStatus("listening");
         }
