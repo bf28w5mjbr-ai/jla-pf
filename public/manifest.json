@@ -10,8 +10,8 @@
   "theme_color": "#ea580c",
   "icons": [
     {
-      "src": "/bluvium-app-logo.png",
-      "sizes": "2378x2056",
+      "src": "/icon.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     }

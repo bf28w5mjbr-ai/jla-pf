@@ -20,10 +20,10 @@ export const metadata: Metadata = {
   },
   description: "Bluviumアプリケーション",
   manifest: "/manifest.json",
-  /** タブのファビコン・ショートカット・ホーム画面（Apple）— 実体は public/bluvium-app-logo.png */
+  /** タブ用は正方形の `/icon.png`（`src/app/icon.png`）。広いロゴは Apple 用のみ。 */
   icons: {
-    icon: [{ url: "/bluvium-app-logo.png", type: "image/png", sizes: "2378x2056" }],
-    shortcut: "/bluvium-app-logo.png",
+    icon: [{ url: "/icon.png", type: "image/png", sizes: "512x512" }],
+    shortcut: "/icon.png",
     apple: [{ url: "/bluvium-app-logo.png", type: "image/png" }],
   },
   appleWebApp: {
