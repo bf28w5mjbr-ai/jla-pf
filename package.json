@@ -24,6 +24,7 @@
     "cleanup:uploads": "node scripts/cleanup-local-uploads.mjs",
     "test:push:api": "node scripts/test-manual-push-api.mjs",
     "verify:production": "node scripts/verify-production-endpoints.mjs",
+    "measure:ttfb": "node scripts/measure-ttfb.mjs",
     "copy-db:data:dry": "node --env-file=.env scripts/copy-public-schema-data.mjs --dry-run",
     "copy-db:data": "node --env-file=.env scripts/copy-public-schema-data.mjs --truncate-first",
     "seed:potato-ocean-woman": "node --env-file=.env.local scripts/seed-potato-ocean-woman.mjs",
