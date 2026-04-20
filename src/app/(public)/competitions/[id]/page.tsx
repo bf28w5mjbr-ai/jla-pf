@@ -178,6 +178,8 @@ export default async function CompetitionDetailPage({
   const firstAdminClubForTeamEntry = teamEntryMemberships.find((m) =>
     isClubAdminRole(m.role)
   )?.club;
+  /** 公開ページの「チームエントリー」導線はクラブ管理者のみ（ログインかつ管理クラブあり） */
+  const showTeamEntryButton = hasTeamEvents && Boolean(firstAdminClubForTeamEntry);
 
   const sessionUserForInquiry = sessionUserId
     ? await prisma.user.findUnique({
@@ -435,7 +437,9 @@ export default async function CompetitionDetailPage({
     (competition.officialRecruitmentEnabled ?? true) && competition.status !== "CANCELLED";
   const showOfficialEntryButton = showEntryLinks && isOfficialRecruitmentOn;
   const entryButtonCount =
-    (hasIndividualEvents ? 1 : 0) + (hasTeamEvents ? 1 : 0) + (showOfficialEntryButton ? 1 : 0);
+    (hasIndividualEvents ? 1 : 0) +
+    (showTeamEntryButton ? 1 : 0) +
+    (showOfficialEntryButton ? 1 : 0);
   const entryFeeDisplay =
     activeTab === "overview"
       ? renderEntryFeeForCategories(competition.entryFee, {
@@ -621,7 +625,7 @@ export default async function CompetitionDetailPage({
                           </Link>
                         </Button>
                       ) : null}
-                      {hasTeamEvents ? (
+                      {showTeamEntryButton && firstAdminClubForTeamEntry ? (
                         <Button
                           asChild
                           size="sm"
@@ -630,11 +634,11 @@ export default async function CompetitionDetailPage({
                         >
                           <Link
                             href={withLoginRedirect(
-                              firstAdminClubForTeamEntry
-                                ? appRoutes.clubs.competition.team(firstAdminClubForTeamEntry.id, competition.id, {
-                                    tab: "entry",
-                                  })
-                                : appRoutes.competitions.legacyTeamEntry(competition.id)
+                              appRoutes.clubs.competition.team(
+                                firstAdminClubForTeamEntry.id,
+                                competition.id,
+                                { tab: "entry" }
+                              )
                             )}
                           >
                             チームエントリー
@@ -668,6 +672,12 @@ export default async function CompetitionDetailPage({
                         {isEntryWindowOpen
                           ? "この時間帯はエントリー手続き・決済が可能です。"
                           : "表示の期間外でも、主催の設定により手続きできる場合があります。詳細は手続き画面でご確認ください。"}
+                      </p>
+                    ) : null}
+                    {sessionUserId && hasTeamEvents && !showTeamEntryButton ? (
+                      <p className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+                        チーム種目のエントリーは、所属クラブの<strong className="font-medium text-foreground">管理者</strong>
+                        がクラブの「チーム管理」から登録します。
                       </p>
                     ) : null}
                   </div>

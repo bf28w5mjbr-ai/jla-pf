@@ -23,7 +23,7 @@ import { ENTRY_CHECKOUT_PAID_STATUSES } from "@/lib/entryCheckoutSessionPaid";
 import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
 import { refreshStartListSnapshotAfterEligibleEntryChange } from "@/lib/startListSnapshot";
 import { clearIndividualWithdrawalParticipantStatusesForEvents } from "@/lib/entryWithdrawalReinstatement";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import { hasOrgAdminAccess, isClubAdminRole } from "@/lib/roleScopes";
 import { calculateCompetitionEntryFee, type CompetitionEntryFeeConfig } from "@/lib/entryFee";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import {
@@ -399,6 +399,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
         { message: "所属クラブが必要です" },
         { status: 400 }
       );
+    }
+
+    if (hasTeamEntriesField) {
+      if (!clubId || typeof clubId !== "string") {
+        return NextResponse.json(
+          { message: "チーム種目の更新には所属クラブの指定が必要です" },
+          { status: 400 }
+        );
+      }
+      if (!approvedMembership || !isClubAdminRole(approvedMembership.role)) {
+        return NextResponse.json(
+          {
+            message:
+              "チーム種目の登録・変更はクラブ管理者のみが行えます。クラブのチーム管理から操作してください。",
+          },
+          { status: 403 }
+        );
+      }
     }
 
     if (!hasTeamEntriesField && preservedTeamEntriesFromSnapshot.length > 0) {
