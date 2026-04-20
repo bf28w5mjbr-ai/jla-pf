@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -24,6 +25,7 @@ type Props = {
 };
 
 export default function NotificationCenter({ initialItems, initialUnreadCount }: Props) {
+  const router = useRouter();
   const [items, setItems] = useState<NotificationItem[]>(initialItems);
   const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
   const [isMarkingAll, setIsMarkingAll] = useState(false);
@@ -64,6 +66,7 @@ export default function NotificationCenter({ initialItems, initialUnreadCount }:
       if (!res.ok) throw new Error("failed");
       setItems((prev) => prev.map((item) => (item.id === id ? { ...item, read: true } : item)));
       setUnreadCount((prev) => Math.max(prev - 1, 0));
+      router.refresh();
     } catch (error) {
       console.error("mark read error", error);
       toast.error("既読更新に失敗しました");
@@ -81,6 +84,7 @@ export default function NotificationCenter({ initialItems, initialUnreadCount }:
       if (!res.ok) throw new Error("failed");
       setItems((prev) => prev.map((item) => ({ ...item, read: true })));
       setUnreadCount(0);
+      router.refresh();
       toast.success("すべて既読にしました");
     } catch (error) {
       console.error("mark all read error", error);

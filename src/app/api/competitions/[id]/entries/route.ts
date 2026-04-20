@@ -107,8 +107,51 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const itemsArray = Array.isArray(items) ? items : [];
     const hasTeamEntriesField = "teamEntries" in (body ?? {});
-    const teamEntriesArray = Array.isArray(teamEntries) ? teamEntries : [];
-    const selectedCount = itemsArray.length + teamEntriesArray.length;
+    const teamEntriesArray =
+      hasTeamEntriesField && Array.isArray(teamEntries) ? teamEntries : [];
+
+    let preservedTeamEntriesFromSnapshot: { eventId: string; teamName: string }[] = [];
+    let snapshotClubIdForPreservedTeams: string | null = null;
+    if (!hasTeamEntriesField) {
+      const prevForTeam = await prisma.competitionEntry.findFirst({
+        where: {
+          competitionId,
+          userId: session.userId,
+          status: "SUBMITTED",
+        },
+        select: {
+          clubId: true,
+          snapshot: { select: { data: true } },
+        },
+      });
+      if (
+        prevForTeam?.snapshot?.data &&
+        typeof prevForTeam.snapshot.data === "object" &&
+        !Array.isArray(prevForTeam.snapshot.data)
+      ) {
+        const sd = prevForTeam.snapshot.data as Record<string, unknown>;
+        const rawTeams = sd.teamEntries;
+        snapshotClubIdForPreservedTeams =
+          typeof sd.clubId === "string" && sd.clubId.trim()
+            ? sd.clubId
+            : (prevForTeam.clubId ?? null);
+        if (Array.isArray(rawTeams)) {
+          for (const row of rawTeams) {
+            if (!row || typeof row !== "object") continue;
+            const r = row as Record<string, unknown>;
+            const eventId = typeof r.eventId === "string" ? r.eventId : "";
+            const teamName = typeof r.teamName === "string" ? r.teamName.trim() : "";
+            if (eventId && teamName) {
+              preservedTeamEntriesFromSnapshot.push({ eventId, teamName });
+            }
+          }
+        }
+      }
+    }
+
+    const selectedCount =
+      itemsArray.length +
+      (hasTeamEntriesField ? teamEntriesArray.length : preservedTeamEntriesFromSnapshot.length);
 
     if (selectedCount === 0) {
       return NextResponse.json(
@@ -323,13 +366,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ message: "種目が不正です" }, { status: 400 });
     }
 
-    const invalidTeamEvent = teamEntriesArray.find((item: { eventId?: string }) => {
-      const id = item.eventId;
-      if (typeof id !== "string") return true;
-      return !eventMap.has(id);
-    });
-    if (invalidTeamEvent) {
-      return NextResponse.json({ message: "種目が不正です" }, { status: 400 });
+    if (hasTeamEntriesField) {
+      const invalidTeamEvent = teamEntriesArray.find((item: { eventId?: string }) => {
+        const id = item.eventId;
+        if (typeof id !== "string") return true;
+        return !eventMap.has(id);
+      });
+      if (invalidTeamEvent) {
+        return NextResponse.json({ message: "種目が不正です" }, { status: 400 });
+      }
     }
 
     const approvedMembership = clubId
@@ -354,6 +399,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
         { message: "所属クラブが必要です" },
         { status: 400 }
       );
+    }
+
+    if (!hasTeamEntriesField && preservedTeamEntriesFromSnapshot.length > 0) {
+      const lockedClubId = snapshotClubIdForPreservedTeams;
+      if (typeof clubId !== "string" || !lockedClubId || clubId !== lockedClubId) {
+        return NextResponse.json(
+          {
+            message:
+              "チーム種目が登録済みのため、所属クラブは変更できません。クラブのチーム管理でチームを編集できます。",
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const entryItemsData = itemsArray.map((item: { eventId: string; entryTime?: string | null }) => {
@@ -395,45 +453,46 @@ export async function POST(request: NextRequest, context: RouteContext) {
       };
     });
 
-    const teamEntriesData = teamEntriesArray.map(
-      (item: { eventId: string; teamName?: string }) => {
-      const event = eventMap.get(item.eventId);
-      if (!event) {
-        throw new Error("種目が不正です");
-      }
-      if (event.type !== "TEAM") {
-        throw new Error("チーム種目のみ選択できます");
-      }
-      const isMixedEvent = event.sex === "OTHER";
-      if (!isMixedEvent && userSex !== "OTHER" && event.sex !== userSex) {
-        throw new Error("性別条件を満たしていません");
-      }
-      if (
-        !meetsCompetitionEventAgeEligibility({
-          competitionUnderAgeEnabled: competitionUsesUnderAgeSystem(competition),
-          underPartition,
-          eventUnderAgeEligibilityEnabled: event.underAgeEligibilityEnabled ?? true,
-          effectiveUnderBandAllowList: resolveEffectiveUnderBandAllowListForEvent({
-            underBandKeysOverride: event.underBandKeysOverride,
-            ageCategoryId: event.ageCategoryId,
-            categoryUnderBandKeysEnabled: event.ageCategory?.underBandKeysEnabled ?? null,
-          }),
-          event,
-          userDateOfBirth: user?.dateOfBirth ? new Date(user.dateOfBirth) : null,
-          seasonalAgeYears: userAge,
-        })
-      ) {
-        throw new Error("年齢条件を満たしていません");
-      }
-      if (!item.teamName || typeof item.teamName !== "string" || !item.teamName.trim()) {
-        throw new Error("チーム名を入力してください");
-      }
+    const teamEntriesData = hasTeamEntriesField
+      ? teamEntriesArray.map((item: { eventId: string; teamName?: string }) => {
+          const event = eventMap.get(item.eventId);
+          if (!event) {
+            throw new Error("種目が不正です");
+          }
+          if (event.type !== "TEAM") {
+            throw new Error("チーム種目のみ選択できます");
+          }
+          const isMixedEvent = event.sex === "OTHER";
+          if (!isMixedEvent && userSex !== "OTHER" && event.sex !== userSex) {
+            throw new Error("性別条件を満たしていません");
+          }
+          if (
+            !meetsCompetitionEventAgeEligibility({
+              competitionUnderAgeEnabled: competitionUsesUnderAgeSystem(competition),
+              underPartition,
+              eventUnderAgeEligibilityEnabled: event.underAgeEligibilityEnabled ?? true,
+              effectiveUnderBandAllowList: resolveEffectiveUnderBandAllowListForEvent({
+                underBandKeysOverride: event.underBandKeysOverride,
+                ageCategoryId: event.ageCategoryId,
+                categoryUnderBandKeysEnabled: event.ageCategory?.underBandKeysEnabled ?? null,
+              }),
+              event,
+              userDateOfBirth: user?.dateOfBirth ? new Date(user.dateOfBirth) : null,
+              seasonalAgeYears: userAge,
+            })
+          ) {
+            throw new Error("年齢条件を満たしていません");
+          }
+          if (!item.teamName || typeof item.teamName !== "string" || !item.teamName.trim()) {
+            throw new Error("チーム名を入力してください");
+          }
 
-      return {
-        eventId: event.id,
-        teamName: item.teamName.trim(),
-      };
-    });
+          return {
+            eventId: event.id,
+            teamName: item.teamName.trim(),
+          };
+        })
+      : preservedTeamEntriesFromSnapshot;
 
     const userDob = user?.dateOfBirth ? new Date(user.dateOfBirth) : null;
     const feeUnits = resolveEntryFeeUnits(competition.entryFee, userAge, {

@@ -472,7 +472,7 @@ export default async function CompetitionEntryPage({
 
   const eligibleEvents = competition.events.filter((event) => {
     if (!isCompetitionEligible) return false;
-    if (event.type !== "INDIVIDUAL" && event.type !== "TEAM") return false;
+    if (event.type !== "INDIVIDUAL") return false;
 
     const isMixedEvent = event.sex === "OTHER";
     if (!isMixedEvent && userSex !== "OTHER" && event.sex !== userSex) {
@@ -732,6 +732,7 @@ export default async function CompetitionEntryPage({
           id: e.id,
           name: e.name,
           sex: e.sex,
+          type: e.type,
         })),
         entry: {
           id: existingEntry.id,
@@ -938,6 +939,10 @@ export default async function CompetitionEntryPage({
       <CompetitionEntryForm
         competitionId={competition.id}
         events={eligibleEvents}
+        individualEntryOnly
+        reservedTeamSlotsForEntryLimit={
+          Array.isArray(initialEntry?.teamEntries) ? initialEntry.teamEntries.length : 0
+        }
         memberships={memberships}
         entryWindowOpen={isEntryWindowOpen}
         entryFee={competition.entryFee as unknown as CompetitionEntryFormProps["entryFee"]}

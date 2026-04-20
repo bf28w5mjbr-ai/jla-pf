@@ -67,16 +67,9 @@ export const getAuthenticatedLayoutUser = cache(async (userId: string) => {
   return getAuthenticatedLayoutUserCrossRequestCache(userId);
 });
 
-const getUnreadNotificationCountCrossRequestCache = unstable_cache(
-  async (userId: string) =>
-    prisma.notification.count({
-      where: { userId, read: false },
-    }),
-  ["sidebar-unread-notification-count"],
-  { revalidate: 15 }
-);
-
-/** サイドバー未読バッジ用（最大約15秒の表示遅れで DB 負荷を下げる） */
+/** サイドバー未読バッジ用（リクエスト内の重複呼び出しのみ抑止） */
 export const getCachedUnreadNotificationCount = cache(async (userId: string) => {
-  return getUnreadNotificationCountCrossRequestCache(userId);
+  return prisma.notification.count({
+    where: { userId, read: false },
+  });
 });

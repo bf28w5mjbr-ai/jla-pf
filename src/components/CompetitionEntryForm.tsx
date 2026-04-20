@@ -187,6 +187,10 @@ type CompetitionEntryFormProps = {
   underAgeFeeBands?: { uThresholds: number[]; openEnabled: boolean } | null;
   /** カード決済の上乗せ率（basis points）。サーバーの STRIPE_PROCESSING_FEE_BPS と一致 */
   cardProcessingFeeBps?: number;
+  /** true のとき個人種目のみ表示し、POST から teamEntries を送らない（チームはクラブのチームハブ） */
+  individualEntryOnly?: boolean;
+  /** individualEntryOnly 時、既存エントリーのチーム件数（種目数上限の計算に使用） */
+  reservedTeamSlotsForEntryLimit?: number;
 };
 
 export default function CompetitionEntryForm({
@@ -215,6 +219,8 @@ export default function CompetitionEntryForm({
   feeAgeCategories,
   underAgeFeeBands = null,
   cardProcessingFeeBps = 360,
+  individualEntryOnly = false,
+  reservedTeamSlotsForEntryLimit = 0,
 }: CompetitionEntryFormProps) {
   const router = useRouter();
   const [showEstablishedEdit, setShowEstablishedEdit] = useState(false);
@@ -222,7 +228,9 @@ export default function CompetitionEntryForm({
     () =>
       new Set([
         ...(initialEntry?.items?.map((item) => item.eventId) ?? []),
-        ...(initialEntry?.teamEntries?.map((item) => item.eventId) ?? []),
+        ...(individualEntryOnly
+          ? []
+          : (initialEntry?.teamEntries?.map((item) => item.eventId) ?? [])),
       ])
   );
   const [entryTimes, setEntryTimes] = useState<Record<string, string>>(
@@ -265,6 +273,10 @@ export default function CompetitionEntryForm({
   const selectedTeamEvents = selectedEvents.filter((event) => event.type === "TEAM");
   const selectedIndividualEvents = selectedEvents.filter((event) => event.type === "INDIVIDUAL");
   const selectedCount = selectedEvents.length;
+  const reservedTeamSlots = individualEntryOnly ? reservedTeamSlotsForEntryLimit : 0;
+  const totalEntrySlots = individualEntryOnly
+    ? selectedIndividualEvents.length + reservedTeamSlots
+    : selectedCount;
 
   const feeResolveAgeCategories = useMemo(() => {
     if (!feeAgeCategories?.length) return null;
@@ -288,7 +300,7 @@ export default function CompetitionEntryForm({
 
   const estimatedFee = useMemo(() => {
     const individualCount = selectedIndividualEvents.length;
-    const teamCount = selectedTeamEvents.length;
+    const teamCount = individualEntryOnly ? reservedTeamSlots : selectedTeamEvents.length;
     if (individualCount + teamCount === 0) return 0;
     const r = resolveEntryFeeUnits(entryFee, userAgeYearsAtCompetitionStart ?? null, {
       userDateOfBirth: userDobForFee,
@@ -315,6 +327,8 @@ export default function CompetitionEntryForm({
     entryFee,
     feeResolveAgeCategories,
     selectedIndividualEvents.length,
+    individualEntryOnly,
+    reservedTeamSlots,
     selectedTeamEvents.length,
     underFeePartitionResolved,
     userAgeYearsAtCompetitionStart,
@@ -334,12 +348,21 @@ export default function CompetitionEntryForm({
     : typeof maxEventEntriesPerPerson === "number" && maxEventEntriesPerPerson > 0
       ? maxEventEntriesPerPerson
       : null;
+  /** 個人フォーム上で選べる個人種目の上限（既存チーム枠を max から差し引く） */
+  const maxIndividualEventsOnForm =
+    individualEntryOnly && effectiveMaxSelectable !== null
+      ? Math.max(0, effectiveMaxSelectable - reservedTeamSlots)
+      : effectiveMaxSelectable;
 
   /** メイン列のみに表示（サイドバーでは重複させない） */
   const entryLimitShort = !allowMultipleEventEntries
     ? "1種目のみ選択できます。"
-    : effectiveMaxSelectable !== null
-      ? `最大${effectiveMaxSelectable}種目まで選択できます。`
+    : maxIndividualEventsOnForm !== null
+      ? `最大${maxIndividualEventsOnForm}種目まで選択できます${
+          individualEntryOnly && reservedTeamSlots > 0
+            ? `（チーム種目${reservedTeamSlots}件は別途クラブのチーム管理で登録済みの分としてカウント）`
+            : ""
+        }。`
       : "複数種目を選べます（上限なし）。";
   const isPaidEntry = initialEntry?.paymentStatus === "PAID";
   const fieldsLocked = lockEntryContentUntilPaid || entryCancelled;
@@ -361,12 +384,12 @@ export default function CompetitionEntryForm({
         return new Set([eventId]);
       }
 
-      if (effectiveMaxSelectable !== null && next.size >= effectiveMaxSelectable) {
-        toast.error(`この大会は${effectiveMaxSelectable}種目まで選択可能です`);
-        return next;
-      }
-
       next.add(eventId);
+      const cap = maxIndividualEventsOnForm ?? effectiveMaxSelectable;
+      if (cap !== null && next.size > cap) {
+        toast.error(`この大会は${cap}種目まで選択可能です`);
+        return prev;
+      }
       return next;
     });
   };
@@ -462,17 +485,17 @@ export default function CompetitionEntryForm({
       toast.error("このエントリーは取消済みのため送信できません");
       return;
     }
-    if (selectedCount === 0) {
+    if (totalEntrySlots === 0) {
       toast.error("種目を1つ以上選択してください");
       return;
     }
 
-    if (!allowMultipleEventEntries && selectedCount > 1) {
+    if (!allowMultipleEventEntries && totalEntrySlots > 1) {
       toast.error("この大会は1種目のみ選択可能です");
       return;
     }
 
-    if (effectiveMaxSelectable !== null && selectedCount > effectiveMaxSelectable) {
+    if (effectiveMaxSelectable !== null && totalEntrySlots > effectiveMaxSelectable) {
       toast.error(`この大会は${effectiveMaxSelectable}種目まで選択可能です`);
       return;
     }
@@ -531,12 +554,16 @@ export default function CompetitionEntryForm({
               eventId: event.id,
               entryTime: entryTimes[event.id]?.trim() || null,
             })),
-          teamEntries: selectedEvents
-            .filter((event) => event.type === "TEAM")
-            .map((event) => ({
-              eventId: event.id,
-              teamName: teamNames[event.id]?.trim() || "",
-            })),
+          ...(individualEntryOnly
+            ? {}
+            : {
+                teamEntries: selectedEvents
+                  .filter((event) => event.type === "TEAM")
+                  .map((event) => ({
+                    eventId: event.id,
+                    teamName: teamNames[event.id]?.trim() || "",
+                  })),
+              }),
         }),
       });
 
@@ -935,6 +962,15 @@ export default function CompetitionEntryForm({
             {!isEligible ? (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
                 資格不足のため送信できません（ページ上部のエントリー資格を確認してください）。
+              </div>
+            ) : null}
+
+            {editingEstablishedEntry && individualEntryOnly && reservedTeamSlots > 0 ? (
+              <div className="rounded-lg border border-sky-200/80 bg-sky-50/70 px-3 py-2.5 text-xs leading-relaxed text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
+                <p className="font-medium text-foreground">チーム種目について</p>
+                <p className="mt-1.5 text-muted-foreground">
+                  チーム種目の追加・変更はこの画面では行えません。受付内容の「チーム種目」を確認し、所属クラブの「チーム管理」から操作してください。
+                </p>
               </div>
             ) : null}
 

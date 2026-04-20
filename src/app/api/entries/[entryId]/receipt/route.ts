@@ -65,11 +65,13 @@ function snapshotRecord(data: unknown): Record<string, unknown> | null {
 }
 
 function collectIndividualEventNames(
-  items: { event: { name: string } | null }[],
+  items: { event: { name: string; type: string } | null }[],
   snapshotData: unknown,
-  eventNameById: Map<string, string>
+  eventNameById: Map<string, string>,
+  eventTypeById: Map<string, string>
 ): string[] {
   const fromRows = items
+    .filter((row) => row.event?.type !== "TEAM")
     .map((row) => row.event?.name?.trim())
     .filter((n): n is string => Boolean(n));
   if (fromRows.length > 0) return fromRows;
@@ -81,6 +83,7 @@ function collectIndividualEventNames(
     if (!row || typeof row !== "object") continue;
     const eid = (row as Record<string, unknown>).eventId;
     if (typeof eid !== "string" || !eid) continue;
+    if (eventTypeById.get(eid) === "TEAM") continue;
     const nm = eventNameById.get(eid)?.trim();
     if (nm) names.push(nm);
   }
@@ -91,8 +94,9 @@ function buildIndividualEntryPdfItemDescription(opts: {
   competitionName: string;
   totalFee: number;
   snapshotData: unknown;
-  items: { event: { name: string } | null }[];
+  items: { event: { name: string; type: string } | null }[];
   eventNameById: Map<string, string>;
+  eventTypeById: Map<string, string>;
   clubName: string | null;
 }): string {
   const base =
@@ -101,7 +105,12 @@ function buildIndividualEntryPdfItemDescription(opts: {
       : `${opts.competitionName}／エントリー受付（参加費無料）`;
   const bits: string[] = [];
 
-  const indiv = collectIndividualEventNames(opts.items, opts.snapshotData, opts.eventNameById);
+  const indiv = collectIndividualEventNames(
+    opts.items,
+    opts.snapshotData,
+    opts.eventNameById,
+    opts.eventTypeById
+  );
   if (indiv.length > 0) bits.push(`個人種目: ${indiv.join("、")}`);
 
   const snap = snapshotRecord(opts.snapshotData);
@@ -202,14 +211,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
               },
             },
             events: {
-              select: { id: true, name: true },
+              select: { id: true, name: true, type: true },
             },
           },
         },
         club: { select: { name: true } },
         items: {
           orderBy: { id: "asc" },
-          include: { event: { select: { name: true } } },
+          include: { event: { select: { name: true, type: true } } },
         },
         snapshot: { select: { data: true } },
         user: {
@@ -306,12 +315,16 @@ export async function GET(request: NextRequest, context: RouteContext) {
         organization: { name: entry.competition.organization.name },
       });
       const eventNameById = new Map(entry.competition.events.map((e) => [e.id, e.name]));
+      const eventTypeById = new Map(
+        entry.competition.events.map((e) => [e.id, e.type as string])
+      );
       const itemDescription = buildIndividualEntryPdfItemDescription({
         competitionName: entry.competition.name,
         totalFee: entry.totalFee,
         snapshotData: entry.snapshot?.data,
         items: entry.items,
         eventNameById,
+        eventTypeById,
         clubName: entry.club?.name ?? null,
       });
 

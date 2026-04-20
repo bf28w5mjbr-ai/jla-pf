@@ -23,7 +23,7 @@ type EntryRow = {
   club: { name: string } | null;
 };
 
-type EventRow = { id: string; name: string; sex: string };
+type EventRow = { id: string; name: string; sex: string; type?: "INDIVIDUAL" | "TEAM" };
 
 export type EntryReceiptForClient = {
   competitionName: string;
@@ -120,13 +120,42 @@ export function buildEntryCompletionReceipt(args: {
   }
 
   const snap = snapshotShape(entry.snapshot?.data);
-  const individualItems = Array.isArray(snap?.items)
+  const eventTypeById = new Map(
+    events
+      .filter((e) => e.type === "INDIVIDUAL" || e.type === "TEAM")
+      .map((e) => [e.id, e.type] as const)
+  );
+
+  const rawItems = Array.isArray(snap?.items)
     ? snap.items
     : entry.items.map((item) => ({
         eventId: item.eventId,
         entryTime: item.entryTime,
       }));
-  const teamItems = Array.isArray(snap?.teamEntries) ? snap.teamEntries : [];
+
+  const individualItems: { eventId?: string; entryTime?: string | null }[] = [];
+  const teamRowsFromMisplacedItems: { eventId: string; teamName: string | null }[] = [];
+  for (const item of rawItems) {
+    const eid = typeof item.eventId === "string" ? item.eventId : "";
+    if (eid && eventTypeById.get(eid) === "TEAM") {
+      const fromSnap = Array.isArray(snap?.teamEntries)
+        ? snap.teamEntries.find((t) => t?.eventId === eid)
+        : undefined;
+      const nm =
+        fromSnap && typeof fromSnap.teamName === "string" ? fromSnap.teamName.trim() : null;
+      teamRowsFromMisplacedItems.push({ eventId: eid, teamName: nm });
+    } else {
+      individualItems.push(item);
+    }
+  }
+
+  const teamItemsBase = Array.isArray(snap?.teamEntries) ? [...snap.teamEntries] : [];
+  for (const row of teamRowsFromMisplacedItems) {
+    if (!teamItemsBase.some((t) => t?.eventId === row.eventId)) {
+      teamItemsBase.push({ eventId: row.eventId, teamName: row.teamName });
+    }
+  }
+  const teamItems = teamItemsBase;
 
   const blurb =
     entry.status === "CANCELLED"
