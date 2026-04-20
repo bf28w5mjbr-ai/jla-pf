@@ -47,6 +47,7 @@ import { parseTechnicalOfficialTiers } from "@/lib/technicalOfficialRules";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
 import DayOpsUnlockBanner from "@/components/DayOpsUnlockBanner";
 import CompetitionPublicPageTabs from "@/components/public/CompetitionPublicPageTabs";
+import { CompetitionHostInquiryDialog } from "@/components/public/CompetitionHostInquiryDialog";
 import { cn } from "@/lib/utils";
 import {
   CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP,
@@ -166,16 +167,32 @@ export default async function CompetitionDetailPage({
   const hasIndividualEvents = competition.events.some((e) => e.type === "INDIVIDUAL");
   const hasTeamEvents = competition.events.some((e) => e.type === "TEAM");
 
-  const teamEntryMemberships = sessionUserId && hasTeamEvents
+  const sessionApprovedMemberships = sessionUserId
     ? await prisma.membership.findMany({
         where: { userId: sessionUserId, status: "APPROVED" },
         include: { club: { select: { id: true, name: true } } },
         orderBy: { club: { name: "asc" } },
       })
     : [];
+  const teamEntryMemberships = hasTeamEvents ? sessionApprovedMemberships : [];
   const firstAdminClubForTeamEntry = teamEntryMemberships.find((m) =>
     isClubAdminRole(m.role)
   )?.club;
+
+  const sessionUserForInquiry = sessionUserId
+    ? await prisma.user.findUnique({
+        where: { id: sessionUserId },
+        select: { familyName: true, givenName: true },
+      })
+    : null;
+  const senderPreviewLine =
+    sessionUserId && sessionUserForInquiry
+      ? `${sessionUserForInquiry.familyName} ${sessionUserForInquiry.givenName}`.trim() +
+        "／" +
+        (sessionApprovedMemberships.length > 0
+          ? sessionApprovedMemberships.map((m) => m.club.name).join("、")
+          : "所属クラブなし")
+      : "";
 
   const hostAbbr = competitionHostAbbreviation(competition);
 
@@ -507,6 +524,17 @@ export default async function CompetitionDetailPage({
                     </div>
                   </div>
                 </div>
+                {competition.status !== "CANCELLED" ? (
+                  <div className="flex flex-wrap items-center gap-2 border-t border-border/50 pt-3">
+                    <CompetitionHostInquiryDialog
+                      competitionId={id}
+                      competitionName={competition.name}
+                      senderPreviewLine={senderPreviewLine}
+                      isAuthenticated={Boolean(sessionUserId)}
+                      loginHref={signInRedirectPath}
+                    />
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
@@ -565,9 +593,9 @@ export default async function CompetitionDetailPage({
                     {!sessionUserId ? (
                       <p className="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground sm:text-xs">
                         エントリー申込・お支払いには
-                        <Link href={signInRedirectPath} className="font-medium text-primary underline-offset-4 hover:underline">
-                          ログイン
-                        </Link>
+                        <Button variant="link" className="mx-0.5 inline h-auto min-h-0 p-0 text-xs font-medium" asChild>
+                          <Link href={signInRedirectPath}>ログイン</Link>
+                        </Button>
                         が必要です。未登録の方はログイン画面からアカウント作成へ進めます。
                       </p>
                     ) : null}
