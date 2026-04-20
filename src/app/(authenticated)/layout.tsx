@@ -48,7 +48,7 @@ export default async function AuthenticatedLayout({
         managedClubs={user.memberships.map((membership) => membership.club)}
       />
       <GlobalNotificationBell unreadCount={unreadNotificationCount} />
-      <main className="app-main-canvas min-h-screen min-w-0 flex-1 pb-[var(--safe-area-bottom)] pl-[var(--safe-area-left)] pr-[max(1rem,calc(var(--safe-area-right)+3.5rem))] pt-[calc(var(--safe-area-top)+4rem)] lg:pt-[var(--safe-area-top)]">
+      <main className="app-main-canvas min-h-screen min-w-0 flex-1 pb-[var(--safe-area-bottom)] px-[var(--app-fab-gutter)] pt-[calc(var(--safe-area-top)+4rem)] lg:pt-[var(--safe-area-top)]">
         {children}
       </main>
     </div>

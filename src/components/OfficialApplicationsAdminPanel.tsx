@@ -34,7 +34,7 @@ function statusLabel(s: OfficialApplicationAdminRow["status"]) {
     case "PENDING":
       return "審査中";
     case "APPROVED":
-      return "承認";
+      return "受付済";
     case "REJECTED":
       return "却下";
     default:
@@ -64,25 +64,21 @@ export function OfficialApplicationsAdminPanel({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const patchStatus = (applicationId: string, status: "APPROVED" | "REJECTED") => {
+  const deleteApplication = (applicationId: string) => {
     startTransition(async () => {
       try {
         const res = await fetch(
           `/api/organizations/${organizationId}/competitions/${competitionId}/official-applications/${applicationId}`,
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status }),
-          }
+          { method: "DELETE" }
         );
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          throw new Error(typeof data.error === "string" ? data.error : "更新に失敗しました");
+          throw new Error(typeof data.error === "string" ? data.error : "削除に失敗しました");
         }
-        toast.success(status === "APPROVED" ? "承認しました" : "却下しました");
+        toast.success("応募を削除しました");
         router.refresh();
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "更新に失敗しました");
+        toast.error(e instanceof Error ? e.message : "削除に失敗しました");
       }
     });
   };
@@ -150,31 +146,16 @@ export function OfficialApplicationsAdminPanel({
               </TableCell>
               {canEdit ? (
                 <TableCell className="px-2 py-1.5 text-right">
-                  {a.status === "PENDING" ? (
-                    <div className="flex flex-wrap justify-end gap-0.5">
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="h-7 px-2 text-[11px]"
-                        disabled={isPending}
-                        onClick={() => patchStatus(a.id, "APPROVED")}
-                      >
-                        承認
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 px-2 text-[11px]"
-                        disabled={isPending}
-                        onClick={() => patchStatus(a.id, "REJECTED")}
-                      >
-                        却下
-                      </Button>
-                    </div>
-                  ) : (
-                    <span className="text-[11px] text-muted-foreground">—</span>
-                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-[11px] text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    disabled={isPending}
+                    onClick={() => deleteApplication(a.id)}
+                  >
+                    削除
+                  </Button>
                 </TableCell>
               ) : null}
             </TableRow>

@@ -28,9 +28,9 @@ export default function OfficialAssignmentSection({
   return (
     <Card className="overflow-hidden">
       <CardHeader className="space-y-1 border-b border-border bg-muted/15 px-4 py-3">
-        <CardTitle className="text-base font-semibold">応募審査</CardTitle>
+        <CardTitle className="text-base font-semibold">オフィシャル応募</CardTitle>
         <CardDescription className="text-xs leading-relaxed">
-          当日の出席確認が入ったオフィシャルは自動でスタートリスト編集権限対象になります。ここでは応募の承認・却下のみを行います。
+          当日の出席確認が入ったオフィシャルは自動でスタートリスト編集権限対象になります。不要な応募は一覧から削除できます。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 px-4 py-3 sm:px-4">

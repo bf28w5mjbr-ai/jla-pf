@@ -1535,7 +1535,7 @@ model CompetitionOfficialApplication {
   userId             String
   positionName       String
   message            String?                   @db.Text
-  status             OfficialApplicationStatus @default(PENDING)
+  status             OfficialApplicationStatus @default(APPROVED)
   reviewedAt         DateTime?
   reviewedByUserId   String?
 

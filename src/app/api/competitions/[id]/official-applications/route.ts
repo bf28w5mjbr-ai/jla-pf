@@ -50,21 +50,19 @@ export async function POST(
       },
     });
 
-    if (existing?.status === "PENDING") {
+    if (existing?.status === "PENDING" || existing?.status === "APPROVED") {
       return NextResponse.json(
-        { error: "すでに応募済みです（審査中）" },
+        { error: "すでに応募済みです。内容を変更する場合は応募内容の更新を利用してください。" },
         { status: 409 }
       );
     }
-    if (existing?.status === "APPROVED") {
-      return NextResponse.json({ error: "すでに承認済みです" }, { status: 409 });
-    }
 
+    const now = new Date();
     const data = {
       positionName,
       message: payload.message,
-      status: "PENDING" as const,
-      reviewedAt: null,
+      status: "APPROVED" as const,
+      reviewedAt: now,
       reviewedByUserId: null,
     };
 
@@ -80,6 +78,9 @@ export async function POST(
               userId: session.userId,
               positionName,
               message: payload.message,
+              status: "APPROVED",
+              reviewedAt: now,
+              reviewedByUserId: null,
             },
           });
 
@@ -117,9 +118,9 @@ export async function PATCH(
     if (!existing) {
       return NextResponse.json({ error: "応募が見つかりません" }, { status: 404 });
     }
-    if (existing.status !== "PENDING") {
+    if (existing.status !== "APPROVED" && existing.status !== "PENDING") {
       return NextResponse.json(
-        { error: "審査中の応募のみ内容を変更できます" },
+        { error: "受付済みの応募のみ内容を変更できます" },
         { status: 400 }
       );
     }
@@ -144,8 +145,7 @@ export async function PATCH(
       data: {
         positionName: payload.positionName,
         message: payload.message,
-        reviewedAt: null,
-        reviewedByUserId: null,
+        status: "APPROVED",
       },
     });
 

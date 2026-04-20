@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 
 export type OfficialApplicationsCsvRow = {
   応募日時: string;
-  審査状態: string;
+  応募状態: string;
   氏名: string;
   メールアドレス: string;
   電話番号: string;
@@ -28,7 +28,7 @@ function sanitizeFileName(name: string): string {
 function buildCsv(rows: OfficialApplicationsCsvRow[]): string {
   const headers: (keyof OfficialApplicationsCsvRow)[] = [
     "応募日時",
-    "審査状態",
+    "応募状態",
     "氏名",
     "メールアドレス",
     "電話番号",

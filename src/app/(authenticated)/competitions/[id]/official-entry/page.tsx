@@ -143,9 +143,9 @@ export default async function CompetitionOfficialEntryPage({
     : "競技者エントリー受付期間外のため、現在はオフィシャル応募できません。";
   const applicationStatusLabel =
     myOfficialApplication?.status === "PENDING"
-      ? "応募済み（審査中）"
+      ? "応募済み"
       : myOfficialApplication?.status === "APPROVED"
-        ? "承認済み"
+        ? "受付済み"
         : myOfficialApplication?.status === "REJECTED"
           ? "再応募できます"
           : "未応募";

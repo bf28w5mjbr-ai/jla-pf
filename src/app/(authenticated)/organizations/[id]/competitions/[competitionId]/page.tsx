@@ -239,7 +239,7 @@ export default async function CompetitionDetailPage({
     showOfficialRecruitment && (competition.technicalOfficialRecruitmentEnabled ?? true);
   const officialStatusLabel = {
     PENDING: "審査中",
-    APPROVED: "承認",
+    APPROVED: "受付済",
     REJECTED: "却下",
   } as const;
   const officialApplicationsCsvRows: OfficialApplicationsCsvRow[] = competition.officialApplications.map(
@@ -251,7 +251,7 @@ export default async function CompetitionDetailPage({
         hour: "2-digit",
         minute: "2-digit",
       }),
-      審査状態: officialStatusLabel[application.status] ?? application.status,
+      応募状態: officialStatusLabel[application.status] ?? application.status,
       氏名: `${application.user.familyName} ${application.user.givenName}`,
       メールアドレス: application.user.email ?? "",
       電話番号: application.user.phoneNumber ?? "",
@@ -618,8 +618,10 @@ export default async function CompetitionDetailPage({
                 <Badge variant={showTechnicalOfficialRecruitment ? "default" : "secondary"}>
                   TO募集: {showTechnicalOfficialRecruitment ? "ON" : "OFF"}
                 </Badge>
-                <Badge variant="outline">応募(審査中): {officialPendingCount}件</Badge>
-                <Badge variant="outline">応募(承認): {officialApprovedCount}件</Badge>
+                {officialPendingCount > 0 ? (
+                  <Badge variant="outline">応募(審査中・旧): {officialPendingCount}件</Badge>
+                ) : null}
+                <Badge variant="outline">応募(受付済): {officialApprovedCount}件</Badge>
                 <Badge variant="outline">応募(却下): {officialRejectedCount}件</Badge>
                 <Badge variant="outline">出席実績: {officialAttendanceCount}件</Badge>
               </div>
