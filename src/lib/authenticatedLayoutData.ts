@@ -1,10 +1,5 @@
 import { cache } from "react";
-import { unstable_cache } from "next/cache";
 import { prisma } from "@/server/db";
-
-type AuthenticatedLayoutUser = Awaited<
-  ReturnType<typeof loadAuthenticatedLayoutUserFromDb>
->;
 
 async function loadAuthenticatedLayoutUserFromDb(userId: string) {
   return prisma.user.findUnique({
@@ -52,19 +47,9 @@ async function loadAuthenticatedLayoutUserFromDb(userId: string) {
   });
 }
 
-const getAuthenticatedLayoutUserCrossRequestCache = unstable_cache(
-  async (userId: string): Promise<AuthenticatedLayoutUser> => {
-    return loadAuthenticatedLayoutUserFromDb(userId);
-  },
-  ["authenticated-layout-user"],
-  {
-    revalidate: 30,
-  }
-);
-
-/** 認証レイアウト用: リクエスト内重複防止 + 短時間の横断キャッシュ */
+/** 認証レイアウト用: 同一リクエスト内の重複呼び出しのみ抑止（リクエスト横断キャッシュはしない） */
 export const getAuthenticatedLayoutUser = cache(async (userId: string) => {
-  return getAuthenticatedLayoutUserCrossRequestCache(userId);
+  return loadAuthenticatedLayoutUserFromDb(userId);
 });
 
 /** サイドバー未読バッジ用（リクエスト内の重複呼び出しのみ抑止） */
