@@ -83,7 +83,7 @@ export default async function CompetitionOfficialEntryPage({
   }
 
   const myOfficialApplication = competition.officialApplications[0] ?? null;
-  const [individualClubRows, teamClubRows] = await Promise.all([
+  const [individualClubRows, teamClubRows, myApprovedMemberships] = await Promise.all([
     prisma.competitionEntry.findMany({
       where: {
         competitionId: competition.id,
@@ -98,6 +98,10 @@ export default async function CompetitionOfficialEntryPage({
       select: { clubId: true },
       distinct: ["clubId"],
     }),
+    prisma.membership.findMany({
+      where: { userId: session.userId, status: "APPROVED" },
+      select: { clubId: true },
+    }),
   ]);
   const clubIdSet = new Set<string>();
   for (const row of individualClubRows) {
@@ -105,6 +109,9 @@ export default async function CompetitionOfficialEntryPage({
   }
   for (const row of teamClubRows) {
     clubIdSet.add(row.clubId);
+  }
+  for (const m of myApprovedMemberships) {
+    clubIdSet.add(m.clubId);
   }
   const technicalClubs =
     clubIdSet.size === 0

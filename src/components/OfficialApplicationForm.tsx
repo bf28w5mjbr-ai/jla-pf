@@ -37,6 +37,30 @@ type Props = {
   technicalClubs: Array<{ clubId: string; clubName: string }>;
 };
 
+function deriveInitialEntryType(
+  app: InitialApplication,
+  technicalOfficialEnabled: boolean
+): "GENERAL" | "TECHNICAL" {
+  if (!technicalOfficialEnabled) return "GENERAL";
+  const pn = app?.positionName;
+  if (pn && pn.startsWith("テクニカルオフィシャル（")) return "TECHNICAL";
+  return "GENERAL";
+}
+
+function deriveInitialClubId(
+  app: InitialApplication,
+  technicalClubs: Array<{ clubId: string; clubName: string }>
+): string {
+  const pn = app?.positionName;
+  if (!pn || !pn.startsWith("テクニカルオフィシャル（")) {
+    return technicalClubs[0]?.clubId ?? "";
+  }
+  const m = pn.match(/^テクニカルオフィシャル（([^）]+)）$/);
+  const clubName = m?.[1]?.trim();
+  if (!clubName) return technicalClubs[0]?.clubId ?? "";
+  return technicalClubs.find((c) => c.clubName === clubName)?.clubId ?? technicalClubs[0]?.clubId ?? "";
+}
+
 export function OfficialApplicationForm({
   competitionId,
   initialApplication,
@@ -48,12 +72,16 @@ export function OfficialApplicationForm({
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const isPendingEdit = initialApplication?.status === "PENDING";
+
   const [message, setMessage] = useState(initialApplication?.message ?? "");
   const [confirmed, setConfirmed] = useState(false);
-  const [entryType, setEntryType] = useState<"GENERAL" | "TECHNICAL">(
-    technicalOfficialEnabled ? "GENERAL" : "GENERAL"
+  const [entryType, setEntryType] = useState<"GENERAL" | "TECHNICAL">(() =>
+    deriveInitialEntryType(initialApplication, technicalOfficialEnabled)
   );
-  const [selectedClubId, setSelectedClubId] = useState<string>(technicalClubs[0]?.clubId ?? "");
+  const [selectedClubId, setSelectedClubId] = useState(() =>
+    deriveInitialClubId(initialApplication, technicalClubs)
+  );
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,8 +91,9 @@ export function OfficialApplicationForm({
     }
     startTransition(async () => {
       try {
+        const method = isPendingEdit ? "PATCH" : "POST";
         const res = await fetch(`/api/competitions/${competitionId}/official-applications`, {
-          method: "POST",
+          method,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: message.trim() || undefined,
@@ -76,35 +105,14 @@ export function OfficialApplicationForm({
         if (!res.ok) {
           throw new Error(typeof data.error === "string" ? data.error : "送信に失敗しました");
         }
-        toast.success("応募を受け付けました");
+        toast.success(isPendingEdit ? "応募内容を更新しました" : "応募を受け付けました");
+        setConfirmed(false);
         router.refresh();
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "送信に失敗しました");
       }
     });
   };
-
-  if (initialApplication?.status === "PENDING") {
-    return (
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <UserCheck className="h-5 w-5 text-amber-600 dark:text-amber-400" aria-hidden />
-            <CardTitle className="text-lg">オフィシャル応募</CardTitle>
-          </div>
-          <CardDescription>
-            応募は受理済みです。現在、主催者が確認中です。
-            {initialApplication?.positionName ? `（${initialApplication.positionName}）` : ""}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
-            応募は受理済みです。主催者の確認（審査中）です。結果が出るまでお待ちください。
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
 
   if (initialApplication?.status === "APPROVED") {
     return (
@@ -131,20 +139,46 @@ export function OfficialApplicationForm({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">オフィシャル参加エントリー</CardTitle>
-        <CardDescription className={cn(pageIntroTextClass("guided"), "mt-1.5")}>
-          この大会でオフィシャルを担当する意思を登録します。エントリー料は発生しません。
+        <div className="flex items-center gap-2">
+          {isPendingEdit ? (
+            <UserCheck className="h-5 w-5 text-amber-600 dark:text-amber-400" aria-hidden />
+          ) : null}
+          <CardTitle className="text-lg">
+            {isPendingEdit ? "オフィシャル応募（審査中）" : "オフィシャル参加エントリー"}
+          </CardTitle>
+        </div>
+        <CardDescription className={cn(!isPendingEdit && pageIntroTextClass("guided"), "mt-1.5")}>
+          {isPendingEdit ? (
+            <>
+              応募は受理済みで主催者が確認中です。
+              {initialApplication?.positionName ? (
+                <span className="mt-1 block text-foreground/90">
+                  現在の申請: {initialApplication.positionName}
+                </span>
+              ) : null}
+              <span className="mt-2 block text-muted-foreground">
+                競技者エントリー受付期間内であれば、一般／TO の切替やメッセージの修正ができます。
+              </span>
+            </>
+          ) : (
+            <>この大会でオフィシャルを担当する意思を登録します。エントリー料は発生しません。</>
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent>
+        {isPendingEdit ? (
+          <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
+            審査が進む前に限り、応募内容を更新できます。更新後も引き続き審査待ちとなります。
+          </p>
+        ) : null}
         <AutofillSyncForm onSubmit={submit} className="space-y-4">
-          {initialApplication?.status === "REJECTED" ? (
+          {!isPendingEdit && initialApplication?.status === "REJECTED" ? (
             <p className={pageIntroTextClass("balanced")}>
               前回の応募は見送りとなりました。内容を更新して再エントリーできます。
             </p>
           ) : null}
           <div className="rounded-md border border-border/80 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-            エントリー内容を選択してください。
+            {isPendingEdit ? "変更後の応募内容を選択してください。" : "エントリー内容を選択してください。"}
           </div>
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">応募種別</Label>
@@ -198,7 +232,7 @@ export function OfficialApplicationForm({
               </Select>
               {technicalClubs.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  この大会で参加が確定しているクラブがないため、TO応募は選択できません。
+                  承認済みの所属クラブがなく、この大会に競技エントリー済みのクラブもないため、TO応募のクラブを選べません。クラブに参加して承認されるか、競技エントリー後に再度お試しください。
                 </p>
               ) : null}
             </div>
@@ -227,7 +261,9 @@ export function OfficialApplicationForm({
               disabled={isPending || !canSubmit}
             />
             <Label htmlFor="official-consent" className="cursor-pointer text-xs leading-relaxed">
-              上記内容を確認し、この大会でオフィシャルを担当する意思があることに同意します。
+              {isPendingEdit
+                ? "変更後の内容でオフィシャル応募を続けることに同意します。"
+                : "上記内容を確認し、この大会でオフィシャルを担当する意思があることに同意します。"}
             </Label>
           </div>
           {!canSubmit ? (
@@ -250,7 +286,7 @@ export function OfficialApplicationForm({
             }
             className="w-full sm:w-auto"
           >
-            {isPending ? "送信中…" : "応募する"}
+            {isPending ? "送信中…" : isPendingEdit ? "応募内容を更新" : "応募する"}
           </Button>
         </AutofillSyncForm>
       </CardContent>
