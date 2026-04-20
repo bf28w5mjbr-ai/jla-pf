@@ -35,19 +35,27 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { userEmail, role } = body;
+    const { userId: bodyUserId, userEmail, email, role } = body ?? {};
 
-    if (!userEmail?.trim()) {
+    const rawUserId = typeof bodyUserId === "string" ? bodyUserId.trim() : "";
+    const emailFromBody =
+      (typeof userEmail === "string" ? userEmail.trim() : "") ||
+      (typeof email === "string" ? email.trim() : "");
+
+    if (!rawUserId && !emailFromBody) {
       return NextResponse.json(
-        { error: "メールアドレスは必須です" },
+        { error: "追加するユーザーを指定してください（userId またはメールアドレス）" },
         { status: 400 }
       );
     }
 
-    // ユーザーを検索
-    const user = await prisma.user.findUnique({
-      where: { email: userEmail.trim() },
-    });
+    const user = rawUserId
+      ? await prisma.user.findFirst({
+          where: { id: rawUserId, deletedAt: null },
+        })
+      : await prisma.user.findFirst({
+          where: { email: emailFromBody, deletedAt: null },
+        });
 
     if (!user) {
       return NextResponse.json(

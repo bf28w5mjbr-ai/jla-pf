@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +32,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { UserPlus, Trash2 } from "lucide-react";
+import { Loader2, UserPlus, Trash2 } from "lucide-react";
+
+type SearchUser = {
+  id: string;
+  familyName: string;
+  givenName: string;
+  email: string;
+};
 import { isOrgAdminRole, normalizeOrgRoleForWrite } from "@/lib/roleScopes";
 
 type Member = {
@@ -63,9 +70,68 @@ export default function MemberManagement({
   onUpdate,
 }: MemberManagementProps) {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [addEmail, setAddEmail] = useState("");
+  const [addQuery, setAddQuery] = useState("");
+  const [candidates, setCandidates] = useState<SearchUser[]>([]);
+  const [selectedUser, setSelectedUser] = useState<SearchUser | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [addRole, setAddRole] = useState("MEMBER");
   const [addLoading, setAddLoading] = useState(false);
+
+  const existingMemberUserIds = useMemo(
+    () => new Set(members.map((m) => m.userId)),
+    [members]
+  );
+
+  const visibleCandidates = useMemo(
+    () => candidates.filter((u) => !existingMemberUserIds.has(u.id)),
+    [candidates, existingMemberUserIds]
+  );
+
+  useEffect(() => {
+    if (!addDialogOpen) return;
+
+    const q = addQuery.trim();
+    if (q.length < 2) {
+      setCandidates([]);
+      setSearchLoading(false);
+      return;
+    }
+
+    const ac = new AbortController();
+    const timer = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const res = await fetch(
+          `/api/organizations/${organizationId}/members/search?q=${encodeURIComponent(q)}`,
+          { signal: ac.signal }
+        );
+        const data = (await res.json()) as { users?: SearchUser[]; error?: string };
+        if (!res.ok) {
+          throw new Error(data.error || "検索に失敗しました");
+        }
+        if (!ac.signal.aborted) {
+          setCandidates(Array.isArray(data.users) ? data.users : []);
+        }
+      } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") return;
+        console.error("Member search error:", e);
+        if (!ac.signal.aborted) {
+          setCandidates([]);
+          toast.error(e instanceof Error ? e.message : "検索に失敗しました");
+        }
+      } finally {
+        if (!ac.signal.aborted) {
+          setSearchLoading(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+      ac.abort();
+      setSearchLoading(false);
+    };
+  }, [addQuery, addDialogOpen, organizationId]);
 
   const [changeRoleLoading, setChangeRoleLoading] = useState<string | null>(null);
   const [removeLoading, setRemoveLoading] = useState<string | null>(null);
@@ -74,8 +140,8 @@ export default function MemberManagement({
 
   // メンバー追加
   const handleAddMember = async () => {
-    if (!addEmail.trim()) {
-      toast.error("メールアドレスを入力してください");
+    if (!selectedUser) {
+      toast.error("候補からユーザーを選択してください");
       return;
     }
 
@@ -86,7 +152,7 @@ export default function MemberManagement({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: addEmail,
+          userId: selectedUser.id,
           role: addRole,
         }),
       });
@@ -98,7 +164,9 @@ export default function MemberManagement({
 
       toast.success("メンバーを追加しました");
       setAddDialogOpen(false);
-      setAddEmail("");
+      setAddQuery("");
+      setCandidates([]);
+      setSelectedUser(null);
       setAddRole("MEMBER");
       onUpdate();
     } catch (error) {
@@ -175,7 +243,18 @@ export default function MemberManagement({
     <div className="space-y-4">
       {/* メンバー追加ボタン */}
       {canAddMembers && (
-        <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <Dialog
+          open={addDialogOpen}
+          onOpenChange={(open) => {
+            setAddDialogOpen(open);
+            if (!open) {
+              setAddQuery("");
+              setCandidates([]);
+              setSelectedUser(null);
+              setAddRole("MEMBER");
+            }
+          }}
+        >
           <DialogTrigger asChild>
             <Button size="sm">
               <UserPlus className="h-4 w-4 mr-2" />
@@ -186,20 +265,77 @@ export default function MemberManagement({
             <DialogHeader>
               <DialogTitle>メンバーを追加</DialogTitle>
               <DialogDescription>
-                追加したいユーザーのメールアドレスを入力してください
+                氏名またはメールの一部（2文字以上）で検索し、候補から選んでください。
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div>
-                <Label htmlFor="email">メールアドレス</Label>
+                <Label htmlFor="member-search">ユーザー検索</Label>
                 <Input
-                  id="email"
-                  type="email"
-                  value={addEmail}
-                  onChange={(e) => setAddEmail(e.target.value)}
-                  placeholder="user@example.com"
+                  id="member-search"
+                  type="search"
+                  autoComplete="off"
+                  value={addQuery}
+                  onChange={(e) => {
+                    setAddQuery(e.target.value);
+                    setSelectedUser(null);
+                  }}
+                  placeholder="例: 山田 / yamada@…"
                 />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  2文字未満では検索しません。同名の区別にメールを表示します。
+                </p>
               </div>
+
+              {addQuery.trim().length >= 2 ? (
+                <div className="rounded-md border border-border bg-muted/30">
+                  {searchLoading ? (
+                    <div className="flex items-center gap-2 px-3 py-6 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+                      検索中…
+                    </div>
+                  ) : visibleCandidates.length === 0 ? (
+                    <p className="px-3 py-4 text-sm text-muted-foreground">
+                      {candidates.length === 0
+                        ? "該当するユーザーがいません。"
+                        : "いずれも既にこの団体のメンバーです。"}
+                    </p>
+                  ) : (
+                    <ul className="max-h-52 divide-y divide-border overflow-y-auto">
+                      {visibleCandidates.map((u) => {
+                        const isSelected = selectedUser?.id === u.id;
+                        return (
+                          <li key={u.id}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedUser(u)}
+                              className={`flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted/80 ${
+                                isSelected ? "bg-muted font-medium" : ""
+                              }`}
+                            >
+                              <span>
+                                {u.familyName} {u.givenName}
+                              </span>
+                              <span className="text-xs text-muted-foreground">{u.email}</span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              ) : null}
+
+              {selectedUser ? (
+                <p className="text-sm text-foreground">
+                  選択中:{" "}
+                  <span className="font-medium">
+                    {selectedUser.familyName} {selectedUser.givenName}
+                  </span>
+                  <span className="text-muted-foreground">（{selectedUser.email}）</span>
+                </p>
+              ) : null}
+
               <div>
                 <Label htmlFor="role">役割</Label>
                 <Select value={addRole} onValueChange={setAddRole}>
@@ -221,7 +357,10 @@ export default function MemberManagement({
               >
                 キャンセル
               </Button>
-              <Button onClick={handleAddMember} disabled={addLoading}>
+              <Button
+                onClick={handleAddMember}
+                disabled={addLoading || !selectedUser}
+              >
                 {addLoading ? "追加中..." : "追加"}
               </Button>
             </DialogFooter>
