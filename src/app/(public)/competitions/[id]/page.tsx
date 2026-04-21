@@ -187,13 +187,10 @@ export default async function CompetitionDetailPage({
         select: { familyName: true, givenName: true },
       })
     : null;
-  const senderPreviewLine =
+  const senderNamePreview =
     sessionUserId && sessionUserForInquiry
-      ? `${sessionUserForInquiry.familyName} ${sessionUserForInquiry.givenName}`.trim() +
-        "／" +
-        (sessionApprovedMemberships.length > 0
-          ? sessionApprovedMemberships.map((m) => m.club.name).join("、")
-          : "所属クラブなし")
+      ? `${sessionUserForInquiry.familyName} ${sessionUserForInquiry.givenName}`.trim() ||
+        "（氏名未設定）"
       : "";
 
   const hostAbbr = competitionHostAbbreviation(competition);
@@ -533,7 +530,7 @@ export default async function CompetitionDetailPage({
                     <CompetitionHostInquiryDialog
                       competitionId={id}
                       competitionName={competition.name}
-                      senderPreviewLine={senderPreviewLine}
+                      senderNamePreview={senderNamePreview}
                       isAuthenticated={Boolean(sessionUserId)}
                       loginHref={signInRedirectPath}
                     />

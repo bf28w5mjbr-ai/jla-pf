@@ -20,8 +20,8 @@ import { Textarea } from "@/components/ui/textarea";
 type Props = {
   competitionId: string;
   competitionName: string;
-  /** ログイン済みのとき DB に基づく「氏名／所属」一行 */
-  senderPreviewLine: string;
+  /** ログイン済みのとき DB に基づく氏名プレビュー */
+  senderNamePreview: string;
   isAuthenticated: boolean;
   loginHref: string;
 };
@@ -29,7 +29,7 @@ type Props = {
 export function CompetitionHostInquiryDialog({
   competitionId,
   competitionName,
-  senderPreviewLine,
+  senderNamePreview,
   isAuthenticated,
   loginHref,
 }: Props) {
@@ -90,9 +90,12 @@ export function CompetitionHostInquiryDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
+          <p className="text-left text-xs leading-relaxed text-muted-foreground">
+            氏名・クラブ所属は、プロフィール登録内容に基づき送信メールに自動で含まれます（ここでの入力は不要です）。
+          </p>
           <div className="rounded-md border border-border/80 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-foreground">
-            <span className="font-medium text-muted-foreground">送信者（自動付与）</span>
-            <p className="mt-1 font-medium">{senderPreviewLine}</p>
+            <span className="font-medium text-muted-foreground">氏名（自動付与）</span>
+            <p className="mt-1 font-medium">{senderNamePreview}</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="host-inquiry-message">メッセージ</Label>
