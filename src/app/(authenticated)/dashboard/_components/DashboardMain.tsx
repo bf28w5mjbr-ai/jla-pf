@@ -22,6 +22,7 @@ import DashboardProfilePhoto from "@/components/DashboardProfilePhoto";
 import NfcTagManager from "@/components/NfcTagManager";
 import EntryWithdrawRequestButton from "@/components/EntryWithdrawRequestButton";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
+import { isRegistrationQualificationKind } from "@/lib/qualificationRegistrationKinds";
 import { cn } from "@/lib/utils";
 
 function calcAge(dateOfBirth: Date): number {
@@ -43,7 +44,7 @@ type OfficialAttendanceAggRow = {
 };
 
 export async function DashboardMain({ userId }: { userId: string }) {
-  const [user, entries, attendancePreview, attendanceAggRows] = await Promise.all([
+  const [user, entries, attendancePreview, attendanceAggRows, qualificationTemplates] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -162,6 +163,10 @@ export async function DashboardMain({ userId }: { userId: string }) {
       INNER JOIN "Competition" co ON co.id = a."competitionId"
       WHERE a."userId" = ${userId}
     `,
+    prisma.qualificationTemplate.findMany({
+      select: { kind: true, name: true },
+      orderBy: { kind: "asc" },
+    }),
   ]);
 
   if (!user) redirect("/login");
@@ -184,33 +189,18 @@ export async function DashboardMain({ userId }: { userId: string }) {
     REJECTED: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200",
   } as const;
 
-  const normalize = (value: string | null | undefined) =>
-    (value ?? "")
-      .normalize("NFKC")
-      .toLowerCase()
-      .replace(/[\s_\-./()（）・]+/g, "");
+  const qualificationLabelByKind = new Map<string, string>();
+  for (const t of qualificationTemplates) {
+    if (!qualificationLabelByKind.has(t.kind)) {
+      qualificationLabelByKind.set(t.kind, t.name.trim() || t.kind);
+    }
+  }
+  const qualificationDisplayLabel = (kind: string) => qualificationLabelByKind.get(kind) ?? kind;
 
-  const playerRegistrationKeywords = ["選手登録", "player registration", "player_registration"];
-  const lifesaverKeywords = ["認定ライフセーバー", "certified lifesaver", "cls"];
-
-  const matchesKeywords = (value: string | null | undefined, keywords: string[]) => {
-    const normalizedValue = normalize(value);
-    if (!normalizedValue) return false;
-    return keywords.some((keyword) => {
-      const normalizedKeyword = normalize(keyword);
-      return (
-        normalizedValue === normalizedKeyword ||
-        normalizedValue.includes(normalizedKeyword) ||
-        normalizedKeyword.includes(normalizedValue)
-      );
-    });
-  };
-
-  const isRegistrationKind = (value: string | null | undefined) =>
-    matchesKeywords(value, playerRegistrationKeywords) || matchesKeywords(value, lifesaverKeywords);
-
-  const registrationQualifications = user.qualifications.filter((q) => isRegistrationKind(q.kind));
-  const ownedQualifications = user.qualifications.filter((q) => !isRegistrationKind(q.kind));
+  const registrationQualifications = user.qualifications.filter((q) =>
+    isRegistrationQualificationKind(q.kind)
+  );
+  const ownedQualifications = user.qualifications.filter((q) => !isRegistrationQualificationKind(q.kind));
 
   const qualificationStatusLabel = {
     APPROVED: "有効",
@@ -367,9 +357,9 @@ export async function DashboardMain({ userId }: { userId: string }) {
                                   "inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold shadow-sm",
                                   qualificationStatusClass[status]
                                 )}
-                                title={`${qualificationStatusLabel[status]}${expiryDate ? `｜有効期限 ${expiryDate.toLocaleDateString("ja-JP")}` : ""}`}
+                                title={`${qualificationDisplayLabel(q.kind)}｜${qualificationStatusLabel[status]}${expiryDate ? `｜有効期限 ${expiryDate.toLocaleDateString("ja-JP")}` : ""}`}
                               >
-                                <span>{q.kind}</span>
+                                <span>{qualificationDisplayLabel(q.kind)}</span>
                               </span>
                               {isExpiringSoon ? (
                                 <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-[10px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
@@ -405,9 +395,9 @@ export async function DashboardMain({ userId }: { userId: string }) {
                                   "inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold shadow-sm",
                                   qualificationStatusClass[status]
                                 )}
-                                title={`${qualificationStatusLabel[status]}${expiryDate ? `｜有効期限 ${expiryDate.toLocaleDateString("ja-JP")}` : ""}`}
+                                title={`${qualificationDisplayLabel(q.kind)}｜${qualificationStatusLabel[status]}${expiryDate ? `｜有効期限 ${expiryDate.toLocaleDateString("ja-JP")}` : ""}`}
                               >
-                                <span>{q.kind}</span>
+                                <span>{qualificationDisplayLabel(q.kind)}</span>
                               </span>
                               {isExpiringSoon ? (
                                 <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-[10px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">

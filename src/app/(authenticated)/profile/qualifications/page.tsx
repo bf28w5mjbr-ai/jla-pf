@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP } from "@/lib/competitionEntryAgeTiered";
-import { parseQualificationTemplateMeta } from "@/lib/qualificationTemplateRules";
+import { isRegistrationQualificationKind } from "@/lib/qualificationRegistrationKinds";
+import { normalizeQualificationKind, parseQualificationTemplateMeta } from "@/lib/qualificationTemplateRules";
 import JlaMemberNumberEditor from "./JlaMemberNumberEditor";
 import QualificationsSelectionClient from "../../qualifications/QualificationsSelectionClient";
 
@@ -72,42 +73,15 @@ export default async function ProfileQualificationsPage() {
     .filter((q) => q.status === "APPROVED" || q.status === "PENDING")
     .map((q) => q.kind);
 
-  const normalize = (value: string | null | undefined) =>
-    (value ?? "")
-      .normalize("NFKC")
-      .toLowerCase()
-      .replace(/[\s_\-./()（）・]+/g, "");
-
-  const playerRegistrationKeywords = ["選手登録", "player registration", "player_registration"];
-  const blsWsKeywords = ["BLS・WS", "BLS/WS", "BLS WS", "blsws", "bls ws", "ベーシックライフセーバー", "basic lifesaver", "bls"];
-  const lifesaverKeywords = ["認定ライフセーバー", "certified lifesaver", "cls"];
-
-  const matchesKeywords = (value: string | null | undefined, keywords: string[]) => {
-    const normalizedValue = normalize(value);
-    if (!normalizedValue) return false;
-    return keywords.some((keyword) => {
-      const normalizedKeyword = normalize(keyword);
-      return (
-        normalizedValue === normalizedKeyword ||
-        normalizedValue.includes(normalizedKeyword) ||
-        normalizedKeyword.includes(normalizedValue)
-      );
-    });
-  };
-
-  const isRegistrationKind = (value: string | null | undefined) =>
-    matchesKeywords(value, playerRegistrationKeywords) ||
-    matchesKeywords(value, blsWsKeywords) ||
-    matchesKeywords(value, lifesaverKeywords);
-
   const isRegistrationTemplate = (template: (typeof rawTemplates)[number]) =>
-    isRegistrationKind(template.kind) || isRegistrationKind(template.name);
+    isRegistrationQualificationKind(template.kind) || isRegistrationQualificationKind(template.name);
 
   const isOwnedTemplate = (template: (typeof rawTemplates)[number]) =>
     qualifications.some(
       (q) =>
         q.status === "APPROVED" &&
-        (normalize(q.kind) === normalize(template.kind) || normalize(q.kind) === normalize(template.name ?? ""))
+        (normalizeQualificationKind(q.kind) === normalizeQualificationKind(template.kind) ||
+          normalizeQualificationKind(q.kind) === normalizeQualificationKind(template.name ?? ""))
     );
 
   const templateByKind = new Map<string, (typeof rawTemplates)[number]>();
@@ -118,7 +92,7 @@ export default async function ProfileQualificationsPage() {
   }
 
   const ownedQualifications = qualifications.filter(
-    (q) => !isRegistrationKind(q.kind) && q.status === "APPROVED"
+    (q) => !isRegistrationQualificationKind(q.kind) && q.status === "APPROVED"
   );
 
   const unownedTemplates = rawTemplates.filter(
