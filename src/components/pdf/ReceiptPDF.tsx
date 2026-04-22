@@ -242,7 +242,8 @@ export interface ReceiptPDFProps {
 }
 
 function formatDateJa(date: Date) {
-  return new Date(date).toLocaleDateString("ja-JP", {
+  const d = date instanceof Date && !Number.isNaN(date.getTime()) ? date : new Date();
+  return d.toLocaleDateString("ja-JP", {
     year: "numeric",
     month: "long",
     day: "numeric",
@@ -250,7 +251,8 @@ function formatDateJa(date: Date) {
 }
 
 function formatCurrency(amount: number) {
-  return `¥${amount.toLocaleString("ja-JP")}`;
+  const n = typeof amount === "number" && Number.isFinite(amount) ? Math.round(amount) : 0;
+  return `¥${n.toLocaleString("ja-JP")}`;
 }
 
 function nonEmptyLines(...parts: (string | undefined | null)[]) {

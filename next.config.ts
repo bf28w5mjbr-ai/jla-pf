@@ -99,6 +99,16 @@ const securityHeaders: { key: string; value: string }[] = [
 const nextConfig: NextConfig = {
   /* options here */
   /**
+   * PDF 領収書等で `@react-pdf/renderer` が実行時に WOFF を読むが、
+   * Output File Tracing が node_modules のフォントを拾わず本番で 500 になるのを防ぐ。
+   */
+  outputFileTracingIncludes: {
+    "/api/*": [
+      "./node_modules/@fontsource/noto-sans-jp/files/**/*.woff",
+      "./node_modules/@fontsource/noto-sans-jp/files/**/*.woff2",
+    ],
+  },
+  /**
    * Turbopack が @prisma/client を古いバンドルとして保持し、
    * `prisma generate` 後も select に新フィールドが無い Client が残るのを防ぐ。
    * @see https://www.prisma.io/docs/orm/more/help-and-troubleshooting/nextjs-help

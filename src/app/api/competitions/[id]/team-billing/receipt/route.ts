@@ -13,6 +13,7 @@ import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityA
 import { resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
 import { partitionUnderBandsForCompetition } from "@/lib/competitionUnderAgeSettings";
 import { competitionHostDisplayName } from "@/lib/competitionHostDisplay";
+import { coercePdfIssuedDate, nonNegativeYenForPdf } from "@/lib/receiptPdfGuards";
 
 export const runtime = "nodejs";
 
@@ -218,8 +219,16 @@ export async function GET(request: NextRequest, context: RouteContext) {
       },
     });
 
-    const displayAmount = isFree ? 0 : payment?.amount ?? totalFee;
-    const issuedDate = payment?.paidAt ?? latestTeamUpdate?.updatedAt ?? new Date();
+    const totalFeeSanitized = nonNegativeYenForPdf(totalFee, 0);
+    const displayAmount = isFree
+      ? 0
+      : nonNegativeYenForPdf(payment?.amount ?? totalFeeSanitized, totalFeeSanitized);
+    const issuedDateRaw = payment?.paidAt ?? latestTeamUpdate?.updatedAt ?? new Date();
+    const issuedDate = coercePdfIssuedDate(
+      issuedDateRaw,
+      latestTeamUpdate?.updatedAt,
+      new Date()
+    );
     const receiptKey = payment?.id ?? ownerId;
     const receiptNumber = buildTeamReceiptNumber(receiptKey, issuedDate);
 

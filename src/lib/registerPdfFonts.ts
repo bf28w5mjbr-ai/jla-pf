@@ -1,26 +1,46 @@
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Font } from "@react-pdf/renderer";
 
 let registered = false;
 
+const require = createRequire(import.meta.url);
+
 /** @react-pdf/font は src にファイルパス（文字列）を期待する。Buffer は不可。 */
 function resolveNotoWoffPath(filename: string): string {
-  // Turbopack が require.resolve を [project]/... のまま残すことがあるため process.cwd() で組み立てる。
-  const abs = path.join(
-    process.cwd(),
-    "node_modules",
-    "@fontsource",
-    "noto-sans-jp",
-    "files",
-    filename
+  const candidates: string[] = [];
+  try {
+    const resolver = (
+      import.meta as ImportMeta & { resolve?: (specifier: string, parent?: string) => string }
+    ).resolve;
+    if (typeof resolver === "function") {
+      const resolved = resolver.call(import.meta, "@fontsource/noto-sans-jp/package.json");
+      if (typeof resolved === "string" && resolved.startsWith("file:")) {
+        candidates.push(path.join(path.dirname(fileURLToPath(resolved)), "files", filename));
+      }
+    }
+  } catch {
+    // import.meta.resolve 非対応・解決失敗
+  }
+  try {
+    const pkgJson = require.resolve("@fontsource/noto-sans-jp/package.json");
+    candidates.push(path.join(path.dirname(pkgJson), "files", filename));
+  } catch {
+    // パッケージ解決不可（極端なバンドル構成）
+  }
+  // Turbopack が require.resolve を壊すケースへのフォールバック
+  candidates.push(
+    path.join(process.cwd(), "node_modules", "@fontsource", "noto-sans-jp", "files", filename)
   );
-  if (!existsSync(abs)) {
+
+  const abs = candidates.find((p) => existsSync(p));
+  if (!abs) {
     const msg =
-      "PDF用フォントが見つかりません: " +
-      abs +
-      "\n" +
-      "pnpm install を実行し、パッケージ @fontsource/noto-sans-jp が入っているか確認してください。";
+      "PDF用フォントが見つかりません。試したパス:\n" +
+      candidates.join("\n") +
+      "\npnpm install を実行し、パッケージ @fontsource/noto-sans-jp が入っているか確認してください。";
     throw new Error(msg);
   }
   return abs;

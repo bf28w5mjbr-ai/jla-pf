@@ -12,6 +12,7 @@ import { generatePdfBuffer } from "@/lib/pdf-helper";
 import { fetchStripeReceiptUrlForCheckoutSessionId } from "@/lib/stripeEntryReceiptUrl";
 import { competitionHostDisplayName } from "@/lib/competitionHostDisplay";
 import { pickLatestPaidCheckoutForReceipt } from "@/lib/entryReceiptCheckoutPick";
+import { coercePdfIssuedDate, nonNegativeYenForPdf } from "@/lib/receiptPdfGuards";
 
 export const runtime = "nodejs";
 
@@ -258,14 +259,17 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const format = new URL(request.url).searchParams.get("format");
 
     const latestCompletedCheckout = pickLatestPaidCheckoutForReceipt(entry.checkoutSessions);
-    const chargedYen =
+    const chargedYenRaw =
       latestCompletedCheckout && typeof latestCompletedCheckout.amount === "number"
         ? latestCompletedCheckout.amount
         : entry.totalFee;
-    const issuedDate =
+    const totalFeeYen = nonNegativeYenForPdf(entry.totalFee, 0);
+    const chargedYen = nonNegativeYenForPdf(chargedYenRaw, totalFeeYen);
+    const issuedDateRaw =
       latestCompletedCheckout?.completedAt ??
       latestCompletedCheckout?.createdAt ??
       entry.updatedAt;
+    const issuedDate = coercePdfIssuedDate(issuedDateRaw, entry.updatedAt, entry.createdAt);
     const receiptNumber = buildReceiptNumber(entry.id, issuedDate);
     const recipientName = `${entry.user.familyName} ${entry.user.givenName}`.trim();
 
@@ -320,7 +324,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       );
       const itemDescription = buildIndividualEntryPdfItemDescription({
         competitionName: entry.competition.name,
-        totalFee: entry.totalFee,
+        totalFee: totalFeeYen,
         snapshotData: entry.snapshot?.data,
         items: entry.items,
         eventNameById,
@@ -329,15 +333,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
       });
 
       const processingYen =
-        entry.totalFee > 0 && chargedYen > entry.totalFee ? chargedYen - entry.totalFee : 0;
+        totalFeeYen > 0 && chargedYen > totalFeeYen ? chargedYen - totalFeeYen : 0;
       const receiptItems =
-        entry.totalFee > 0 && processingYen > 0
+        totalFeeYen > 0 && processingYen > 0
           ? [
               {
                 description: `${itemDescription}（参加費）`,
                 quantity: 1,
-                unitPrice: entry.totalFee,
-                amount: entry.totalFee,
+                unitPrice: totalFeeYen,
+                amount: totalFeeYen,
               },
               {
                 description: "決済手数料（カード決済等・お支払い者負担）",
@@ -350,11 +354,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
               {
                 description: itemDescription,
                 quantity: 1,
-                unitPrice: entry.totalFee,
-                amount: entry.totalFee,
+                unitPrice: totalFeeYen,
+                amount: totalFeeYen,
               },
             ];
-      const pdfTotalAmount = entry.totalFee > 0 ? chargedYen : 0;
+      const pdfTotalAmount = totalFeeYen > 0 ? chargedYen : 0;
 
       const pdfComponent = React.createElement(ReceiptPDF, {
         receiptNumber,
@@ -386,7 +390,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         },
         recipient: {
           name: recipientName || "参加者",
-          email: entry.user.email,
+          email: entry.user.email ?? "",
           address: formatAddress({
             postalCode: entry.user.postalCode,
             prefecture: entry.user.prefecture,
@@ -414,7 +418,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       receiptNumber,
       issuedDate,
       amount: chargedYen,
-      entryFeeYen: entry.totalFee,
+      entryFeeYen: totalFeeYen,
       competitionId: entry.competitionId,
       competitionName: entry.competition.name,
       stripeReceiptUrl: stripeHostedUrl,
