@@ -76,6 +76,12 @@ function buildContentSecurityPolicy(): string {
   return directives.join("; ");
 }
 
+/** PDF 用フォント。`/api/*` 全体に含めると全ルートの Lambda に重複同梱されデプロイが極端に遅くなるため、PDF 生成ルートのみ指定する。 */
+const pdfNotoFontTraceGlobs = [
+  "./node_modules/@fontsource/noto-sans-jp/files/**/*.woff",
+  "./node_modules/@fontsource/noto-sans-jp/files/**/*.woff2",
+] as const;
+
 const securityHeaders: { key: string; value: string }[] = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
@@ -103,10 +109,10 @@ const nextConfig: NextConfig = {
    * Output File Tracing が node_modules のフォントを拾わず本番で 500 になるのを防ぐ。
    */
   outputFileTracingIncludes: {
-    "/api/*": [
-      "./node_modules/@fontsource/noto-sans-jp/files/**/*.woff",
-      "./node_modules/@fontsource/noto-sans-jp/files/**/*.woff2",
-    ],
+    "/api/entries/[entryId]/receipt": [...pdfNotoFontTraceGlobs],
+    "/api/competitions/[id]/team-billing/receipt": [...pdfNotoFontTraceGlobs],
+    "/api/clubs/[clubId]/dues/[duesId]/receipt": [...pdfNotoFontTraceGlobs],
+    "/api/clubs/[clubId]/dues/[duesId]/invoice": [...pdfNotoFontTraceGlobs],
   },
   /**
    * Turbopack が @prisma/client を古いバンドルとして保持し、
