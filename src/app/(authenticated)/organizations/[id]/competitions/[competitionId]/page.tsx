@@ -63,14 +63,41 @@ export async function generateMetadata({
 }: {
   params: Promise<{ id: string; competitionId: string }>;
 }): Promise<Metadata> {
-  const { competitionId } = await params;
+  const { id: organizationId, competitionId } = await params;
+  const cookieStore = await cookies();
+  const token = cookieStore.get("session")?.value;
+  const session = await verifySessionCached(token);
+  const genericTitle = { title: "大会 | Bluvium" };
+  if (!session?.userId) {
+    return genericTitle;
+  }
+
   const competition = await prisma.competition.findUnique({
     where: { id: competitionId },
-    select: { name: true },
+    select: {
+      name: true,
+      organizationId: true,
+      organization: {
+        select: {
+          admins: {
+            where: { userId: session.userId },
+            select: { role: true },
+          },
+        },
+      },
+    },
   });
 
+  if (
+    !competition ||
+    competition.organizationId !== organizationId ||
+    !hasOrgAdminAccess(competition.organization.admins)
+  ) {
+    return genericTitle;
+  }
+
   return {
-    title: `${competition?.name || "大会"} | Bluvium`,
+    title: `${competition.name || "大会"} | Bluvium`,
   };
 }
 

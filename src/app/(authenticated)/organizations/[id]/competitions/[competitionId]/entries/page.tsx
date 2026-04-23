@@ -11,7 +11,7 @@ import { ArrowLeft, AlertTriangle, CheckCircle2, ChevronDown, Clock } from "luci
 import StartListConfigurator from "@/components/admin/StartListConfigurator";
 import CompetitionTeamBillingManager from "@/components/admin/CompetitionTeamBillingManager";
 import CompetitionEntryAdminActions from "@/components/admin/CompetitionEntryAdminActions";
-import { isOrgAdminRole } from "@/lib/roleScopes";
+import { hasOrgAdminAccess, isOrgAdminRole } from "@/lib/roleScopes";
 import { parseTeamEntryPaymentMetadata, buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
 import {
   getAdminEntryLifecycleStateLabel,
@@ -28,14 +28,41 @@ export async function generateMetadata({
 }: {
   params: Promise<{ id: string; competitionId: string }>;
 }): Promise<Metadata> {
-  const { competitionId } = await params;
+  const { id: organizationId, competitionId } = await params;
+  const cookieStore = await cookies();
+  const token = cookieStore.get("session")?.value;
+  const session = await verifySessionCached(token);
+  const genericTitle = { title: "エントリー状況 | 大会 | Bluvium" };
+  if (!session?.userId) {
+    return genericTitle;
+  }
+
   const competition = await prisma.competition.findUnique({
     where: { id: competitionId },
-    select: { name: true },
+    select: {
+      name: true,
+      organizationId: true,
+      organization: {
+        select: {
+          admins: {
+            where: { userId: session.userId },
+            select: { role: true },
+          },
+        },
+      },
+    },
   });
 
+  if (
+    !competition ||
+    competition.organizationId !== organizationId ||
+    !hasOrgAdminAccess(competition.organization.admins)
+  ) {
+    return genericTitle;
+  }
+
   return {
-    title: `エントリー状況 | ${competition?.name || "大会"} | Bluvium`,
+    title: `エントリー状況 | ${competition.name || "大会"} | Bluvium`,
   };
 }
 

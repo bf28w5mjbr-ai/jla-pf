@@ -4,6 +4,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { verifySessionCached } from "@/lib/auth";
+import { canViewClubDetailPage, redirectUnlessCanViewClubDetail } from "@/lib/clubAccess";
 import { prisma } from "@/server/db";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -267,6 +268,13 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
+  const cookieStore = await cookies();
+  const token = cookieStore.get("session")?.value;
+  const sess = await verifySessionCached(token);
+  if (!sess?.userId || !(await canViewClubDetailPage(id, sess.userId))) {
+    return { title: "クラブ | Bluvium" };
+  }
+
   const club = await prisma.club.findUnique({
     where: { id },
     select: { name: true },
@@ -297,6 +305,8 @@ export default async function ClubDetailPage({
   });
 
   if (!sessionUser) redirect("/login");
+
+  await redirectUnlessCanViewClubDetail(id, sess.userId);
 
   const club = await prisma.club.findUnique({
     where: { id },

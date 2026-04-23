@@ -34,6 +34,7 @@ import {
   User,
   Users,
 } from "lucide-react";
+import { canViewOrganizationDashboardPage } from "@/lib/organizationDashboardAccess";
 import { isOrgAdminRole } from "@/lib/roleScopes";
 import { normalizeOptionalHttpUrl } from "@/lib/safeExternalUrl";
 import { parseOrganizationDetailTab } from "@/lib/organizationDetailTab";
@@ -120,6 +121,13 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
+  const cookieStore = await cookies();
+  const token = cookieStore.get("session")?.value;
+  const session = await verifySessionCached(token);
+  if (!session?.userId || !(await canViewOrganizationDashboardPage(id, session.userId))) {
+    return { title: "大会主催者 | Bluvium" };
+  }
+
   const org = await prisma.organization.findUnique({
     where: { id },
     select: { name: true },
@@ -221,7 +229,7 @@ export default async function OrganizationDetailPage({
   const isOrgAdmin = isOrgAdminRole(userRole);
 
   if (!userRole || !isOrgAdmin) {
-    redirect("/dashboard");
+    notFound();
   }
 
   /** Webhook 未着・オンボ直後の Stripe 側のみ先に有効化、など DB と実状態のズレを解消 */

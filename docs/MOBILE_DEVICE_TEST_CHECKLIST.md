@@ -1,5 +1,26 @@
 # Mobile Device Test Checklist (iOS / Android)
 
+全体の 8 フェーズ順のロードマップは **[APP_MOBILIZATION_ROADMAP.md](./APP_MOBILIZATION_ROADMAP.md)**。ストア・ディープリンク・CI は **[MOBILIZATION_STORE_AND_CI.md](./MOBILIZATION_STORE_AND_CI.md)**。
+
+## フェーズ 2 追記（認証・Cookie・パスキー）
+
+実機（Capacitor WebView）で次を確認し、問題はロードマップ末尾の Issue テンプレで起票する。
+
+- [ ] メール＋パスワードログイン後、画面遷移してもセッションが維持される（[api/auth/login/route.ts](../src/app/api/auth/login/route.ts) の Cookie 属性とオリジンが一致しているか）
+- [ ] SMS ログイン（利用する環境）でも同様
+- [ ] パスキー登録・ログイン（`src/app/api/passkeys/`）が同一オリジンで完走する
+- [ ] アプリを長時間バックグラウンド → 復帰後の操作
+
+## フェーズ 3 追記（Stripe / PDF / 外部リンク）
+
+- [ ] エントリー等の Stripe Checkout 開始〜戻り（3DS を含む本番相当フローがあればそれも）
+- [ ] 領収書 PDF の取得・表示（ブラウザ / WebView のダウンロード挙動）
+- [ ] 外部リンク（新規タブ・Stripe iframe）がブロックされないか
+
+## フェーズ 4（本ドキュメントの主眼）
+
+以下はプッシュ通知の受け入れ。`linkUrl` はフェーズ 4 の本番配線確認に含める。
+
 ## 前提
 
 - `android/app/google-services.json` を配置済み

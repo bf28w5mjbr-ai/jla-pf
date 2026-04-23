@@ -57,7 +57,10 @@ pnpm dev
 - `docs/PERMISSIONS_CURRENT.md`: 権限仕様の一次情報
 - `docs/OPERATIONS_MANUAL.md`: 運用手順
 - `docs/TROUBLESHOOTING.md`: 障害対応
-- `docs/MOBILE_DEVICE_TEST_CHECKLIST.md`: モバイル実機検証
+- `docs/APP_MOBILIZATION_ROADMAP.md`: アプリ化 8 フェーズ（配布形態〜実機検証の順）
+- `docs/APP_MOBILIZATION_WALKTHROUGH.md`: アプリ化の手取り手順（コマンドと実機チェック順）
+- `docs/MOBILIZATION_STORE_AND_CI.md`: ストア審査・Universal Links・CI/署名・掲載/法務
+- `docs/MOBILE_DEVICE_TEST_CHECKLIST.md`: モバイル実機検証（プッシュ中心）
 
 ## ライセンス
 
