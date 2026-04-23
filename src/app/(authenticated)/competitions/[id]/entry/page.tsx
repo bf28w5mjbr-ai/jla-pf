@@ -16,15 +16,14 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowLeft, Calendar, CircleCheck, MapPin, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, Calendar, CircleCheck, MapPin } from "lucide-react";
 import {
   formatAdminWallClockSameAsDatetimeLocal,
   formatCompactJaDateRange,
 } from "@/lib/datetimeLocal";
 import { EntryDeadlineCountdown } from "@/components/competitions/EntryDeadlineCountdown";
 import CompetitionEntryForm from "@/components/CompetitionEntryForm";
-import { hasOrgAdminAccess, isClubAdminRole } from "@/lib/roleScopes";
-import { getTeamMemberAssignmentWindowState } from "@/lib/teamMemberAssignmentWindow";
+import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { stripe } from "@/lib/stripe";
 import { buildEntryCompletionReceipt } from "@/lib/entryCompletionReceipt";
 import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
@@ -554,22 +553,6 @@ export default async function CompetitionEntryPage({
       "所属クラブが必須ですが、承認済みのクラブがありません。"
     );
   }
-  const canManageTeamEntries = memberships.some((membership) => isClubAdminRole(membership.role));
-  const teamAdminMemberships = [...memberships]
-    .filter((m) => isClubAdminRole(m.role))
-    .sort((a, b) => a.club.name.localeCompare(b.club.name, "ja"));
-  const teamAssignmentWindow = await getTeamMemberAssignmentWindowState(
-    prisma,
-    competition.id,
-    {
-      entryEndDate: competition.entryEndDate,
-      startListSettings: competition.startListSettings,
-      startDate: competition.startDate,
-    },
-    now
-  );
-  const isTeamAssignmentWindowOpen = teamAssignmentWindow.open;
-
   const snapshot = existingEntry?.snapshot?.data as
     | {
         items?: { eventId?: string; entryTime?: string | null }[];
@@ -849,81 +832,6 @@ export default async function CompetitionEntryPage({
           </div>
         </CardContent>
       </Card>
-
-      {hasTeamEvents ? (
-        <Card padding="none" className="border-border/80 shadow-sm">
-          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
-            <div className="flex min-w-0 gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
-                <Users className="h-5 w-5" aria-hidden />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-foreground">チーム種目</p>
-                <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                  {isTeamAssignmentWindowOpen
-                    ? "メンバー割当はエントリー終了後から可能です。クラブ管理者は各チームのスタートリスト上のヒートのマーシャル締切まで編集でき、スタートリスト設定の目安日時は通知用です。"
-                    : "チーム種目の登録・管理はクラブ管理者が行います。エントリー終了後は上記のとおりメンバー割当が可能になります。"}
-                </p>
-              </div>
-            </div>
-            {canManageTeamEntries ? (
-              isTeamAssignmentWindowOpen ? (
-                teamAdminMemberships.length > 0 ? (
-                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
-                    {teamAdminMemberships.map((m) => (
-                      <Button
-                        key={m.club.id}
-                        variant="outline"
-                        size="sm"
-                        className="h-9 w-full shrink-0 px-4 text-xs sm:w-auto"
-                        asChild
-                      >
-                        <Link
-                          href={appRoutes.clubs.competition.team(m.club.id, competition.id, {
-                            tab: "assignment",
-                          })}
-                        >
-                          メンバー割当（{m.club.name}）
-                        </Link>
-                      </Button>
-                    ))}
-                  </div>
-                ) : (
-                  <Button variant="outline" size="sm" className="h-9 w-full shrink-0 px-4 text-xs sm:w-auto" asChild>
-                    <Link href={appRoutes.competitions.legacyTeamAssignment(competition.id)}>
-                      メンバー割当へ
-                    </Link>
-                  </Button>
-                )
-              ) : teamAdminMemberships.length > 0 ? (
-                <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
-                  {teamAdminMemberships.map((m) => (
-                    <Button
-                      key={m.club.id}
-                      variant="outline"
-                      size="sm"
-                      className="h-9 w-full shrink-0 px-4 text-xs sm:w-auto"
-                      asChild
-                    >
-                      <Link
-                        href={appRoutes.clubs.competition.team(m.club.id, competition.id, {
-                          tab: "entry",
-                        })}
-                      >
-                        チーム管理（{m.club.name}）
-                      </Link>
-                    </Button>
-                  ))}
-                </div>
-              ) : (
-                <Button variant="outline" size="sm" className="h-9 w-full shrink-0 px-4 text-xs sm:w-auto" asChild>
-                  <Link href={appRoutes.competitions.legacyTeamEntry(competition.id)}>チーム管理へ</Link>
-                </Button>
-              )
-            ) : null}
-          </CardContent>
-        </Card>
-      ) : null}
 
       {clubBulkSettlementPending ? (
         <Card className="border-sky-200/80 bg-sky-50/60 dark:border-sky-900/50 dark:bg-sky-950/25">
