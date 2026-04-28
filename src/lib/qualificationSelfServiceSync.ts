@@ -1,6 +1,11 @@
 import { prisma } from "@/server/db";
 import { isValidJlaMemberNumber, normalizeJlaMemberNumber } from "@/lib/jlaMemberNumber";
-import { isQualificationExpired, normalizeQualificationKind } from "@/lib/qualificationTemplateRules";
+import {
+  findTemplateKindByKeywords,
+  matchesQualificationKeywords,
+  resolveQualificationTemplateForKindInput,
+} from "@/lib/qualificationKindMatch";
+import { isQualificationExpired } from "@/lib/qualificationTemplateRules";
 
 type TemplateLite = { kind: string; name: string };
 
@@ -8,41 +13,9 @@ export type SyncHeldQualificationsResult =
   | { ok: true }
   | { ok: false; status: number; error: string };
 
-function matchesKeywords(value: string | null | undefined, keywords: string[]): boolean {
-  const normalizedValue = normalizeQualificationKind(value);
-  if (!normalizedValue) return false;
-  return keywords.some((keyword) => {
-    const normalizedKeyword = normalizeQualificationKind(keyword);
-    return (
-      normalizedValue === normalizedKeyword ||
-      normalizedValue.includes(normalizedKeyword) ||
-      normalizedKeyword.includes(normalizedValue)
-    );
-  });
-}
-
-function resolveTemplateForKindInput(
-  templates: TemplateLite[],
-  input: string
-): TemplateLite | null {
-  return (
-    templates.find(
-      (template) =>
-        matchesKeywords(input, [template.kind]) || matchesKeywords(input, [template.name])
-    ) ?? null
-  );
-}
-
 function canonicalKindForQualification(kind: string, templates: TemplateLite[]): string | null {
-  const t = resolveTemplateForKindInput(templates, kind);
+  const t = resolveQualificationTemplateForKindInput(templates, kind);
   return t?.kind ?? null;
-}
-
-function findTemplateKindByKeywords(templates: TemplateLite[], keywords: string[]): string | null {
-  const hit = templates.find(
-    (t) => matchesKeywords(t.kind, keywords) || matchesKeywords(t.name, keywords)
-  );
-  return hit?.kind ?? null;
 }
 
 /**
@@ -62,7 +35,7 @@ export async function syncUserHeldQualifications(
   for (const raw of kindInputs) {
     const trimmed = typeof raw === "string" ? raw.trim() : "";
     if (!trimmed) continue;
-    const resolved = resolveTemplateForKindInput(templates, trimmed);
+    const resolved = resolveQualificationTemplateForKindInput(templates, trimmed);
     if (!resolved) {
       return {
         ok: false,
@@ -167,7 +140,8 @@ export async function syncUserHeldQualifications(
   if (blsKind && target.has(blsKind) && lifesaverKind && target.has(lifesaverKind)) {
     const lifeRow = surviving.find(
       (q) =>
-        matchesKeywords(q.kind, [lifesaverKind]) || matchesKeywords(q.kind, ["認定ライフセーバー"])
+        matchesQualificationKeywords(q.kind, [lifesaverKind]) ||
+          matchesQualificationKeywords(q.kind, ["認定ライフセーバー"])
     );
     const lifesaverEffective = !lifeRow || !isQualificationExpired(lifeRow.expiryDate);
     if (lifesaverEffective) {

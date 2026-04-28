@@ -210,7 +210,7 @@ model QualificationTemplate {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([kind])
+  @@unique([kind])
   @@index([domain])
   @@index([level])
 }

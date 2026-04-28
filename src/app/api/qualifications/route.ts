@@ -11,6 +11,10 @@ import { Prisma, QualificationStatus } from "@prisma/client";
 import { isValidJlaMemberNumber, normalizeJlaMemberNumber } from "@/lib/jlaMemberNumber";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 import {
+  matchesQualificationKeywords,
+  resolveQualificationTemplateForKindInput,
+} from "@/lib/qualificationKindMatch";
+import {
   evaluatePrerequisiteExpression,
   isQualificationExpired,
   normalizeQualificationKind,
@@ -118,19 +122,6 @@ export async function POST(req: NextRequest) {
     const data = CreateQualificationSchema.parse(body);
     const isProvisionalLink = data.provisionalLink === true;
 
-    const matchesKeywords = (value: string | null | undefined, keywords: string[]) => {
-      const normalizedValue = normalizeQualificationKind(value);
-      if (!normalizedValue) return false;
-      return keywords.some((keyword) => {
-        const normalizedKeyword = normalizeQualificationKind(keyword);
-        return (
-          normalizedValue === normalizedKeyword ||
-          normalizedValue.includes(normalizedKeyword) ||
-          normalizedKeyword.includes(normalizedValue)
-        );
-      });
-    };
-
     const templates = await prisma.qualificationTemplate.findMany({
       select: {
         kind: true,
@@ -139,11 +130,7 @@ export async function POST(req: NextRequest) {
       },
     });
     const requestedTemplate =
-      templates.find(
-        (template) =>
-          matchesKeywords(data.kind, [template.kind]) ||
-          matchesKeywords(data.kind, [template.name])
-      ) ?? null;
+      resolveQualificationTemplateForKindInput(templates, data.kind) ?? null;
 
     if (!requestedTemplate) {
       return NextResponse.json(
@@ -240,7 +227,10 @@ export async function POST(req: NextRequest) {
     });
 
     const existingMatch = existingQualifications.find((qualification) =>
-      matchesKeywords(qualification.kind, [requestedTemplate.kind, requestedTemplate.name])
+      matchesQualificationKeywords(qualification.kind, [
+        requestedTemplate.kind,
+        requestedTemplate.name,
+      ])
     );
 
     if (existingMatch) {
@@ -254,7 +244,11 @@ export async function POST(req: NextRequest) {
 
     if (!isProvisionalLink && requestedKind === "BLS・WS") {
       const lifesaverQualification = existingQualifications.find((qualification) =>
-        matchesKeywords(qualification.kind, ["認定ライフセーバー", "certified lifesaver", "cls"])
+        matchesQualificationKeywords(qualification.kind, [
+          "認定ライフセーバー",
+          "certified lifesaver",
+          "cls",
+        ])
       );
 
       if (lifesaverQualification?.status === "APPROVED") {
