@@ -1,7 +1,6 @@
 export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
-import { stripe } from "@/lib/stripe";
 import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/env";
 import { getSmsAuthPublicFlags } from "@/lib/smsHoldPolicy";
 
@@ -45,6 +44,7 @@ export async function GET(request: NextRequest) {
     let stripeApi = "skipped";
     if (deepCheck && hasStripeSecret) {
       try {
+        const { stripe } = await import("@/lib/stripe");
         await stripe.balance.retrieve();
         stripeApi = "ok";
       } catch {

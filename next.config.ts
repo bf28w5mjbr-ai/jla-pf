@@ -78,8 +78,8 @@ function buildContentSecurityPolicy(): string {
 
 /** PDF 用フォント。`/api/*` 全体に含めると全ルートの Lambda に重複同梱されデプロイが極端に遅くなるため、PDF 生成ルートのみ指定する。 */
 const pdfNotoFontTraceGlobs = [
-  "./node_modules/@fontsource/noto-sans-jp/files/**/*.woff",
-  "./node_modules/@fontsource/noto-sans-jp/files/**/*.woff2",
+  "./node_modules/@fontsource/noto-sans-jp/files/noto-sans-jp-japanese-400-normal.woff",
+  "./node_modules/@fontsource/noto-sans-jp/files/noto-sans-jp-japanese-700-normal.woff",
 ] as const;
 
 const securityHeaders: { key: string; value: string }[] = [
@@ -121,7 +121,16 @@ const nextConfig: NextConfig = {
    * `prisma generate` 後も select に新フィールドが無い Client が残るのを防ぐ。
    * @see https://www.prisma.io/docs/orm/more/help-and-troubleshooting/nextjs-help
    */
-  serverExternalPackages: ["@prisma/client", "prisma"],
+  serverExternalPackages: [
+    "@prisma/client",
+    "prisma",
+    "stripe",
+    "firebase-admin",
+    "@aws-sdk/client-s3",
+    "@aws-sdk/s3-request-presigner",
+    "@aws-sdk/client-sns",
+    "@react-pdf/renderer",
+  ],
   reactCompiler: true,
   experimental: {
     optimizePackageImports: [

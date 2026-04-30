@@ -1,6 +1,3 @@
-import { cert, getApps, initializeApp } from "firebase-admin/app";
-import { getMessaging } from "firebase-admin/messaging";
-
 function getServiceAccountFromEnv() {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   if (!raw) {
@@ -17,6 +14,9 @@ function getServiceAccountFromEnv() {
     return null;
   }
 }
+
+import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { getMessaging } from "firebase-admin/messaging";
 
 function getFirebaseApp() {
   const existing = getApps()[0];
