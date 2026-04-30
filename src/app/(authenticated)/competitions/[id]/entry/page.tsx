@@ -823,7 +823,7 @@ export default async function CompetitionEntryPage({
                 </div>
                 {!meetsQualification ? (
                   <p className="border-t border-border/50 pt-2 text-xs leading-relaxed text-muted-foreground">
-                    登録資格:{" "}
+                    申請資格:{" "}
                     {userQualifications.length > 0 ? userQualifications.join("、") : "なし"}
                   </p>
                 ) : null}

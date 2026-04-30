@@ -22,7 +22,7 @@ import DashboardProfilePhoto from "@/components/DashboardProfilePhoto";
 import NfcTagManager from "@/components/NfcTagManager";
 import EntryWithdrawRequestButton from "@/components/EntryWithdrawRequestButton";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
-import { isRegistrationQualificationKind } from "@/lib/qualificationRegistrationKinds";
+import { QualificationRecordOrigin } from "@prisma/client";
 import { cn } from "@/lib/utils";
 
 function calcAge(dateOfBirth: Date): number {
@@ -83,6 +83,7 @@ export async function DashboardMain({ userId }: { userId: string }) {
             status: true,
             expiryDate: true,
             createdAt: true,
+            recordOrigin: true,
           },
         },
       },
@@ -197,10 +198,12 @@ export async function DashboardMain({ userId }: { userId: string }) {
   }
   const qualificationDisplayLabel = (kind: string) => qualificationLabelByKind.get(kind) ?? kind;
 
-  const registrationQualifications = user.qualifications.filter((q) =>
-    isRegistrationQualificationKind(q.kind)
+  const applicationQualifications = user.qualifications.filter(
+    (q) => q.recordOrigin === QualificationRecordOrigin.USER_APPLICATION
   );
-  const ownedQualifications = user.qualifications.filter((q) => !isRegistrationQualificationKind(q.kind));
+  const heldQualifications = user.qualifications.filter(
+    (q) => q.recordOrigin === QualificationRecordOrigin.ASSOCIATION_IMPORT
+  );
 
   const qualificationStatusLabel = {
     APPROVED: "有効",
@@ -326,7 +329,7 @@ export async function DashboardMain({ userId }: { userId: string }) {
 
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <h3 className="text-sm font-semibold text-foreground">保有資格</h3>
+                    <h3 className="text-sm font-semibold text-foreground">資格</h3>
                     <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" asChild>
                       <Link href="/qualifications" aria-label="資格を選択" title="資格を選択">
                         <Plus className="h-4 w-4" aria-hidden />
@@ -335,12 +338,12 @@ export async function DashboardMain({ userId }: { userId: string }) {
                   </div>
                   <div className="mt-3 space-y-4">
                     <div>
-                      <h4 className="text-xs font-semibold text-muted-foreground">登録資格</h4>
+                      <h4 className="text-xs font-semibold text-muted-foreground">申請資格</h4>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {registrationQualifications.length === 0 && (
-                          <p className="text-xs text-muted-foreground">登録資格はまだありません。</p>
+                        {applicationQualifications.length === 0 && (
+                          <p className="text-xs text-muted-foreground">申請資格はまだありません。</p>
                         )}
-                        {registrationQualifications.map((q) => {
+                        {applicationQualifications.map((q) => {
                           const expiryDate = q.expiryDate ? new Date(q.expiryDate) : null;
                           const now = new Date();
                           const isExpired = !!expiryDate && expiryDate.getTime() < now.getTime();
@@ -375,10 +378,12 @@ export async function DashboardMain({ userId }: { userId: string }) {
                     <div>
                       <h4 className="text-xs font-semibold text-muted-foreground">保有資格</h4>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {ownedQualifications.length === 0 && (
-                          <p className="text-xs text-muted-foreground">保有資格はまだありません。</p>
+                        {heldQualifications.length === 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            協会公式データの連携後にここに表示されます。
+                          </p>
                         )}
-                        {ownedQualifications.map((q) => {
+                        {heldQualifications.map((q) => {
                           const expiryDate = q.expiryDate ? new Date(q.expiryDate) : null;
                           const now = new Date();
                           const isExpired = !!expiryDate && expiryDate.getTime() < now.getTime();

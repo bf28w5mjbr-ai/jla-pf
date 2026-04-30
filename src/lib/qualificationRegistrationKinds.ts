@@ -1,7 +1,7 @@
 import { normalizeQualificationKind } from "@/lib/qualificationTemplateRules";
 
 /**
- * マイページ「登録資格」に分類する種別（選手登録・BLS/WS・認定ライフセーバー系）。
+ * マイページで「登録系」テンプレートに分類する種別（選手登録・BLS/WS・認定ライフセーバー系）。
  * `/profile/qualifications` の区分と一致させること。
  */
 const playerRegistrationKeywords = ["選手登録", "player registration", "player_registration"];
@@ -46,7 +46,7 @@ function isStandaloneBlsKind(normalized: string): boolean {
   return normalized === "bls";
 }
 
-/** ダッシュボードの「登録資格」／プロフィールの紐づけ区分に使う */
+/** プロフィールの紐づけ区分（テンプレート分類）に使う */
 export function isRegistrationQualificationKind(value: string | null | undefined): boolean {
   const n = normalizeQualificationKind(value);
   if (isStandaloneBlsKind(n)) {

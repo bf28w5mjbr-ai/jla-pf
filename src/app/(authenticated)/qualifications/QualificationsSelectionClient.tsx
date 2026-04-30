@@ -206,7 +206,7 @@ export default function QualificationsSelectionClient({
       if (!res.ok) {
         throw new Error(data.error || "保存に失敗しました");
       }
-      toast.success("保有資格を保存しました");
+      toast.success("申請資格を保存しました");
       router.push(appRoutes.dashboard());
       router.refresh();
     } catch (e) {
@@ -373,7 +373,7 @@ export default function QualificationsSelectionClient({
             JLAメンバーIDがアカウントに未登録です
           </p>
           <p className="mt-1 text-xs leading-relaxed text-amber-950/85 dark:text-amber-100/85">
-            資格を保存するには、協会発行のメンバーIDが必要です。マイページの「保有資格」でJLAメンバーIDを登録済みならページを再表示すると反映され、この欄は不要になります。
+            資格を保存するには、協会発行のメンバーIDが必要です。マイページの「資格の管理」でJLAメンバーIDを登録済みならページを再表示すると反映され、この欄は不要になります。
           </p>
           <div className="mt-3 max-w-xs space-y-2">
             <Label htmlFor="qual-inline-jla-id">JLAメンバーID（保存時に必須）</Label>

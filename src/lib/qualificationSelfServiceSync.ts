@@ -1,3 +1,4 @@
+import { QualificationRecordOrigin } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { isValidJlaMemberNumber, normalizeJlaMemberNumber } from "@/lib/jlaMemberNumber";
 import {
@@ -72,7 +73,7 @@ export async function syncUserHeldQualifications(
         ok: false,
         status: 400,
         error:
-          "アカウントに登録されたJLAメンバーIDと異なる値が送られました。プロフィールの「保有資格」でメンバーIDを確認してください。",
+          "アカウントに登録されたJLAメンバーIDと異なる値が送られました。プロフィールの「資格の管理」でメンバーIDを確認してください。",
       };
     }
     effectiveCert = fromProfile;
@@ -82,7 +83,7 @@ export async function syncUserHeldQualifications(
         ok: false,
         status: 400,
         error:
-          "資格を紐づけるにはJLAメンバーIDが必要です。マイアカウントの「保有資格」でメンバーIDを登録するか、保存時に入力してください。",
+          "資格を紐づけるにはJLAメンバーIDが必要です。マイアカウントの「資格の管理」でメンバーIDを登録するか、保存時に入力してください。",
       };
     }
     effectiveCert = fromBody;
@@ -100,6 +101,7 @@ export async function syncUserHeldQualifications(
     where: {
       userId,
       status: { in: ["PENDING", "APPROVED"] },
+      recordOrigin: QualificationRecordOrigin.USER_APPLICATION,
     },
     select: {
       id: true,
@@ -218,6 +220,7 @@ export async function syncUserHeldQualifications(
           issueDate: null,
           expiryDate: null,
           status: "APPROVED",
+          recordOrigin: QualificationRecordOrigin.USER_APPLICATION,
         },
       });
     }

@@ -21,7 +21,7 @@ const PutBodySchema = z.object({
     }),
 });
 
-/** PUT — 保有資格をチェック内容どおりに同期（審査なし・即時 APPROVED） */
+/** PUT — 申請資格（ユーザー選択）をチェック内容どおりに同期（審査なし・即時 APPROVED） */
 export async function PUT(req: NextRequest) {
   try {
     const jar = await cookies();

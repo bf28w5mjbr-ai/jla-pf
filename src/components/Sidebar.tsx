@@ -156,7 +156,7 @@ export default function Sidebar({
       icon: <BookOpen className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />,
     },
     {
-      label: "保有資格",
+      label: "資格の管理",
       href: "/profile/qualifications",
       condition: SHOW_PROFILE_QUALIFICATIONS_MANAGEMENT_NAV,
       icon: <Award className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />,

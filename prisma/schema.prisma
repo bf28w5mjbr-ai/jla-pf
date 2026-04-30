@@ -460,14 +460,15 @@ model Membership {
 }
 
 model Qualification {
-  id            String              @id @default(cuid())
+  id            String                    @id @default(cuid())
   userId        String
   kind          String // e.g., "BLS", "ILS", etc.
   certNumber    String?
   issueDate     DateTime?
   expiryDate    DateTime?
-  status        QualificationStatus @default(PENDING)
+  status        QualificationStatus       @default(PENDING)
   attachmentUrl String?
+  recordOrigin  QualificationRecordOrigin @default(USER_APPLICATION)
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -476,6 +477,7 @@ model Qualification {
   updatedAt DateTime @updatedAt
 
   @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, recordOrigin])
   @@index([status, createdAt(sort: Asc)])
   @@index([status, expiryDate])
 }
@@ -1836,6 +1838,12 @@ enum QualificationStatus {
   APPROVED
   REJECTED
   EXPIRED
+}
+
+/// 資格レコードの由来（ユーザー申請で紐づけたもの／協会CSV等の公式データ）
+enum QualificationRecordOrigin {
+  USER_APPLICATION
+  ASSOCIATION_IMPORT
 }
 
 enum Sex {

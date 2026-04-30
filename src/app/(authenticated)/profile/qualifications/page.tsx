@@ -14,7 +14,7 @@ import JlaMemberNumberEditor from "./JlaMemberNumberEditor";
 import QualificationsSelectionClient from "../../qualifications/QualificationsSelectionClient";
 
 export const metadata: Metadata = {
-  title: "保有資格の管理 | Bluvium",
+  title: "資格の管理 | Bluvium",
 };
 
 export const dynamic = "force-dynamic";
@@ -114,7 +114,7 @@ export default async function ProfileQualificationsPage() {
             <span className="text-sm font-medium">資格</span>
           </div>
           <h1 className="text-balance text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            保有資格の管理
+            資格の管理
           </h1>
           <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
             チェックボックスで資格を選んで保存すると、すぐにアカウントに紐づきます。更新講習の案内は下の一覧から進められます。
@@ -160,7 +160,7 @@ export default async function ProfileQualificationsPage() {
               className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground"
             >
               <GraduationCap className="h-5 w-5 text-primary" strokeWidth={1.75} aria-hidden />
-              保有資格（更新講習）
+              申請済み資格（更新講習）
             </h2>
             <p className="text-sm text-muted-foreground">紐づけ済みの資格から、更新のための講習情報へ進めます。</p>
           </div>

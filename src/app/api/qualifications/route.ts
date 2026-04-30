@@ -7,7 +7,7 @@ import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { z } from "zod";
-import { Prisma, QualificationStatus } from "@prisma/client";
+import { Prisma, QualificationRecordOrigin, QualificationStatus } from "@prisma/client";
 import { isValidJlaMemberNumber, normalizeJlaMemberNumber } from "@/lib/jlaMemberNumber";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 import {
@@ -173,7 +173,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(
           {
             error:
-              "アカウントに登録されたJLAメンバーIDと異なる値が送られました。プロフィールの「保有資格」でメンバーIDを確認してください。",
+              "アカウントに登録されたJLAメンバーIDと異なる値が送られました。プロフィールの「資格の管理」でメンバーIDを確認してください。",
           },
           { status: 400 }
         );
@@ -184,7 +184,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(
           {
             error:
-              "資格の紐づけにはJLAメンバーIDが必要です。マイアカウントの「保有資格」でメンバーIDを登録するか、入力してください。",
+              "資格の紐づけにはJLAメンバーIDが必要です。マイアカウントの「資格の管理」でメンバーIDを登録するか、入力してください。",
           },
           { status: 400 }
         );
@@ -404,6 +404,7 @@ export async function POST(req: NextRequest) {
                 issueDate: data.issueDate ? new Date(data.issueDate) : null,
                 expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
                 status: "APPROVED",
+                recordOrigin: QualificationRecordOrigin.USER_APPLICATION,
               },
               include: {
                 user: {
