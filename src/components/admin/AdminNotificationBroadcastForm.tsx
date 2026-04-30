@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 
 type Target = "ALL" | "ROLE";
-type Role = "USER" | "ORG_ADMIN" | "PF_ADMIN";
+type Role = "USER" | "ORG_ADMIN" | "PF_ADMIN" | "CLUB_ADMIN";
 
 export default function AdminNotificationBroadcastForm() {
   const [target, setTarget] = useState<Target>("ALL");
@@ -100,6 +100,7 @@ export default function AdminNotificationBroadcastForm() {
             <option value="USER">USER</option>
             <option value="ORG_ADMIN">ORG_ADMIN</option>
             <option value="PF_ADMIN">PF_ADMIN</option>
+            <option value="CLUB_ADMIN">CLUB_ADMIN（クラブ管理者・承認済み所属）</option>
           </select>
         </div>
       ) : null}

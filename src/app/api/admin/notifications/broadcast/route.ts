@@ -9,10 +9,13 @@ import { createNotification } from "@/lib/notificationService";
 import { prisma } from "@/server/db";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { MembershipRole, MembershipStatus } from "@prisma/client";
+
+const BROADCAST_ROLES = ["USER", "ORG_ADMIN", "PF_ADMIN", "CLUB_ADMIN"] as const;
 
 const BroadcastSchema = z.object({
   target: z.enum(["ALL", "ROLE"]),
-  role: z.enum(["USER", "ORG_ADMIN", "PF_ADMIN"]).optional(),
+  role: z.enum(BROADCAST_ROLES).optional(),
   title: z.string().min(1).max(120),
   body: z.string().min(1).max(1000),
   linkUrl: z.string().url().optional(),
@@ -42,10 +45,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "role is required for ROLE target" }, { status: 400 });
     }
 
-    const users = await prisma.user.findMany({
-      where: data.target === "ALL" ? {} : { role: data.role },
-      select: { id: true },
-    });
+    let users: { id: string }[];
+    if (data.target === "ALL") {
+      users = await prisma.user.findMany({ where: {}, select: { id: true } });
+    } else if (data.role === "CLUB_ADMIN") {
+      const memberships = await prisma.membership.findMany({
+        where: {
+          role: MembershipRole.ADMIN,
+          status: MembershipStatus.APPROVED,
+        },
+        select: { userId: true },
+      });
+      const uniqueIds = [...new Set(memberships.map((m) => m.userId))];
+      users =
+        uniqueIds.length === 0
+          ? []
+          : await prisma.user.findMany({
+              where: { id: { in: uniqueIds } },
+              select: { id: true },
+            });
+    } else {
+      users = await prisma.user.findMany({
+        where: { role: data.role },
+        select: { id: true },
+      });
+    }
 
     const job = await prisma.notificationJob.create({
       data: {
