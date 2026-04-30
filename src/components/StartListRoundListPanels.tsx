@@ -925,6 +925,33 @@ export function LiveRoundContent({
       if (!m) return;
       setHeatCloseBusy(true);
       try {
+        const draftForHeat = Object.values(marshalDraftOps).filter(
+          (op) => op.heatIndex === displayHeatNumber
+        );
+        if (draftForHeat.length > 0) {
+          const bulkResult = await postParticipantStatusesBulk(m.competitionId, draftForHeat);
+          const failedMap: Record<string, string> = {};
+          for (const f of bulkResult.failed) failedMap[f.opKey] = f.error;
+          setMarshalDraftErrors((prev) => ({ ...prev, ...failedMap }));
+          if (bulkResult.failed.length > 0) {
+            toast.error("未確定チェックの反映に失敗したため、締切を中止しました");
+            return;
+          }
+          const successKeys = new Set(bulkResult.success.map((s) => s.opKey));
+          setMarshalDraftOps((prev) => {
+            if (successKeys.size === 0) return prev;
+            const next = { ...prev };
+            for (const key of successKeys) delete next[key];
+            return next;
+          });
+          setMarshalDraftErrors((prev) => {
+            if (successKeys.size === 0) return prev;
+            const next = { ...prev };
+            for (const key of successKeys) delete next[key];
+            return next;
+          });
+        }
+
         const putRes = await fetch(`/api/competitions/${m.competitionId}/day-ops/heat-marshal`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -952,7 +979,7 @@ export function LiveRoundContent({
         setHeatCloseBusy(false);
       }
     },
-    [m, eventId, patchHeatCallClosed]
+    [m, marshalDraftOps, eventId, patchHeatCallClosed]
   );
 
   const runHeatMarshalReopen = useCallback(

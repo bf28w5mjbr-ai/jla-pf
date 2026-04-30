@@ -268,6 +268,10 @@ export function HeatMarshalLanePanel({
           (serial) => {
             void (async () => {
               if (marshalBlockedRef.current) return;
+              if (Object.keys(marshalDraftOps).length > 0) {
+                toast.error("未確定チェックがあります。先に「確定」で反映してください");
+                return;
+              }
               if (!serial.trim()) {
                 toast.error("タグIDを読み取れませんでした");
                 return;
@@ -304,7 +308,7 @@ export function HeatMarshalLanePanel({
       marshalDialogNfcAbortRef.current = null;
       setNfcDialogStatus("idle");
     };
-  }, [marshalDialogBlocked, heat.heatIndex, runHeatMarshalComplete]);
+  }, [marshalDialogBlocked, heat.heatIndex, marshalDraftOps, runHeatMarshalComplete]);
 
   const listTitleClass = compact ? "text-[11px] font-medium text-foreground" : "text-sm font-medium text-foreground";
   const textSm = compact ? "text-xs" : "text-sm";
