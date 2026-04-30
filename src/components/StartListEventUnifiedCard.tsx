@@ -282,7 +282,7 @@ export default function StartListEventUnifiedCard({
   const refreshDayOpsParticipantPoll = useCallback(async () => {
     if (!showDayOpsShell) return;
     const res = await fetch(
-      `/api/competitions/${competitionId}/day-ops/participant-statuses?eventId=${encodeURIComponent(event.id)}`
+      `/api/competitions/${competitionId}/day-ops/participant-statuses?eventId=${encodeURIComponent(event.id)}&includeCandidates=0`
     );
     if (!res.ok) return;
     const data = (await res.json().catch(() => ({}))) as {
@@ -609,11 +609,18 @@ export default function StartListEventUnifiedCard({
     const tick = () => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       void refreshDayOpsParticipantPoll();
-      void refetchListMarshalHeats();
+      if (activeViewMode !== "normal") {
+        void refetchListMarshalHeats();
+      }
     };
-    const id = setInterval(tick, 7000);
+    const id = setInterval(tick, activeViewMode === "normal" ? 20000 : 7000);
     return () => clearInterval(id);
-  }, [showDayOpsShell, refreshDayOpsParticipantPoll, refetchListMarshalHeats]);
+  }, [
+    showDayOpsShell,
+    activeViewMode,
+    refreshDayOpsParticipantPoll,
+    refetchListMarshalHeats,
+  ]);
 
   useEffect(() => {
     if (!showDayOpsShell) return;
@@ -621,12 +628,21 @@ export default function StartListEventUnifiedCard({
       const d = (ev as CustomEvent<{ competitionId?: string; eventId?: string }>).detail;
       if (d?.competitionId === competitionId && d?.eventId === event.id) {
         void refreshDayOpsParticipantPoll();
-        void refetchListMarshalHeats();
+        if (activeViewMode !== "normal") {
+          void refetchListMarshalHeats();
+        }
       }
     };
     window.addEventListener(JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED, handler);
     return () => window.removeEventListener(JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED, handler);
-  }, [showDayOpsShell, competitionId, event.id, refreshDayOpsParticipantPoll, refetchListMarshalHeats]);
+  }, [
+    showDayOpsShell,
+    competitionId,
+    event.id,
+    activeViewMode,
+    refreshDayOpsParticipantPoll,
+    refetchListMarshalHeats,
+  ]);
 
   const listMarshalHeatsByIndex = useMemo(() => {
     const m = new Map<number, HeatMarshalHeatRow>();

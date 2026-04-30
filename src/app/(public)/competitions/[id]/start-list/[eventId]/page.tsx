@@ -93,15 +93,17 @@ export default async function CompetitionEventStartListPage({
   const session = await verifySessionCached(token);
   const sessionUserId = session?.userId ?? null;
 
-  try {
-    await ensureStartListSnapshotIfEligible(competitionId);
-    await repairStartListSnapshotEmptyHeadHeatsWhenEntriesExist({
-      competitionId,
-      createdByUserId: sessionUserId ?? undefined,
-    });
-  } catch (e) {
-    console.error("ensureStartListSnapshotIfEligible / repair snapshot:", e);
-  }
+  void (async () => {
+    try {
+      await ensureStartListSnapshotIfEligible(competitionId);
+      await repairStartListSnapshotEmptyHeadHeatsWhenEntriesExist({
+        competitionId,
+        createdByUserId: sessionUserId ?? undefined,
+      });
+    } catch (e) {
+      console.error("ensureStartListSnapshotIfEligible / repair snapshot:", e);
+    }
+  })();
 
   const [competition, event] = await Promise.all([
     prisma.competition.findUnique({

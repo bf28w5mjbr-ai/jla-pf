@@ -44,7 +44,23 @@ export async function GET(
       },
       include: {
         event: { select: { id: true, name: true } },
-        rows: true,
+        rows: {
+          select: {
+            id: true,
+            entryType: true,
+            competitionEntryId: true,
+            teamEntryId: true,
+            rank: true,
+            status: true,
+            resultValue: true,
+            unit: true,
+            resultText: true,
+            penaltyValue: true,
+            remarks: true,
+            lane: true,
+            heat: true,
+          },
+        },
       },
       orderBy: [{ eventId: "asc" }, { round: "asc" }],
     });

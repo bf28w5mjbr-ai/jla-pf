@@ -25,7 +25,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const { id: competitionId } = await context.params;
     await assertDayOpsReadAccess(competitionId, request);
 
-    const eventId = new URL(request.url).searchParams.get("eventId");
+    const searchParams = new URL(request.url).searchParams;
+    const eventId = searchParams.get("eventId");
+    const includeCandidates = searchParams.get("includeCandidates") !== "0";
     if (!eventId) {
       return NextResponse.json({ error: "eventIdが必要です" }, { status: 400 });
     }
@@ -46,38 +48,42 @@ export async function GET(request: NextRequest, context: RouteContext) {
         },
         orderBy: { updatedAt: "desc" },
       }),
-      prisma.competitionEntry.findMany({
-        where: {
-          competitionId,
-          status: "SUBMITTED",
-          items: {
-            some: { eventId },
-          },
-        },
-        select: {
-          id: true,
-          userId: true,
-          user: {
-            select: { familyName: true, givenName: true },
-          },
-        },
-      }),
-      prisma.teamEntry.findMany({
-        where: {
-          competitionId,
-          eventId,
-        },
-        select: {
-          id: true,
-          teamName: true,
-          members: {
-            select: {
-              userId: true,
-              user: { select: { familyName: true, givenName: true } },
+      includeCandidates
+        ? prisma.competitionEntry.findMany({
+            where: {
+              competitionId,
+              status: "SUBMITTED",
+              items: {
+                some: { eventId },
+              },
             },
-          },
-        },
-      }),
+            select: {
+              id: true,
+              userId: true,
+              user: {
+                select: { familyName: true, givenName: true },
+              },
+            },
+          })
+        : Promise.resolve([]),
+      includeCandidates
+        ? prisma.teamEntry.findMany({
+            where: {
+              competitionId,
+              eventId,
+            },
+            select: {
+              id: true,
+              teamName: true,
+              members: {
+                select: {
+                  userId: true,
+                  user: { select: { familyName: true, givenName: true } },
+                },
+              },
+            },
+          })
+        : Promise.resolve([]),
     ]);
     const callClosed = isCallClosedForEvent(competition?.startListSettings, eventId);
 
@@ -275,50 +281,50 @@ export async function POST(request: NextRequest, context: RouteContext) {
             select: { userId: true },
           });
           if (members.length > 0) {
-            for (const { userId } of members) {
-              for (const mr of allMarshalRounds) {
-                await tx.competitionParticipantStatus.upsert({
-                  where: {
-                    competitionId_eventId_participantType_competitionEntryId_teamEntryId_teamMemberUserId_marshalRound:
-                      {
-                        competitionId,
-                        eventId,
-                        participantType: "TEAM",
-                        competitionEntryId: null,
-                        teamEntryId,
-                        teamMemberUserId: userId,
-                        marshalRound: mr,
-                      } as never,
-                  },
-                  create: {
-                    competitionId,
-                    eventId,
-                    participantType: "TEAM",
-                    competitionEntryId: null,
-                    teamEntryId,
-                    teamMemberUserId: userId,
-                    marshalRound: mr,
-                    status: "DNS",
-                    reason: reasonResolved,
-                    calledAt: null,
-                    updatedByUserId: operatorUserId,
-                  },
-                  update: {
-                    status: "DNS",
-                    reason: reasonResolved,
-                    calledAt: null,
-                    updatedByUserId: operatorUserId,
-                  },
-                });
-              }
-            }
+            const memberUserIds = members.map(({ userId }) => userId);
+            const allRows = allMarshalRounds.flatMap((mr) =>
+              memberUserIds.map((userId) => ({
+                competitionId,
+                eventId,
+                participantType: "TEAM" as const,
+                competitionEntryId: null,
+                teamEntryId,
+                teamMemberUserId: userId,
+                marshalRound: mr,
+                status: "DNS" as const,
+                reason: reasonResolved,
+                calledAt: null,
+                updatedByUserId: operatorUserId,
+              }))
+            );
+            await tx.competitionParticipantStatus.createMany({
+              data: allRows,
+              skipDuplicates: true,
+            });
+            await tx.competitionParticipantStatus.updateMany({
+              where: {
+                competitionId,
+                eventId,
+                participantType: "TEAM",
+                competitionEntryId: null,
+                teamEntryId,
+                teamMemberUserId: { in: memberUserIds },
+                marshalRound: { in: allMarshalRounds },
+              },
+              data: {
+                status: "DNS",
+                reason: reasonResolved,
+                calledAt: null,
+                updatedByUserId: operatorUserId,
+              },
+            });
             const row = await tx.competitionParticipantStatus.findFirst({
               where: {
                 competitionId,
                 eventId,
                 participantType: "TEAM",
                 teamEntryId,
-                teamMemberUserId: members[0].userId,
+                teamMemberUserId: memberUserIds[0],
               },
               orderBy: { updatedAt: "desc" },
             });
@@ -410,50 +416,50 @@ export async function POST(request: NextRequest, context: RouteContext) {
             select: { userId: true },
           });
           if (members.length > 0) {
-            for (const { userId } of members) {
-              for (const mr of allMarshalRounds) {
-                await tx.competitionParticipantStatus.upsert({
-                  where: {
-                    competitionId_eventId_participantType_competitionEntryId_teamEntryId_teamMemberUserId_marshalRound:
-                      {
-                        competitionId,
-                        eventId,
-                        participantType: "TEAM",
-                        competitionEntryId: null,
-                        teamEntryId,
-                        teamMemberUserId: userId,
-                        marshalRound: mr,
-                      } as never,
-                  },
-                  create: {
-                    competitionId,
-                    eventId,
-                    participantType: "TEAM",
-                    competitionEntryId: null,
-                    teamEntryId,
-                    teamMemberUserId: userId,
-                    marshalRound: mr,
-                    status: "DSQ",
-                    reason: reason || null,
-                    calledAt: null,
-                    updatedByUserId: operatorUserId,
-                  },
-                  update: {
-                    status: "DSQ",
-                    reason: reason || null,
-                    calledAt: null,
-                    updatedByUserId: operatorUserId,
-                  },
-                });
-              }
-            }
+            const memberUserIds = members.map(({ userId }) => userId);
+            const allRows = allMarshalRounds.flatMap((mr) =>
+              memberUserIds.map((userId) => ({
+                competitionId,
+                eventId,
+                participantType: "TEAM" as const,
+                competitionEntryId: null,
+                teamEntryId,
+                teamMemberUserId: userId,
+                marshalRound: mr,
+                status: "DSQ" as const,
+                reason: reason || null,
+                calledAt: null,
+                updatedByUserId: operatorUserId,
+              }))
+            );
+            await tx.competitionParticipantStatus.createMany({
+              data: allRows,
+              skipDuplicates: true,
+            });
+            await tx.competitionParticipantStatus.updateMany({
+              where: {
+                competitionId,
+                eventId,
+                participantType: "TEAM",
+                competitionEntryId: null,
+                teamEntryId,
+                teamMemberUserId: { in: memberUserIds },
+                marshalRound: { in: allMarshalRounds },
+              },
+              data: {
+                status: "DSQ",
+                reason: reason || null,
+                calledAt: null,
+                updatedByUserId: operatorUserId,
+              },
+            });
             const row = await tx.competitionParticipantStatus.findFirst({
               where: {
                 competitionId,
                 eventId,
                 participantType: "TEAM",
                 teamEntryId,
-                teamMemberUserId: members[0].userId,
+                teamMemberUserId: memberUserIds[0],
               },
               orderBy: { updatedAt: "desc" },
             });

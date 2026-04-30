@@ -44,6 +44,11 @@ export async function GET(
 ) {
   try {
     const { id: competitionId, eventId } = await params;
+    const roundParam = req.nextUrl.searchParams.get("round");
+    const roundFilter =
+      roundParam === "HEAT" || roundParam === "SEMI" || roundParam === "FINAL"
+        ? roundParam
+        : null;
     const token = req.cookies.get("session")?.value;
     const session = token ? await verifySession(token) : null;
 
@@ -70,9 +75,28 @@ export async function GET(
       where: {
         competitionId,
         eventId,
+        ...(roundFilter ? { round: roundFilter } : {}),
         ...(canViewUnpublished ? {} : { publishedAt: { not: null } }),
       },
-      include: { rows: true },
+      include: {
+        rows: {
+          select: {
+            id: true,
+            entryType: true,
+            competitionEntryId: true,
+            teamEntryId: true,
+            rank: true,
+            status: true,
+            resultValue: true,
+            unit: true,
+            resultText: true,
+            penaltyValue: true,
+            remarks: true,
+            lane: true,
+            heat: true,
+          },
+        },
+      },
       orderBy: { round: "asc" },
     });
 

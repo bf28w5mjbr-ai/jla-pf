@@ -176,19 +176,40 @@ export function OfficialResultManager({
   }, [competitionId, canEdit]);
 
   useEffect(() => {
+    const loadCandidates = async () => {
+      if (!eventId) return;
+      try {
+        const candidatesRes = await fetch(
+          `/api/competitions/${competitionId}/events/${eventId}/result-candidates`
+        );
+        if (!candidatesRes.ok) {
+          throw new Error("結果候補の取得に失敗しました");
+        }
+        const candidatesJson = (await candidatesRes.json()) as {
+          individualCandidates?: Candidate[];
+          teamCandidates?: Candidate[];
+        };
+        setIndividualCandidates(candidatesJson.individualCandidates ?? []);
+        setTeamCandidates(candidatesJson.teamCandidates ?? []);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "結果候補の取得に失敗しました");
+      }
+    };
+    if (canEdit) {
+      void loadCandidates();
+    }
+  }, [competitionId, eventId, canEdit]);
+
+  useEffect(() => {
     const loadResult = async () => {
       if (!eventId) return;
       try {
         setIsLoading(true);
-        const [resultRes, candidatesRes] = await Promise.all([
-          fetch(`/api/competitions/${competitionId}/events/${eventId}/official-result`),
-          fetch(`/api/competitions/${competitionId}/events/${eventId}/result-candidates`),
-        ]);
+        const resultRes = await fetch(
+          `/api/competitions/${competitionId}/events/${eventId}/official-result?round=${encodeURIComponent(round)}`
+        );
         if (!resultRes.ok) {
           throw new Error("既存結果の取得に失敗しました");
-        }
-        if (!candidatesRes.ok) {
-          throw new Error("結果候補の取得に失敗しました");
         }
 
         const resultJson = (await resultRes.json()) as { results?: ApiResult[] };
@@ -217,13 +238,6 @@ export function OfficialResultManager({
           setNote("");
           setRows([]);
         }
-
-        const candidatesJson = (await candidatesRes.json()) as {
-          individualCandidates?: Candidate[];
-          teamCandidates?: Candidate[];
-        };
-        setIndividualCandidates(candidatesJson.individualCandidates ?? []);
-        setTeamCandidates(candidatesJson.teamCandidates ?? []);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "読み込みに失敗しました");
       } finally {
