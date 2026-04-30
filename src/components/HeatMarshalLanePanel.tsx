@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   dayOpsParticipantStatusLabelJa,
   isDayOpsTerminalParticipantStatus,
 } from "@/lib/dayOpsParticipantStatusDisplay";
-import { postHeatMarshalComplete } from "@/lib/heatMarshalApi";
+import { postHeatMarshalComplete, postParticipantStatusesBulk } from "@/lib/heatMarshalApi";
 import { isNfcScanSupportedSync, startNfcScanSession } from "@/lib/nfc/nfcScanSession";
 import { cn } from "@/lib/utils";
 import {
@@ -83,6 +84,24 @@ export function HeatMarshalLanePanel({
   marshalBlockedRef.current = marshalDialogBlocked;
   const [participants, setParticipants] = useState<HeatMarshalParticipant[]>(heat.participants);
   const [marshalPendingKey, setMarshalPendingKey] = useState<string | null>(null);
+  const [marshalDraftOps, setMarshalDraftOps] = useState<
+    Record<
+      string,
+      {
+        opKey: string;
+        eventId: string;
+        round: MarshalRoundKey;
+        heatIndex: number;
+        participantType: "INDIVIDUAL" | "TEAM";
+        competitionEntryId?: string;
+        teamEntryId?: string;
+        teamMemberUserId?: string | null;
+        status: "CALLED" | "PENDING";
+      }
+    >
+  >({});
+  const [marshalDraftErrors, setMarshalDraftErrors] = useState<Record<string, string>>({});
+  const [marshalBulkSubmitting, setMarshalBulkSubmitting] = useState(false);
   const [nfcDialogStatus, setNfcDialogStatus] = useState<
     "idle" | "listening" | "unsupported" | "error"
   >("idle");
@@ -96,6 +115,8 @@ export function HeatMarshalLanePanel({
 
   useEffect(() => {
     setParticipants(heat.participants);
+    setMarshalDraftOps({});
+    setMarshalDraftErrors({});
   }, [heat]);
 
   const applyMarshalResponse = useCallback((data: { lane?: unknown }) => {
@@ -104,6 +125,11 @@ export function HeatMarshalLanePanel({
     setParticipants((prev) =>
       prev.map((p) => (p.lane === lane ? { ...p, status: "CALLED" } : p))
     );
+  }, []);
+
+  const applyPendingResponse = useCallback((lane: number) => {
+    if (!Number.isFinite(lane)) return;
+    setParticipants((prev) => prev.map((p) => (p.lane === lane ? { ...p, status: "PENDING" } : p)));
   }, []);
 
   const runHeatMarshalComplete = useCallback(
@@ -153,6 +179,66 @@ export function HeatMarshalLanePanel({
     },
     [applyMarshalResponse, competitionId, eventId, marshalRound, onSuccess]
   );
+
+  const queueMarshalDraftToggle = useCallback(
+    (p: HeatMarshalParticipant, targetStatus: "CALLED" | "PENDING") => {
+      const pKey = marshalParticipantKey(p);
+      setMarshalDraftErrors((prev) => {
+        if (!prev[pKey]) return prev;
+        const next = { ...prev };
+        delete next[pKey];
+        return next;
+      });
+      if (targetStatus === "CALLED") {
+        applyMarshalResponse({ lane: p.lane });
+      } else {
+        applyPendingResponse(p.lane);
+      }
+      setMarshalDraftOps((prev) => ({
+        ...prev,
+        [pKey]: {
+          opKey: pKey,
+          eventId,
+          round: marshalRound,
+          heatIndex: heat.heatIndex,
+          participantType: p.participantType,
+          ...(p.participantType === "INDIVIDUAL"
+            ? { competitionEntryId: p.competitionEntryId ?? undefined }
+            : { teamEntryId: p.teamEntryId ?? undefined, teamMemberUserId: p.teamMemberUserId ?? null }),
+          status: targetStatus,
+        },
+      }));
+    },
+    [applyMarshalResponse, applyPendingResponse, eventId, heat.heatIndex, marshalRound]
+  );
+
+  const submitMarshalDraftOps = useCallback(async () => {
+    const operations = Object.values(marshalDraftOps);
+    if (operations.length === 0) return;
+    setMarshalBulkSubmitting(true);
+    try {
+      const result = await postParticipantStatusesBulk(competitionId, operations);
+      const failedMap: Record<string, string> = {};
+      for (const f of result.failed) failedMap[f.opKey] = f.error;
+      setMarshalDraftErrors(failedMap);
+      setMarshalDraftOps((prev) => {
+        if (result.failed.length === 0) return {};
+        const next: typeof prev = {};
+        for (const f of result.failed) {
+          if (prev[f.opKey]) next[f.opKey] = prev[f.opKey];
+        }
+        return next;
+      });
+      if (result.success.length > 0) toast.success(`${result.success.length}件を確定しました`);
+      if (result.failed.length > 0) toast.error(`${result.failed.length}件の確定に失敗しました`);
+      await onSuccess?.();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "一括確定に失敗しました");
+      await onSuccess?.();
+    } finally {
+      setMarshalBulkSubmitting(false);
+    }
+  }, [competitionId, marshalDraftOps, onSuccess]);
 
   useEffect(() => {
     if (marshalDialogBlocked) {
@@ -224,6 +310,7 @@ export function HeatMarshalLanePanel({
   const textSm = compact ? "text-xs" : "text-sm";
   const textXs = compact ? "text-[10px]" : "text-xs";
   const boxSize = compact ? "size-3.5" : "size-4";
+  const marshalDraftCount = Object.keys(marshalDraftOps).length;
 
   return (
     <>
@@ -240,6 +327,41 @@ export function HeatMarshalLanePanel({
       ) : (
         <>
           <div className="space-y-1.5">
+            {marshalDraftCount > 0 ? (
+              <div className={cn("rounded-md border border-primary/30 bg-primary/5 px-2 py-1.5", textXs)}>
+                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                  <span className="font-semibold text-foreground">未確定 {marshalDraftCount}件</span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-6 px-2 text-[10px]"
+                      disabled={marshalBulkSubmitting}
+                      onClick={() => {
+                        setMarshalDraftOps({});
+                        setMarshalDraftErrors({});
+                        setParticipants(heat.participants);
+                      }}
+                    >
+                      取り消し
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-6 px-2 text-[10px]"
+                      disabled={marshalBulkSubmitting}
+                      onClick={() => void submitMarshalDraftOps()}
+                    >
+                      {marshalBulkSubmitting ? "確定中…" : "確定"}
+                    </Button>
+                  </div>
+                </div>
+                {Object.keys(marshalDraftErrors).length > 0 ? (
+                  <p className="mt-1 text-destructive">失敗した行があります。修正して再度確定してください。</p>
+                ) : null}
+              </div>
+            ) : null}
             <p className={listTitleClass}>
               レーン
               <span className="font-normal text-muted-foreground">
@@ -251,10 +373,10 @@ export function HeatMarshalLanePanel({
                 const pKey = marshalParticipantKey(p);
                 const done = p.status === "CALLED";
                 const isTerminal = isDayOpsTerminalParticipantStatus(p.status);
-                const globallyBusy = marshalPendingKey !== null;
+                const globallyBusy = marshalPendingKey !== null || marshalBulkSubmitting;
                 const rowBusy = marshalPendingKey === pKey;
                 const checkboxDisabled =
-                  marshalDialogBlocked || globallyBusy || isTerminal || done;
+                  marshalDialogBlocked || globallyBusy || isTerminal;
                 const inputId = `marshal-h${heat.heatIndex}-lane${p.lane}-${pKey.replace(/[^a-zA-Z0-9_-]/g, "")}`;
                 const rowInteractive = !done && !isTerminal && !marshalDialogBlocked && !globallyBusy;
 
@@ -293,26 +415,17 @@ export function HeatMarshalLanePanel({
                             compact && "rounded-[5px] [&_svg]:size-2.5",
                             done &&
                               "border-emerald-600 data-[state=checked]:border-emerald-600 data-[state=checked]:bg-emerald-600",
-                            rowBusy && "invisible"
+                            rowBusy && "invisible",
+                            marshalDraftErrors[pKey] && "border-destructive"
                           )}
                           onCheckedChange={(checked) => {
-                            if (checked !== true || done) return;
-                            void (async () => {
-                              setMarshalPendingKey(pKey);
-                              try {
-                                await runHeatMarshalComplete({
-                                  mode: "manual",
-                                  heatIndex: heat.heatIndex,
-                                  participant: p,
-                                });
-                              } catch (error) {
-                                toast.error(
-                                  error instanceof Error ? error.message : "マーシャルに失敗しました"
-                                );
-                              } finally {
-                                setMarshalPendingKey(null);
-                              }
-                            })();
+                            if (checked === true && !done) {
+                              queueMarshalDraftToggle(p, "CALLED");
+                              return;
+                            }
+                            if (checked === false && done) {
+                              queueMarshalDraftToggle(p, "PENDING");
+                            }
                           }}
                         />
                         {rowBusy ? (
@@ -337,6 +450,11 @@ export function HeatMarshalLanePanel({
                         </div>
                         {!compact ? (
                           <div className="mt-0.5 text-xs text-muted-foreground/90">状態: {p.status}</div>
+                        ) : null}
+                        {marshalDraftErrors[pKey] ? (
+                          <div className="mt-0.5 text-[10px] text-destructive">
+                            {marshalDraftErrors[pKey]}
+                          </div>
                         ) : null}
                       </div>
                       <div className="flex shrink-0 items-start pt-0.5">

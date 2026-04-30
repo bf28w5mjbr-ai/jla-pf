@@ -24,6 +24,7 @@ import {
 } from "@/components/HeatMarshalLanePanel";
 import {
   MarshalStartListLaneCheckbox,
+  type MarshalDraftTogglePayload,
   type MarshalResultPayload,
 } from "@/components/MarshalStartListWidgets";
 import { ResultStartListLaneCheckbox } from "@/components/ResultStartListWidgets";
@@ -33,7 +34,7 @@ import {
   postHeatResultReorder,
   type HeatResultCaptureRow,
 } from "@/lib/heatResultCaptureApi";
-import { postHeatMarshalComplete } from "@/lib/heatMarshalApi";
+import { postHeatMarshalComplete, postParticipantStatusesBulk } from "@/lib/heatMarshalApi";
 import {
   buildParticipantStatusRecordForRound,
   type ParticipantStatusRowForScope,
@@ -57,6 +58,32 @@ function foldTeamMarshalStatuses(rows: HeatMarshalParticipant[]): string {
   if (s.every((x) => x === "CALLED" || x === "CHECKED_IN")) return "CALLED";
   if (s.some((x) => x === "MARSHAL_ABSENT")) return "MARSHAL_ABSENT";
   return "PENDING";
+}
+
+function applyMarshalDraftOpsToHeats(
+  heats: HeatMarshalHeatRow[],
+  draftOps: Record<string, { opKey: string; heatIndex: number; status: "CALLED" | "PENDING" }>
+): HeatMarshalHeatRow[] {
+  const ops = Object.values(draftOps);
+  if (ops.length === 0) return heats;
+  const byHeat = new Map<number, Map<string, "CALLED" | "PENDING">>();
+  for (const op of ops) {
+    const map = byHeat.get(op.heatIndex) ?? new Map<string, "CALLED" | "PENDING">();
+    map.set(op.opKey, op.status);
+    byHeat.set(op.heatIndex, map);
+  }
+  return heats.map((heat) => {
+    const map = byHeat.get(heat.heatIndex);
+    if (!map || map.size === 0) return heat;
+    return {
+      ...heat,
+      participants: heat.participants.map((p) => {
+        const pKey = marshalParticipantKey(p);
+        const nextStatus = map.get(pKey);
+        return nextStatus ? { ...p, status: nextStatus } : p;
+      }),
+    };
+  });
 }
 
 /** 同一チームの `T:teamId:userId` 行を `buildParticipantDayOpsStatusByKey` 相当に畳む。レガシー `T:teamId` のみのときはその値。 */
@@ -568,6 +595,29 @@ export function LiveRoundContent({
     }
     return participantStatusByKey ?? {};
   }, [participantStatusRows, marshalRoundForDisplay, participantStatusByKey]);
+  const statusUpdatedAtByKey = useMemo(() => {
+    const out: Record<string, string> = {};
+    if (!participantStatusRows?.length || !marshalRoundForDisplay) return out;
+    for (const row of participantStatusRows) {
+      if (row.marshalRound !== marshalRoundForDisplay) continue;
+      const pType = row.participantType === "TEAM" ? "TEAM" : "INDIVIDUAL";
+      const teamMemberUserId = (row as { teamMemberUserId?: string | null }).teamMemberUserId;
+      const key =
+        pType === "INDIVIDUAL"
+          ? `I:${row.competitionEntryId ?? ""}`
+          : teamMemberUserId
+            ? `T:${row.teamEntryId ?? ""}:${teamMemberUserId}`
+            : `T:${row.teamEntryId ?? ""}`;
+      if (!key) continue;
+      const ts = row.updatedAt instanceof Date ? row.updatedAt : new Date(row.updatedAt);
+      if (!Number.isFinite(ts.getTime())) continue;
+      const prev = out[key];
+      if (!prev || new Date(prev).getTime() < ts.getTime()) {
+        out[key] = ts.toISOString();
+      }
+    }
+    return out;
+  }, [participantStatusRows, marshalRoundForDisplay]);
   const m = startListMarshal ?? null;
   const mRef = useRef(m);
   mRef.current = m;
@@ -583,6 +633,25 @@ export function LiveRoundContent({
   const [localMarshalHeats, setLocalMarshalHeats] = useState<HeatMarshalHeatRow[]>([]);
   const [localResultRows, setLocalResultRows] = useState<HeatResultCaptureRow[]>([]);
   const [marshalPendingKey, setMarshalPendingKey] = useState<string | null>(null);
+  const [marshalDraftOps, setMarshalDraftOps] = useState<
+    Record<
+      string,
+      {
+        opKey: string;
+        eventId: string;
+        round: "HEAT" | "SEMI" | "FINAL";
+        heatIndex: number;
+        participantType: "INDIVIDUAL" | "TEAM";
+        competitionEntryId?: string;
+        teamEntryId?: string;
+        teamMemberUserId?: string | null;
+        status: "CALLED" | "PENDING";
+        lastKnownUpdatedAt?: string | null;
+      }
+    >
+  >({});
+  const [marshalDraftErrors, setMarshalDraftErrors] = useState<Record<string, string>>({});
+  const [marshalBulkSubmitting, setMarshalBulkSubmitting] = useState(false);
   const [resultCapturePendingKey, setResultCapturePendingKey] = useState<string | null>(null);
   const [marshalResult, setMarshalResult] = useState<MarshalResultPayload | null>(null);
   const [heatCloseTarget, setHeatCloseTarget] = useState<number | null>(null);
@@ -617,8 +686,8 @@ export function LiveRoundContent({
   const resultInputOrderLabel = resultInputOrder === "asc" ? "昇順入力" : "降順入力";
 
   useEffect(() => {
-    setLocalMarshalHeats(m?.heats ?? []);
-  }, [m?.heats]);
+    setLocalMarshalHeats(applyMarshalDraftOpsToHeats(m?.heats ?? [], marshalDraftOps));
+  }, [m?.heats, marshalDraftOps]);
 
   const marshalHeatByDisplayNumber = useMemo(() => {
     const map = new Map<number, HeatMarshalHeatRow>();
@@ -755,6 +824,84 @@ export function LiveRoundContent({
       )
     );
   }, []);
+
+  const queueMarshalDraftToggle = useCallback(
+    (payload: MarshalDraftTogglePayload) => {
+      const { participant, heatIndex, targetStatus, opKey } = payload;
+      setMarshalDraftErrors((prev) => {
+        if (!prev[opKey]) return prev;
+        const next = { ...prev };
+        delete next[opKey];
+        return next;
+      });
+      if (targetStatus === "CALLED") {
+        patchLaneCalled(heatIndex, participant.lane);
+      } else {
+        patchLanePending(heatIndex, participant.lane);
+      }
+      setMarshalDraftOps((prev) => ({
+        ...prev,
+        [opKey]: {
+          opKey,
+          eventId,
+          round: (m?.round ?? "HEAT") as "HEAT" | "SEMI" | "FINAL",
+          heatIndex,
+          participantType: participant.participantType,
+          ...(participant.participantType === "INDIVIDUAL"
+            ? { competitionEntryId: participant.competitionEntryId ?? undefined }
+            : {
+                teamEntryId: participant.teamEntryId ?? undefined,
+                teamMemberUserId: participant.teamMemberUserId ?? null,
+              }),
+          status: targetStatus,
+          lastKnownUpdatedAt: statusUpdatedAtByKey[opKey] ?? null,
+        },
+      }));
+    },
+    [eventId, m?.round, patchLaneCalled, patchLanePending, statusUpdatedAtByKey]
+  );
+
+  const discardMarshalDrafts = useCallback(() => {
+    setMarshalDraftOps({});
+    setMarshalDraftErrors({});
+    if (m) {
+      void m.onMarshalSuccess();
+    }
+  }, [m]);
+
+  const submitMarshalDrafts = useCallback(async () => {
+    if (!m) return;
+    const operations = Object.values(marshalDraftOps);
+    if (operations.length === 0) return;
+    setMarshalBulkSubmitting(true);
+    try {
+      const result = await postParticipantStatusesBulk(m.competitionId, operations);
+      const failedMap: Record<string, string> = {};
+      for (const f of result.failed) failedMap[f.opKey] = f.error;
+      setMarshalDraftErrors(failedMap);
+      setMarshalDraftOps((prev) => {
+        if (result.failed.length === 0) return {};
+        const next: typeof prev = {};
+        for (const f of result.failed) {
+          if (prev[f.opKey]) next[f.opKey] = prev[f.opKey];
+        }
+        return next;
+      });
+      if (result.success.length > 0) {
+        toast.success(`${result.success.length}件を確定しました`);
+      }
+      if (result.failed.length > 0) {
+        toast.error(`${result.failed.length}件の確定に失敗しました。行ごとのエラーを確認してください`);
+      }
+      await m.onMarshalSuccess();
+      setMarshalResult(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "一括確定に失敗しました");
+      await m.onMarshalSuccess();
+    } finally {
+      setMarshalBulkSubmitting(false);
+    }
+  }, [m, marshalDraftOps]);
 
   const patchHeatCallClosed = useCallback((heatIndex1Based: number) => {
     const iso = new Date().toISOString();
@@ -1281,16 +1428,11 @@ export function LiveRoundContent({
           <MarshalStartListLaneCheckbox
             participant={participant}
             heatIndex={displayHeatNumber}
-            competitionId={marshal.competitionId}
-            eventId={eventId}
-            marshalRound={marshal.round}
             marshalDialogBlocked={heatMarshalBlocked}
-            marshalPendingKey={marshalPendingKey}
-            setMarshalPendingKey={setMarshalPendingKey}
-            onMarshalResult={handleMarshalResult}
-            onLaneCalled={(lane) => patchLaneCalled(displayHeatNumber, lane)}
+            marshalPendingKey={marshalBulkSubmitting ? "bulk-commit" : marshalPendingKey}
+            onToggleDraft={queueMarshalDraftToggle}
+            draftError={participant ? marshalDraftErrors[marshalParticipantKey(participant)] : undefined}
             allowUnsetCalled={allowUnsetCalled}
-            onUnsetCalled={(lane) => patchLanePending(displayHeatNumber, lane)}
           />
         )}
         <span
@@ -1571,6 +1713,41 @@ export function LiveRoundContent({
       ) : null}
       {marshalInline && m ? (
         <div className="space-y-1.5">
+          {Object.keys(marshalDraftOps).length > 0 ? (
+            <div className="rounded-md border border-primary/30 bg-primary/5 px-2 py-1.5 text-[10px]">
+              <div className="flex flex-wrap items-center justify-between gap-1.5">
+                <span className="font-semibold text-foreground">
+                  未確定 {Object.keys(marshalDraftOps).length}件
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-2 text-[10px]"
+                    disabled={marshalBulkSubmitting}
+                    onClick={discardMarshalDrafts}
+                  >
+                    取り消し
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-6 px-2 text-[10px]"
+                    disabled={marshalBulkSubmitting}
+                    onClick={() => void submitMarshalDrafts()}
+                  >
+                    {marshalBulkSubmitting ? "確定中…" : "確定"}
+                  </Button>
+                </div>
+              </div>
+              {Object.keys(marshalDraftErrors).length > 0 ? (
+                <p className="mt-1 text-[10px] text-destructive">
+                  {Object.keys(marshalDraftErrors).length}件でエラーがあります。再確認して再度確定してください。
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           {!m.loading && !m.marshalOpsBlocked && !m.isCallClosed ? (
             <p
               className={cn(

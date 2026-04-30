@@ -9,6 +9,35 @@ export type HeatMarshalCompleteResponse = {
   alreadyMarshalled?: boolean;
 };
 
+export type ParticipantStatusBulkOperation = {
+  opKey: string;
+  eventId: string;
+  round: "HEAT" | "SEMI" | "FINAL";
+  heatIndex: number;
+  participantType: "INDIVIDUAL" | "TEAM";
+  competitionEntryId?: string;
+  teamEntryId?: string;
+  teamMemberUserId?: string | null;
+  status: "CALLED" | "PENDING";
+  reason?: string;
+  lastKnownUpdatedAt?: string | null;
+};
+
+export type ParticipantStatusBulkResponse = {
+  success: Array<{
+    opKey: string;
+    lane: number;
+    label: string;
+    status: "CALLED" | "PENDING";
+    alreadyMarshalled?: boolean;
+  }>;
+  failed: Array<{
+    opKey: string;
+    error: string;
+    errorCode?: string;
+  }>;
+};
+
 export async function postHeatMarshalComplete(
   competitionId: string,
   body: Record<string, unknown>
@@ -61,4 +90,37 @@ export async function postMarshalRevertPending(
   if (!res.ok) {
     throw new Error(typeof data.error === "string" ? data.error : "召集の取り消しに失敗しました");
   }
+}
+
+export async function postParticipantStatusesBulk(
+  competitionId: string,
+  operations: ParticipantStatusBulkOperation[]
+): Promise<ParticipantStatusBulkResponse> {
+  const res = await fetch(`/api/competitions/${competitionId}/day-ops/participant-statuses/bulk`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ operations }),
+  });
+  const data = (await res.json().catch(() => ({}))) as
+    | ParticipantStatusBulkResponse
+    | { error?: string; errorCode?: string };
+  if (!res.ok) {
+    throw new DayOpsFetchError(
+      typeof (data as { error?: string }).error === "string"
+        ? (data as { error?: string }).error!
+        : "一括反映に失敗しました",
+      res.status,
+      typeof (data as { errorCode?: string }).errorCode === "string"
+        ? (data as { errorCode?: string }).errorCode
+        : undefined
+    );
+  }
+  return {
+    success: Array.isArray((data as ParticipantStatusBulkResponse).success)
+      ? (data as ParticipantStatusBulkResponse).success
+      : [],
+    failed: Array.isArray((data as ParticipantStatusBulkResponse).failed)
+      ? (data as ParticipantStatusBulkResponse).failed
+      : [],
+  };
 }
