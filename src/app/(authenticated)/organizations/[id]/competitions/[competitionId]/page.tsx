@@ -1,4 +1,5 @@
 import type { ComponentProps } from "react";
+import type { Prisma } from "@prisma/client";
 import { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
@@ -32,7 +33,6 @@ import TechnicalOfficialSettingsEditor from "@/components/TechnicalOfficialSetti
 import OfficialAttendanceSection from "@/components/OfficialAttendanceSection";
 import CompetitionStatusToggleButton from "@/components/CompetitionStatusToggleButton";
 import CompetitionBasicInfoEditor from "@/components/CompetitionBasicInfoEditor";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { loadCompetitionMutationState } from "@/lib/competitionPublishedEditRules";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -40,9 +40,14 @@ import { formatCompactJaDateRange } from "@/lib/datetimeLocal";
 import { relationLogosWithDisplaySrc } from "@/lib/relationLogos";
 import {
   parseCompetitionManagementTab,
+  type CompetitionManagementTabValue,
 } from "@/lib/competitionManagementTab";
+import { getCompetitionManagementAccess } from "@/lib/competitionManagementAccess";
 import CopyAbsoluteUrlButton from "@/components/public/CopyAbsoluteUrlButton";
-import { listTechnicalOfficialShortagesForCompetition } from "@/lib/technicalOfficialQueries";
+import {
+  listTechnicalOfficialShortagesForCompetition,
+  type TechnicalOfficialShortageRow,
+} from "@/lib/technicalOfficialQueries";
 import CompetitionManagementTabsClient from "@/components/admin/CompetitionManagementTabsClient";
 import { OfficialRecruitmentToggleButton } from "@/components/OfficialRecruitmentToggleButton";
 import { TechnicalOfficialRecruitmentToggleButton } from "@/components/TechnicalOfficialRecruitmentToggleButton";
@@ -55,6 +60,91 @@ import OfficialAttendancesCsvExportButton, {
 import CompetitionDayOpsPassphraseEditor from "@/components/CompetitionDayOpsPassphraseEditor";
 
 type EntrySettingsEditorProps = ComponentProps<typeof CompetitionEntrySettingsEditor>;
+
+type OfficialApplicationForCsv = {
+  createdAt: Date;
+  status: string;
+  positionName: string;
+  message: string | null;
+  user: {
+    familyName: string;
+    givenName: string;
+    email: string | null;
+    phoneNumber: string | null;
+  };
+};
+
+type OfficialAttendanceForCsv = {
+  attendanceDate: Date;
+  method: string;
+  user: OfficialApplicationForCsv["user"];
+};
+
+function buildCompetitionManagementInclude(
+  userId: string,
+  activeTab: CompetitionManagementTabValue
+): Prisma.CompetitionInclude {
+  const officialTab: Prisma.CompetitionInclude =
+    activeTab === "official"
+      ? {
+          officialApplications: {
+            orderBy: { createdAt: "desc" },
+            include: {
+              user: {
+                select: {
+                  familyName: true,
+                  givenName: true,
+                  email: true,
+                  phoneNumber: true,
+                },
+              },
+            },
+          },
+          officialAttendances: {
+            orderBy: [{ attendanceDate: "desc" }, { createdAt: "desc" }],
+            include: {
+              user: {
+                select: {
+                  familyName: true,
+                  givenName: true,
+                  email: true,
+                  phoneNumber: true,
+                },
+              },
+            },
+          },
+        }
+      : {};
+
+  return {
+    organization: {
+      include: {
+        admins: {
+          where: { userId },
+        },
+      },
+    },
+    technicalOfficialQualificationTemplate: {
+      select: { id: true, name: true, kind: true },
+    },
+    announcements: {
+      orderBy: { createdAt: "desc" },
+    },
+    attachments: {
+      orderBy: { createdAt: "desc" },
+    },
+    galleryPhotos: {
+      orderBy: { createdAt: "asc" },
+    },
+    events: {
+      orderBy: { displayOrder: "asc" },
+    },
+    ageCategories: {
+      orderBy: { displayOrder: "asc" },
+    },
+    ...officialTab,
+  };
+}
 
 export const dynamic = "force-dynamic";
 
@@ -72,32 +162,17 @@ export async function generateMetadata({
     return genericTitle;
   }
 
-  const competition = await prisma.competition.findUnique({
-    where: { id: competitionId },
-    select: {
-      name: true,
-      organizationId: true,
-      organization: {
-        select: {
-          admins: {
-            where: { userId: session.userId },
-            select: { role: true },
-          },
-        },
-      },
-    },
-  });
-
-  if (
-    !competition ||
-    competition.organizationId !== organizationId ||
-    !hasOrgAdminAccess(competition.organization.admins)
-  ) {
+  const access = await getCompetitionManagementAccess(
+    organizationId,
+    competitionId,
+    session.userId
+  );
+  if (access.kind !== "ok") {
     return genericTitle;
   }
 
   return {
-    title: `${competition.name || "大会"} | Bluvium`,
+    title: `${access.name || "大会"} | Bluvium`,
   };
 }
 
@@ -119,83 +194,45 @@ export default async function CompetitionDetailPage({
     redirect("/login");
   }
 
-  const competition = await prisma.competition.findUnique({
-    where: { id: competitionId },
-    include: {
-      organization: {
-        include: {
-          admins: {
-            where: { userId: session.userId },
-          },
-        },
-      },
-      technicalOfficialQualificationTemplate: {
-        select: { id: true, name: true, kind: true },
-      },
-      announcements: {
-        orderBy: { createdAt: "desc" },
-      },
-      attachments: {
-        orderBy: { createdAt: "desc" },
-      },
-      galleryPhotos: {
-        orderBy: { createdAt: "asc" },
-      },
-      events: {
-        orderBy: { displayOrder: "asc" },
-      },
-      ageCategories: {
-        orderBy: { displayOrder: "asc" },
-      },
-      officialApplications: {
-        orderBy: { createdAt: "desc" },
-        include: {
-          user: {
-            select: {
-              familyName: true,
-              givenName: true,
-              email: true,
-              phoneNumber: true,
-            },
-          },
-        },
-      },
-      officialAttendances: {
-        orderBy: [{ attendanceDate: "desc" }, { createdAt: "desc" }],
-        include: {
-          user: {
-            select: {
-              familyName: true,
-              givenName: true,
-              email: true,
-              phoneNumber: true,
-            },
-          },
-        },
-      },
-    },
-  });
+  const loadOfficialTab = activeTab === "official";
+
+  const [access, competition, entryMutationState] = await Promise.all([
+    getCompetitionManagementAccess(organizationId, competitionId, session.userId),
+    prisma.competition.findUnique({
+      where: { id: competitionId },
+      include: buildCompetitionManagementInclude(session.userId, activeTab),
+    }),
+    loadCompetitionMutationState(competitionId),
+  ]);
 
   if (!competition) {
     notFound();
   }
+  if (access.kind === "not_found" || access.kind === "wrong_org") {
+    notFound();
+  }
+  if (access.kind === "forbidden") {
+    redirect(`/organizations/${organizationId}`);
+  }
+
+  const officialApplications: OfficialApplicationForCsv[] = loadOfficialTab
+    ? (competition as unknown as { officialApplications: OfficialApplicationForCsv[] })
+        .officialApplications
+    : [];
+  const officialAttendances: OfficialAttendanceForCsv[] = loadOfficialTab
+    ? (competition as unknown as { officialAttendances: OfficialAttendanceForCsv[] })
+        .officialAttendances
+    : [];
 
   const [qualificationTemplates, shortageRows] = await Promise.all([
     prisma.qualificationTemplate.findMany({
       orderBy: { name: "asc" },
       select: { id: true, name: true, kind: true },
     }),
-    listTechnicalOfficialShortagesForCompetition(prisma, competitionId),
+    loadOfficialTab
+      ? listTechnicalOfficialShortagesForCompetition(prisma, competitionId)
+      : Promise.resolve([] as TechnicalOfficialShortageRow[]),
   ]);
-
-  // 大会が指定された団体に属していることを確認
-  if (competition.organizationId !== organizationId) {
-    notFound();
-  }
-
-  if (!hasOrgAdminAccess(competition.organization.admins)) {
-    redirect(`/organizations/${organizationId}`);
-  }
 
   const canEdit = true;
 
@@ -242,8 +279,6 @@ export default async function CompetitionDetailPage({
       ? competition.maxEventEntriesPerPerson
       : null;
 
-  const entryMutationState = await loadCompetitionMutationState(competitionId);
-
   const [entryRowCount, teamEntryRowCount, siblingCompetitionsForCopy] = await Promise.all([
     prisma.competitionEntry.count({ where: { competitionId } }),
     prisma.teamEntry.count({ where: { competitionId } }),
@@ -269,7 +304,7 @@ export default async function CompetitionDetailPage({
     APPROVED: "受付済",
     REJECTED: "却下",
   } as const;
-  const officialApplicationsCsvRows: OfficialApplicationsCsvRow[] = competition.officialApplications.map(
+  const officialApplicationsCsvRows: OfficialApplicationsCsvRow[] = officialApplications.map(
     (application) => ({
       応募日時: application.createdAt.toLocaleString("ja-JP", {
         year: "numeric",
@@ -278,7 +313,9 @@ export default async function CompetitionDetailPage({
         hour: "2-digit",
         minute: "2-digit",
       }),
-      応募状態: officialStatusLabel[application.status] ?? application.status,
+      応募状態:
+        officialStatusLabel[application.status as keyof typeof officialStatusLabel] ??
+        application.status,
       氏名: `${application.user.familyName} ${application.user.givenName}`,
       メールアドレス: application.user.email ?? "",
       電話番号: application.user.phoneNumber ?? "",
@@ -298,7 +335,7 @@ export default async function CompetitionDetailPage({
       : competition.competitionType === "B"
         ? "0.5"
         : "0.0";
-  const officialAttendancesCsvRows: OfficialAttendancesCsvRow[] = competition.officialAttendances.map(
+  const officialAttendancesCsvRows: OfficialAttendancesCsvRow[] = officialAttendances.map(
     (attendance) => ({
       出席日: attendance.attendanceDate.toLocaleDateString("ja-JP"),
       氏名: `${attendance.user.familyName} ${attendance.user.givenName}`,
@@ -309,16 +346,16 @@ export default async function CompetitionDetailPage({
       カウント追加分: attendanceCountAdditionLabel,
     })
   );
-  const officialPendingCount = competition.officialApplications.filter(
+  const officialPendingCount = officialApplications.filter(
     (application) => application.status === "PENDING"
   ).length;
-  const officialApprovedCount = competition.officialApplications.filter(
+  const officialApprovedCount = officialApplications.filter(
     (application) => application.status === "APPROVED"
   ).length;
-  const officialRejectedCount = competition.officialApplications.filter(
+  const officialRejectedCount = officialApplications.filter(
     (application) => application.status === "REJECTED"
   ).length;
-  const officialAttendanceCount = competition.officialAttendances.length;
+  const officialAttendanceCount = officialAttendances.length;
 
   return (
     <div className="app-page mx-auto w-full min-w-0 max-w-6xl space-y-5 px-4 py-6 sm:space-y-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">

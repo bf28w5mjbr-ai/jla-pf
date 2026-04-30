@@ -178,44 +178,45 @@ export default async function OrganizationDetailPage({
     }
   }
 
-  let organization = await prisma.organization.findUnique({
-    where: { id },
-    include: {
-      admins: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              familyName: true,
-              givenName: true,
-              email: true,
+  const [orgRow, competitionTotalCount, competitions] = await Promise.all([
+    prisma.organization.findUnique({
+      where: { id },
+      include: {
+        admins: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                familyName: true,
+                givenName: true,
+                email: true,
+              },
             },
           },
+          orderBy: [
+            { role: "asc" }, // ADMIN, MEMBER の順
+            { createdAt: "asc" },
+          ],
         },
-        orderBy: [
-          { role: "asc" }, // ADMIN, MEMBER の順
-          { createdAt: "asc" },
-        ],
-      },
-      createdBy: {
-        select: {
-          familyName: true,
-          givenName: true,
+        createdBy: {
+          select: {
+            familyName: true,
+            givenName: true,
+          },
         },
       },
-    },
-  });
+    }),
+    prisma.competition.count({
+      where: { organizationId: id },
+    }),
+    prisma.competition.findMany({
+      where: { organizationId: id },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    }),
+  ]);
 
-  const competitionTotalCount = await prisma.competition.count({
-    where: { organizationId: id },
-  });
-
-  // 大会一覧（直近のみ。件数は competitionTotalCount を参照）
-  const competitions = await prisma.competition.findMany({
-    where: { organizationId: id },
-    orderBy: { createdAt: "desc" },
-    take: 10,
-  });
+  let organization = orgRow;
 
   if (!organization) {
     notFound();
