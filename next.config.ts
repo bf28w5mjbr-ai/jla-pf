@@ -107,12 +107,14 @@ const nextConfig: NextConfig = {
   /**
    * PDF 領収書等で `@react-pdf/renderer` が実行時に WOFF を読むが、
    * Output File Tracing が node_modules のフォントを拾わず本番で 500 になるのを防ぐ。
+   * キーの `[param]` は picomatch の文字クラスになるため、リテラルの角括弧は `\\[` `\\]` でエスケープする。
+   * @see https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats
    */
   outputFileTracingIncludes: {
-    "/api/entries/[entryId]/receipt": [...pdfNotoFontTraceGlobs],
-    "/api/competitions/[id]/team-billing/receipt": [...pdfNotoFontTraceGlobs],
-    "/api/clubs/[clubId]/dues/[duesId]/receipt": [...pdfNotoFontTraceGlobs],
-    "/api/clubs/[clubId]/dues/[duesId]/invoice": [...pdfNotoFontTraceGlobs],
+    "/api/entries/\\[entryId\\]/receipt": [...pdfNotoFontTraceGlobs],
+    "/api/competitions/\\[id\\]/team-billing/receipt": [...pdfNotoFontTraceGlobs],
+    "/api/clubs/\\[clubId\\]/dues/\\[duesId\\]/receipt": [...pdfNotoFontTraceGlobs],
+    "/api/clubs/\\[clubId\\]/dues/\\[duesId\\]/invoice": [...pdfNotoFontTraceGlobs],
   },
   /**
    * Turbopack が @prisma/client を古いバンドルとして保持し、

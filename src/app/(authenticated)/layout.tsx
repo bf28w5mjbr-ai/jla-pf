@@ -23,7 +23,10 @@ export default async function AuthenticatedLayout({
     redirect("/login");
   }
 
-  const user = await getAuthenticatedLayoutUser(session.userId);
+  const [user, unreadNotificationCount] = await Promise.all([
+    getAuthenticatedLayoutUser(session.userId),
+    getCachedUnreadNotificationCount(session.userId),
+  ]);
 
   if (!user) {
     redirect("/login");
@@ -35,8 +38,6 @@ export default async function AuthenticatedLayout({
   const userOrganizations = [...user.orgAdminRoles]
     .map((r) => r.organization)
     .sort((a, b) => a.name.localeCompare(b.name, "ja"));
-
-  const unreadNotificationCount = await getCachedUnreadNotificationCount(session.userId);
 
   return (
     <div className="flex min-h-screen bg-background">

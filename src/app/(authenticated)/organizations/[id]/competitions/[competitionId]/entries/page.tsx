@@ -92,13 +92,11 @@ export default async function CompetitionEntriesPage({
     redirect(`/organizations/${organizationId}`);
   }
 
-  try {
-    await ensureStartListSnapshotIfEligible(competitionId);
-  } catch (e) {
+  const ensureSnapshot = ensureStartListSnapshotIfEligible(competitionId).catch((e) => {
     console.error("ensureStartListSnapshotIfEligible:", e);
-  }
+  });
 
-  const competition = await prisma.competition.findUnique({
+  const competitionPromise = prisma.competition.findUnique({
     where: { id: competitionId },
     select: {
       id: true,
@@ -125,86 +123,89 @@ export default async function CompetitionEntriesPage({
     },
   });
 
+  const [, competition] = await Promise.all([ensureSnapshot, competitionPromise]);
+
   if (!competition || competition.organizationId !== organizationId) {
     notFound();
   }
 
-  const entries = await prisma.competitionEntry.findMany({
-    where: {
-      competitionId: competition.id,
-    },
-    include: {
-      user: {
-        select: {
-          id: true,
-          familyName: true,
-          givenName: true,
-          email: true,
-          phoneNumber: true,
+  const [entries, teamEntries] = await Promise.all([
+    prisma.competitionEntry.findMany({
+      where: {
+        competitionId: competition.id,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            familyName: true,
+            givenName: true,
+            email: true,
+            phoneNumber: true,
+          },
         },
-      },
-      club: {
-        select: {
-          id: true,
-          name: true,
+        club: {
+          select: {
+            id: true,
+            name: true,
+          },
         },
-      },
-      checkoutSessions: {
-        orderBy: { createdAt: "desc" },
-        take: 15,
-      },
-      items: {
-        include: {
-          event: {
-            select: {
-              id: true,
-              name: true,
-              sex: true,
+        checkoutSessions: {
+          orderBy: { createdAt: "desc" },
+          take: 15,
+        },
+        items: {
+          include: {
+            event: {
+              select: {
+                id: true,
+                name: true,
+                sex: true,
+              },
             },
           },
         },
-      },
-      snapshot: true,
-      participantStatuses: {
-        select: { eventId: true, status: true, reason: true },
-      },
-      _count: {
-        select: {
-          items: true,
+        snapshot: true,
+        participantStatuses: {
+          select: { eventId: true, status: true, reason: true },
         },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  const teamEntries = await prisma.teamEntry.findMany({
-    where: {
-      competitionId: competition.id,
-    },
-    include: {
-      club: {
-        select: {
-          name: true,
-        },
-      },
-      members: {
-        include: {
-          user: {
-            select: {
-              familyName: true,
-              givenName: true,
-            },
+        _count: {
+          select: {
+            items: true,
           },
         },
       },
-      event: {
-        select: {
-          id: true,
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.teamEntry.findMany({
+      where: {
+        competitionId: competition.id,
+      },
+      include: {
+        club: {
+          select: {
+            name: true,
+          },
+        },
+        members: {
+          include: {
+            user: {
+              select: {
+                familyName: true,
+                givenName: true,
+              },
+            },
+          },
+        },
+        event: {
+          select: {
+            id: true,
+          },
         },
       },
-    },
-    orderBy: { createdAt: "asc" },
-  });
+      orderBy: { createdAt: "asc" },
+    }),
+  ]);
   const teamPaymentOwnerIds = Array.from(new Set(teamEntries.map((entry) => buildTeamEntryPaymentOwnerId(competition.id, entry.clubId))));
   const teamPayments = teamPaymentOwnerIds.length
     ? await prisma.payment.findMany({

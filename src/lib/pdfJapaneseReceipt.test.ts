@@ -5,6 +5,8 @@ import { generatePdfBuffer } from "@/lib/pdf-helper";
 
 /**
  * 本番トレース漏れ・フォント解決失敗で領収書 API が 500 になる退行を防ぐ。
+ * Output File Tracing（next.config の outputFileTracingIncludes）の検証は `pnpm build` 後に
+ * `pnpm verify:pdf-font-nft` を実行する（Vitest 単体では nft に含まれるかは検知しない）。
  */
 describe("generatePdfBuffer + NotoSansJP", () => {
   it("主催団体名義に相当する ReceiptPDF を PDF バイナリにできる", async () => {
