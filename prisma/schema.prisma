@@ -107,6 +107,7 @@ model User {
   dayParticipantStatusesUpdated CompetitionParticipantStatus[] @relation("CompetitionParticipantStatusUpdater")
   teamMarshalParticipantStatuses CompetitionParticipantStatus[] @relation("TeamMarshalMember")
   resultDraftsUpdated  CompetitionResultDraft[] @relation("CompetitionResultDraftUpdater")
+  dayOpsHeatOperationDraftsUpdated DayOpsHeatOperationDraft[] @relation("DayOpsHeatOperationDraftUpdater")
   startListSnapshotsCaptured CompetitionStartListSnapshot[] @relation("CompetitionStartListSnapshotCreator")
   competitionBalanceLinesCreated CompetitionBalanceLine[]
   officialApplications              CompetitionOfficialApplication[] @relation("OfficialApplicationApplicant")
@@ -1412,6 +1413,7 @@ model Competition {
   participantStatuses CompetitionParticipantStatus[]
   heatMarshalStates   CompetitionHeatMarshalState[]
   resultDrafts        CompetitionResultDraft[]
+  dayOpsHeatOperationDrafts DayOpsHeatOperationDraft[]
   startListSnapshot   CompetitionStartListSnapshot?
   balanceLines        CompetitionBalanceLine[]
   officialApplications CompetitionOfficialApplication[]
@@ -1705,12 +1707,35 @@ model Event {
   participantStatuses CompetitionParticipantStatus[]
   heatMarshalStates   CompetitionHeatMarshalState[]
   resultDrafts        CompetitionResultDraft[]
+  dayOpsHeatOperationDrafts DayOpsHeatOperationDraft[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([competitionId, displayOrder])
   @@index([ageCategoryId])
+}
+
+/// マーシャル／リザルトの未確定 UI ドラフト（複数端末共有・確定 API で promotion 後は削除を想定）
+model DayOpsHeatOperationDraft {
+  id                  String      @id @default(cuid())
+  competitionId       String
+  eventId             String
+  round               ResultRound
+  heatIndex           Int
+  marshalDraftPayload Json?
+  resultDraftPayload  Json?
+  updatedByUserId     String?
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  event       Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  updatedBy   User?       @relation("DayOpsHeatOperationDraftUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([competitionId, eventId, round, heatIndex])
+  @@index([competitionId, eventId])
 }
 
 /// 当日運用: ラウンド・ヒート単位の召集締切（スタートリストスナップショットの heatIndex と対応）

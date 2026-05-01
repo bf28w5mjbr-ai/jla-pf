@@ -144,3 +144,48 @@ export async function computeDescInputCalledBaselineInHeat(opts: {
     teamMembersByTeamId,
   });
 }
+
+/**
+ * ヒート確定（confirm-heat）時の「召集済み人数」検証用。
+ * append 降順・マーシャル GET と同じ `countCalledMarshalSlotsInHeat` 定義に揃える。
+ */
+export async function countCalledMarshalSlotsForHeatConfirmInTransaction(opts: {
+  tx: Prisma.TransactionClient;
+  competitionId: string;
+  eventId: string;
+  round: ResultRound;
+  heatIndex: number;
+  snapshot: StartListSnapshotPayload | null;
+}): Promise<number> {
+  const roundData = getRoundDataFromSnapshot(opts.snapshot, opts.eventId, opts.round);
+  const heat = getHeatFromRoundData(roundData, opts.heatIndex);
+  if (!heat || !(heat.participants?.length)) return 0;
+
+  const [marshalRow, statuses] = await Promise.all([
+    opts.tx.competitionHeatMarshalState.findUnique({
+      where: {
+        competitionId_eventId_round_heatIndex: {
+          competitionId: opts.competitionId,
+          eventId: opts.eventId,
+          round: opts.round,
+          heatIndex: opts.heatIndex,
+        },
+      },
+      select: { callClosedAt: true },
+    }),
+    fetchParticipantStatusesForMarshalEvent(opts.tx, opts.competitionId, opts.eventId),
+  ]);
+  const heatMarshalCallClosed = Boolean(marshalRow?.callClosedAt);
+  const statusByKey = buildParticipantMarshalDisplayByKeyForRound(statuses, opts.round);
+  const teamIds = new Set<string>();
+  for (const p of heat.participants ?? []) {
+    if (p.kind === "TEAM" && p.teamEntryId) teamIds.add(p.teamEntryId);
+  }
+  const teamMembersByTeamId = await fetchTeamMembersMapForTeamIds(opts.tx, [...teamIds]);
+  return countCalledMarshalSlotsInHeat({
+    heatMarshalCallClosed,
+    heat,
+    statusByKey,
+    teamMembersByTeamId,
+  });
+}

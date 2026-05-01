@@ -86,19 +86,28 @@ export function ResultStartListLaneCheckbox({
   const isTerminal = Boolean(mergedStatus && isDayOpsTerminalParticipantStatus(mergedStatus));
   /** マーシャル GET の行のみで判定（ポールの CALLED だけでは有効にしない） */
   const marshalReady = p.status === "CALLED";
+  const teamMissingMember =
+    p.participantType === "TEAM" && !(p.teamMemberUserId && p.teamMemberUserId.trim());
   const globallyBusy = capturePendingKey !== null;
   const rowBusy = capturePendingKey === pKey;
   const checkboxDisabled =
-    captureBlocked || globallyBusy || isTerminal || hasRank || !marshalReady;
+    captureBlocked ||
+    globallyBusy ||
+    isTerminal ||
+    hasRank ||
+    !marshalReady ||
+    teamMissingMember;
   const inputId = `sl-result-h${heatIndex}-L${p.lane}-${pKey.replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const boxSize = "size-3.5";
 
   const marshalBlockTitle =
     isMarshalAbsentDisplayStatus(mergedStatus)
       ? "マーシャル締切により未出場扱いのためリザルトを記録できません（競技中の失格 DSQ とは別）"
-      : !marshalReady && !isTerminal && !hasRank
-        ? "マーシャル一覧で召集済み（CALLED）になるまでリザルトを記録できません"
-        : undefined;
+      : teamMissingMember
+        ? "チーム構成員が割り当てられていないため、このレーンではリザルトを記録できません"
+        : !marshalReady && !isTerminal && !hasRank
+          ? "マーシャル一覧で召集済み（CALLED）になるまでリザルトを記録できません"
+          : undefined;
 
   return (
     <div

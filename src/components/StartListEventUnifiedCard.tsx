@@ -8,6 +8,11 @@ function parseHeatMarshalResponseRound(raw: unknown): ResultRound | null {
   if (typeof raw !== "string") return null;
   return (RESULT_ROUNDS as readonly string[]).includes(raw) ? (raw as ResultRound) : null;
 }
+
+/** 当日運用シェル: 通常モードの参加者ステータスポーリング */
+const DAY_OPS_POLL_INTERVAL_NORMAL_MS = 20_000;
+/** マーシャル／リザルト時は複数端末で状態を揃えるため短めにヒート一覧・リザルトを再取得 */
+const DAY_OPS_POLL_INTERVAL_SYNC_MS = 4_500;
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import { useRouter } from "next/navigation";
@@ -52,7 +57,11 @@ import { LiveRoundContent, sexLabel } from "@/components/StartListRoundListPanel
 import { getHeatResultCapture, type HeatResultCaptureRow } from "@/lib/heatResultCaptureApi";
 import { cn } from "@/lib/utils";
 import { clampRoundTabsToNonIncreasingHeatCounts } from "@/lib/startListEventHeatValidation";
-import { JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED } from "@/lib/dayOpsParticipantStatusDisplay";
+import {
+  dispatchJlaDayOpsParticipantStatusChanged,
+  JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED,
+} from "@/lib/dayOpsParticipantStatusDisplay";
+import { measureDayOpsAsync } from "@/lib/dayOpsMetrics";
 
 /** スタートリスト表示モード（タブごと・localStorage） */
 export type StartListMarshalViewMode = "normal" | "marshal" | "result";
@@ -281,32 +290,34 @@ export default function StartListEventUnifiedCard({
 
   const refreshDayOpsParticipantPoll = useCallback(async () => {
     if (!showDayOpsShell) return;
-    const res = await fetch(
-      `/api/competitions/${competitionId}/day-ops/participant-statuses?eventId=${encodeURIComponent(event.id)}&includeCandidates=0`
-    );
-    if (!res.ok) return;
-    const data = (await res.json().catch(() => ({}))) as {
-      callClosed?: unknown;
-      statuses?: ReadonlyArray<{
-        participantType: string;
-        competitionEntryId: string | null;
-        teamEntryId: string | null;
-        status: string;
-      }>;
-    };
-    if (Array.isArray(data.statuses)) {
-      setPolledParticipantStatusRows(
-        data.statuses.map((s) => ({
-          participantType: String(s.participantType),
-          competitionEntryId: s.competitionEntryId ?? null,
-          teamEntryId: s.teamEntryId ?? null,
-          status: String(s.status),
-          marshalRound: (s as { marshalRound?: ResultRound }).marshalRound ?? "HEAT",
-          updatedAt: (s as { updatedAt?: string }).updatedAt ?? new Date().toISOString(),
-          calledAt: (s as { calledAt?: string | null }).calledAt ?? null,
-        }))
+    await measureDayOpsAsync("day-ops participant-statuses", async () => {
+      const res = await fetch(
+        `/api/competitions/${competitionId}/day-ops/participant-statuses?eventId=${encodeURIComponent(event.id)}&includeCandidates=0`
       );
-    }
+      if (!res.ok) return;
+      const data = (await res.json().catch(() => ({}))) as {
+        callClosed?: unknown;
+        statuses?: ReadonlyArray<{
+          participantType: string;
+          competitionEntryId: string | null;
+          teamEntryId: string | null;
+          status: string;
+        }>;
+      };
+      if (Array.isArray(data.statuses)) {
+        setPolledParticipantStatusRows(
+          data.statuses.map((s) => ({
+            participantType: String(s.participantType),
+            competitionEntryId: s.competitionEntryId ?? null,
+            teamEntryId: s.teamEntryId ?? null,
+            status: String(s.status),
+            marshalRound: (s as { marshalRound?: ResultRound }).marshalRound ?? "HEAT",
+            updatedAt: (s as { updatedAt?: string }).updatedAt ?? new Date().toISOString(),
+            calledAt: (s as { calledAt?: string | null }).calledAt ?? null,
+          }))
+        );
+      }
+    });
   }, [showDayOpsShell, competitionId, event.id]);
 
   useEffect(() => {
@@ -512,10 +523,12 @@ export default function StartListEventUnifiedCard({
   const refetchResultCapture = useCallback(async () => {
     if (!showResultOps || !listMarshalRound) return;
     try {
-      const data = await getHeatResultCapture(competitionId, event.id, listMarshalRound);
-      setListResultLocked(Boolean(data.lockedAt));
-      setListResultRows(data.rows);
-      setListResultConfirmedHeats(data.confirmedHeats);
+      await measureDayOpsAsync("day-ops heat-result-capture", async () => {
+        const data = await getHeatResultCapture(competitionId, event.id, listMarshalRound);
+        setListResultLocked(Boolean(data.lockedAt));
+        setListResultRows(data.rows);
+        setListResultConfirmedHeats(data.confirmedHeats);
+      });
     } catch {
       /* 楽観更新を維持 */
     }
@@ -556,18 +569,20 @@ export default function StartListEventUnifiedCard({
   const fetchListMarshalHeatsCore = useCallback(
     async (signal?: AbortSignal) => {
       if (!listMarshalRound) return;
-      const res = await fetch(
-        `/api/competitions/${competitionId}/day-ops/heat-marshal?eventId=${encodeURIComponent(event.id)}&round=${encodeURIComponent(listMarshalRound)}`,
-        { signal }
-      );
-      if (!res.ok) {
-        setListMarshalHeats(null);
-        setListMarshalApiRound(null);
-        return;
-      }
-      const data = (await res.json()) as { heats?: HeatMarshalHeatRow[]; round?: unknown };
-      setListMarshalHeats(data.heats ?? []);
-      setListMarshalApiRound(parseHeatMarshalResponseRound(data.round));
+      await measureDayOpsAsync("day-ops heat-marshal", async () => {
+        const res = await fetch(
+          `/api/competitions/${competitionId}/day-ops/heat-marshal?eventId=${encodeURIComponent(event.id)}&round=${encodeURIComponent(listMarshalRound)}`,
+          { signal }
+        );
+        if (!res.ok) {
+          setListMarshalHeats(null);
+          setListMarshalApiRound(null);
+          return;
+        }
+        const data = (await res.json()) as { heats?: HeatMarshalHeatRow[]; round?: unknown };
+        setListMarshalHeats(data.heats ?? []);
+        setListMarshalApiRound(parseHeatMarshalResponseRound(data.round));
+      });
     },
     [competitionId, event.id, listMarshalRound]
   );
@@ -581,6 +596,16 @@ export default function StartListEventUnifiedCard({
       setListMarshalApiRound(null);
     }
   }, [fetchListMarshalHeatsCore]);
+
+  /** マーシャル GET と（リザルトモード時のみ）着順キャプチャ GET をまとめて再取得 */
+  const refreshMarshalAndResultLists = useCallback(() => {
+    if (activeViewMode !== "normal") {
+      void refetchListMarshalHeats();
+    }
+    if (activeViewMode === "result" && showResultOps) {
+      void refetchResultCapture();
+    }
+  }, [activeViewMode, refetchListMarshalHeats, refetchResultCapture, showResultOps]);
 
   useEffect(() => {
     if (!showDayOpsShell || listMarshalRound === null) {
@@ -609,18 +634,32 @@ export default function StartListEventUnifiedCard({
     const tick = () => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       void refreshDayOpsParticipantPoll();
-      if (activeViewMode !== "normal") {
-        void refetchListMarshalHeats();
-      }
+      refreshMarshalAndResultLists();
     };
-    const id = setInterval(tick, activeViewMode === "normal" ? 20000 : 7000);
+    const intervalMs =
+      activeViewMode === "normal"
+        ? DAY_OPS_POLL_INTERVAL_NORMAL_MS
+        : DAY_OPS_POLL_INTERVAL_SYNC_MS;
+    const id = setInterval(tick, intervalMs);
     return () => clearInterval(id);
   }, [
     showDayOpsShell,
     activeViewMode,
     refreshDayOpsParticipantPoll,
-    refetchListMarshalHeats,
+    refreshMarshalAndResultLists,
   ]);
+
+  /** バックグラウンドから戻った直後に他端末の更新を取り込む */
+  useEffect(() => {
+    if (!showDayOpsShell) return;
+    const onVisibility = () => {
+      if (typeof document === "undefined" || document.visibilityState !== "visible") return;
+      void refreshDayOpsParticipantPoll();
+      refreshMarshalAndResultLists();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [showDayOpsShell, refreshDayOpsParticipantPoll, refreshMarshalAndResultLists]);
 
   useEffect(() => {
     if (!showDayOpsShell) return;
@@ -628,9 +667,7 @@ export default function StartListEventUnifiedCard({
       const d = (ev as CustomEvent<{ competitionId?: string; eventId?: string }>).detail;
       if (d?.competitionId === competitionId && d?.eventId === event.id) {
         void refreshDayOpsParticipantPoll();
-        if (activeViewMode !== "normal") {
-          void refetchListMarshalHeats();
-        }
+        refreshMarshalAndResultLists();
       }
     };
     window.addEventListener(JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED, handler);
@@ -639,9 +676,35 @@ export default function StartListEventUnifiedCard({
     showDayOpsShell,
     competitionId,
     event.id,
-    activeViewMode,
     refreshDayOpsParticipantPoll,
-    refetchListMarshalHeats,
+    refreshMarshalAndResultLists,
+  ]);
+
+  /** 別ブラウザ向け: DB fingerprint を SSE で監視（`NEXT_PUBLIC_DAY_OPS_LIVE_STREAM=1`）。リザルトドラフトのサーバー同期は `NEXT_PUBLIC_DAY_OPS_RESULT_DRAFT_SYNC=1`。 */
+  useEffect(() => {
+    if (!showDayOpsShell || process.env.NEXT_PUBLIC_DAY_OPS_LIVE_STREAM !== "1") return;
+    const url = `/api/competitions/${competitionId}/day-ops/live-events?eventId=${encodeURIComponent(event.id)}`;
+    const es = new EventSource(url, { withCredentials: true });
+    es.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data) as { type?: string };
+        if (msg.type === "changes") {
+          void refreshDayOpsParticipantPoll();
+          refreshMarshalAndResultLists();
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    return () => {
+      es.close();
+    };
+  }, [
+    showDayOpsShell,
+    competitionId,
+    event.id,
+    refreshDayOpsParticipantPoll,
+    refreshMarshalAndResultLists,
   ]);
 
   const listMarshalHeatsByIndex = useMemo(() => {
@@ -954,7 +1017,9 @@ export default function StartListEventUnifiedCard({
             onMarshalSuccess: async () => {
               await refreshDayOpsParticipantPoll();
               await refetchListMarshalHeats();
+              await refetchResultCapture();
               router.refresh();
+              dispatchJlaDayOpsParticipantStatusChanged(competitionId, event.id);
             },
           }
         : null;

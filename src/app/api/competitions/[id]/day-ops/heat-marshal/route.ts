@@ -27,6 +27,7 @@ import {
   heatIndicesBlockingMarshalReopen,
   marshalReopenBlockedForHeat,
 } from "@/lib/marshalHeatOfficialResultGate";
+import { dayOpsServerTimingEnabled, formatDayOpsServerTiming } from "@/lib/dayOpsMetrics";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -69,6 +70,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "roundが不正です" }, { status: 400 });
     }
 
+    const wall0 = Date.now();
     const [eventRow, snapshot, statuses, competition] = await Promise.all([
       prisma.event.findFirst({
         where: { id: eventId, competitionId },
@@ -96,6 +98,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         select: { startListSettings: true },
       }),
     ]);
+    const wall1 = Date.now();
 
     if (!eventRow) {
       return NextResponse.json({ error: "種目が見つかりません" }, { status: 404 });
@@ -119,6 +122,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       where: { competitionId, eventId, round: effectiveRound },
       select: { heatIndex: true, callClosedAt: true },
     });
+    const wall2 = Date.now();
 
     const closedByHeat = new Map<number, Date | null>();
     for (const r of marshalRows) {
@@ -161,6 +165,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         teamMembersByTeamId.set(m.teamEntryId, list);
       }
     }
+    const wall3 = Date.now();
 
     const heatIndicesForBlock = heatsOrdered.map((h) => h.heatIndex);
     const marshalReopenBlockedHeats =
@@ -172,6 +177,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
             heatIndices: heatIndicesForBlock,
           })
         : new Set<number>();
+    const wall4 = Date.now();
 
     const heats =
       heatsOrdered.map((h) => {
@@ -253,6 +259,22 @@ export async function GET(request: NextRequest, context: RouteContext) {
         };
       }) ?? [];
 
+    const wall5 = Date.now();
+    const timingOpt =
+      dayOpsServerTimingEnabled() ?
+        {
+          headers: {
+            "Server-Timing": formatDayOpsServerTiming([
+              { name: "db_round1", durMs: wall1 - wall0 },
+              { name: "db_marshal_rows", durMs: wall2 - wall1 },
+              { name: "db_team_members", durMs: wall3 - wall2 },
+              { name: "db_reopen_gate", durMs: wall4 - wall3 },
+              { name: "build_json", durMs: wall5 - wall4 },
+            ]),
+          },
+        }
+      : {};
+
     return NextResponse.json({
       eventId,
       /** 実際に一覧・締切状態を解決したラウンド */
@@ -274,7 +296,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       /** 当該種目がスナップショット events に含まれるか（ヒートの有無とは別） */
       eventInSnapshot,
       heats,
-    });
+    }, timingOpt);
   } catch (error) {
     if (error instanceof Error && error.message === "COMPETITION_NOT_FOUND") {
       return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });

@@ -6,12 +6,7 @@ import { prisma } from "@/server/db";
 import { assertDayOpsRecorderWriteAccess } from "@/lib/dayOpsAccess";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
 import { loadStartListSnapshotPayload } from "@/lib/heatMarshalGate";
-import type { MarshalParticipantRef } from "@/lib/heatMarshalFromSnapshot";
-import {
-  getRoundDataFromSnapshot,
-  marshalParticipantRefsForAutoDsq,
-} from "@/lib/heatMarshalFromSnapshot";
-import { expandTeamMarshalRefsWithMembers } from "@/lib/teamMarshalExpand";
+import { countCalledMarshalSlotsForHeatConfirmInTransaction } from "@/lib/marshalHeatCalledCount";
 import { tryAutoAppendNextStartListRound } from "@/lib/startListNextRoundFromOfficial";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
 
@@ -52,17 +47,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const snapshot = await loadStartListSnapshotPayload(competitionId);
-    const roundData = getRoundDataFromSnapshot(snapshot, eventId, roundDb);
-    const refsInHeat = marshalParticipantRefsForAutoDsq(roundData, heatIndex);
-    const expandedRefs = await expandTeamMarshalRefsWithMembers(prisma, refsInHeat);
-    const teamMemberRefsByTeam = new Map<string, MarshalParticipantRef[]>();
-    for (const r of expandedRefs) {
-      if (r.participantType === "TEAM" && r.teamEntryId) {
-        const list = teamMemberRefsByTeam.get(r.teamEntryId) ?? [];
-        list.push(r);
-        teamMemberRefsByTeam.set(r.teamEntryId, list);
-      }
-    }
 
     const row = await prisma.$transaction(async (tx) => {
       const existing = await tx.officialResult.findUnique({
@@ -90,49 +74,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
         select: { id: true },
       });
 
-      if (refsInHeat.length > 0) {
-        let calledInHeat = 0;
-        for (const ref of refsInHeat) {
-          if (ref.participantType === "INDIVIDUAL" && ref.competitionEntryId) {
-            const stRow = await tx.competitionParticipantStatus.findFirst({
-              where: {
-                competitionId,
-                eventId,
-                participantType: "INDIVIDUAL",
-                competitionEntryId: ref.competitionEntryId,
-                teamEntryId: null,
-                teamMemberUserId: null,
-                marshalRound: roundDb,
-              },
-              select: { status: true },
-            });
-            if (stRow?.status === "CALLED") calledInHeat += 1;
-            continue;
-          }
-          if (ref.participantType === "TEAM" && ref.teamEntryId) {
-            const memberRefs = teamMemberRefsByTeam.get(ref.teamEntryId) ?? [];
-            if (memberRefs.length === 0) continue;
-            const allCalled = (
-              await Promise.all(
-                memberRefs.map((mr: MarshalParticipantRef) =>
-                  tx.competitionParticipantStatus.findFirst({
-                    where: {
-                      competitionId,
-                      eventId,
-                      participantType: "TEAM",
-                      competitionEntryId: null,
-                      teamEntryId: ref.teamEntryId,
-                      teamMemberUserId: mr.teamMemberUserId ?? null,
-                      marshalRound: roundDb,
-                    },
-                    select: { status: true },
-                  })
-                )
-              )
-            ).every((stRow: { status: string } | null) => stRow?.status === "CALLED");
-            if (allCalled) calledInHeat += 1;
-          }
-        }
+      const calledInHeat = await countCalledMarshalSlotsForHeatConfirmInTransaction({
+        tx,
+        competitionId,
+        eventId,
+        round: roundDb,
+        heatIndex,
+        snapshot,
+      });
+
+      if (calledInHeat > 0) {
         const rankCount = await tx.officialResultRow.count({
           where: {
             officialResultId: officialResult.id,
@@ -140,7 +91,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             status: "OK",
           },
         });
-        if (calledInHeat > 0 && rankCount < calledInHeat) {
+        if (rankCount < calledInHeat) {
           throw new Error("HEAT_RESULT_INCOMPLETE_RANKS");
         }
       }
@@ -203,7 +154,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
     if (error instanceof Error && error.message === "DAY_OPS_UNAUTHORIZED") {
       return NextResponse.json(
-        { error: "ログインするか、大会の当日運用暗号をスタートリスト画面で入力してください" },
+        {
+          error:
+            "ログインするか、大会の当日運用暗号をスタートリスト画面で入力してください",
+        },
         { status: 401 }
       );
     }

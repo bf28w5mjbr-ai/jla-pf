@@ -38,6 +38,8 @@ const appendSchema = z.union([
       participantType: z.enum(["INDIVIDUAL", "TEAM"]),
       competitionEntryId: z.string().optional(),
       teamEntryId: z.string().optional(),
+      /** チーム種目の手動記録時は必須（resolveParticipantInHeatForDayOps と一致） */
+      teamMemberUserId: z.string().optional(),
       tieWithPrevious: z.boolean().optional(),
       inputOrder: z.enum(["asc", "desc"]).optional(),
     })
@@ -54,6 +56,13 @@ const appendSchema = z.union([
           code: z.ZodIssueCode.custom,
           message: "teamEntryIdが必要です",
           path: ["teamEntryId"],
+        });
+      }
+      if (val.participantType === "TEAM" && !val.teamMemberUserId?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "teamMemberUserId（構成員）が必要です",
+          path: ["teamMemberUserId"],
         });
       }
     }),
@@ -112,6 +121,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
               participantType: body.participantType,
               competitionEntryId: body.competitionEntryId,
               teamEntryId: body.teamEntryId,
+              teamMemberUserId:
+                body.participantType === "TEAM" ? body.teamMemberUserId?.trim() : undefined,
             },
     });
     if (!resolvedSlot.ok) {

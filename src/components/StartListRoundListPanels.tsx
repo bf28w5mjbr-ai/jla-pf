@@ -43,10 +43,19 @@ import {
   DAY_OPS_STATUS_MARSHAL_ABSENT,
   dayOpsParticipantStatusLabelJa,
   dayOpsTerminalStatusBadgeClass,
+  dispatchJlaDayOpsParticipantStatusChanged,
   isDayOpsTerminalParticipantStatus,
   resolveHeatLaneDayOpsDisplayStatus,
 } from "@/lib/dayOpsParticipantStatusDisplay";
 import { isNfcScanSupportedSync, startNfcScanSession } from "@/lib/nfc/nfcScanSession";
+import {
+  deleteHeatOperationDraftFireAndForget,
+  getHeatOperationDraft,
+  isDayOpsResultDraftServerSyncEnabled,
+  parseServerResultDraftPayload,
+  patchHeatOperationDraftResultPayloadFireAndForget,
+  type HeatResultDraftServerEntry,
+} from "@/lib/dayOpsHeatOperationDraftSync";
 import { secondaryClubLabelForTeamRow } from "@/lib/startListTeamDisplay";
 import { cn } from "@/lib/utils";
 
@@ -150,6 +159,54 @@ function resultRankForParticipant(
     return true;
   });
   return match?.rank ?? null;
+}
+
+/**
+ * 未 append のチェックのみのときの仮着順。`draftSequence` の昇順で昇順入力は空き番の小さい方から、
+ * 降順入力は空き番の大きい方から割り当てる。
+ */
+function provisionalResultRankForParticipant(
+  heatIndex: number,
+  participant: HeatMarshalParticipant | undefined,
+  apiHeat: HeatMarshalHeatRow | undefined,
+  rows: HeatResultCaptureRow[],
+  drafts: Record<string, { heatIndex: number; draftSequence?: number }>,
+  inputOrder: "asc" | "desc"
+): number | null {
+  if (!participant) return null;
+  const pKey = marshalParticipantKey(participant);
+  const mine = drafts[pKey];
+  if (!mine || mine.heatIndex !== heatIndex) return null;
+
+  const calledN = countCalledInMarshalHeat(apiHeat);
+  if (calledN <= 0) return null;
+
+  const used = new Set(
+    rows.filter((r) => r.heat === heatIndex && r.rank != null).map((r) => r.rank as number)
+  );
+
+  const draftsInHeat = Object.entries(drafts)
+    .filter(([, op]) => op.heatIndex === heatIndex)
+    .map(([key, op]) => ({ key, seq: op.draftSequence ?? 0 }))
+    .sort((a, b) => a.seq - b.seq || a.key.localeCompare(b.key));
+
+  const keyToRank = new Map<string, number>();
+  for (const { key } of draftsInHeat) {
+    if (inputOrder === "asc") {
+      let r = 1;
+      while (r <= calledN && used.has(r)) r++;
+      if (r > calledN) break;
+      used.add(r);
+      keyToRank.set(key, r);
+    } else {
+      let r = calledN;
+      while (r >= 1 && used.has(r)) r--;
+      if (r < 1) break;
+      used.add(r);
+      keyToRank.set(key, r);
+    }
+  }
+  return keyToRank.get(pKey) ?? null;
 }
 
 function countCalledInMarshalHeat(apiHeat: HeatMarshalHeatRow | undefined): number {
@@ -664,6 +721,8 @@ export function LiveRoundContent({
         participantType: "INDIVIDUAL" | "TEAM";
         competitionEntryId?: string;
         teamEntryId?: string;
+        teamMemberUserId?: string;
+        draftSequence?: number;
       }
     >
   >({});
@@ -698,6 +757,11 @@ export function LiveRoundContent({
   const resultNfcInFlightRef = useRef(false);
   const confirmedHeatsRef = useRef<number[]>([]);
   confirmedHeatsRef.current = localConfirmedHeats;
+  const resultDraftOpsRef = useRef(resultDraftOps);
+  resultDraftOpsRef.current = resultDraftOps;
+  const resultDraftPatchTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const lastLocalResultDraftTouchRef = useRef(0);
+  const resultDraftSequenceRef = useRef(0);
   const resultInputOrderLabel = resultInputOrder === "asc" ? "昇順入力" : "降順入力";
 
   useEffect(() => {
@@ -728,6 +792,101 @@ export function LiveRoundContent({
     setLocalConfirmedHeats(resultCapture?.confirmedHeats ?? []);
   }, [confirmedHeatsKey, resultCapture?.confirmedHeats]);
 
+  useEffect(() => {
+    const timers = resultDraftPatchTimersRef.current;
+    return () => {
+      for (const t of Object.values(timers)) clearTimeout(t);
+      resultDraftPatchTimersRef.current = {};
+    };
+  }, []);
+
+  const scheduleResultDraftServerPatch = useCallback(
+    (heatIndex: number) => {
+      if (!isDayOpsResultDraftServerSyncEnabled()) return;
+      const timers = resultDraftPatchTimersRef.current;
+      clearTimeout(timers[heatIndex]);
+      timers[heatIndex] = setTimeout(() => {
+        const mm = mRef.current;
+        if (!mm?.competitionId) {
+          delete timers[heatIndex];
+          return;
+        }
+        lastLocalResultDraftTouchRef.current = Date.now();
+        const entries: Record<string, HeatResultDraftServerEntry> = {};
+        for (const op of Object.values(resultDraftOpsRef.current)) {
+          if (op.heatIndex === heatIndex) {
+            entries[op.opKey] = op as HeatResultDraftServerEntry;
+          }
+        }
+        patchHeatOperationDraftResultPayloadFireAndForget(mm.competitionId, {
+          eventId,
+          round: mm.round,
+          heatIndex,
+          entries,
+        });
+        delete timers[heatIndex];
+      }, 480);
+    },
+    [eventId]
+  );
+
+  const pullResultDraftsFromServer = useCallback(() => {
+    if (!isDayOpsResultDraftServerSyncEnabled()) return;
+    if (Date.now() - lastLocalResultDraftTouchRef.current < 900) return;
+    const mm = mRef.current;
+    if (!mm?.competitionId || mm.marshalUiMode !== "result" || !mm.resultCapture) return;
+
+    void (async () => {
+      for (const h of heatsRef.current) {
+        const hi = Number(h.heatIndex);
+        if (!Number.isFinite(hi) || !h.callClosedAt) continue;
+        if (confirmedHeatsRef.current.includes(hi)) continue;
+        try {
+          const row = await getHeatOperationDraft(mm.competitionId, {
+            eventId,
+            round: mm.round,
+            heatIndex: hi,
+          });
+          if (!row.updatedAt) continue;
+          const entries = parseServerResultDraftPayload(row.resultDraftPayload);
+          if (!entries) continue;
+
+          setResultDraftOps((prev) => {
+            const next = { ...prev };
+            for (const k of Object.keys(next)) {
+              if (next[k]!.heatIndex === hi) delete next[k];
+            }
+            for (const [k, v] of Object.entries(entries)) {
+              if (v && typeof v === "object" && v.heatIndex === hi) {
+                next[k] = v as (typeof prev)[string];
+              }
+            }
+            return next;
+          });
+        } catch {
+          // ignore per-heat errors
+        }
+      }
+    })();
+  }, [eventId]);
+
+  useEffect(() => {
+    if (!resultCaptureVisible || !isDayOpsResultDraftServerSyncEnabled()) return;
+    const t = window.setTimeout(() => {
+      pullResultDraftsFromServer();
+    }, 600);
+    return () => window.clearTimeout(t);
+  }, [resultCaptureVisible, pullResultDraftsFromServer]);
+
+  useEffect(() => {
+    if (!isDayOpsResultDraftServerSyncEnabled() || !resultCaptureVisible) return;
+    const onVis = () => {
+      if (document.visibilityState === "visible") pullResultDraftsFromServer();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [resultCaptureVisible, pullResultDraftsFromServer]);
+
   const handleRankRecorded = useCallback(
     (payload: {
       heatIndex: number;
@@ -749,9 +908,8 @@ export function LiveRoundContent({
         },
       ]);
       setTieNextHeatIndex((prev) => (prev === payload.heatIndex ? null : prev));
-      void resultCapture?.onRefetch();
     },
-    [resultCapture]
+    []
   );
 
   const countResultDraftsForHeat = useCallback(
@@ -789,15 +947,21 @@ export function LiveRoundContent({
             heatIndex,
             tieWithPrevious,
             inputOrder,
+            draftSequence: ++resultDraftSequenceRef.current,
             participantType: participant.participantType,
             ...(participant.participantType === "INDIVIDUAL"
               ? { competitionEntryId: participant.competitionEntryId ?? undefined }
-              : { teamEntryId: participant.teamEntryId ?? undefined }),
+              : {
+                  teamEntryId: participant.teamEntryId ?? undefined,
+                  teamMemberUserId: participant.teamMemberUserId?.trim() || undefined,
+                }),
           },
         };
       });
+      lastLocalResultDraftTouchRef.current = Date.now();
+      scheduleResultDraftServerPatch(heatIndex);
     },
-    []
+    [scheduleResultDraftServerPatch]
   );
 
   const rankedParticipantKeysForHeat = useCallback(
@@ -848,6 +1012,7 @@ export function LiveRoundContent({
           order: next,
         });
         void resultCapture?.onRefetch();
+        dispatchJlaDayOpsParticipantStatusChanged(m.competitionId, eventId);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "順位の並べ替えに失敗しました");
         void resultCapture?.onRefetch();
@@ -955,6 +1120,14 @@ export function LiveRoundContent({
         toast.error(`${result.failed.length}件の確定に失敗しました。行ごとのエラーを確認してください`);
       }
       await m.onMarshalSuccess();
+      const heatIndicesAfterBulk = new Set(operations.map((o) => o.heatIndex));
+      for (const hi of heatIndicesAfterBulk) {
+        deleteHeatOperationDraftFireAndForget(m.competitionId, {
+          eventId,
+          round: m.round,
+          heatIndex: hi,
+        });
+      }
       setMarshalResult(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "一括確定に失敗しました");
@@ -962,7 +1135,7 @@ export function LiveRoundContent({
     } finally {
       setMarshalBulkSubmitting(false);
     }
-  }, [m, marshalDraftOps]);
+  }, [m, marshalDraftOps, eventId]);
 
   const patchHeatCallClosed = useCallback((heatIndex1Based: number) => {
     const iso = new Date().toISOString();
@@ -1031,6 +1204,11 @@ export function LiveRoundContent({
         patchHeatCallClosed(displayHeatNumber);
         setHeatCloseTarget(null);
         await m.onMarshalSuccess();
+        deleteHeatOperationDraftFireAndForget(m.competitionId, {
+          eventId,
+          round: m.round,
+          heatIndex: displayHeatNumber,
+        });
         toast.success(
           `ヒート${displayHeatNumber}のマーシャルを締め切りました。未召集のレーンは未出場扱いです（競技中の失格 DSQ とは別）`
         );
@@ -1099,6 +1277,8 @@ export function LiveRoundContent({
                 competitionEntryId:
                   op.participantType === "INDIVIDUAL" ? op.competitionEntryId : undefined,
                 teamEntryId: op.participantType === "TEAM" ? op.teamEntryId : undefined,
+                teamMemberUserId:
+                  op.participantType === "TEAM" ? op.teamMemberUserId : undefined,
               });
               handleRankRecorded({
                 heatIndex: op.heatIndex,
@@ -1147,6 +1327,12 @@ export function LiveRoundContent({
         setHeatResultConfirmTarget(null);
         void resultCapture.onRefetch();
         toast.success(`ヒート ${displayHeatNumber} のリザルトを確定しました`);
+        dispatchJlaDayOpsParticipantStatusChanged(m.competitionId, eventId);
+        deleteHeatOperationDraftFireAndForget(m.competitionId, {
+          eventId,
+          round: m.round,
+          heatIndex: displayHeatNumber,
+        });
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "確定に失敗しました");
       } finally {
@@ -1292,6 +1478,7 @@ export function LiveRoundContent({
               teamEntryId: data.teamEntryId,
             });
             toast.success(`NFCで着順 ${data.rank} 位を記録しました（ヒート ${h.heatIndex}）`);
+            dispatchJlaDayOpsParticipantStatusChanged(mm.competitionId, eventId);
             return;
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
@@ -1612,7 +1799,16 @@ export function LiveRoundContent({
   ) => {
     const participant = marshalParticipantForLane(apiHeatForHeat, laneNumber, laneIndex0);
     const displayStatus = resolveHeatLaneDayOpsDisplayStatus(participant, serverStatus);
-    const rk = resultRankForParticipant(displayHeatNumber, participant, localResultRows);
+    const serverRk = resultRankForParticipant(displayHeatNumber, participant, localResultRows);
+    const provisionalRk = provisionalResultRankForParticipant(
+      displayHeatNumber,
+      participant,
+      apiHeatForHeat,
+      localResultRows,
+      resultDraftOps,
+      resultInputOrder
+    );
+    const displayRk = serverRk ?? provisionalRk;
     const heatConfirmed = localConfirmedHeats.includes(displayHeatNumber);
     const heatMarshalClosed = Boolean(apiHeatForHeat?.callClosedAt);
     const captureBlocked =
@@ -1623,21 +1819,37 @@ export function LiveRoundContent({
       !heatMarshalClosed;
     const st = displayStatus;
     const terminalResult = Boolean(st && isDayOpsTerminalParticipantStatus(st));
-    /** 確定前: スタートレーン番号。確定後: 着順（位付き）またはレーン表記（着順なしの行） */
+    /** 確定前: レーン番号または仮着順。確定後: 着順または L+レーン */
     const leftColumnContent =
-      heatConfirmed && rk != null ? (
-        <span className="text-violet-800 dark:text-violet-200">{rk}位</span>
+      heatConfirmed && serverRk != null ? (
+        <span className="text-violet-800 dark:text-violet-200">{serverRk}位</span>
       ) : heatConfirmed ? (
         <span className="text-muted-foreground" title={`スタートレーン ${laneNumber}（着順記録なし）`}>
           L{laneNumber}
         </span>
+      ) : displayRk != null ? (
+        <span
+          className={cn(
+            "tabular-nums",
+            serverRk != null
+              ? "text-violet-800 dark:text-violet-200"
+              : "text-violet-700/90 dark:text-violet-300/90"
+          )}
+          title={
+            serverRk != null
+              ? undefined
+              : "未保存の仮表示です。「リザルト確定」でデータベースに反映されます"
+          }
+        >
+          {displayRk}位
+        </span>
       ) : (
         laneNumber
       );
-    const showRankBadgeInline = rk != null && !heatConfirmed;
+    const showRankBadgeInline = displayRk != null && !heatConfirmed;
     const canDragRank = Boolean(
       participantRankKey &&
-        rk != null &&
+        serverRk != null &&
         !heatConfirmed &&
         !marshal.loading &&
         !rc.loading &&
@@ -1718,14 +1930,17 @@ export function LiveRoundContent({
         <span
           className={cn(
             "mt-0.5 shrink-0 min-w-[2.25rem] text-right text-[11px] font-semibold tabular-nums text-gray-500 dark:text-gray-400",
-            heatConfirmed && rk != null && "text-violet-800 dark:text-violet-200"
+            heatConfirmed && serverRk != null && "text-violet-800 dark:text-violet-200",
+            !heatConfirmed && displayRk != null && "text-violet-800 dark:text-violet-200"
           )}
           aria-label={
-            heatConfirmed && rk != null
-              ? `確定着順 ${rk}位、スタートレーン ${laneNumber}`
+            heatConfirmed && serverRk != null
+              ? `確定着順 ${serverRk}位、スタートレーン ${laneNumber}`
               : heatConfirmed
                 ? `スタートレーン ${laneNumber}、着順は記録されていません`
-                : `スタートレーン ${laneNumber}`
+                : displayRk != null
+                  ? `仮着順 ${displayRk}位、スタートレーン ${laneNumber}`
+                  : `スタートレーン ${laneNumber}`
           }
         >
           {leftColumnContent}
@@ -1734,8 +1949,8 @@ export function LiveRoundContent({
           className={cn(
             "min-w-0 flex-1 text-[13px] leading-snug",
             marshalDisplayClass(displayStatus),
-            rk != null && !heatConfirmed && "font-semibold text-violet-800 dark:text-violet-200",
-            heatConfirmed && rk != null && "font-semibold"
+            displayRk != null && !heatConfirmed && "font-semibold text-violet-800 dark:text-violet-200",
+            heatConfirmed && serverRk != null && "font-semibold"
           )}
         >
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
@@ -1743,8 +1958,20 @@ export function LiveRoundContent({
               <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0">
                 {nameContent}
                 {showRankBadgeInline ? (
-                  <span className="rounded bg-violet-100 px-1 py-0 text-[10px] font-bold tabular-nums text-violet-950 dark:bg-violet-900/80 dark:text-violet-50">
-                    {rk}位
+                  <span
+                    className={cn(
+                      "rounded px-1 py-0 text-[10px] font-bold tabular-nums",
+                      serverRk != null
+                        ? "bg-violet-100 text-violet-950 dark:bg-violet-900/80 dark:text-violet-50"
+                        : "border border-dashed border-violet-400/70 bg-violet-50/80 text-violet-900 dark:border-violet-600/70 dark:bg-violet-950/50 dark:text-violet-100"
+                    )}
+                    title={
+                      serverRk == null && provisionalRk != null
+                        ? "仮表示（リザルト確定で正式記録）"
+                        : undefined
+                    }
+                  >
+                    {displayRk}位{serverRk == null && provisionalRk != null ? "（仮）" : ""}
                   </span>
                 ) : null}
               </div>
@@ -1783,6 +2010,11 @@ export function LiveRoundContent({
             に着順（1位から連番）を記録します。別ヒートに挟んでも各ヒート内の順序だけが使われます。
             <span className="font-semibold"> リザルト確定 </span>
             は、召集済みの全員分の着順が揃うまでボタンは押せません。
+            <span className="mt-1 block border-t border-violet-200/80 pt-1 text-muted-foreground dark:border-violet-800/60">
+              Web 上の一般公開は、主催の「公式結果」で
+              <span className="font-medium text-foreground"> 公開日時 </span>
+              が設定されたタイミングです。当日運用のリザルト確定だけでは、大会サイトの結果一覧には自動では出ません。
+            </span>
             NFC はマーシャルと同様、
             <span className="font-semibold"> 全ヒートを順に試し </span>
             、タグの人が含まれるヒートだけで次の空き順位に記録します。
@@ -2187,12 +2419,13 @@ export function LiveRoundContent({
                             const ar = a.rankForSort;
                             const br = b.rankForSort;
                             if (ar != null && br != null) {
-                              if (ar !== br) return ar - br;
+                              if (ar !== br) {
+                                return resultInputOrder === "asc" ? ar - br : br - ar;
+                              }
                               return a.laneForSort - b.laneForSort;
                             }
                             if (ar != null || br != null) {
-                              if (resultInputOrder === "asc") return ar != null ? -1 : 1;
-                              return ar != null ? 1 : -1;
+                              return ar != null ? -1 : 1;
                             }
                             return resultInputOrder === "asc"
                               ? a.laneForSort - b.laneForSort
@@ -2496,12 +2729,13 @@ export function LiveRoundContent({
                             const ar = a.rankForSort;
                             const br = b.rankForSort;
                             if (ar != null && br != null) {
-                              if (ar !== br) return ar - br;
+                              if (ar !== br) {
+                                return resultInputOrder === "asc" ? ar - br : br - ar;
+                              }
                               return a.laneForSort - b.laneForSort;
                             }
                             if (ar != null || br != null) {
-                              if (resultInputOrder === "asc") return ar != null ? -1 : 1;
-                              return ar != null ? 1 : -1;
+                              return ar != null ? -1 : 1;
                             }
                             return resultInputOrder === "asc"
                               ? a.laneForSort - b.laneForSort

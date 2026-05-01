@@ -139,7 +139,10 @@ export function dayOpsTerminalStatusBadgeClass(status: string): string {
   }
 }
 
-/** スタートリスト等で参加者ステータス（失格など）の再取得を促す */
+/**
+ * 当日運用まわりで「サーバー状態が変わったので取り直して」の合図。
+ * 参加者ステータスに限らず、同一ブラウザの別タブ向けにマーシャル一覧／リザルト着順の再取得にも使う。
+ */
 export const JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED = "jla-dayops-participant-status-changed";
 
 export function dispatchJlaDayOpsParticipantStatusChanged(

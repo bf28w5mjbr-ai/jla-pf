@@ -15,6 +15,7 @@ import {
   loadStartListSnapshotPayload,
   resolveParticipantMarshalHeat,
 } from "@/lib/heatMarshalGate";
+import { dayOpsServerTimingEnabled, formatDayOpsServerTiming } from "@/lib/dayOpsMetrics";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -32,6 +33,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "eventIdが必要です" }, { status: 400 });
     }
 
+    const wall0 = Date.now();
     const [competition, eventMeta, statuses, individualCandidates, teamCandidates] = await Promise.all([
       prisma.competition.findUnique({
         where: { id: competitionId },
@@ -85,7 +87,21 @@ export async function GET(request: NextRequest, context: RouteContext) {
           })
         : Promise.resolve([]),
     ]);
+    const wall1 = Date.now();
     const callClosed = isCallClosedForEvent(competition?.startListSettings, eventId);
+
+    const wall2 = Date.now();
+    const timingOpt =
+      dayOpsServerTimingEnabled() ?
+        {
+          headers: {
+            "Server-Timing": formatDayOpsServerTiming([
+              { name: "db", durMs: wall1 - wall0 },
+              { name: "build", durMs: wall2 - wall1 },
+            ]),
+          },
+        }
+      : {};
 
     return NextResponse.json({
       statuses,
@@ -109,7 +125,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           })),
         })),
       },
-    });
+    }, timingOpt);
   } catch (error) {
     if (error instanceof Error && error.message === "COMPETITION_NOT_FOUND") {
       return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });
