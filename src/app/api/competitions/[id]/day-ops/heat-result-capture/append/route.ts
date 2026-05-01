@@ -10,14 +10,9 @@ import {
   DAY_OPS_STATUS_MARSHAL_ABSENT,
   effectiveDayOpsStatusForMarshalDisplay,
 } from "@/lib/dayOpsParticipantStatusDisplay";
-import { loadStartListSnapshotPayload } from "@/lib/heatMarshalGate";
-import {
-  getRoundDataFromSnapshot,
-  marshalParticipantRefsForAutoDsq,
-  type MarshalParticipantRef,
-} from "@/lib/heatMarshalFromSnapshot";
+import { loadStartListSnapshotPayload, loadStartListSnapshotPayloadLoose } from "@/lib/heatMarshalGate";
+import { computeDescInputCalledBaselineInHeat } from "@/lib/marshalHeatCalledCount";
 import { resolveParticipantInHeatForDayOps } from "@/lib/heatDayOpsResolveParticipantInHeat";
-import { expandTeamMarshalRefsWithMembers } from "@/lib/teamMarshalExpand";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -179,6 +174,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
           participantType: target.participantType,
           competitionEntryId: target.competitionEntryId ?? null,
           teamEntryId: target.teamEntryId ?? null,
+          teamMemberUserId:
+            target.participantType === "TEAM" ? target.teamMemberUserId ?? null : null,
           marshalRound: round,
         },
         select: { status: true },
@@ -333,60 +330,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
         }
       }
       if (body.tieWithPrevious !== true && body.inputOrder === "desc") {
-        const snapshot = await loadStartListSnapshotPayload(competitionId);
-        const roundData = getRoundDataFromSnapshot(snapshot, eventId, round);
-        const refsInHeat = marshalParticipantRefsForAutoDsq(roundData, heatIndex);
-        const expandedRefs = await expandTeamMarshalRefsWithMembers(prisma, refsInHeat);
-        const teamMemberRefsByTeam = new Map<string, MarshalParticipantRef[]>();
-        for (const r of expandedRefs) {
-          if (r.participantType === "TEAM" && r.teamEntryId) {
-            const list = teamMemberRefsByTeam.get(r.teamEntryId) ?? [];
-            list.push(r);
-            teamMemberRefsByTeam.set(r.teamEntryId, list);
-          }
-        }
-        let calledInHeat = 0;
-        for (const ref of refsInHeat) {
-          if (ref.participantType === "INDIVIDUAL" && ref.competitionEntryId) {
-            const stRow = await tx.competitionParticipantStatus.findFirst({
-              where: {
-                competitionId,
-                eventId,
-                participantType: "INDIVIDUAL",
-                competitionEntryId: ref.competitionEntryId,
-                teamEntryId: null,
-                teamMemberUserId: null,
-                marshalRound: round,
-              },
-              select: { status: true },
-            });
-            if (stRow?.status === "CALLED") calledInHeat += 1;
-            continue;
-          }
-          if (ref.participantType === "TEAM" && ref.teamEntryId) {
-            const memberRefs = teamMemberRefsByTeam.get(ref.teamEntryId) ?? [];
-            if (memberRefs.length === 0) continue;
-            const allCalled = (
-              await Promise.all(
-                memberRefs.map((mr: MarshalParticipantRef) =>
-                  tx.competitionParticipantStatus.findFirst({
-                    where: {
-                      competitionId,
-                      eventId,
-                      participantType: "TEAM",
-                      competitionEntryId: null,
-                      teamEntryId: ref.teamEntryId,
-                      teamMemberUserId: mr.teamMemberUserId ?? null,
-                      marshalRound: round,
-                    },
-                    select: { status: true },
-                  })
-                )
-              )
-            ).every((stRow: { status: string } | null) => stRow?.status === "CALLED");
-            if (allCalled) calledInHeat += 1;
-          }
-        }
+        const snapshot =
+          (await loadStartListSnapshotPayload(competitionId)) ??
+          (await loadStartListSnapshotPayloadLoose(competitionId));
+        const calledInHeat = await computeDescInputCalledBaselineInHeat({
+          tx,
+          competitionId,
+          eventId,
+          round,
+          heatIndex,
+          heatMarshalCallClosed: true,
+          snapshot,
+        });
         if (calledInHeat <= 0) {
           throw new Error("DESC_INPUT_NO_CALLED");
         }
@@ -498,7 +453,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
     if (error instanceof Error && error.message === "DESC_INPUT_NO_CALLED") {
       return NextResponse.json(
-        { error: "降順入力の基準人数（CALLED）がないため記録できません" },
+        {
+          error:
+            "降順入力には、このヒートでマーシャル一覧に召集済（CALLED）と表示されている参加者が1名以上必要です。一覧を更新して状態を確認してください。",
+          errorCode: "DESC_INPUT_NO_CALLED",
+        },
         { status: 409 }
       );
     }

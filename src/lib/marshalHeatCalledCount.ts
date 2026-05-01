@@ -1,0 +1,146 @@
+import type { ResultRound } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
+import type { StartListHeat } from "@/lib/startListRounds";
+import type { StartListSnapshotPayload } from "@/lib/startListSnapshot";
+import {
+  buildParticipantMarshalDisplayByKeyForRound,
+  type ParticipantStatusRowForScope,
+} from "@/lib/competitionParticipantStatusScope";
+import { effectiveDayOpsStatusForMarshalDisplay } from "@/lib/dayOpsParticipantStatusDisplay";
+import { getHeatFromRoundData, getRoundDataFromSnapshot } from "@/lib/heatMarshalFromSnapshot";
+
+/**
+ * heat-marshal GET が組み立てる参加者行と同じキー・締切表示ルールで、
+ * ヒート内の「召集済（effective が CALLED）」スロット数を数える。
+ * リザルト降順入力の基準人数はこの値と一致させる。
+ */
+export function countCalledMarshalSlotsInHeat(opts: {
+  heatMarshalCallClosed: boolean;
+  heat: StartListHeat;
+  statusByKey: Map<string, { status: string; calledAt: Date | null }>;
+  teamMembersByTeamId: Map<string, Array<{ userId: string; label: string }>>;
+}): number {
+  const { heatMarshalCallClosed, heat, statusByKey, teamMembersByTeamId } = opts;
+  const parts = heat.participants ?? [];
+  const byTeam = new Map<string, Array<{ status: string }>>();
+  let indiv = 0;
+
+  for (const p of parts) {
+    if (p.kind === "INDIVIDUAL") {
+      const st = statusByKey.get(`I:${p.entryId}`);
+      const stored = st?.status ?? "PENDING";
+      const eff = effectiveDayOpsStatusForMarshalDisplay(stored, heatMarshalCallClosed);
+      if (eff === "CALLED") indiv += 1;
+      continue;
+    }
+    if (p.kind === "TEAM" && p.teamEntryId) {
+      const members = teamMembersByTeamId.get(p.teamEntryId) ?? [];
+      if (members.length === 0) {
+        const stUnassigned = statusByKey.get(`T:${p.teamEntryId}`);
+        const stored = stUnassigned?.status ?? "PENDING";
+        const eff = effectiveDayOpsStatusForMarshalDisplay(stored, heatMarshalCallClosed);
+        const list = byTeam.get(p.teamEntryId) ?? [];
+        list.push({ status: eff });
+        byTeam.set(p.teamEntryId, list);
+      } else {
+        const list = byTeam.get(p.teamEntryId) ?? [];
+        for (const mem of members) {
+          const st = statusByKey.get(`T:${p.teamEntryId}:${mem.userId}`);
+          const stored = st?.status ?? "PENDING";
+          const eff = effectiveDayOpsStatusForMarshalDisplay(stored, heatMarshalCallClosed);
+          list.push({ status: eff });
+        }
+        byTeam.set(p.teamEntryId, list);
+      }
+    }
+  }
+
+  let teams = 0;
+  for (const [, rows] of byTeam) {
+    if (rows.length > 0 && rows.every((r) => r.status === "CALLED")) teams += 1;
+  }
+  return indiv + teams;
+}
+
+export async function fetchParticipantStatusesForMarshalEvent(
+  db: Pick<Prisma.TransactionClient, "competitionParticipantStatus">,
+  competitionId: string,
+  eventId: string
+): Promise<ParticipantStatusRowForScope[]> {
+  return db.competitionParticipantStatus.findMany({
+    where: { competitionId, eventId },
+    orderBy: { updatedAt: "desc" },
+    select: {
+      participantType: true,
+      competitionEntryId: true,
+      teamEntryId: true,
+      teamMemberUserId: true,
+      status: true,
+      calledAt: true,
+      marshalRound: true,
+      updatedAt: true,
+    },
+  });
+}
+
+export async function fetchTeamMembersMapForTeamIds(
+  db: Pick<Prisma.TransactionClient, "teamEntryMember">,
+  teamIds: string[]
+): Promise<Map<string, Array<{ userId: string; label: string }>>> {
+  const map = new Map<string, Array<{ userId: string; label: string }>>();
+  if (teamIds.length === 0) return map;
+  const memberRows = await db.teamEntryMember.findMany({
+    where: { teamEntryId: { in: teamIds } },
+    orderBy: { order: "asc" },
+    select: {
+      teamEntryId: true,
+      userId: true,
+      user: { select: { familyName: true, givenName: true } },
+    },
+  });
+  for (const m of memberRows) {
+    const list = map.get(m.teamEntryId) ?? [];
+    list.push({
+      userId: m.userId,
+      label: `${m.user.familyName} ${m.user.givenName}`,
+    });
+    map.set(m.teamEntryId, list);
+  }
+  return map;
+}
+
+/**
+ * リザルト append の降順モード用: マーシャル一覧 API と同じルールでの CALLED 人数（チームは全構成員 CALLED で1）。
+ * `heatMarshalCallClosed` は当該ヒートが締切済みのとき true（effective 表示と一致させる）。
+ */
+export async function computeDescInputCalledBaselineInHeat(opts: {
+  tx: Prisma.TransactionClient;
+  competitionId: string;
+  eventId: string;
+  round: ResultRound;
+  heatIndex: number;
+  heatMarshalCallClosed: boolean;
+  snapshot: StartListSnapshotPayload | null;
+}): Promise<number> {
+  const roundData = getRoundDataFromSnapshot(opts.snapshot, opts.eventId, opts.round);
+  const heat = getHeatFromRoundData(roundData, opts.heatIndex);
+  if (!heat) return 0;
+
+  const statuses = await fetchParticipantStatusesForMarshalEvent(
+    opts.tx,
+    opts.competitionId,
+    opts.eventId
+  );
+  const statusByKey = buildParticipantMarshalDisplayByKeyForRound(statuses, opts.round);
+  const teamIds = new Set<string>();
+  for (const p of heat.participants ?? []) {
+    if (p.kind === "TEAM" && p.teamEntryId) teamIds.add(p.teamEntryId);
+  }
+  const teamMembersByTeamId = await fetchTeamMembersMapForTeamIds(opts.tx, [...teamIds]);
+  return countCalledMarshalSlotsInHeat({
+    heatMarshalCallClosed: opts.heatMarshalCallClosed,
+    heat,
+    statusByKey,
+    teamMembersByTeamId,
+  });
+}

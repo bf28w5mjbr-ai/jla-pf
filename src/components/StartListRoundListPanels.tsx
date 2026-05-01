@@ -653,6 +653,21 @@ export function LiveRoundContent({
   const [marshalDraftErrors, setMarshalDraftErrors] = useState<Record<string, string>>({});
   const [marshalBulkSubmitting, setMarshalBulkSubmitting] = useState(false);
   const [resultCapturePendingKey, setResultCapturePendingKey] = useState<string | null>(null);
+  const [resultDraftOps, setResultDraftOps] = useState<
+    Record<
+      string,
+      {
+        opKey: string;
+        heatIndex: number;
+        tieWithPrevious: boolean;
+        inputOrder: "asc" | "desc";
+        participantType: "INDIVIDUAL" | "TEAM";
+        competitionEntryId?: string;
+        teamEntryId?: string;
+      }
+    >
+  >({});
+  const [resultDraftErrors, setResultDraftErrors] = useState<Record<string, string>>({});
   const [marshalResult, setMarshalResult] = useState<MarshalResultPayload | null>(null);
   const [heatCloseTarget, setHeatCloseTarget] = useState<number | null>(null);
   const [heatCloseBusy, setHeatCloseBusy] = useState(false);
@@ -737,6 +752,52 @@ export function LiveRoundContent({
       void resultCapture?.onRefetch();
     },
     [resultCapture]
+  );
+
+  const countResultDraftsForHeat = useCallback(
+    (heatIndex: number) => Object.values(resultDraftOps).filter((op) => op.heatIndex === heatIndex).length,
+    [resultDraftOps]
+  );
+
+  const toggleResultDraft = useCallback(
+    (payload: {
+      opKey: string;
+      heatIndex: number;
+      participant: HeatMarshalParticipant;
+      tieWithPrevious: boolean;
+      inputOrder: "asc" | "desc";
+      checked: boolean;
+    }) => {
+      const { opKey, heatIndex, participant, tieWithPrevious, inputOrder, checked } = payload;
+      setResultDraftErrors((prev) => {
+        if (!prev[opKey]) return prev;
+        const next = { ...prev };
+        delete next[opKey];
+        return next;
+      });
+      setResultDraftOps((prev) => {
+        if (!checked) {
+          if (!prev[opKey]) return prev;
+          const next = { ...prev };
+          delete next[opKey];
+          return next;
+        }
+        return {
+          ...prev,
+          [opKey]: {
+            opKey,
+            heatIndex,
+            tieWithPrevious,
+            inputOrder,
+            participantType: participant.participantType,
+            ...(participant.participantType === "INDIVIDUAL"
+              ? { competitionEntryId: participant.competitionEntryId ?? undefined }
+              : { teamEntryId: participant.teamEntryId ?? undefined }),
+          },
+        };
+      });
+    },
+    []
   );
 
   const rankedParticipantKeysForHeat = useCallback(
@@ -1019,6 +1080,60 @@ export function LiveRoundContent({
       if (!m || !resultCapture) return;
       setHeatResultConfirmBusy(true);
       try {
+        const draftsForHeat = Object.values(resultDraftOps).filter(
+          (op) => op.heatIndex === displayHeatNumber
+        );
+        if (draftsForHeat.length > 0) {
+          const failedMap: Record<string, string> = {};
+          let successCount = 0;
+          for (const op of draftsForHeat) {
+            try {
+              const data = await postHeatResultCaptureAppend(m.competitionId, {
+                mode: "manual",
+                eventId,
+                round: m.round,
+                heatIndex: op.heatIndex,
+                tieWithPrevious: op.tieWithPrevious,
+                inputOrder: op.inputOrder,
+                participantType: op.participantType,
+                competitionEntryId:
+                  op.participantType === "INDIVIDUAL" ? op.competitionEntryId : undefined,
+                teamEntryId: op.participantType === "TEAM" ? op.teamEntryId : undefined,
+              });
+              handleRankRecorded({
+                heatIndex: op.heatIndex,
+                lane: data.lane,
+                rank: data.rank,
+                participantType: data.participantType,
+                competitionEntryId: data.competitionEntryId,
+                teamEntryId: data.teamEntryId,
+              });
+              successCount += 1;
+            } catch (error) {
+              failedMap[op.opKey] = error instanceof Error ? error.message : "記録に失敗しました";
+            }
+          }
+          setResultDraftErrors((prev) => ({ ...prev, ...failedMap }));
+          const failedKeys = new Set(Object.keys(failedMap));
+          setResultDraftOps((prev) => {
+            const next: typeof prev = {};
+            for (const [k, v] of Object.entries(prev)) {
+              if (failedKeys.has(k)) next[k] = v;
+            }
+            return next;
+          });
+          if (failedKeys.size > 0) {
+            if (successCount > 0) {
+              toast.error(
+                `未確定チェック ${failedKeys.size}件の反映に失敗したため、リザルト確定を中止しました`
+              );
+            } else {
+              toast.error("未確定チェックの反映に失敗したため、リザルト確定を中止しました");
+            }
+            return;
+          }
+        }
+
         await postHeatResultConfirmHeat(m.competitionId, {
           eventId,
           round: m.round,
@@ -1038,7 +1153,7 @@ export function LiveRoundContent({
         setHeatResultConfirmBusy(false);
       }
     },
-    [m, eventId, resultCapture]
+    [m, resultCapture, resultDraftOps, eventId, handleRankRecorded]
   );
 
   const handleMarshalResult = useCallback(
@@ -1582,14 +1697,20 @@ export function LiveRoundContent({
             participant={participant}
             serverDayOpsStatus={serverStatus}
             heatIndex={displayHeatNumber}
-            competitionId={marshal.competitionId}
-            eventId={eventId}
-            resultRound={marshal.round}
             captureBlocked={captureBlocked}
             capturePendingKey={resultCapturePendingKey}
-            setCapturePendingKey={setResultCapturePendingKey}
             resultRows={localResultRows}
-            onRankRecorded={handleRankRecorded}
+            onToggleDraft={toggleResultDraft}
+            draftChecked={
+              participant
+                ? Boolean(resultDraftOps[marshalParticipantKey(participant)])
+                : false
+            }
+            draftError={
+              participant
+                ? resultDraftErrors[marshalParticipantKey(participant)]
+                : undefined
+            }
             tieWithPrevious={tieNextHeatIndex === displayHeatNumber}
             inputOrder={resultInputOrder}
           />
@@ -1725,7 +1846,7 @@ export function LiveRoundContent({
               </Button>
             </div>
             <p className="mt-1 text-left text-[10px] text-violet-900/90 dark:text-violet-100/90 sm:text-right">
-              昇順は1位から、降順は下位から入力します（失格は常に最下位扱い）。
+              昇順は1位から、降順は下位から入力します（失格は常に最下位扱い）。降順の基準人数はマーシャル一覧の「召集済」人数と同じです（団体は構成員全員が召集済のとき1枠）。
             </p>
             <p className="mt-0.5 text-left text-[10px] text-muted-foreground sm:text-right">
               着順が入った行はドラッグで入れ替え可能です。
@@ -1863,9 +1984,11 @@ export function LiveRoundContent({
           const heatConfirmedForSort = localConfirmedHeats.includes(displayHeatNumber);
           const calledForResultConfirm = countCalledInMarshalHeat(apiHeat);
           const rankOkCount = countOkRanksForHeat(localResultRows, displayHeatNumber, apiHeat);
+          const resultDraftCount = countResultDraftsForHeat(displayHeatNumber);
           const canTieInHeat = rankOkCount > 0;
           const heatResultRanksComplete =
-            calledForResultConfirm === 0 || rankOkCount >= calledForResultConfirm;
+            calledForResultConfirm === 0 ||
+            rankOkCount + resultDraftCount >= calledForResultConfirm;
           const indForResult = heatConfirmedForSort
             ? orderIndividualItemsByConfirmedResultRank(heatItems, displayHeatNumber, localResultRows)
             : heatItems;
@@ -1903,6 +2026,11 @@ export function LiveRoundContent({
                         {localConfirmedHeats.includes(displayHeatNumber) ? (
                           <span className="rounded bg-violet-200/90 px-1.5 py-0.5 text-[10px] font-medium text-violet-950 dark:bg-violet-900/70 dark:text-violet-100">
                             リザルト確定済み
+                          </span>
+                        ) : null}
+                        {!localConfirmedHeats.includes(displayHeatNumber) && resultDraftCount > 0 ? (
+                          <span className="rounded bg-violet-100/90 px-1.5 py-0.5 text-[10px] font-medium text-violet-950 dark:bg-violet-900/70 dark:text-violet-100">
+                            未確定 {resultDraftCount}件
                           </span>
                         ) : null}
                         <Button
@@ -2023,8 +2151,8 @@ export function LiveRoundContent({
               calledForResultConfirm > 0 &&
               !heatResultRanksComplete ? (
                 <p className="mt-1 text-[10px] leading-snug text-amber-800 dark:text-amber-200">
-                  召集済み {calledForResultConfirm} 名のうち、着順が入力済みなのは {rankOkCount}{" "}
-                  件です。全員分の着順が揃うまでリザルト確定はできません。
+                  召集済み {calledForResultConfirm} 名のうち、着順入力済み {rankOkCount} 件・未確定{" "}
+                  {resultDraftCount} 件です。全員分が反映されるまでリザルト確定はできません。
                 </p>
               ) : null}
               {resultCaptureVisible && m && resultCapture ? (
@@ -2164,9 +2292,11 @@ export function LiveRoundContent({
           const heatConfirmedForSortTeam = localConfirmedHeats.includes(displayHeatNumber);
           const calledForResultConfirmTeam = countCalledInMarshalHeat(apiHeat);
           const rankOkCountTeam = countOkRanksForHeat(localResultRows, displayHeatNumber, apiHeat);
+          const resultDraftCountTeam = countResultDraftsForHeat(displayHeatNumber);
           const canTieInHeatTeam = rankOkCountTeam > 0;
           const heatResultRanksCompleteTeam =
-            calledForResultConfirmTeam === 0 || rankOkCountTeam >= calledForResultConfirmTeam;
+            calledForResultConfirmTeam === 0 ||
+            rankOkCountTeam + resultDraftCountTeam >= calledForResultConfirmTeam;
           const teamForResult = heatConfirmedForSortTeam
             ? orderTeamItemsByConfirmedResultRank(heatItems, displayHeatNumber, localResultRows)
             : heatItems;
@@ -2204,6 +2334,12 @@ export function LiveRoundContent({
                         {localConfirmedHeats.includes(displayHeatNumber) ? (
                           <span className="rounded bg-violet-200/90 px-1.5 py-0.5 text-[10px] font-medium text-violet-950 dark:bg-violet-900/70 dark:text-violet-100">
                             リザルト確定済み
+                          </span>
+                        ) : null}
+                        {!localConfirmedHeats.includes(displayHeatNumber) &&
+                        resultDraftCountTeam > 0 ? (
+                          <span className="rounded bg-violet-100/90 px-1.5 py-0.5 text-[10px] font-medium text-violet-950 dark:bg-violet-900/70 dark:text-violet-100">
+                            未確定 {resultDraftCountTeam}件
                           </span>
                         ) : null}
                         <Button
@@ -2324,8 +2460,8 @@ export function LiveRoundContent({
               calledForResultConfirmTeam > 0 &&
               !heatResultRanksCompleteTeam ? (
                 <p className="mt-1 text-[10px] leading-snug text-amber-800 dark:text-amber-200">
-                  召集済み {calledForResultConfirmTeam} 名のうち、着順が入力済みなのは {rankOkCountTeam}{" "}
-                  件です。全員分の着順が揃うまでリザルト確定はできません。
+                  召集済み {calledForResultConfirmTeam} 名のうち、着順入力済み {rankOkCountTeam}{" "}
+                  件・未確定 {resultDraftCountTeam} 件です。全員分が反映されるまでリザルト確定はできません。
                 </p>
               ) : null}
               {resultCaptureVisible && m && resultCapture ? (

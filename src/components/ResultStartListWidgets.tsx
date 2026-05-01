@@ -1,19 +1,15 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { HeatMarshalParticipant } from "@/components/HeatMarshalLanePanel";
 import { marshalParticipantKey } from "@/components/HeatMarshalLanePanel";
-import { postHeatResultCaptureAppend } from "@/lib/heatResultCaptureApi";
 import {
   isDayOpsTerminalParticipantStatus,
   isMarshalAbsentDisplayStatus,
   resolveHeatLaneDayOpsDisplayStatus,
 } from "@/lib/dayOpsParticipantStatusDisplay";
 import { cn } from "@/lib/utils";
-
-type MarshalRoundKey = "HEAT" | "SEMI" | "FINAL";
 
 function rankForParticipant(
   heatIndex1Based: number,
@@ -41,14 +37,12 @@ function rankForParticipant(
 export function ResultStartListLaneCheckbox({
   participant,
   heatIndex,
-  competitionId,
-  eventId,
-  resultRound,
   captureBlocked,
   capturePendingKey,
-  setCapturePendingKey,
   resultRows,
-  onRankRecorded,
+  onToggleDraft,
+  draftChecked = false,
+  draftError,
   tieWithPrevious = false,
   inputOrder = "asc",
   serverDayOpsStatus,
@@ -57,12 +51,8 @@ export function ResultStartListLaneCheckbox({
   /** ページ SSR の参加者ステータス（マーシャル一覧より新しい CALLED と整合させる） */
   serverDayOpsStatus?: string | undefined;
   heatIndex: number;
-  competitionId: string;
-  eventId: string;
-  resultRound: MarshalRoundKey;
   captureBlocked: boolean;
   capturePendingKey: string | null;
-  setCapturePendingKey: (k: string | null) => void;
   resultRows: Array<{
     heat: number | null;
     rank: number | null;
@@ -70,14 +60,16 @@ export function ResultStartListLaneCheckbox({
     competitionEntryId: string | null;
     teamEntryId: string | null;
   }>;
-  onRankRecorded: (payload: {
+  onToggleDraft: (payload: {
+    opKey: string;
     heatIndex: number;
-    lane: number;
-    rank: number;
-    participantType: "INDIVIDUAL" | "TEAM";
-    competitionEntryId: string | null;
-    teamEntryId: string | null;
+    participant: HeatMarshalParticipant;
+    tieWithPrevious: boolean;
+    inputOrder: "asc" | "desc";
+    checked: boolean;
   }) => void;
+  draftChecked?: boolean;
+  draftError?: string;
   tieWithPrevious?: boolean;
   inputOrder?: "asc" | "desc";
 }) {
@@ -89,6 +81,7 @@ export function ResultStartListLaneCheckbox({
   const pKey = marshalParticipantKey(p);
   const rank = rankForParticipant(heatIndex, p, resultRows);
   const hasRank = rank != null;
+  const checkedState = hasRank || draftChecked;
   const mergedStatus = resolveHeatLaneDayOpsDisplayStatus(p, serverDayOpsStatus);
   const isTerminal = Boolean(mergedStatus && isDayOpsTerminalParticipantStatus(mergedStatus));
   /** マーシャル GET の行のみで判定（ポールの CALLED だけでは有効にしない） */
@@ -114,7 +107,7 @@ export function ResultStartListLaneCheckbox({
     >
       <Checkbox
         id={inputId}
-        checked={hasRank}
+        checked={checkedState}
         disabled={checkboxDisabled}
         className={cn(
           "col-start-1 row-start-1",
@@ -122,40 +115,19 @@ export function ResultStartListLaneCheckbox({
           "rounded-[5px] [&_svg]:size-2.5",
           hasRank &&
             "border-violet-600 data-[state=checked]:border-violet-600 data-[state=checked]:bg-violet-600",
-          rowBusy && "invisible"
+          rowBusy && "invisible",
+          draftError && "border-destructive"
         )}
         onCheckedChange={(checked) => {
-          if (checked !== true || hasRank) return;
-          void (async () => {
-            setCapturePendingKey(pKey);
-            try {
-              const data = await postHeatResultCaptureAppend(competitionId, {
-                mode: "manual",
-                eventId,
-                round: resultRound,
-                heatIndex,
-                tieWithPrevious,
-                inputOrder,
-                participantType: p.participantType,
-                competitionEntryId:
-                  p.participantType === "INDIVIDUAL" ? p.competitionEntryId ?? undefined : undefined,
-                teamEntryId: p.participantType === "TEAM" ? p.teamEntryId ?? undefined : undefined,
-              });
-              onRankRecorded({
-                heatIndex,
-                lane: data.lane,
-                rank: data.rank,
-                participantType: p.participantType,
-                competitionEntryId: p.participantType === "INDIVIDUAL" ? p.competitionEntryId ?? null : null,
-                teamEntryId: p.participantType === "TEAM" ? p.teamEntryId ?? null : null,
-              });
-              toast.success(`着順 ${data.rank} 位を記録しました`);
-            } catch (error) {
-              toast.error(error instanceof Error ? error.message : "記録に失敗しました");
-            } finally {
-              setCapturePendingKey(null);
-            }
-          })();
+          if (hasRank) return;
+          onToggleDraft({
+            opKey: pKey,
+            heatIndex,
+            participant: p,
+            tieWithPrevious,
+            inputOrder,
+            checked: checked === true,
+          });
         }}
       />
       {rowBusy ? (
