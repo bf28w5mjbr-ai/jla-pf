@@ -24,6 +24,7 @@ import {
   ArrowLeft,
   Calendar,
   ChevronRight,
+  CircleDot,
   Globe,
   Landmark,
   Mail,
@@ -31,7 +32,6 @@ import {
   Phone,
   Plus,
   Trophy,
-  User,
   Users,
 } from "lucide-react";
 import { canViewOrganizationDashboardPage } from "@/lib/organizationDashboardAccess";
@@ -327,8 +327,8 @@ export default async function OrganizationDetailPage({
       )}
 
       <header>
-        <div className="overflow-hidden rounded-xl border border-border/70 bg-gradient-to-br from-muted/40 via-background to-background shadow-sm">
-          <div className="space-y-3 p-4 sm:p-5">
+        <div className="overflow-hidden rounded-xl border border-border/70 bg-gradient-to-br from-muted/35 via-background to-muted/25 shadow-sm">
+          <div className="space-y-2 p-3 sm:space-y-2.5 sm:p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <Button variant="outline" size="sm" className="h-8 gap-1.5 px-2.5 text-xs sm:text-sm" asChild>
                 <Link href="/dashboard">
@@ -344,54 +344,71 @@ export default async function OrganizationDetailPage({
                     <ChevronRight className="h-3.5 w-3.5 opacity-70 sm:h-4 sm:w-4" aria-hidden />
                   </Link>
                 </Button>
-                {isOrgAdmin ? (
-                  <Button size="sm" className="h-8 gap-1.5 px-2.5 text-xs shadow-sm sm:gap-2 sm:px-3 sm:text-sm" asChild>
-                    <Link href={`/organizations/${organization.id}/competitions/create`}>
-                      <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
-                      大会作成
-                    </Link>
-                  </Button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 text-primary">
+              <Landmark className="h-4 w-4 shrink-0 sm:h-[1.125rem] sm:w-[1.125rem]" strokeWidth={1.75} aria-hidden />
+              <span className="text-xs font-medium sm:text-sm">大会主催者</span>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+              <div className="inline-flex shrink-0 flex-col items-center rounded-lg border border-border/50 bg-muted/10 p-1.5 shadow-sm">
+                <OrganizationLogoManager
+                  organizationId={organization.id}
+                  currentLogoUrl={organization.logoUrl}
+                  organizationName={organization.name}
+                  canEdit={true}
+                  variant="compact"
+                />
+              </div>
+              <div className="min-w-0 flex-1 space-y-1">
+                <h1 className="text-balance text-lg font-semibold tracking-tight text-foreground sm:text-xl">
+                  {organization.name}
+                </h1>
+                {nameSubtitleParts.length > 0 ? (
+                  <p className="text-xs text-muted-foreground sm:text-sm">{nameSubtitleParts.join(" · ")}</p>
+                ) : null}
+                {[organization.representativeFamilyName, organization.representativeGivenName].some((s) => s?.trim()) ? (
+                  <div className="min-w-0 pt-0.5">
+                    <span className="text-[11px] font-medium text-muted-foreground">代表者</span>
+                    <p className="font-medium text-foreground">
+                      {[organization.representativeFamilyName, organization.representativeGivenName]
+                        .map((s) => s?.trim())
+                        .filter(Boolean)
+                        .join(" ")}
+                    </p>
+                  </div>
                 ) : null}
               </div>
             </div>
 
-            <div className="min-w-0 space-y-1">
-              <div className="flex items-center gap-1.5 text-primary">
-                <Landmark className="h-4 w-4 shrink-0 sm:h-[1.125rem] sm:w-[1.125rem]" strokeWidth={1.75} aria-hidden />
-                <span className="text-xs font-medium sm:text-sm">大会主催者</span>
-              </div>
-              <h1 className="text-balance text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-                {organization.name}
-              </h1>
-              {nameSubtitleParts.length > 0 ? (
-                <p className="text-xs text-muted-foreground sm:text-sm">{nameSubtitleParts.join(" · ")}</p>
-              ) : null}
-              <p className="max-w-2xl text-[11px] leading-snug text-muted-foreground sm:text-xs">
-                大会・メンバー・事業は下のタブから管理できます。
-              </p>
-            </div>
-
             <div
-              className="grid gap-1.5 border-t border-border/60 pt-3 sm:grid-cols-3 sm:gap-2 sm:pt-3.5"
+              className="grid gap-1.5 border-t border-border/60 pt-2.5 sm:grid-cols-3 sm:pt-3"
               role="group"
               aria-label="団体の概要"
             >
-              <div className="flex min-h-[2.75rem] flex-col justify-center rounded-lg border border-border/60 bg-card/60 px-2.5 py-2 sm:min-h-[3rem] sm:px-3">
-                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  状態
-                </span>
-                <span
-                  className={cn(
-                    "mt-0.5 inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-xs font-semibold",
-                    orgStatusBadgeClass(organization.status)
-                  )}
-                >
-                  {statusLabelMap[organization.status as keyof typeof statusLabelMap] ||
-                    organization.status}
-                </span>
+              <div className="flex min-h-0 items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 sm:min-h-[2.5rem] sm:gap-2 sm:px-2.5">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary sm:h-8 sm:w-8">
+                  <CircleDot className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={1.75} aria-hidden />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-[11px] font-medium text-muted-foreground">状態</span>
+                  <div className="mt-0.5">
+                    <span
+                      className={cn(
+                        "inline-flex w-fit max-w-full items-center rounded-full border px-2 py-0.5 text-xs font-semibold",
+                        orgStatusBadgeClass(organization.status)
+                      )}
+                    >
+                      {statusLabelMap[organization.status as keyof typeof statusLabelMap] ||
+                        organization.status}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="flex min-h-[2.75rem] items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2.5 py-2 sm:min-h-[3rem] sm:gap-2.5 sm:px-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary sm:h-9 sm:w-9">
+              <div className="flex min-h-0 items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 sm:min-h-[2.5rem] sm:gap-2 sm:px-2.5">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary sm:h-8 sm:w-8">
                   <Trophy className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={1.75} aria-hidden />
                 </div>
                 <div>
@@ -402,8 +419,8 @@ export default async function OrganizationDetailPage({
                   </p>
                 </div>
               </div>
-              <div className="flex min-h-[2.75rem] items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2.5 py-2 sm:min-h-[3rem] sm:gap-2.5 sm:px-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary sm:h-9 sm:w-9">
+              <div className="flex min-h-0 items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 sm:min-h-[2.5rem] sm:gap-2 sm:px-2.5">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary sm:h-8 sm:w-8">
                   <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={1.75} aria-hidden />
                 </div>
                 <div>
@@ -415,150 +432,116 @@ export default async function OrganizationDetailPage({
                 </div>
               </div>
             </div>
+
+            <div className="border-t border-border/60 pt-2.5 sm:pt-3">
+              <p className="mb-2 text-[11px] leading-snug text-muted-foreground sm:text-xs">
+                以下は公開ページ・大会情報に反映されます。
+              </p>
+              <div className="rounded-lg border border-border/40 bg-background/40 p-2 sm:p-2.5">
+                <div className="grid gap-1.5 text-sm sm:grid-cols-2 sm:gap-x-3 sm:gap-y-2 lg:grid-cols-3">
+                    {organization.email ? (
+                      <div className="flex min-w-0 items-start gap-1.5">
+                        <Mail className="mt-0.5 h-3 w-3 shrink-0 text-primary/70" aria-hidden />
+                        <div className="min-w-0 leading-snug">
+                          <span className="text-[11px] font-medium text-muted-foreground">メール</span>
+                          <div className="mt-0.5 min-w-0">
+                            <Button
+                              asChild
+                              variant="outline"
+                              size="sm"
+                              className="h-auto min-h-6 max-w-full justify-start px-1.5 py-0.5 text-left text-[11px] font-medium"
+                            >
+                              <a href={`mailto:${organization.email}`} className="break-all">
+                                {organization.email}
+                              </a>
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {organization.phoneNumber ? (
+                      <div className="flex min-w-0 items-start gap-1.5">
+                        <Phone className="mt-0.5 h-3 w-3 shrink-0 text-primary/70" aria-hidden />
+                        <div className="min-w-0 leading-snug">
+                          <span className="text-[11px] font-medium text-muted-foreground">電話</span>
+                          <p className="tabular-nums font-medium text-foreground">{organization.phoneNumber}</p>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {organization.establishedYear ? (
+                      <div className="flex min-w-0 items-start gap-1.5">
+                        <Calendar className="mt-0.5 h-3 w-3 shrink-0 text-primary/70" aria-hidden />
+                        <div className="leading-snug">
+                          <span className="text-[11px] font-medium text-muted-foreground">設立年</span>
+                          <p className="tabular-nums font-medium text-foreground">
+                            {organization.establishedYear}年
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {organization.websiteUrl ? (
+                      <div className="flex min-w-0 items-start gap-1.5 sm:col-span-2 lg:col-span-1">
+                        <Globe className="mt-0.5 h-3 w-3 shrink-0 text-primary/70" aria-hidden />
+                        <div className="min-w-0 leading-snug">
+                          <span className="text-[11px] font-medium text-muted-foreground">ウェブサイト</span>
+                          <div className="mt-0.5 min-w-0">
+                            {organizationWebsiteSafeHref ? (
+                              <Button
+                                asChild
+                                variant="outline"
+                                size="sm"
+                                className="h-auto min-h-6 max-w-full justify-start px-1.5 py-0.5 text-left text-[11px] font-medium"
+                              >
+                                <a
+                                  href={organizationWebsiteSafeHref}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="break-all"
+                                >
+                                  {organization.websiteUrl.replace(/^https?:\/\//, "")}
+                                </a>
+                              </Button>
+                            ) : (
+                              <span className="block break-all text-sm font-medium text-foreground">
+                                {organization.websiteUrl}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {officeAddressLine ? (
+                    <div className="mt-2.5 flex min-w-0 items-start gap-1.5 border-t border-border/50 pt-2.5">
+                      <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-primary/70" aria-hidden />
+                      <div className="min-w-0 leading-snug">
+                        <span className="text-[11px] font-medium text-muted-foreground">事務局所在地</span>
+                        <p className="text-xs font-medium leading-snug text-foreground sm:text-sm">
+                          {officeAddressLine}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {organization.description ? (
+                    <div className="mt-2.5 border-t border-border/50 pt-2.5">
+                      <span className="text-[11px] font-medium text-muted-foreground">団体について</span>
+                      <p className="mt-0.5 whitespace-pre-wrap text-xs leading-relaxed text-foreground sm:text-sm">
+                        {organization.description}
+                      </p>
+                    </div>
+                  ) : null}
+              </div>
+            </div>
           </div>
         </div>
       </header>
 
-      <Card className="overflow-hidden border-border/90 shadow-sm">
-        <CardHeader className="border-b border-border/60 bg-muted/15 px-3 py-2 sm:px-5">
-          <CardTitle className="text-sm font-semibold sm:text-base">基本情報</CardTitle>
-          <CardDescription className="text-[11px] leading-snug sm:text-xs">
-            ロゴ・連絡先・所在地（公開・大会に反映）
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-0 p-0">
-          <div className="bg-muted/10 px-3 py-2.5 sm:px-5 sm:py-3">
-            <OrganizationLogoManager
-              organizationId={organization.id}
-              currentLogoUrl={organization.logoUrl}
-              organizationName={organization.name}
-              canEdit={true}
-            />
-          </div>
-
-          <div className="border-t border-border/60 px-3 py-2.5 sm:px-5 sm:py-3">
-            <div className="rounded-lg border border-border/70 bg-card/40 p-2 sm:p-2.5">
-              <div className="grid gap-1.5 text-sm sm:grid-cols-2 sm:gap-x-3 sm:gap-y-2 lg:grid-cols-3">
-                {organization.representativeFamilyName || organization.representativeGivenName ? (
-                  <div className="flex min-w-0 items-start gap-1.5">
-                    <User className="mt-0.5 h-3 w-3 shrink-0 text-primary/70" aria-hidden />
-                    <div className="min-w-0 leading-snug">
-                      <span className="text-[11px] font-medium text-muted-foreground">代表者</span>
-                      <p className="font-medium text-foreground">
-                        {organization.representativeFamilyName} {organization.representativeGivenName}
-                      </p>
-                    </div>
-                  </div>
-                ) : null}
-
-                {organization.email ? (
-                  <div className="flex min-w-0 items-start gap-1.5">
-                    <Mail className="mt-0.5 h-3 w-3 shrink-0 text-primary/70" aria-hidden />
-                    <div className="min-w-0 leading-snug">
-                      <span className="text-[11px] font-medium text-muted-foreground">メール</span>
-                      <div className="mt-0.5 min-w-0">
-                        <Button
-                          asChild
-                          variant="outline"
-                          size="sm"
-                          className="h-auto min-h-6 max-w-full justify-start px-1.5 py-0.5 text-left text-[11px] font-medium"
-                        >
-                          <a href={`mailto:${organization.email}`} className="break-all">
-                            {organization.email}
-                          </a>
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-
-                {organization.phoneNumber ? (
-                  <div className="flex min-w-0 items-start gap-1.5">
-                    <Phone className="mt-0.5 h-3 w-3 shrink-0 text-primary/70" aria-hidden />
-                    <div className="min-w-0 leading-snug">
-                      <span className="text-[11px] font-medium text-muted-foreground">電話</span>
-                      <p className="tabular-nums font-medium text-foreground">{organization.phoneNumber}</p>
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="flex min-w-0 items-start gap-1.5">
-                  <Users className="mt-0.5 h-3 w-3 shrink-0 text-primary/70" aria-hidden />
-                  <div className="leading-snug">
-                    <span className="text-[11px] font-medium text-muted-foreground">メンバー</span>
-                    <p className="font-medium text-foreground">{organization.admins.length}名</p>
-                  </div>
-                </div>
-
-                {organization.establishedYear ? (
-                  <div className="flex min-w-0 items-start gap-1.5">
-                    <Calendar className="mt-0.5 h-3 w-3 shrink-0 text-primary/70" aria-hidden />
-                    <div className="leading-snug">
-                      <span className="text-[11px] font-medium text-muted-foreground">設立年</span>
-                      <p className="tabular-nums font-medium text-foreground">
-                        {organization.establishedYear}年
-                      </p>
-                    </div>
-                  </div>
-                ) : null}
-
-                {organization.websiteUrl ? (
-                  <div className="flex min-w-0 items-start gap-1.5 sm:col-span-2 lg:col-span-1">
-                    <Globe className="mt-0.5 h-3 w-3 shrink-0 text-primary/70" aria-hidden />
-                    <div className="min-w-0 leading-snug">
-                      <span className="text-[11px] font-medium text-muted-foreground">ウェブサイト</span>
-                      <div className="mt-0.5 min-w-0">
-                        {organizationWebsiteSafeHref ? (
-                          <Button
-                            asChild
-                            variant="outline"
-                            size="sm"
-                            className="h-auto min-h-6 max-w-full justify-start px-1.5 py-0.5 text-left text-[11px] font-medium"
-                          >
-                            <a
-                              href={organizationWebsiteSafeHref}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="break-all"
-                            >
-                              {organization.websiteUrl.replace(/^https?:\/\//, "")}
-                            </a>
-                          </Button>
-                        ) : (
-                          <span className="block break-all text-sm font-medium text-foreground">
-                            {organization.websiteUrl}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              {officeAddressLine ? (
-                <div className="mt-2.5 flex min-w-0 items-start gap-1.5 border-t border-border/50 pt-2.5">
-                  <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-primary/70" aria-hidden />
-                  <div className="min-w-0 leading-snug">
-                    <span className="text-[11px] font-medium text-muted-foreground">事務局所在地</span>
-                    <p className="text-xs font-medium leading-snug text-foreground sm:text-sm">{officeAddressLine}</p>
-                  </div>
-                </div>
-              ) : null}
-
-              {organization.description ? (
-                <div className="mt-2.5 border-t border-border/50 pt-2.5">
-                  <span className="text-[11px] font-medium text-muted-foreground">団体について</span>
-                  <p className="mt-0.5 whitespace-pre-wrap text-xs leading-relaxed text-foreground sm:text-sm">
-                    {organization.description}
-                  </p>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="space-y-4">
+      <div className="mt-3 space-y-4">
         <OrganizationDetailTabsClient activeTab={activeTab}>
           <div className="sticky top-[calc(var(--safe-area-top,0px)+0.5rem)] z-10 -mx-3 border-y border-border/60 bg-background/95 px-3 py-1.5 backdrop-blur-md sm:static sm:mx-0 sm:rounded-lg sm:border sm:bg-muted/35 sm:px-1 sm:py-1 sm:backdrop-blur-none">
             <TabsList

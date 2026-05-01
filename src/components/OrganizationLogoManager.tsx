@@ -3,16 +3,14 @@
 import { useState, useRef, useEffect, useId } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { isValidOrganizationLogoUrl } from "@/lib/organizationLogo";
 import { OrganizationLogoImage } from "@/components/OrganizationLogoImage";
 import { downscaleRasterLogoFileIfLarge, fetchWithConnectionRetry } from "@/lib/browserUploadHelpers";
 import {
   tryDirectOrganizationLogoUpload,
   tryJsonBase64OrganizationLogoUpload,
 } from "@/lib/organizationLogoDirectUpload";
+import { Loader2, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface OrganizationLogoManagerProps {
@@ -20,6 +18,10 @@ interface OrganizationLogoManagerProps {
   currentLogoUrl?: string | null;
   organizationName: string;
   canEdit?: boolean;
+  /** 一覧・ダッシュなど省スペース向け（プレビュー枠と周辺余白を小さくする） */
+  variant?: "default" | "compact";
+  /** ルートコンテナのクラス（例: ヒーローでは常に縦積みにする） */
+  className?: string;
 }
 
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
@@ -46,13 +48,14 @@ export default function OrganizationLogoManager({
   currentLogoUrl,
   organizationName,
   canEdit = false,
+  variant = "default",
+  className,
 }: OrganizationLogoManagerProps) {
   const router = useRouter();
   const inputId = useId();
   const [uploading, setUploading] = useState(false);
-  const [urlSaving, setUrlSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [preview, setPreview] = useState<string | null>(currentLogoUrl || null);
-  const [urlDraft, setUrlDraft] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -160,7 +163,6 @@ export default function OrganizationLogoManager({
       }
 
       setPreview(logoUrl);
-      setUrlDraft("");
 
       toast.success("団体ロゴを更新しました");
       router.refresh();
@@ -176,7 +178,7 @@ export default function OrganizationLogoManager({
 
   const clearLogo = async () => {
     if (!confirm("ロゴを削除しますか？")) return;
-    setUrlSaving(true);
+    setDeleting(true);
     try {
       const response = await fetch(`/api/organizations/${organizationId}/logo/delete`, {
         method: "DELETE",
@@ -186,47 +188,18 @@ export default function OrganizationLogoManager({
         throw new Error(typeof data.error === "string" ? data.error : "削除に失敗しました");
       }
       setPreview(null);
-      setUrlDraft("");
       toast.success("ロゴを削除しました");
       router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "削除に失敗しました");
     } finally {
-      setUrlSaving(false);
+      setDeleting(false);
     }
   };
 
-  const applyLogoUrl = async () => {
-    const trimmed = urlDraft.trim();
-    if (!trimmed) {
-      toast.error("URLを入力してください");
-      return;
-    }
-    if (!isValidOrganizationLogoUrl(trimmed)) {
-      toast.error("https:// で始まる画像URLを入力してください");
-      return;
-    }
-
-    setUrlSaving(true);
-    try {
-      const response = await fetch(`/api/organizations/${organizationId}/logo`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ logoUrl: trimmed }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(typeof data.error === "string" ? data.error : "URLの反映に失敗しました");
-      }
-      setPreview(data.logoUrl ?? trimmed);
-      toast.success("ロゴURLを反映しました");
-      router.refresh();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "URLの反映に失敗しました");
-    } finally {
-      setUrlSaving(false);
-    }
-  };
+  const isCompact = variant === "compact";
+  const frameClass = isCompact ? "h-16 w-16" : "h-24 w-24";
+  const thumbRadius = isCompact ? "rounded-lg" : "rounded-xl";
 
   if (!canEdit) {
     return (
@@ -234,19 +207,28 @@ export default function OrganizationLogoManager({
         key={currentLogoUrl ?? "no-logo"}
         logoUrl={currentLogoUrl}
         organizationName={organizationName}
-        frameClassName="h-32 w-32"
-        className="rounded-xl shadow-sm"
+        frameClassName={frameClass}
+        className={cn(thumbRadius, "shadow-sm")}
       />
     );
   }
 
+  const showDelete = Boolean(preview || currentLogoUrl);
+
   return (
-    <div className="flex max-w-md flex-col gap-3 sm:flex-row sm:items-start">
+    <div
+      className={cn(
+        "flex flex-col sm:flex-row sm:items-start",
+        isCompact ? "max-w-none gap-2 sm:gap-3" : "max-w-md gap-3",
+        className,
+      )}
+    >
       <div className="relative shrink-0">
         <label
           htmlFor={inputId}
           className={cn(
-            "group relative block cursor-pointer rounded-xl outline-none transition",
+            "group relative block cursor-pointer outline-none transition",
+            thumbRadius,
             uploading && "pointer-events-none opacity-60",
           )}
         >
@@ -254,16 +236,47 @@ export default function OrganizationLogoManager({
             key={preview ?? "empty"}
             logoUrl={preview}
             organizationName={organizationName}
-            frameClassName="h-32 w-32"
-            className="rounded-xl shadow-sm"
+            frameClassName={frameClass}
+            className={cn(thumbRadius, "shadow-sm")}
           />
           <span
-            className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-black/0 text-xs font-medium text-white opacity-0 transition group-hover:bg-black/45 group-hover:opacity-100 group-focus-visible:bg-black/45 group-focus-visible:opacity-100"
+            className={cn(
+              "pointer-events-none absolute inset-0 flex items-center justify-center bg-black/0 font-medium text-white opacity-0 transition group-hover:bg-black/45 group-hover:opacity-100 group-focus-within:bg-black/45 group-focus-within:opacity-100 group-focus-visible:bg-black/45 group-focus-visible:opacity-100",
+              thumbRadius,
+              isCompact ? "px-1 text-[10px] leading-tight" : "text-xs",
+            )}
             aria-hidden
           >
             画像を変更
           </span>
         </label>
+        {showDelete ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="icon"
+            title="ロゴを削除"
+            aria-label="ロゴを削除"
+            disabled={deleting || uploading}
+            className={cn(
+              "absolute z-10 border border-border/70 bg-background/95 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-destructive/15 hover:text-destructive",
+              isCompact
+                ? "bottom-0 right-0 h-6 w-6 rounded-md [&_svg]:size-3"
+                : "bottom-1 right-1 h-7 w-7 rounded-md [&_svg]:size-3.5",
+            )}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void clearLogo();
+            }}
+          >
+            {deleting ? (
+              <Loader2 className={cn("animate-spin", isCompact ? "size-3" : "size-3.5")} aria-hidden />
+            ) : (
+              <Trash2 aria-hidden />
+            )}
+          </Button>
+        ) : null}
         <input
           ref={fileInputRef}
           id={inputId}
@@ -274,67 +287,25 @@ export default function OrganizationLogoManager({
           className="sr-only"
         />
         {uploading && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-background/70 text-xs font-medium backdrop-blur-[1px]">
+          <div
+            className={cn(
+              "pointer-events-none absolute inset-0 flex items-center justify-center bg-background/70 font-medium backdrop-blur-[1px]",
+              thumbRadius,
+              isCompact ? "text-[10px] leading-tight" : "text-xs",
+            )}
+          >
             アップロード中…
           </div>
         )}
       </div>
 
-      <div className="min-w-0 flex-1 space-y-2">
-        <p className="text-xs text-muted-foreground">
-          プレビューはロゴの色に合わせて背景が変わります。透過画像は枠を抑えた表示になります。
-        </p>
-
-        <details className="group rounded-lg border border-border/60 bg-muted/10 open:border-border open:bg-muted/20">
-          <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-xs font-medium text-muted-foreground transition hover:text-foreground [&::-webkit-details-marker]:hidden">
-            <ChevronDown
-              aria-hidden
-              className="h-3.5 w-3.5 shrink-0 transition-transform duration-200 group-open:rotate-180"
-            />
-            その他（URLで指定・削除）
-          </summary>
-          <div className="space-y-3 border-t border-border/50 px-3 py-3">
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
-              自サイトや CDN の <span className="font-medium text-foreground/80">HTTPS</span>{" "}
-              画像URLを登録できます（アップロードと同じフィールドです）。
-            </p>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-              <Input
-                type="url"
-                inputMode="url"
-                placeholder="https://…"
-                value={urlDraft}
-                onChange={(e) => setUrlDraft(e.target.value)}
-                className="h-9 min-w-0 flex-1 text-sm"
-                disabled={urlSaving || uploading}
-                autoComplete="off"
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="h-9 shrink-0 px-3 text-xs sm:w-auto"
-                disabled={urlSaving || uploading}
-                onClick={() => void applyLogoUrl()}
-              >
-                {urlSaving ? "反映中…" : "反映"}
-              </Button>
-            </div>
-            {(preview || currentLogoUrl) && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8 w-full justify-center text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive sm:w-auto"
-                disabled={urlSaving || uploading}
-                onClick={() => void clearLogo()}
-              >
-                ロゴを削除
-              </Button>
-            )}
-          </div>
-        </details>
-      </div>
+      {!isCompact ? (
+        <div className="min-w-0 flex-1 space-y-2">
+          <p className="text-xs text-muted-foreground">
+            プレビューはロゴの色に合わせて背景が変わります。透過画像は枠を抑えた表示になります。
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }
