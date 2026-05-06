@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import { resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
@@ -82,20 +82,18 @@ export async function replaceClubPrepaidSlotsForSave(
   const status =
     params.billingTiming === "INSTANT_PREPAID" ? "PENDING_CLUB_CHECKOUT" : "DEFERRED_POST_CLOSE";
 
-  for (const coveredUserId of params.prepaidIndividualUserIds) {
-    await tx.clubCompetitionPrepaidIndividualSlot.create({
-      data: {
-        competitionId: params.competitionId,
-        clubId: params.clubId,
-        coveredUserId,
-        status,
-        clubPaymentId:
-          params.billingTiming === "INSTANT_PREPAID" && params.paymentId
-            ? params.paymentId
-            : null,
-      },
-    });
-  }
+  const clubPaymentId =
+    params.billingTiming === "INSTANT_PREPAID" && params.paymentId ? params.paymentId : null;
+
+  await tx.clubCompetitionPrepaidIndividualSlot.createMany({
+    data: params.prepaidIndividualUserIds.map((coveredUserId) => ({
+      competitionId: params.competitionId,
+      clubId: params.clubId,
+      coveredUserId,
+      status,
+      clubPaymentId,
+    })),
+  });
 }
 
 /** Stripe の CLUB 大会参加費 Checkout 成功後：先払い枠の有効化と、締切後枠に紐づく個人エントリーの清算 */

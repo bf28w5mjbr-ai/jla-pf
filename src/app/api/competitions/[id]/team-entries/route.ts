@@ -254,7 +254,12 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     });
     const clearStripeRefsAfterSucceededPayment = existingTeamPayment?.status === "SUCCEEDED";
 
-    await prisma.$transaction(async (tx) => {
+    /**
+     * 既定 ~5s のインタラクティブ TX タイムアウトを超えると
+     * 「Transaction not found … old closed transaction」になる（特に多数チームの逐次 create）。
+     */
+    await prisma.$transaction(
+      async (tx) => {
       /**
        * TeamEntry 削除は CompetitionParticipantStatus へ ON DELETE SET NULL。
        * 同一種目・同一 marshalRound で複数チーム分の行が、null 化後に
@@ -281,14 +286,14 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         },
       });
 
-      for (const team of normalizedTeams) {
-        await tx.teamEntry.create({
-          data: {
+      if (normalizedTeams.length > 0) {
+        await tx.teamEntry.createMany({
+          data: normalizedTeams.map((team) => ({
             competitionId,
             clubId,
             eventId: team.eventId,
             teamName: team.teamName,
-          },
+          })),
         });
       }
 
@@ -428,7 +433,9 @@ export async function PUT(request: NextRequest, context: RouteContext) {
           });
         }
       }
-    });
+    },
+      { maxWait: 20_000, timeout: 55_000 }
+    );
 
     const teamEntries = await prisma.teamEntry.findMany({
       where: {
