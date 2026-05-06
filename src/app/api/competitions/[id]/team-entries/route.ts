@@ -245,6 +245,22 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const clearStripeRefsAfterSucceededPayment = existingTeamPayment?.status === "SUCCEEDED";
 
     await prisma.$transaction(async (tx) => {
+      /**
+       * TeamEntry 削除は CompetitionParticipantStatus へ ON DELETE SET NULL。
+       * 同一種目・同一 marshalRound で複数チーム分の行が、null 化後に
+       * @@unique([competitionId, eventId, participantType, competitionEntryId, teamEntryId, teamMemberUserId, marshalRound])
+       * で衝突し得る（例: teamMemberUserId が null のチーム単位行が複数）。
+       * エントリー期間中のクラブ側チーム一覧の置き換えでは、当該チームに紐づく marshal 行を先に除去する。
+       */
+      await tx.competitionParticipantStatus.deleteMany({
+        where: {
+          teamEntry: {
+            competitionId,
+            clubId,
+          },
+        },
+      });
+
       await tx.teamEntry.deleteMany({
         where: {
           competitionId,
