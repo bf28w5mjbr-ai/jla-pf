@@ -1,5 +1,6 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { isClubAdminRole } from "@/lib/roleScopes";
@@ -38,8 +39,17 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ message: "認証が必要です" }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { clubId, teams, prepaidIndividualUserIds: rawPrepaidIds } = body ?? {};
+    let body: Record<string, unknown>;
+    try {
+      const parsed = await request.json();
+      body =
+        parsed && typeof parsed === "object" && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : {};
+    } catch {
+      return NextResponse.json({ message: "リクエストの形式が不正です" }, { status: 400 });
+    }
+    const { clubId, teams, prepaidIndividualUserIds: rawPrepaidIds } = body;
 
     if (!clubId || typeof clubId !== "string") {
       return NextResponse.json({ message: "クラブを選択してください" }, { status: 400 });
@@ -251,15 +261,18 @@ export async function PUT(request: NextRequest, context: RouteContext) {
        * @@unique([competitionId, eventId, participantType, competitionEntryId, teamEntryId, teamMemberUserId, marshalRound])
        * で衝突し得る（例: teamMemberUserId が null のチーム単位行が複数）。
        * エントリー期間中のクラブ側チーム一覧の置き換えでは、当該チームに紐づく marshal 行を先に除去する。
+       * ID 明示の deleteMany にする（リレーション絞り込みの生成 SQL 差異を避ける）。
        */
-      await tx.competitionParticipantStatus.deleteMany({
-        where: {
-          teamEntry: {
-            competitionId,
-            clubId,
-          },
-        },
+      const doomedTeamEntryIds = await tx.teamEntry.findMany({
+        where: { competitionId, clubId },
+        select: { id: true },
       });
+      const doomedIds = doomedTeamEntryIds.map((r) => r.id);
+      if (doomedIds.length > 0) {
+        await tx.competitionParticipantStatus.deleteMany({
+          where: { teamEntryId: { in: doomedIds } },
+        });
+      }
 
       await tx.teamEntry.deleteMany({
         where: {
@@ -380,7 +393,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
                   stripeCheckoutSessionId: null,
                   stripePaymentIntentId: null,
                   paidAt: null,
-                  stripeDisputeId: null,
                 }
               : {}),
             metadata: {
@@ -437,6 +449,15 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       paymentOwnerId: buildTeamEntryPaymentOwnerId(competitionId, clubId),
     });
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json(
+        {
+          message:
+            "データの一意制約に抵触しました。別端末での更新や当日運用記録との競合の可能性があります。運営へお問い合わせください。",
+        },
+        { status: 409 }
+      );
+    }
     return jsonInternalError500("PUT api/competitions/[id]/team-entries/route.ts", error);
   }
 }
