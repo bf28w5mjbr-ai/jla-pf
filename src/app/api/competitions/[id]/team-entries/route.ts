@@ -209,6 +209,19 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     const clubIndividualBillingTiming = resolveClubIndividualEntryBillingTiming(competition.entryFee);
 
+    const paymentOwnerId = buildTeamEntryPaymentOwnerId(competitionId, clubId);
+    const existingTeamPayment = await prisma.payment.findUnique({
+      where: {
+        ownerType_ownerId_type: {
+          ownerType: "CLUB",
+          ownerId: paymentOwnerId,
+          type: "COMPETITION_ENTRY_FEE",
+        },
+      },
+      select: { status: true },
+    });
+    const clearStripeRefsAfterSucceededPayment = existingTeamPayment?.status === "SUCCEEDED";
+
     await prisma.$transaction(async (tx) => {
       await tx.teamEntry.deleteMany({
         where: {
@@ -242,7 +255,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
       const teamTotalYen = normalizedTeams.length * teamEntryFeePerTeam;
       const totalAmount = teamTotalYen + prepaidSubtotalYen;
-      const paymentOwnerId = buildTeamEntryPaymentOwnerId(competitionId, clubId);
 
       if (
         normalizedTeams.length === 0 &&
@@ -324,6 +336,9 @@ export async function PUT(request: NextRequest, context: RouteContext) {
             userId: session.userId,
             status: "PENDING",
             amount: Math.max(0, totalAmount),
+            ...(clearStripeRefsAfterSucceededPayment
+              ? { stripeCheckoutSessionId: null, stripePaymentIntentId: null }
+              : {}),
             metadata: {
               scope: "TEAM_ENTRY",
               competitionId,

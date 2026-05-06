@@ -15,7 +15,10 @@ export function jsonInternalError500(
   err: unknown
 ): NextResponse {
   logApiError(context, err);
-  const body: { error: string; details?: string } = { error: "internal_error" };
+  const body: { error: string; message: string; details?: string } = {
+    error: "internal_error",
+    message: "サーバーでエラーが発生しました。時間をおいて再度お試しください。",
+  };
   if (process.env.NODE_ENV !== "production" && err instanceof Error) {
     body.details = err.message;
   }

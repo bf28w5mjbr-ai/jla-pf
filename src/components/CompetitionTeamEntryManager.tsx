@@ -234,6 +234,9 @@ export default function CompetitionTeamEntryManager({
     [scopedTeamEvents]
   );
 
+  /** 表示スコープ外の区分に登録済みのチームも API 保存に含める（POOL_ONLY 時にオーシャン行が落ちて全削除になる不具合の防止） */
+  const allTeamEventIdSet = useMemo(() => new Set(teamEvents.map((e) => e.id)), [teamEvents]);
+
   const selectedClubEntries = useMemo(
     () => entriesByClub[selectedClubId] ?? [],
     [entriesByClub, selectedClubId]
@@ -246,8 +249,14 @@ export default function CompetitionTeamEntryManager({
     () => selectedClubEntries.filter((entry) => scopedEventIdSet.has(entry.eventId)),
     [selectedClubEntries, scopedEventIdSet]
   );
+  const entriesForSave = useMemo(
+    () => selectedClubEntries.filter((entry) => allTeamEventIdSet.has(entry.eventId)),
+    [selectedClubEntries, allTeamEventIdSet]
+  );
+  const hiddenCategoryTeamCount = Math.max(0, entriesForSave.length - entriesForScope.length);
+
   const selectedClubName = clubs.find((club) => club.id === selectedClubId)?.name ?? "";
-  const totalTeamCount = entriesForScope.length;
+  const totalTeamCount = entriesForSave.length;
   const estimatedFee = totalTeamCount * teamEntryFeePerTeam;
   const billing = billingByClub[selectedClubId];
   const paymentQuery = searchParams.get("payment");
@@ -341,7 +350,7 @@ export default function CompetitionTeamEntryManager({
       return;
     }
 
-    const invalidEntry = entriesForScope.find((entry) => !entry.teamName.trim());
+    const invalidEntry = entriesForSave.find((entry) => !entry.teamName.trim());
     if (invalidEntry) {
       toast.error("チーム名を入力してください");
       return;
@@ -364,7 +373,7 @@ export default function CompetitionTeamEntryManager({
         },
         body: JSON.stringify({
           clubId: selectedClubId,
-          teams: entriesForScope.map((entry) => ({
+          teams: entriesForSave.map((entry) => ({
             eventId: entry.eventId,
             teamName: entry.teamName.trim(),
           })),
@@ -374,9 +383,21 @@ export default function CompetitionTeamEntryManager({
         }),
       });
 
-      const data = await response.json();
+      const data = (await response.json()) as {
+        message?: string;
+        details?: string;
+        teamEntries?: ExistingTeamEntry[];
+      };
       if (!response.ok) {
-        throw new Error(data.message || "チームエントリーの更新に失敗しました");
+        const base =
+          typeof data.message === "string" && data.message.trim()
+            ? data.message
+            : "チームエントリーの更新に失敗しました";
+        const devHint =
+          process.env.NODE_ENV !== "production" && typeof data.details === "string"
+            ? ` (${data.details})`
+            : "";
+        throw new Error(base + devHint);
       }
 
       setEntriesByClub((prev) => ({
@@ -612,6 +633,13 @@ export default function CompetitionTeamEntryManager({
           {eventCategoryScope === "OCEAN_ONLY" ? "（オーシャン競技の大会のため、プール種目は表示しません）" : null}
           {eventCategoryScope === "POOL_ONLY" ? "（プール競技の大会のため、オーシャン種目は表示しません）" : null}
         </CardDescription>
+        {hiddenCategoryTeamCount > 0 ? (
+          <p className="rounded-md border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs leading-relaxed text-amber-950 dark:border-amber-800 dark:bg-amber-950/35 dark:text-amber-50">
+            表示していない区分の登録チームが{" "}
+            <span className="font-semibold tabular-nums">{hiddenCategoryTeamCount}</span>{" "}
+            組あります。保存ではこれらも含めて大会に反映されます（一覧はエントリー履歴で確認できます）。
+          </p>
+        ) : null}
       </CardHeader>
       <CardContent className="space-y-6 px-4 py-5 sm:px-6">
         <div className="flex gap-3 rounded-lg border border-primary/20 bg-primary/[0.04] px-3 py-3 text-sm text-foreground dark:bg-primary/[0.07]">
