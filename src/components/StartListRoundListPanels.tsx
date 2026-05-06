@@ -762,7 +762,6 @@ export function LiveRoundContent({
   const resultDraftPatchTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const lastLocalResultDraftTouchRef = useRef(0);
   const resultDraftSequenceRef = useRef(0);
-  const resultInputOrderLabel = resultInputOrder === "asc" ? "昇順入力" : "降順入力";
 
   useEffect(() => {
     setLocalMarshalHeats(applyMarshalDraftOpsToHeats(m?.heats ?? [], marshalDraftOps));
@@ -1996,44 +1995,33 @@ export function LiveRoundContent({
     <div className="space-y-1.5">
       {resultCaptureVisible && m && resultCapture ? (
         <>
-          <p className="rounded-md border border-violet-200/90 bg-violet-50/60 px-2 py-1.5 text-[10px] leading-snug text-violet-950 dark:border-violet-900/70 dark:bg-violet-950/35 dark:text-violet-100">
-            <span className="font-semibold">リザルトモード</span>
-            —{" "}
-            各ヒートで
-            <span className="font-semibold"> マーシャル締切 </span>
-            を実行した後にのみ着順を記録できます。
-            <span className="font-semibold"> 召集チェック済みの選手のみ</span>
-            が対象です。チェックまたはNFCの
-            <span className="font-semibold"> 入力した順 </span>
-            で、
-            <span className="font-semibold"> ヒートごと </span>
-            に着順（1位から連番）を記録します。別ヒートに挟んでも各ヒート内の順序だけが使われます。
-            <span className="font-semibold"> リザルト確定 </span>
-            は、召集済みの全員分の着順が揃うまでボタンは押せません。
-            <span className="mt-1 block border-t border-violet-200/80 pt-1 text-muted-foreground dark:border-violet-800/60">
-              Web 上の一般公開は、主催の「公式結果」で
+          <div className="space-y-1.5 rounded-md border border-violet-200/90 bg-violet-50/60 px-2 py-1.5 text-[10px] leading-snug text-violet-950 dark:border-violet-900/70 dark:bg-violet-950/35 dark:text-violet-100">
+            <p>
+              <span className="font-semibold">リザルトモード</span>
+              {" — "}
+              各ヒートでマーシャル締切後にのみ記録できます。召集済みのみ対象で、ヒート単位です。チェックまたは NFC
+              で記録し、召集済み全員分そろってから「リザルト確定」してください。記録済みの行はドラッグで並べ替えられます。
+            </p>
+            <p className="text-muted-foreground dark:text-violet-200/85">
+              <span className="font-semibold text-violet-950 dark:text-violet-100">公開</span>
+              {" — "}
+              Web の一般掲載は主催の「公式結果」で
               <span className="font-medium text-foreground"> 公開日時 </span>
-              が設定されたタイミングです。当日運用のリザルト確定だけでは、大会サイトの結果一覧には自動では出ません。
-            </span>
-            NFC はマーシャルと同様、
-            <span className="font-semibold"> 全ヒートを順に試し </span>
-            、タグの人が含まれるヒートだけで次の空き順位に記録します。
+              が設定されたときです（当日の確定だけでは結果一覧に載りません）。
+            </p>
             {resultCapture.locked ? (
-              <span className="mt-1 block font-semibold text-amber-800 dark:text-amber-200">
+              <p className="font-semibold text-amber-800 dark:text-amber-200">
                 公式結果が確定済みのため記録できません。
-              </span>
+              </p>
             ) : null}
             {localConfirmedHeats.length > 0 && !resultCapture.locked ? (
-              <span className="mt-1 block border-t border-violet-200/80 pt-1 text-muted-foreground dark:border-violet-800/60">
+              <p className="border-t border-violet-200/80 pt-1.5 text-muted-foreground dark:border-violet-800/60">
                 <span className="font-semibold text-violet-950 dark:text-violet-100">確定済みヒート</span>
-                の行は、左のチェック欄が確定マークになり、左列は
-                <span className="font-medium text-foreground"> 着順（○位） </span>
-                です。着順がない行は
-                <span className="font-medium text-foreground"> L＋レーン番号 </span>
-                （スタートレーン）を表示します。
-              </span>
+                {" — "}
+                左は着順、記録がない行は L＋レーン番号です。
+              </p>
             ) : null}
-          </p>
+          </div>
           {!m.loading && !resultCapture.loading && !m.marshalOpsBlocked && !resultCapture.locked ? (
             <p
               className={cn(
@@ -2049,7 +2037,7 @@ export function LiveRoundContent({
               role="status"
             >
               {nfcResultInline === "listening"
-                ? "NFC 待機中（タグをかざすと、該当ヒート内の次の着順として記録されます）"
+                ? "NFC 待機中（ヒートを順に試し、タグの選手がいるヒートで次の着順に記録されます）"
                 : nfcResultInline === "unsupported"
                   ? "この環境では NFC を利用できません。レーン左のチェックで記録してください。"
                   : nfcResultInline === "error"
@@ -2058,30 +2046,46 @@ export function LiveRoundContent({
             </p>
           ) : null}
           <div className="sticky top-2 z-20 mt-1 rounded-md border border-violet-200/90 bg-violet-50/95 px-2 py-1.5 shadow-sm backdrop-blur-[1px] dark:border-violet-900/70 dark:bg-violet-950/70 sm:static sm:bg-violet-50/70 sm:shadow-none dark:sm:bg-violet-950/35">
-            <div className="flex flex-wrap items-center justify-start gap-1.5 sm:justify-end">
-              <span className="text-[10px] font-semibold text-violet-900 dark:text-violet-100">
-                入力順
+            <div
+              className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end"
+              role="radiogroup"
+              aria-label="着順の入力方向"
+            >
+              <span className="text-[10px] font-semibold text-violet-900 dark:text-violet-100 sm:mr-1">
+                着順の入れ方
               </span>
-              <span className="rounded border border-violet-300/80 bg-violet-100/80 px-2 py-0.5 text-[10px] font-medium text-violet-900 dark:border-violet-700/80 dark:bg-violet-900/55 dark:text-violet-100">
-                現在: {resultInputOrderLabel}
-              </span>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="h-7 px-2 text-[10px] sm:h-6"
-                onClick={() =>
-                  setResultInputOrder((prev) => (prev === "asc" ? "desc" : "asc"))
-                }
-              >
-                昇/降順を切替
-              </Button>
+              <div className="flex flex-wrap items-center gap-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={resultInputOrder === "asc" ? "default" : "outline"}
+                  className="h-8 min-w-[7.5rem] px-2.5 text-[10px] font-semibold sm:h-7"
+                  role="radio"
+                  aria-checked={resultInputOrder === "asc"}
+                  onClick={() => setResultInputOrder("asc")}
+                  title="1位から空き番を順に埋めます。失格・未記録の行は一覧では末尾に並びます。"
+                >
+                  上位から<span className="ml-0.5 font-normal opacity-90">（1位〜）</span>
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={resultInputOrder === "desc" ? "default" : "outline"}
+                  className="h-8 min-w-[7.5rem] px-2.5 text-[10px] font-semibold sm:h-7"
+                  role="radio"
+                  aria-checked={resultInputOrder === "desc"}
+                  onClick={() => setResultInputOrder("desc")}
+                  title="最下位から埋めます。基準人数は当ヒートの召集済人数です（団体は構成員全員が召集済のとき1枠）。失格・未記録は末尾です。"
+                >
+                  下位から<span className="ml-0.5 font-normal opacity-90">（最下位〜）</span>
+                </Button>
+              </div>
             </div>
-            <p className="mt-1 text-left text-[10px] text-violet-900/90 dark:text-violet-100/90 sm:text-right">
-              昇順は1位から、降順は下位から入力します（失格は常に最下位扱い）。降順の基準人数はマーシャル一覧の「召集済」人数と同じです（団体は構成員全員が召集済のとき1枠）。
-            </p>
-            <p className="mt-0.5 text-left text-[10px] text-muted-foreground sm:text-right">
-              着順が入った行はドラッグで入れ替え可能です。
+            <p
+              className="mt-1 text-left text-[10px] text-muted-foreground sm:text-right"
+              title="降順ではマーシャル一覧の召集済人数が上限です。団体は構成員全員が召集済のとき1枠として数えます。"
+            >
+              失格・未記録は一覧では末尾に並びます。
             </p>
           </div>
         </>

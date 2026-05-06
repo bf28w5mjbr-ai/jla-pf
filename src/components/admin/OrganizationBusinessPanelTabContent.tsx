@@ -1,5 +1,7 @@
 import Link from "next/link";
+import type { CompetitionStripeSettlementAccountType } from "@prisma/client";
 import { prisma } from "@/server/db";
+import { CompetitionStripeSettlementSelect } from "@/components/CompetitionStripeSettlementSelect";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CalendarRange, ChevronRight, Info, LayoutDashboard, Wallet } from "lucide-react";
@@ -45,6 +47,10 @@ function statusBadgeClass(status: string) {
   }
 }
 
+function stripeSettlementShortLabelJa(t: CompetitionStripeSettlementAccountType) {
+  return t === "PLATFORM" ? "プラットフォーム" : "主催団体（Connect）";
+}
+
 function StatBox({
   label,
   value,
@@ -77,6 +83,7 @@ export default async function OrganizationBusinessPanelTabContent({
       status: true,
       startDate: true,
       endDate: true,
+      stripeSettlementAccountType: true,
     },
   });
 
@@ -182,6 +189,20 @@ export default async function OrganizationBusinessPanelTabContent({
       </CardHeader>
 
       <CardContent className="space-y-4 p-4 sm:p-6">
+        {isOrgAdmin ? (
+          <div
+            className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground"
+            role="note"
+          >
+            <p className="font-medium text-foreground">有料エントリーの決済口座（大会ごと）</p>
+            <p className="mt-1.5 leading-relaxed">
+              「プラットフォーム」を選ぶと、Stripe Connect の審査が未完でも有料エントリーを受け付けられます。
+              Connect が有効な団体では、売上は従来どおり主催団体アカウントへ送金されます。
+              Connect 未整備の間だけ、売上がプラットフォーム口座側に載ります。
+            </p>
+          </div>
+        ) : null}
+
         {!isOrgAdmin ? (
           <div
             className="flex gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground"
@@ -238,6 +259,22 @@ export default async function OrganizationBusinessPanelTabContent({
                     </div>
                   </div>
                 ) : null}
+                <div className={`mt-3 space-y-1.5 ${isOrgAdmin ? "border-t border-border/80 pt-3" : ""}`}>
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    決済口座（有料エントリー）
+                  </p>
+                  {isOrgAdmin ? (
+                    <CompetitionStripeSettlementSelect
+                      organizationId={organizationId}
+                      competitionId={c.id}
+                      initialValue={c.stripeSettlementAccountType}
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {stripeSettlementShortLabelJa(c.stripeSettlementAccountType)}
+                    </p>
+                  )}
+                </div>
                 <Button asChild variant="secondary" size="sm" className="mt-3 h-9 w-full gap-1 font-medium">
                   <Link href={financeHref}>
                     事業収支を開く
@@ -272,8 +309,15 @@ export default async function OrganizationBusinessPanelTabContent({
                       <th className="whitespace-nowrap px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         手動仕訳差額
                       </th>
+                      <th className="whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        決済口座
+                      </th>
                     </>
-                  ) : null}
+                  ) : (
+                    <th className="whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      決済口座
+                    </th>
+                  )}
                   <th className="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     操作
                   </th>
@@ -316,8 +360,19 @@ export default async function OrganizationBusinessPanelTabContent({
                           <td className="whitespace-nowrap px-3 py-3 text-right align-middle text-sm font-medium tabular-nums">
                             {formatYen(manualNet)}
                           </td>
+                          <td className="px-3 py-2 align-middle">
+                            <CompetitionStripeSettlementSelect
+                              organizationId={organizationId}
+                              competitionId={c.id}
+                              initialValue={c.stripeSettlementAccountType}
+                            />
+                          </td>
                         </>
-                      ) : null}
+                      ) : (
+                        <td className="whitespace-nowrap px-3 py-3 align-middle text-xs text-muted-foreground">
+                          {stripeSettlementShortLabelJa(c.stripeSettlementAccountType)}
+                        </td>
+                      )}
                       <td className="px-4 py-2.5 align-middle">
                         <Button asChild variant="outline" size="sm" className="h-8 gap-1 px-3">
                           <Link href={financeHref}>

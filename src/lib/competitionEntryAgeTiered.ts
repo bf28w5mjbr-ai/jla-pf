@@ -320,6 +320,26 @@ export function isTieredEntryFee(entryFee: unknown): boolean {
   );
 }
 
+/**
+ * 年齢カテゴリ別／アンダー別／年齢帯別の各ティアに載っている teamEntryFeePerTeam の最大値。
+ * クラブ管理者の生年月日がどのティアにも入らないときのチーム請求単価のフォールバックに使う。
+ */
+export function maxTeamEntryFeeUnitAcrossTiers(entryFee: unknown): number | null {
+  const cat = parseAgeCategoryFeeTiers(entryFee);
+  if (cat && cat.length > 0) {
+    return Math.max(...cat.map((t) => t.teamEntryFeePerTeam));
+  }
+  const under = parseUnderFeeTiers(entryFee);
+  if (under && under.length > 0) {
+    return Math.max(...under.map((t) => t.teamEntryFeePerTeam));
+  }
+  const age = parseAgeFeeTiers(entryFee);
+  if (age && age.length > 0) {
+    return Math.max(...age.map((t) => t.teamEntryFeePerTeam));
+  }
+  return null;
+}
+
 export function flattenFlatEntryFeeUnits(entryFee: unknown): {
   individual: number;
   team: number;

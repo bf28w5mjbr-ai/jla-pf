@@ -16,7 +16,11 @@ import {
   getStripeProcessingFeeBpsFromEnv,
   stripeProcessingFeeSurchargeYenFromBps,
 } from "@/lib/stripeProcessingFee";
-import { connectRequirementSkipped, paidEntryCheckoutBlockReason } from "@/lib/organizerBilling";
+import {
+  connectRequirementSkipped,
+  paidEntryCheckoutBlockReason,
+  resolveEntryCheckoutStripeConnectParams,
+} from "@/lib/organizerBilling";
 import { refreshOrganizationStripeConnectFlags } from "@/lib/organizerStripeConnect";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
 import { ENTRY_CHECKOUT_PAID_STATUSES } from "@/lib/entryCheckoutSessionPaid";
@@ -35,6 +39,7 @@ import { resolveEffectiveUnderBandAllowListForEvent } from "@/lib/underBandAllow
 import {
   isTieredEntryFee,
   isTieredRequiredQualifications,
+  maxTeamEntryFeeUnitAcrossTiers,
   parseAgeCategoryFeeTiers,
   parseUnderFeeTiers,
   resolveEntryFeeUnits,
@@ -432,14 +437,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
     }
 
-    const entryItemsData = itemsArray.map((item: { eventId: string; entryTime?: string | null }) => {
-      const event = eventMap.get(item.eventId);
-      if (!event) {
-        throw new Error("種目が不正です");
-      }
-      if (event.type !== "INDIVIDUAL") {
-        throw new Error("個人種目のみ選択できます");
-      }
+    const validateEntrantSexAndAgeForEvent = (event: NonNullable<ReturnType<typeof eventMap.get>>) => {
       const isMixedEvent = event.sex === "OTHER";
       if (!isMixedEvent && userSex !== "OTHER" && event.sex !== userSex) {
         throw new Error("性別条件を満たしていません");
@@ -461,14 +459,34 @@ export async function POST(request: NextRequest, context: RouteContext) {
       ) {
         throw new Error("年齢条件を満たしていません");
       }
-      if (event.requiresEntryTime && (!item.entryTime || !item.entryTime.trim())) {
-        throw new Error("エントリータイムが必要です");
-      }
+    };
 
-      return {
-        eventId: event.id,
-        entryTime: item.entryTime?.trim() || null,
-      };
+    const entryItemsData = itemsArray.map((item: { eventId: string; entryTime?: string | null }) => {
+      const event = eventMap.get(item.eventId);
+      if (!event) {
+        throw new Error("種目が不正です");
+      }
+      if (event.type === "INDIVIDUAL") {
+        validateEntrantSexAndAgeForEvent(event);
+        if (event.requiresEntryTime && (!item.entryTime || !item.entryTime.trim())) {
+          throw new Error("エントリータイムが必要です");
+        }
+        return {
+          eventId: event.id,
+          entryTime: item.entryTime?.trim() || null,
+        };
+      }
+      if (event.type === "TEAM") {
+        if (!requireClubMembership) {
+          throw new Error("チーム種目は所属クラブ必須のため選択できません");
+        }
+        validateEntrantSexAndAgeForEvent(event);
+        return {
+          eventId: event.id,
+          entryTime: item.entryTime?.trim() || null,
+        };
+      }
+      throw new Error("種目タイプが不正です");
     });
 
     const teamEntriesData = hasTeamEntriesField
@@ -480,27 +498,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           if (event.type !== "TEAM") {
             throw new Error("チーム種目のみ選択できます");
           }
-          const isMixedEvent = event.sex === "OTHER";
-          if (!isMixedEvent && userSex !== "OTHER" && event.sex !== userSex) {
-            throw new Error("性別条件を満たしていません");
-          }
-          if (
-            !meetsCompetitionEventAgeEligibility({
-              competitionUnderAgeEnabled: competitionUsesUnderAgeSystem(competition),
-              underPartition,
-              eventUnderAgeEligibilityEnabled: event.underAgeEligibilityEnabled ?? true,
-              effectiveUnderBandAllowList: resolveEffectiveUnderBandAllowListForEvent({
-                underBandKeysOverride: event.underBandKeysOverride,
-                ageCategoryId: event.ageCategoryId,
-                categoryUnderBandKeysEnabled: event.ageCategory?.underBandKeysEnabled ?? null,
-              }),
-              event,
-              userDateOfBirth: user?.dateOfBirth ? new Date(user.dateOfBirth) : null,
-              seasonalAgeYears: userAge,
-            })
-          ) {
-            throw new Error("年齢条件を満たしていません");
-          }
+          // チーム枠はクラブ管理者が登録するのみ。出場者の性別・年齢はメンバー割当で検証する。
           if (!item.teamName || typeof item.teamName !== "string" || !item.teamName.trim()) {
             throw new Error("チーム名を入力してください");
           }
@@ -518,10 +516,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
       competitionAgeCategories: competition.ageCategories,
       underFeePartition: underPartition ?? null,
     });
+    const clubAdminTeamOnlyFeeBypass =
+      hasTeamEntriesField &&
+      approvedMembership &&
+      isClubAdminRole(approvedMembership.role) &&
+      entryItemsData.length === 0 &&
+      teamEntriesData.length > 0;
+
     if (
       feeUnits.ageTierMissing &&
       isTieredEntryFee(competition.entryFee) &&
-      entryItemsData.length + teamEntriesData.length > 0
+      entryItemsData.length + teamEntriesData.length > 0 &&
+      !clubAdminTeamOnlyFeeBypass
     ) {
       const isCat = parseAgeCategoryFeeTiers(competition.entryFee) !== null;
       const isUnder = parseUnderFeeTiers(competition.entryFee) !== null;
@@ -543,19 +549,31 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const baseEntryFee = calculateCompetitionEntryFee(
-      competition.entryFee as CompetitionEntryFeeConfig | number | null,
-      {
-        individualCount: entryItemsData.length,
-        teamCount: teamEntriesData.length,
-      },
-      {
-        userAgeYearsAtCompetitionStart: userAge,
-        userDateOfBirth: userDob,
-        competitionAgeCategories: competition.ageCategories,
-        underFeePartition: underPartition ?? null,
+    let baseEntryFee: number;
+    if (clubAdminTeamOnlyFeeBypass && feeUnits.ageTierMissing && isTieredEntryFee(competition.entryFee)) {
+      const fallbackTeamUnit = maxTeamEntryFeeUnitAcrossTiers(competition.entryFee);
+      if (fallbackTeamUnit == null) {
+        return NextResponse.json(
+          { message: "参加費のチーム単価を解決できません。主催者へお問い合わせください。" },
+          { status: 400 }
+        );
       }
-    );
+      baseEntryFee = fallbackTeamUnit * teamEntriesData.length;
+    } else {
+      baseEntryFee = calculateCompetitionEntryFee(
+        competition.entryFee as CompetitionEntryFeeConfig | number | null,
+        {
+          individualCount: entryItemsData.length,
+          teamCount: teamEntriesData.length,
+        },
+        {
+          userAgeYearsAtCompetitionStart: userAge,
+          userDateOfBirth: userDob,
+          competitionAgeCategories: competition.ageCategories,
+          underFeePartition: underPartition ?? null,
+        }
+      );
+    }
 
     const clubIndividualBillingTiming = resolveClubIndividualEntryBillingTiming(
       competition.entryFee
@@ -697,7 +715,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       await clearIndividualWithdrawalParticipantStatusesForEvents(tx, {
         competitionId,
         competitionEntryId: entry.id,
-        individualEventIds: entryItemsData.map((row) => row.eventId),
+        individualEventIds: entryItemsData
+          .map((row) => row.eventId)
+          .filter((id) => eventMap.get(id)?.type === "INDIVIDUAL"),
         updatedByUserId: session.userId,
       });
 
@@ -815,7 +835,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
         },
       });
       const paidBlock = orgBilling
-        ? paidEntryCheckoutBlockReason(orgBilling)
+        ? paidEntryCheckoutBlockReason(orgBilling, {
+            stripeSettlementAccountType: competition.stripeSettlementAccountType,
+          })
         : "主催団体の決済設定を確認できませんでした。";
       if (paidBlock) {
         return NextResponse.json({ message: paidBlock }, { status: 403 });
@@ -933,7 +955,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
       const origin = stripeRedirectOrigin();
       let checkoutSession: Stripe.Checkout.Session;
-      const skipConnect = connectRequirementSkipped();
+      const skipConnectEnv = connectRequirementSkipped();
+      const connectCheckoutParams = resolveEntryCheckoutStripeConnectParams({
+        skipConnectEnv,
+        stripeSettlementAccountType: competition.stripeSettlementAccountType,
+        org: orgBilling,
+        applicationFeeWithProcessing,
+      });
+
       try {
         checkoutSession = await createPaymentCheckout({
           organizationId: competition.organizationId,
@@ -949,8 +978,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 }
               : undefined,
           customerEmail: entryUser?.email ?? null,
-          destinationConnectAccountId: skipConnect ? null : orgBilling?.stripeConnectAccountId ?? null,
-          applicationFeeAmountYen: skipConnect ? null : applicationFeeWithProcessing,
+          destinationConnectAccountId: connectCheckoutParams.destinationConnectAccountId,
+          applicationFeeAmountYen: connectCheckoutParams.applicationFeeAmountYen,
           metadata: {
             entryCheckoutSessionId: entryCheckoutSession.id,
             entryId: result.entry.id,

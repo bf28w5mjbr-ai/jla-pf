@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { appRoutes } from "@/lib/appRoutes";
-import { hasOrgAdminAccess, isClubAdminRole } from "@/lib/roleScopes";
+import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
 import CompetitionTeamEntryManager from "@/components/CompetitionTeamEntryManager";
 import TeamEntryHistoryPanel from "@/components/TeamEntryHistoryPanel";
@@ -21,6 +21,10 @@ import {
 import { formatCompetitionEntryPeriodRangeJa } from "@/lib/datetimeLocal";
 import { getStripeProcessingFeeBpsFromEnv } from "@/lib/stripeProcessingFee";
 import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
+import {
+  prismaCompetitionToTeamAssignmentCompetitionJson,
+  prismaEventToTeamAssignmentEventJson,
+} from "@/lib/teamMemberSlotEligibility";
 
 function parseRelayPositionNames(raw: unknown): string[] {
   if (!raw || !Array.isArray(raw)) return [];
@@ -151,9 +155,24 @@ export default async function ClubCompetitionTeamHubPage({
           },
         },
       },
+      ageCategories: {
+        orderBy: { displayOrder: "asc" },
+        select: {
+          id: true,
+          displayOrder: true,
+          eligibleBirthDateFrom: true,
+          eligibleBirthDateTo: true,
+          underBandKeysEnabled: true,
+        },
+      },
       events: {
         where: { type: "TEAM" },
         orderBy: { displayOrder: "asc" },
+        include: {
+          ageCategory: {
+            select: { id: true, underBandKeysEnabled: true },
+          },
+        },
       },
     },
   });
@@ -175,10 +194,21 @@ export default async function ClubCompetitionTeamHubPage({
     include: {
       event: {
         select: {
+          id: true,
           name: true,
           sex: true,
+          minAge: true,
+          maxAge: true,
+          eligibleBirthDateFrom: true,
+          eligibleBirthDateTo: true,
+          ageCategoryId: true,
+          underBandKeysOverride: true,
+          underAgeEligibilityEnabled: true,
           teamRelayPositionCount: true,
           teamRelayPositionNames: true,
+          ageCategory: {
+            select: { id: true, underBandKeysEnabled: true },
+          },
         },
       },
       members: {
@@ -231,6 +261,8 @@ export default async function ClubCompetitionTeamHubPage({
           id: true,
           familyName: true,
           givenName: true,
+          sex: true,
+          dateOfBirth: true,
         },
       },
     },
@@ -322,6 +354,7 @@ export default async function ClubCompetitionTeamHubPage({
           const memberSlots = buildMemberSlotsFromDb(entry.members, slotCount);
           return {
             teamEntryId: entry.id,
+            eventId: entry.eventId,
             eventName: entry.event.name,
             sexLabel:
               entry.event.sex === "MALE"
@@ -347,6 +380,8 @@ export default async function ClubCompetitionTeamHubPage({
         .map((entry) => ({
           userId: entry.user.id,
           name: `${entry.user.familyName} ${entry.user.givenName}`,
+          sex: entry.user.sex,
+          dateOfBirth: entry.user.dateOfBirth ? entry.user.dateOfBirth.toISOString() : null,
         })),
     ])
   );
@@ -413,6 +448,31 @@ export default async function ClubCompetitionTeamHubPage({
       competition.id,
       teamEntriesFull.map((e) => ({ id: e.id, eventId: e.eventId }))
     )
+  );
+
+  const teamAssignmentCompetition = prismaCompetitionToTeamAssignmentCompetitionJson({
+    startDate: competition.startDate,
+    underAgeSystemEnabled: competition.underAgeSystemEnabled ?? false,
+    underAgeUThresholds: competition.underAgeUThresholds,
+    underAgeOpenEnabled: competition.underAgeOpenEnabled,
+    ageCategories: competition.ageCategories,
+  });
+
+  const teamAssignmentEventsById = Object.fromEntries(
+    competition.events.map((e) => [
+      e.id,
+      prismaEventToTeamAssignmentEventJson({
+        sex: e.sex,
+        minAge: e.minAge,
+        maxAge: e.maxAge,
+        eligibleBirthDateFrom: e.eligibleBirthDateFrom,
+        eligibleBirthDateTo: e.eligibleBirthDateTo,
+        ageCategoryId: e.ageCategoryId,
+        underBandKeysOverride: e.underBandKeysOverride,
+        underAgeEligibilityEnabled: e.underAgeEligibilityEnabled,
+        ageCategory: e.ageCategory,
+      }),
+    ])
   );
 
   const linkEntry = appRoutes.clubs.competition.team(club.id, competition.id, { tab: "entry" });
@@ -601,6 +661,8 @@ export default async function ClubCompetitionTeamHubPage({
             assignmentDeadlineLabel={assignmentDeadlineLabel}
             marshalBlockByTeamEntryId={marshalBlockByTeamEntryId}
             initialClubId={club.id}
+            teamAssignmentCompetition={teamAssignmentCompetition}
+            teamAssignmentEventsById={teamAssignmentEventsById}
           />
         </>
       )}

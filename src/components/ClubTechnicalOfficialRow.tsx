@@ -210,6 +210,9 @@ export default function ClubTechnicalOfficialRow({
             。チーム種目の件数は含みません。段階は<strong className="font-medium text-foreground">最も高い閾値の行のみ</strong>
             適用されます。
           </span>
+          <span className="mt-1.5 block text-muted-foreground">
+            メンバーが大会のオフィシャル応募で「TOとして応募」し保存した場合は、ここから依頼しなくても任命が付き、充足人数に含まれます（招待で付いた任命と合わせて数えます）。
+          </span>
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3.5 text-sm">

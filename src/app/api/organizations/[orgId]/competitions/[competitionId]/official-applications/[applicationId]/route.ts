@@ -50,6 +50,13 @@ export async function DELETE(
           userId: application.userId,
         },
       }),
+      prisma.competitionTechnicalOfficialAssignment.deleteMany({
+        where: {
+          competitionId,
+          userId: application.userId,
+          invitationId: null,
+        },
+      }),
       prisma.competitionOfficialApplication.delete({
         where: { id: application.id },
       }),

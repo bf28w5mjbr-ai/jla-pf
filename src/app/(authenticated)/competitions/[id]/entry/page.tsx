@@ -471,7 +471,6 @@ export default async function CompetitionEntryPage({
 
   const eligibleEvents = competition.events.filter((event) => {
     if (!isCompetitionEligible) return false;
-    if (event.type !== "INDIVIDUAL") return false;
 
     const isMixedEvent = event.sex === "OTHER";
     if (!isMixedEvent && userSex !== "OTHER" && event.sex !== userSex) {
@@ -496,7 +495,13 @@ export default async function CompetitionEntryPage({
       return false;
     }
 
-    return true;
+    if (event.type === "INDIVIDUAL") {
+      return true;
+    }
+    if (event.type === "TEAM") {
+      return requireClubMembership;
+    }
+    return false;
   });
 
   const missingQualificationLabels = rq.list.filter(

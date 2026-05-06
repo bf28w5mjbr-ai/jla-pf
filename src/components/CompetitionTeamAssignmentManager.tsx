@@ -24,6 +24,12 @@ import {
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import type { Sex } from "@prisma/client";
+import {
+  isClubMemberEligibleForTeamAssignmentSlot,
+  type TeamAssignmentCompetitionJson,
+  type TeamAssignmentEventJson,
+} from "@/lib/teamMemberSlotEligibility";
 
 const EMPTY_SLOT_VALUE = "__none__";
 
@@ -35,10 +41,13 @@ type ClubOption = {
 type EligibleMember = {
   userId: string;
   name: string;
+  sex: Sex;
+  dateOfBirth: string | null;
 };
 
 type TeamEntryAssignment = {
   teamEntryId: string;
+  eventId: string;
   eventName: string;
   sexLabel: string;
   teamName: string;
@@ -60,6 +69,9 @@ type Props = {
   marshalBlockByTeamEntryId?: Record<string, boolean>;
   /** URL の `?clubId=` と同期（クラブ詳細からの導線用） */
   initialClubId?: string | null;
+  /** 種目ごとの性別・年齢候補絞り込み（未指定なら従来どおり全員を表示） */
+  teamAssignmentCompetition?: TeamAssignmentCompetitionJson | null;
+  teamAssignmentEventsById?: Record<string, TeamAssignmentEventJson> | null;
 };
 
 function slotLabel(assignment: TeamEntryAssignment, index: number): string {
@@ -79,6 +91,28 @@ function countTotalSlots(assignments: TeamEntryAssignment[]): number {
   return assignments.reduce((acc, a) => acc + a.memberSlots.length, 0);
 }
 
+function memberOptionDisabledReason(params: {
+  member: EligibleMember;
+  selectedUserId: string | null;
+  takenElsewhere: Set<string>;
+  eventJson: TeamAssignmentEventJson | undefined;
+  competitionJson: TeamAssignmentCompetitionJson | undefined;
+}): string | null {
+  const { member, selectedUserId, takenElsewhere, eventJson, competitionJson } = params;
+  if (takenElsewhere.has(member.userId) && member.userId !== selectedUserId) {
+    return "他ポジションに配属済み";
+  }
+  if (!eventJson || !competitionJson) return null;
+  if (member.userId === selectedUserId) return null;
+  const ok = isClubMemberEligibleForTeamAssignmentSlot({
+    memberSex: member.sex,
+    memberDateOfBirth: member.dateOfBirth ? new Date(member.dateOfBirth) : null,
+    event: eventJson,
+    competition: competitionJson,
+  });
+  return ok ? null : "種目の条件外";
+}
+
 export default function CompetitionTeamAssignmentManager({
   competitionId,
   clubs,
@@ -88,6 +122,8 @@ export default function CompetitionTeamAssignmentManager({
   assignmentDeadlineLabel,
   marshalBlockByTeamEntryId = {},
   initialClubId,
+  teamAssignmentCompetition = null,
+  teamAssignmentEventsById = null,
 }: Props) {
   const router = useRouter();
   const [selectedClubId, setSelectedClubId] = useState(() => {
@@ -366,7 +402,7 @@ export default function CompetitionTeamAssignmentManager({
               </span>
               <p className="text-sm font-semibold text-foreground">割当できるメンバーがいません</p>
               <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
-                個人エントリーが提出済みのクラブメンバーがいないため、ここからは割当できません。
+                エントリーが提出済みのクラブメンバーがいないため、ここからは割当できません。
               </p>
             </div>
           ) : (
@@ -421,6 +457,8 @@ export default function CompetitionTeamAssignmentManager({
                           .map((uid, i) => (i !== slotIndex && uid ? uid : null))
                           .filter((x): x is string => Boolean(x))
                       );
+                      const eventJson = teamAssignmentEventsById?.[assignment.eventId];
+                      const competitionJson = teamAssignmentCompetition ?? undefined;
                       return (
                         <div
                           key={`${assignment.teamEntryId}-slot-${slotIndex}`}
@@ -461,17 +499,21 @@ export default function CompetitionTeamAssignmentManager({
                               <SelectContent>
                                 <SelectItem value={EMPTY_SLOT_VALUE}>未選択</SelectItem>
                                 {eligibleMembers.map((member) => {
-                                  const disabledOption =
-                                    takenElsewhere.has(member.userId) &&
-                                    member.userId !== selectedUserId;
+                                  const reason = memberOptionDisabledReason({
+                                    member,
+                                    selectedUserId,
+                                    takenElsewhere,
+                                    eventJson,
+                                    competitionJson,
+                                  });
                                   return (
                                     <SelectItem
                                       key={`${assignment.teamEntryId}-${slotIndex}-${member.userId}`}
                                       value={member.userId}
-                                      disabled={disabledOption}
+                                      disabled={Boolean(reason)}
                                     >
                                       {member.name}
-                                      {disabledOption ? "（他ポジションに配属済み）" : ""}
+                                      {reason ? `（${reason}）` : ""}
                                     </SelectItem>
                                   );
                                 })}

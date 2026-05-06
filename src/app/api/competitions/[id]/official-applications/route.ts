@@ -8,6 +8,7 @@ import {
   loadOfficialApplicationCompetition,
   parseOfficialApplicationBody,
 } from "@/lib/officialApplicationSubmit";
+import { syncTechnicalOfficialAssignmentFromOfficialApplication } from "@/lib/syncTechnicalOfficialAssignmentFromOfficialApplication";
 
 export async function POST(
   req: NextRequest,
@@ -66,23 +67,34 @@ export async function POST(
       reviewedByUserId: null,
     };
 
-    const row =
-      existing?.status === "REJECTED"
-        ? await prisma.competitionOfficialApplication.update({
-            where: { id: existing.id },
-            data,
-          })
-        : await prisma.competitionOfficialApplication.create({
-            data: {
-              competitionId,
-              userId: session.userId,
-              positionName,
-              message: payload.message,
-              status: "APPROVED",
-              reviewedAt: now,
-              reviewedByUserId: null,
-            },
-          });
+    const row = await prisma.$transaction(async (tx) => {
+      const applicationRow =
+        existing?.status === "REJECTED"
+          ? await tx.competitionOfficialApplication.update({
+              where: { id: existing.id },
+              data,
+            })
+          : await tx.competitionOfficialApplication.create({
+              data: {
+                competitionId,
+                userId: session.userId,
+                positionName,
+                message: payload.message,
+                status: "APPROVED",
+                reviewedAt: now,
+                reviewedByUserId: null,
+              },
+            });
+
+      await syncTechnicalOfficialAssignmentFromOfficialApplication(tx, {
+        competitionId,
+        userId: session.userId,
+        entryType,
+        clubId,
+      });
+
+      return applicationRow;
+    });
 
     return NextResponse.json({ success: true, application: row });
   } catch (e) {
@@ -140,13 +152,24 @@ export async function PATCH(
       return NextResponse.json({ error: payload.error }, { status: payload.status });
     }
 
-    const row = await prisma.competitionOfficialApplication.update({
-      where: { id: existing.id },
-      data: {
-        positionName: payload.positionName,
-        message: payload.message,
-        status: "APPROVED",
-      },
+    const row = await prisma.$transaction(async (tx) => {
+      const applicationRow = await tx.competitionOfficialApplication.update({
+        where: { id: existing.id },
+        data: {
+          positionName: payload.positionName,
+          message: payload.message,
+          status: "APPROVED",
+        },
+      });
+
+      await syncTechnicalOfficialAssignmentFromOfficialApplication(tx, {
+        competitionId,
+        userId: session.userId,
+        entryType,
+        clubId,
+      });
+
+      return applicationRow;
     });
 
     return NextResponse.json({ success: true, application: row });

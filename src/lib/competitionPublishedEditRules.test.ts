@@ -60,6 +60,7 @@ function createCompetition(overrides: Partial<Competition> = {}): Competition {
     isPublished: false,
     publishedAt: null,
     dayOpsAccessSecretHash: null,
+    stripeSettlementAccountType: "ORGANIZER_CONNECT",
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,

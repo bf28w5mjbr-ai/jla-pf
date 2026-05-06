@@ -10,7 +10,11 @@ import {
   getStripeProcessingFeeBpsFromEnv,
   stripeProcessingFeeSurchargeYenFromBps,
 } from "@/lib/stripeProcessingFee";
-import { connectRequirementSkipped, paidEntryCheckoutBlockReason } from "@/lib/organizerBilling";
+import {
+  connectRequirementSkipped,
+  paidEntryCheckoutBlockReason,
+  resolveEntryCheckoutStripeConnectParams,
+} from "@/lib/organizerBilling";
 import { refreshOrganizationStripeConnectFlags } from "@/lib/organizerStripeConnect";
 import { buildTeamEntryPaymentOwnerId, parseTeamEntryPaymentMetadata } from "@/lib/teamEntryPayments";
 import { isClubAdminRole } from "@/lib/roleScopes";
@@ -46,6 +50,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           organizationId: true,
           entryStartDate: true,
           entryEndDate: true,
+          stripeSettlementAccountType: true,
         },
       }),
       prisma.membership.findFirst({
@@ -143,7 +148,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       },
     });
     const paidBlock = orgBilling
-      ? paidEntryCheckoutBlockReason(orgBilling)
+      ? paidEntryCheckoutBlockReason(orgBilling, {
+          stripeSettlementAccountType: competition.stripeSettlementAccountType,
+        })
       : "主催団体の決済設定を確認できませんでした。";
     if (paidBlock) {
       return NextResponse.json({ message: paidBlock }, { status: 403 });
@@ -158,13 +165,20 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const entryHubPath = appRoutes.clubs.competition.team(clubId, competitionId, {
       tab: "entry",
     });
-    const skipConnect = connectRequirementSkipped();
+    const skipConnectEnv = connectRequirementSkipped();
     const baseYen = payment.amount; // チーム参加費（カード手数料行を除く）
     const processingFeeBps = getStripeProcessingFeeBpsFromEnv();
     const processingFeeYen = stripeProcessingFeeSurchargeYenFromBps(baseYen, processingFeeBps);
     const checkoutTotalYen = baseYen + processingFeeYen;
     const platformFeeOnBase = applicationFeeAmountYen(baseYen); // PF は参加費ベースのみ
     const applicationFeeWithProcessing = platformFeeOnBase + processingFeeYen;
+
+    const connectCheckoutParams = resolveEntryCheckoutStripeConnectParams({
+      skipConnectEnv,
+      stripeSettlementAccountType: competition.stripeSettlementAccountType,
+      org: orgBilling,
+      applicationFeeWithProcessing,
+    });
 
     const checkoutSession = await createPaymentCheckout({
       organizationId: competition.organizationId,
@@ -180,8 +194,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
             }
           : undefined,
       customerEmail: payer?.email ?? null,
-      destinationConnectAccountId: skipConnect ? null : orgBilling?.stripeConnectAccountId ?? null,
-      applicationFeeAmountYen: skipConnect ? null : applicationFeeWithProcessing,
+      destinationConnectAccountId: connectCheckoutParams.destinationConnectAccountId,
+      applicationFeeAmountYen: connectCheckoutParams.applicationFeeAmountYen,
       successUrl: `${absoluteAppUrl(origin, entryHubPath)}&payment=success&session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${absoluteAppUrl(origin, entryHubPath)}&payment=cancel`,
       metadata: {

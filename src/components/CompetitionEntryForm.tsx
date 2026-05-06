@@ -275,7 +275,7 @@ export default function CompetitionEntryForm({
   const selectedCount = selectedEvents.length;
   const reservedTeamSlots = individualEntryOnly ? reservedTeamSlotsForEntryLimit : 0;
   const totalEntrySlots = individualEntryOnly
-    ? selectedIndividualEvents.length + reservedTeamSlots
+    ? selectedIndividualEvents.length + selectedTeamEvents.length + reservedTeamSlots
     : selectedCount;
 
   const feeResolveAgeCategories = useMemo(() => {
@@ -299,7 +299,8 @@ export default function CompetitionEntryForm({
   }, [underAgeFeeBands]);
 
   const estimatedFee = useMemo(() => {
-    const individualCount = selectedIndividualEvents.length;
+    const individualCount =
+      selectedIndividualEvents.length + (individualEntryOnly ? selectedTeamEvents.length : 0);
     const teamCount = individualEntryOnly ? reservedTeamSlots : selectedTeamEvents.length;
     if (individualCount + teamCount === 0) return 0;
     const r = resolveEntryFeeUnits(entryFee, userAgeYearsAtCompetitionStart ?? null, {
@@ -528,7 +529,7 @@ export default function CompetitionEntryForm({
         }
       }
 
-      if (event.type === "TEAM") {
+      if (event.type === "TEAM" && !individualEntryOnly) {
         if (!teamNames[event.id] || teamNames[event.id].trim().length === 0) {
           toast.error(`「${event.name}（${sexLabel(event.sex)}）」のチーム名を入力してください`);
           return;
@@ -549,10 +550,15 @@ export default function CompetitionEntryForm({
           confirmed,
           ...(entryPledge ? { pledgeAccepted } : {}),
           items: selectedEvents
-            .filter((event) => event.type === "INDIVIDUAL")
+            .filter((event) =>
+              individualEntryOnly
+                ? event.type === "INDIVIDUAL" || event.type === "TEAM"
+                : event.type === "INDIVIDUAL"
+            )
             .map((event) => ({
               eventId: event.id,
-              entryTime: entryTimes[event.id]?.trim() || null,
+              entryTime:
+                event.type === "INDIVIDUAL" ? entryTimes[event.id]?.trim() || null : null,
             })),
           ...(individualEntryOnly
             ? {}
@@ -693,22 +699,30 @@ export default function CompetitionEntryForm({
 
               {isSelected && event.type === "TEAM" && (
                 <div className="mt-3 rounded-lg border border-border/60 bg-muted/30 p-3">
-                  <Label htmlFor={`team-name-${event.id}`} className="text-xs font-medium">
-                    チーム名
-                  </Label>
-                  <Input
-                    id={`team-name-${event.id}`}
-                    value={teamNames[event.id] || ""}
-                    onChange={(e) =>
-                      setTeamNames((prev) => ({
-                        ...prev,
-                        [event.id]: e.target.value,
-                      }))
-                    }
-                    placeholder="チーム名を入力"
-                    className="mt-2 h-9 text-sm"
-                    disabled={fieldsLocked}
-                  />
+                  {individualEntryOnly ? (
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      この種目への参加意思を登録します。実際の出場チーム名・メンバーは、所属クラブの「チーム管理」でクラブ管理者が登録し、メンバー割当で決まります。
+                    </p>
+                  ) : (
+                    <>
+                      <Label htmlFor={`team-name-${event.id}`} className="text-xs font-medium">
+                        チーム名
+                      </Label>
+                      <Input
+                        id={`team-name-${event.id}`}
+                        value={teamNames[event.id] || ""}
+                        onChange={(e) =>
+                          setTeamNames((prev) => ({
+                            ...prev,
+                            [event.id]: e.target.value,
+                          }))
+                        }
+                        placeholder="チーム名を入力"
+                        className="mt-2 h-9 text-sm"
+                        disabled={fieldsLocked}
+                      />
+                    </>
+                  )}
                 </div>
               )}
             </div>

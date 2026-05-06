@@ -227,7 +227,9 @@ export function OfficialApplicationForm({
                   <RadioGroupItem id="official-type-technical" value="TECHNICAL" />
                   <span className="text-xs leading-relaxed">
                     <span className="block font-medium text-foreground">TOとして応募</span>
-                    <span className="text-muted-foreground">クラブのテクニカルオフィシャルとして応募</span>
+                    <span className="text-muted-foreground">
+                      クラブのテクニカルオフィシャルとして応募。保存すると選択したクラブの任命として登録され、不足人数のカウントに含まれます。
+                    </span>
                   </span>
                 </Label>
               ) : null}

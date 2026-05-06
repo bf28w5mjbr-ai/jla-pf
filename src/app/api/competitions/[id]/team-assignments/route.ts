@@ -7,6 +7,11 @@ import {
   getTeamEntryMarshalAssignmentBlockedMap,
   getTeamMemberAssignmentWindowState,
 } from "@/lib/teamMemberAssignmentWindow";
+import {
+  isClubMemberEligibleForTeamAssignmentSlot,
+  prismaCompetitionToTeamAssignmentCompetitionJson,
+  prismaEventToTeamAssignmentEventJson,
+} from "@/lib/teamMemberSlotEligibility";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -59,6 +64,19 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         entryEndDate: true,
         startDate: true,
         startListSettings: true,
+        underAgeSystemEnabled: true,
+        underAgeUThresholds: true,
+        underAgeOpenEnabled: true,
+        ageCategories: {
+          orderBy: { displayOrder: "asc" },
+          select: {
+            id: true,
+            displayOrder: true,
+            eligibleBirthDateFrom: true,
+            eligibleBirthDateTo: true,
+            underBandKeysEnabled: true,
+          },
+        },
       },
     });
 
@@ -133,6 +151,21 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       select: {
         id: true,
         eventId: true,
+        event: {
+          select: {
+            sex: true,
+            minAge: true,
+            maxAge: true,
+            eligibleBirthDateFrom: true,
+            eligibleBirthDateTo: true,
+            ageCategoryId: true,
+            underBandKeysOverride: true,
+            underAgeEligibilityEnabled: true,
+            ageCategory: {
+              select: { id: true, underBandKeysEnabled: true },
+            },
+          },
+        },
       },
     });
 
@@ -182,6 +215,65 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     if (hasIneligibleUser) {
       return NextResponse.json(
         { message: "クラブのエントリー済みメンバーのみ割り当てできます" },
+        { status: 400 }
+      );
+    }
+
+    const assignedUserIds = new Set<string>();
+    for (const assignment of normalizedAssignments) {
+      if (assignment.memberSlots) {
+        for (const uid of assignment.memberSlots) {
+          if (uid) assignedUserIds.add(uid);
+        }
+      } else {
+        for (const uid of assignment.memberUserIds ?? []) {
+          assignedUserIds.add(uid);
+        }
+      }
+    }
+
+    const assignedUsers =
+      assignedUserIds.size > 0
+        ? await prisma.user.findMany({
+            where: { id: { in: [...assignedUserIds] } },
+            select: { id: true, sex: true, dateOfBirth: true },
+          })
+        : [];
+    const userById = new Map(assignedUsers.map((u) => [u.id, u]));
+
+    const competitionJson = prismaCompetitionToTeamAssignmentCompetitionJson({
+      startDate: competition.startDate,
+      underAgeSystemEnabled: competition.underAgeSystemEnabled ?? false,
+      underAgeUThresholds: competition.underAgeUThresholds,
+      underAgeOpenEnabled: competition.underAgeOpenEnabled,
+      ageCategories: competition.ageCategories,
+    });
+
+    const teamEntryById = new Map(teamEntries.map((t) => [t.id, t]));
+    const eventEligibilityViolation = normalizedAssignments.some((assignment) => {
+      const te = teamEntryById.get(assignment.teamEntryId);
+      if (!te?.event) return true;
+      const eventJson = prismaEventToTeamAssignmentEventJson(te.event);
+      const slotList = assignment.memberSlots ?? assignment.memberUserIds ?? [];
+      return slotList.some((userId) => {
+        if (!userId) return false;
+        const u = userById.get(userId);
+        if (!u) return true;
+        return !isClubMemberEligibleForTeamAssignmentSlot({
+          memberSex: u.sex,
+          memberDateOfBirth: u.dateOfBirth,
+          event: eventJson,
+          competition: competitionJson,
+        });
+      });
+    });
+
+    if (eventEligibilityViolation) {
+      return NextResponse.json(
+        {
+          message:
+            "種目の性別・年齢条件を満たさないメンバーが含まれています。該当ポジションのメンバーを選び直してください。",
+        },
         { status: 400 }
       );
     }

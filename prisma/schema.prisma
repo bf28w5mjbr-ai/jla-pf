@@ -1383,6 +1383,8 @@ model Competition {
   technicalOfficialQualificationTemplate     QualificationTemplate? @relation(fields: [technicalOfficialQualificationTemplateId], references: [id], onDelete: SetNull)
   /// [{ minEntries: number, requiredCount: number }] 昇順で保存。閾値の件数＝クラブの個人エントリー件数（キャンセル除く）。チームエントリー件数は含めない
   technicalOfficialTiers                   Json?
+  /// 有料エントリーの決済で使うStripe口座
+  stripeSettlementAccountType              CompetitionStripeSettlementAccountType @default(ORGANIZER_CONNECT)
 
   // 関係組織情報
   sponsors         String? @db.Text // 後援（複数の場合は改行区切り）
@@ -1909,6 +1911,11 @@ enum CompetitionStatus {
   ONGOING // 開催中
   COMPLETED // 終了
   CANCELLED // 中止
+}
+
+enum CompetitionStripeSettlementAccountType {
+  ORGANIZER_CONNECT
+  PLATFORM
 }
 
 enum ClubAnnualRegistrationStatus {

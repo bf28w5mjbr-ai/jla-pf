@@ -37,7 +37,9 @@
     "backfill:event-stored-names": "tsx --tsconfig tsconfig.json --env-file=.env scripts/backfill-event-stored-names.ts",
     "suggest:under-u-from-categories": "tsx --tsconfig tsconfig.json --env-file=.env scripts/suggest-under-u-from-age-categories.ts",
     "formalize:organization": "tsx --tsconfig tsconfig.json --env-file=.env scripts/formalize-organization-by-name.ts",
-    "seed:jla-affiliate-clubs": "tsx --tsconfig tsconfig.json --env-file=.env scripts/seed-jla-affiliate-clubs.ts"
+    "seed:jla-affiliate-clubs": "tsx --tsconfig tsconfig.json --env-file=.env scripts/seed-jla-affiliate-clubs.ts",
+    "backfill:to-assignment-from-official-apps": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-to-assignment-from-official-applications.ts",
+    "backfill:to-assignment-from-official-apps:dry": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-to-assignment-from-official-applications.ts --dry-run"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1024.0",
