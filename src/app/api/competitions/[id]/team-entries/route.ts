@@ -21,6 +21,12 @@ type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
+/** Prisma Int 用。NaN/Infinity を弾き、異常設定で 500 にならないようにする */
+function toSafeNonNegativeIntYen(n: number): number {
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(Math.floor(n), 2_147_000_000);
+}
+
 export async function PUT(request: NextRequest, context: RouteContext) {
   const { id: competitionId } = await context.params;
 
@@ -79,10 +85,18 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       );
     }
 
+    /** 本番でマイグレーション先行／遅延があっても、未反映の列を SELECT しないよう必要列のみ */
     const competition = await prisma.competition.findUnique({
       where: { id: competitionId },
-      include: {
-        events: true,
+      select: {
+        id: true,
+        entryStartDate: true,
+        entryEndDate: true,
+        startDate: true,
+        entryFee: true,
+        underAgeSystemEnabled: true,
+        underAgeUThresholds: true,
+        underAgeOpenEnabled: true,
         ageCategories: {
           orderBy: { displayOrder: "asc" },
           select: {
@@ -90,6 +104,15 @@ export async function PUT(request: NextRequest, context: RouteContext) {
             displayOrder: true,
             eligibleBirthDateFrom: true,
             eligibleBirthDateTo: true,
+          },
+        },
+        events: {
+          where: { type: "TEAM" },
+          select: {
+            id: true,
+            type: true,
+            name: true,
+            maxTeamEntriesPerClub: true,
           },
         },
       },
@@ -111,9 +134,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const eventMap = new Map(
-      competition.events.filter((event) => event.type === "TEAM").map((event) => [event.id, event])
-    );
+    const eventMap = new Map(competition.events.map((event) => [event.id, event]));
 
     const normalizedTeams = teams.map((team: unknown) => {
       const item = team as { eventId?: string; teamName?: string };
@@ -189,6 +210,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       }
       teamEntryFeePerTeam = fallbackTeamUnit;
     }
+    teamEntryFeePerTeam = toSafeNonNegativeIntYen(teamEntryFeePerTeam);
 
     if (prepaidIndividualUserIds.length > 0) {
       const memberRows = await prisma.membership.findMany({
@@ -241,7 +263,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         });
       }
 
-      const prepaidSubtotalYen = await sumInstantPrepaidIndividualsYen(tx, {
+      const prepaidSubtotalYenRaw = await sumInstantPrepaidIndividualsYen(tx, {
         startDate: new Date(competition.startDate),
         entryFee: competition.entryFee,
         underAge: {
@@ -253,8 +275,9 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         coveredUserIds: prepaidIndividualUserIds,
       });
 
-      const teamTotalYen = normalizedTeams.length * teamEntryFeePerTeam;
-      const totalAmount = teamTotalYen + prepaidSubtotalYen;
+      const prepaidSub = toSafeNonNegativeIntYen(prepaidSubtotalYenRaw);
+      const teamTotalYen = toSafeNonNegativeIntYen(normalizedTeams.length * teamEntryFeePerTeam);
+      const totalAmount = toSafeNonNegativeIntYen(teamTotalYen + prepaidSub);
 
       if (
         normalizedTeams.length === 0 &&
@@ -321,23 +344,28 @@ export async function PUT(request: NextRequest, context: RouteContext) {
             type: "COMPETITION_ENTRY_FEE",
             userId: session.userId,
             status: "PENDING",
-            amount: Math.max(0, totalAmount),
+            amount: totalAmount,
             metadata: {
               scope: "TEAM_ENTRY",
               competitionId,
               clubId,
               teamCount: normalizedTeams.length,
               unitPrice: teamEntryFeePerTeam,
-              prepaidIndividualSubtotalYen: prepaidSubtotalYen,
+              prepaidIndividualSubtotalYen: prepaidSub,
               clubIndividualBillingTiming,
             },
           },
           update: {
             userId: session.userId,
             status: "PENDING",
-            amount: Math.max(0, totalAmount),
+            amount: totalAmount,
             ...(clearStripeRefsAfterSucceededPayment
-              ? { stripeCheckoutSessionId: null, stripePaymentIntentId: null }
+              ? {
+                  stripeCheckoutSessionId: null,
+                  stripePaymentIntentId: null,
+                  paidAt: null,
+                  stripeDisputeId: null,
+                }
               : {}),
             metadata: {
               scope: "TEAM_ENTRY",
@@ -345,7 +373,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
               clubId,
               teamCount: normalizedTeams.length,
               unitPrice: teamEntryFeePerTeam,
-              prepaidIndividualSubtotalYen: prepaidSubtotalYen,
+              prepaidIndividualSubtotalYen: prepaidSub,
               clubIndividualBillingTiming,
             },
           },
