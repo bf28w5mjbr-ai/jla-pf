@@ -46,6 +46,10 @@ import {
   resolveRequiredQualificationsForAge,
 } from "@/lib/competitionEntryAgeTiered";
 import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
+import {
+  personalEntryItemsHasMixedEventTypes,
+  shouldBlockPersonalEntryItemsXorForGeneralUser,
+} from "@/lib/personalEntryItemsXor";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -115,7 +119,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const teamEntriesArray =
       hasTeamEntriesField && Array.isArray(teamEntries) ? teamEntries : [];
 
-    let preservedTeamEntriesFromSnapshot: { eventId: string; teamName: string }[] = [];
+    const preservedTeamEntriesFromSnapshot: { eventId: string; teamName: string }[] = [];
     let snapshotClubIdForPreservedTeams: string | null = null;
     if (!hasTeamEntriesField) {
       const prevForTeam = await prisma.competitionEntry.findFirst({
@@ -488,6 +492,43 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
       throw new Error("種目タイプが不正です");
     });
+
+    /** 個人種目とチーム種目の同日エントリー（items 単位）を禁止（移行前の混在データは更新のみ例外）。 */
+    const nextItemTypes = entryItemsData
+      .map((row) => eventMap.get(row.eventId)?.type)
+      .filter((t): t is "INDIVIDUAL" | "TEAM" => t === "INDIVIDUAL" || t === "TEAM");
+    let persistedSubmittedItemTypesForXor: ("INDIVIDUAL" | "TEAM")[] = [];
+    if (!isAdmin && personalEntryItemsHasMixedEventTypes(nextItemTypes)) {
+      const prevForXorTypes = await prisma.competitionEntry.findFirst({
+        where: {
+          competitionId,
+          userId: session.userId,
+          status: "SUBMITTED",
+        },
+        select: {
+          items: { select: { eventId: true } },
+        },
+      });
+      persistedSubmittedItemTypesForXor =
+        prevForXorTypes?.items
+          .map((row) => eventMap.get(row.eventId)?.type)
+          .filter((t): t is "INDIVIDUAL" | "TEAM" => t === "INDIVIDUAL" || t === "TEAM") ?? [];
+    }
+    if (
+      shouldBlockPersonalEntryItemsXorForGeneralUser({
+        isAdmin,
+        incomingItemTypes: nextItemTypes,
+        persistedSubmittedItemTypes: persistedSubmittedItemTypesForXor,
+      })
+    ) {
+      return NextResponse.json(
+        {
+          message:
+            "個人種目とチーム種目を同一エントリーでは同時に選べません。「個人種目」または「チーム種目のみ」を選び直してください。",
+        },
+        { status: 400 }
+      );
+    }
 
     const teamEntriesData = hasTeamEntriesField
       ? teamEntriesArray.map((item: { eventId: string; teamName?: string }) => {

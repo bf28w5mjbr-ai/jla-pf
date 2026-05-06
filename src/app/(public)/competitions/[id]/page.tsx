@@ -434,7 +434,7 @@ export default async function CompetitionDetailPage({
     (competition.officialRecruitmentEnabled ?? true) && competition.status !== "CANCELLED";
   const showOfficialEntryButton = showEntryLinks && isOfficialRecruitmentOn;
   const entryButtonCount =
-    (hasIndividualEvents ? 1 : 0) +
+    (hasIndividualEvents || hasTeamEvents ? 1 : 0) +
     (showTeamEntryButton ? 1 : 0) +
     (showOfficialEntryButton ? 1 : 0);
   const entryFeeDisplay =
@@ -610,14 +610,14 @@ export default async function CompetitionDetailPage({
                             : ""
                       }`}
                     >
-                      {hasIndividualEvents ? (
+                      {hasIndividualEvents || hasTeamEvents ? (
                         <Button
                           asChild
                           size="sm"
                           className="h-10 w-full justify-center gap-1.5 font-semibold shadow-sm"
                         >
                           <Link href={withLoginRedirect(appRoutes.competitions.entry(competition.id))}>
-                            エントリー
+                            個人でのエントリー
                             <ChevronRight className="h-3.5 w-3.5 opacity-70" />
                           </Link>
                         </Button>
@@ -667,7 +667,7 @@ export default async function CompetitionDetailPage({
                         className={`text-[11px] leading-relaxed ${isEntryWindowOpen ? "text-emerald-800 dark:text-emerald-300/90" : "text-muted-foreground"}`}
                       >
                         {isEntryWindowOpen
-                          ? "この時間帯はエントリー手続き・決済が可能です。"
+                          ? "この時間帯はエントリー手続き・決済が可能です。個人でのエントリーでは、個人種目またはチーム種目のみを選んで申し込みます。"
                           : "表示の期間外でも、主催の設定により手続きできる場合があります。詳細は手続き画面でご確認ください。"}
                       </p>
                     ) : null}

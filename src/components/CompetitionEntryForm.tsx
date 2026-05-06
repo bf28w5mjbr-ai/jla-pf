@@ -187,10 +187,11 @@ type CompetitionEntryFormProps = {
   underAgeFeeBands?: { uThresholds: number[]; openEnabled: boolean } | null;
   /** カード決済の上乗せ率（basis points）。サーバーの STRIPE_PROCESSING_FEE_BPS と一致 */
   cardProcessingFeeBps?: number;
-  /** true のとき個人種目のみ表示し、POST から teamEntries を送らない（チームはクラブのチームハブ） */
-  individualEntryOnly?: boolean;
-  /** individualEntryOnly 時、既存エントリーのチーム件数（種目数上限の計算に使用） */
-  reservedTeamSlotsForEntryLimit?: number;
+  /**
+   * 個人エントリーの枠: 個人種目のみ / チーム種目のみ / 移行前の混在（同一 items 内に両方）。
+   * POST は常に `items` のみ（club `teamEntries` は送らない）。
+   */
+  personalEntryMode?: "individual" | "team-only" | "legacy-mixed";
 };
 
 export default function CompetitionEntryForm({
@@ -219,30 +220,21 @@ export default function CompetitionEntryForm({
   feeAgeCategories,
   underAgeFeeBands = null,
   cardProcessingFeeBps = 360,
-  individualEntryOnly = false,
-  reservedTeamSlotsForEntryLimit = 0,
+  personalEntryMode = "individual",
 }: CompetitionEntryFormProps) {
   const router = useRouter();
   const [showEstablishedEdit, setShowEstablishedEdit] = useState(false);
-  const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(
-    () =>
-      new Set([
-        ...(initialEntry?.items?.map((item) => item.eventId) ?? []),
-        ...(individualEntryOnly
-          ? []
-          : (initialEntry?.teamEntries?.map((item) => item.eventId) ?? [])),
-      ])
-  );
+  const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(() => {
+    const allowed = new Set(events.map((e) => e.id));
+    const fromItems = (initialEntry?.items ?? [])
+      .map((item) => item.eventId)
+      .filter((id) => allowed.has(id));
+    return new Set(fromItems);
+  });
   const [entryTimes, setEntryTimes] = useState<Record<string, string>>(
     () =>
       Object.fromEntries(
         (initialEntry?.items ?? []).map((item) => [item.eventId, item.entryTime ?? ""])
-      )
-  );
-  const [teamNames, setTeamNames] = useState<Record<string, string>>(
-    () =>
-      Object.fromEntries(
-        (initialEntry?.teamEntries ?? []).map((item) => [item.eventId, item.teamName ?? ""])
       )
   );
   const [clubId, setClubId] = useState<string | null>(
@@ -273,10 +265,12 @@ export default function CompetitionEntryForm({
   const selectedTeamEvents = selectedEvents.filter((event) => event.type === "TEAM");
   const selectedIndividualEvents = selectedEvents.filter((event) => event.type === "INDIVIDUAL");
   const selectedCount = selectedEvents.length;
-  const reservedTeamSlots = individualEntryOnly ? reservedTeamSlotsForEntryLimit : 0;
-  const totalEntrySlots = individualEntryOnly
-    ? selectedIndividualEvents.length + selectedTeamEvents.length + reservedTeamSlots
-    : selectedCount;
+  const totalEntrySlots =
+    personalEntryMode === "individual"
+      ? selectedIndividualEvents.length
+      : personalEntryMode === "team-only"
+        ? selectedTeamEvents.length
+        : selectedCount;
 
   const feeResolveAgeCategories = useMemo(() => {
     if (!feeAgeCategories?.length) return null;
@@ -299,9 +293,15 @@ export default function CompetitionEntryForm({
   }, [underAgeFeeBands]);
 
   const estimatedFee = useMemo(() => {
-    const individualCount =
-      selectedIndividualEvents.length + (individualEntryOnly ? selectedTeamEvents.length : 0);
-    const teamCount = individualEntryOnly ? reservedTeamSlots : selectedTeamEvents.length;
+    let individualCount = 0;
+    const teamCount = 0;
+    if (personalEntryMode === "individual") {
+      individualCount = selectedIndividualEvents.length;
+    } else if (personalEntryMode === "team-only") {
+      individualCount = selectedTeamEvents.length;
+    } else {
+      individualCount = selectedIndividualEvents.length + selectedTeamEvents.length;
+    }
     if (individualCount + teamCount === 0) return 0;
     const r = resolveEntryFeeUnits(entryFee, userAgeYearsAtCompetitionStart ?? null, {
       userDateOfBirth: userDobForFee,
@@ -327,9 +327,8 @@ export default function CompetitionEntryForm({
   }, [
     entryFee,
     feeResolveAgeCategories,
+    personalEntryMode,
     selectedIndividualEvents.length,
-    individualEntryOnly,
-    reservedTeamSlots,
     selectedTeamEvents.length,
     underFeePartitionResolved,
     userAgeYearsAtCompetitionStart,
@@ -349,21 +348,16 @@ export default function CompetitionEntryForm({
     : typeof maxEventEntriesPerPerson === "number" && maxEventEntriesPerPerson > 0
       ? maxEventEntriesPerPerson
       : null;
-  /** 個人フォーム上で選べる個人種目の上限（既存チーム枠を max から差し引く） */
-  const maxIndividualEventsOnForm =
-    individualEntryOnly && effectiveMaxSelectable !== null
-      ? Math.max(0, effectiveMaxSelectable - reservedTeamSlots)
-      : effectiveMaxSelectable;
 
   /** メイン列のみに表示（サイドバーでは重複させない） */
   const entryLimitShort = !allowMultipleEventEntries
     ? "1種目のみ選択できます。"
-    : maxIndividualEventsOnForm !== null
-      ? `最大${maxIndividualEventsOnForm}種目まで選択できます${
-          individualEntryOnly && reservedTeamSlots > 0
-            ? `（チーム種目${reservedTeamSlots}件は別途クラブのチーム管理で登録済みの分としてカウント）`
-            : ""
-        }。`
+    : effectiveMaxSelectable !== null
+      ? `最大${effectiveMaxSelectable}種目まで選択できます${
+          personalEntryMode === "team-only"
+            ? "（個人種目は出場しません。メンバーへの配属はクラブのチーム管理で行われます）。"
+            : "。"
+        }`
       : "複数種目を選べます（上限なし）。";
   const isPaidEntry = initialEntry?.paymentStatus === "PAID";
   const fieldsLocked = lockEntryContentUntilPaid || entryCancelled;
@@ -386,7 +380,7 @@ export default function CompetitionEntryForm({
       }
 
       next.add(eventId);
-      const cap = maxIndividualEventsOnForm ?? effectiveMaxSelectable;
+      const cap = effectiveMaxSelectable;
       if (cap !== null && next.size > cap) {
         toast.error(`この大会は${cap}種目まで選択可能です`);
         return prev;
@@ -529,12 +523,6 @@ export default function CompetitionEntryForm({
         }
       }
 
-      if (event.type === "TEAM" && !individualEntryOnly) {
-        if (!teamNames[event.id] || teamNames[event.id].trim().length === 0) {
-          toast.error(`「${event.name}（${sexLabel(event.sex)}）」のチーム名を入力してください`);
-          return;
-        }
-      }
     }
 
     setIsSubmitting(true);
@@ -549,27 +537,11 @@ export default function CompetitionEntryForm({
           notes: notes.trim() || null,
           confirmed,
           ...(entryPledge ? { pledgeAccepted } : {}),
-          items: selectedEvents
-            .filter((event) =>
-              individualEntryOnly
-                ? event.type === "INDIVIDUAL" || event.type === "TEAM"
-                : event.type === "INDIVIDUAL"
-            )
-            .map((event) => ({
-              eventId: event.id,
-              entryTime:
-                event.type === "INDIVIDUAL" ? entryTimes[event.id]?.trim() || null : null,
-            })),
-          ...(individualEntryOnly
-            ? {}
-            : {
-                teamEntries: selectedEvents
-                  .filter((event) => event.type === "TEAM")
-                  .map((event) => ({
-                    eventId: event.id,
-                    teamName: teamNames[event.id]?.trim() || "",
-                  })),
-              }),
+          items: selectedEvents.map((event) => ({
+            eventId: event.id,
+            entryTime:
+              event.type === "INDIVIDUAL" ? entryTimes[event.id]?.trim() || null : null,
+          })),
         }),
       });
 
@@ -697,34 +669,13 @@ export default function CompetitionEntryForm({
                 </div>
               )}
 
-              {isSelected && event.type === "TEAM" && (
+              {isSelected && event.type === "TEAM" ? (
                 <div className="mt-3 rounded-lg border border-border/60 bg-muted/30 p-3">
-                  {individualEntryOnly ? (
-                    <p className="text-xs leading-relaxed text-muted-foreground">
-                      この種目への参加意思を登録します。実際の出場チーム名・メンバーは、所属クラブの「チーム管理」でクラブ管理者が登録し、メンバー割当で決まります。
-                    </p>
-                  ) : (
-                    <>
-                      <Label htmlFor={`team-name-${event.id}`} className="text-xs font-medium">
-                        チーム名
-                      </Label>
-                      <Input
-                        id={`team-name-${event.id}`}
-                        value={teamNames[event.id] || ""}
-                        onChange={(e) =>
-                          setTeamNames((prev) => ({
-                            ...prev,
-                            [event.id]: e.target.value,
-                          }))
-                        }
-                        placeholder="チーム名を入力"
-                        className="mt-2 h-9 text-sm"
-                        disabled={fieldsLocked}
-                      />
-                    </>
-                  )}
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    チーム種目への参加意思を登録します（個人種目には出場しません）。実際のチーム枠・チーム名はクラブのチームエントリーで登録され、あなたへの配属はクラブのメンバー割当で行われます。
+                  </p>
                 </div>
-              )}
+              ) : null}
             </div>
           );
         })}
@@ -979,11 +930,27 @@ export default function CompetitionEntryForm({
               </div>
             ) : null}
 
-            {editingEstablishedEntry && individualEntryOnly && reservedTeamSlots > 0 ? (
+            {editingEstablishedEntry && personalEntryMode === "team-only" ? (
               <div className="rounded-lg border border-sky-200/80 bg-sky-50/70 px-3 py-2.5 text-xs leading-relaxed text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
-                <p className="font-medium text-foreground">チーム種目について</p>
+                <p className="font-medium text-foreground">チーム種目のみのエントリー</p>
                 <p className="mt-1.5 text-muted-foreground">
-                  チーム種目の追加・変更はこの画面では行えません。受付内容の「チーム種目」を確認し、所属クラブの「チーム管理」から操作してください。
+                  「個人種目」への切替はこの大会の受付では行えません（取消・運用でのやり直しが必要です）。チーム枠・実際のチーム名はクラブのチームエントリーで管理します。
+                </p>
+              </div>
+            ) : null}
+            {editingEstablishedEntry && personalEntryMode === "individual" ? (
+              <div className="rounded-lg border border-sky-200/80 bg-sky-50/70 px-3 py-2.5 text-xs leading-relaxed text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
+                <p className="font-medium text-foreground">個人種目のエントリー</p>
+                <p className="mt-1.5 text-muted-foreground">
+                  「チーム種目のみ」への切替はこの大会の受付では行えません。チーム種目に出場する場合も、メンバー配属はクラブのチーム管理で行われます。
+                </p>
+              </div>
+            ) : null}
+            {editingEstablishedEntry && personalEntryMode === "legacy-mixed" ? (
+              <div className="rounded-lg border border-amber-200/80 bg-amber-50/70 px-3 py-2.5 text-xs leading-relaxed text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
+                <p className="font-medium text-foreground">受付記録の確認</p>
+                <p className="mt-1.5 text-muted-foreground">
+                  個人種目とチーム種目が同一エントリーに混在している古い形式の記録です。今後の変更は主催者へお問い合わせください。
                 </p>
               </div>
             ) : null}
@@ -1008,7 +975,9 @@ export default function CompetitionEntryForm({
                 <FormSection
                   sectionId="entry-events"
                   icon={ListChecks}
-                  title="種目の選択"
+                  title={
+                    personalEntryMode === "team-only" ? "チーム種目のみ（参加意思）" : "種目の選択"
+                  }
                   description={entryLimitShort}
                   leadDensity="guided"
                 >

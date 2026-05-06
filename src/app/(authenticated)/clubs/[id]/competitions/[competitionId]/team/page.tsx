@@ -372,6 +372,7 @@ export default async function ClubCompetitionTeamHubPage({
     ])
   );
 
+  /** クラブに紐づく SUBMITTED エントリー全員（個人種目のみ／チーム種目のみの別を問わず割当候補） */
   const eligibleMembersByClub = Object.fromEntries(
     adminClubIds.map((cid) => [
       cid,

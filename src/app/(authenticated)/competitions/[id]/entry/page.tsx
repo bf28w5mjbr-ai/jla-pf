@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowLeft, Calendar, CircleCheck, MapPin } from "lucide-react";
+import { AlertCircle, ArrowLeft, Calendar, CircleCheck, MapPin, User, UsersRound } from "lucide-react";
 import {
   formatAdminWallClockSameAsDatetimeLocal,
   formatCompactJaDateRange,
@@ -109,10 +109,19 @@ export default async function CompetitionEntryPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ session_id?: string | string[] }>;
+  searchParams: Promise<{ session_id?: string | string[]; mode?: string | string[] }>;
 }) {
   const { id } = await params;
   const sp = await searchParams;
+  const rawModeParam = sp.mode;
+  const modeQuery =
+    typeof rawModeParam === "string"
+      ? rawModeParam
+      : Array.isArray(rawModeParam)
+        ? rawModeParam[0]
+        : undefined;
+  const requestedEntryMode =
+    modeQuery === "individual" || modeQuery === "team-only" ? modeQuery : null;
   const rawSessionId = sp.session_id;
   const sessionIdFromUrl =
     typeof rawSessionId === "string"
@@ -667,6 +676,69 @@ export default async function CompetitionEntryPage({
 
   const entryCancelled = existingEntry?.status === "CANCELLED";
 
+  const competitionEventTypeById = new Map(
+    competition.events.map((e) => [e.id, e.type])
+  );
+
+  const itemTypesPersisted =
+    initialEntry?.items
+      ?.map((item) => competitionEventTypeById.get(item.eventId))
+      .filter((t): t is "INDIVIDUAL" | "TEAM" => t === "INDIVIDUAL" || t === "TEAM") ??
+    [];
+
+  const persistedEntryTypeSet = new Set(itemTypesPersisted);
+
+  let legacyMixedPersisted = false;
+  let inferredPersistedMode: "individual" | "team-only" | null = null;
+  if (persistedEntryTypeSet.size > 1) {
+    legacyMixedPersisted = true;
+  } else if (persistedEntryTypeSet.size === 1) {
+    inferredPersistedMode = persistedEntryTypeSet.has("TEAM") ? "team-only" : "individual";
+  }
+
+  /** 種別変更不可（決済状態・単一 XOR）のとき確定済み種別がある */
+  const lockEntryModeFromRecord =
+    Boolean(existingEntry?.status === "SUBMITTED") &&
+    !entryCancelled &&
+    (persistedEntryTypeSet.size > 0 || legacyMixedPersisted);
+
+  if (
+    lockEntryModeFromRecord &&
+    inferredPersistedMode &&
+    requestedEntryMode &&
+    requestedEntryMode !== inferredPersistedMode
+  ) {
+    const qs = new URLSearchParams();
+    if (sessionIdFromUrl) qs.set("session_id", sessionIdFromUrl);
+    qs.set("mode", inferredPersistedMode);
+    redirect(`/competitions/${id}/entry?${qs.toString()}`);
+  }
+
+  const hasEligibleIndividualForPicker = eligibleEvents.some((e) => e.type === "INDIVIDUAL");
+  const hasEligibleTeamForPicker = eligibleEvents.some((e) => e.type === "TEAM");
+
+  const pickingPersonalEntryMode =
+    !lockEntryModeFromRecord &&
+    !legacyMixedPersisted &&
+    isCompetitionEligible &&
+    isEntryWindowOpen &&
+    !entryCancelled &&
+    requestedEntryMode === null;
+
+  const personalEntryMode: "individual" | "team-only" | "legacy-mixed" =
+    legacyMixedPersisted ? "legacy-mixed" : (inferredPersistedMode ?? requestedEntryMode ?? "individual");
+
+  const eventsForPersonalEntryForm =
+    legacyMixedPersisted || personalEntryMode === "legacy-mixed"
+      ? eligibleEvents
+      : personalEntryMode === "individual"
+        ? eligibleEvents.filter((e) => e.type === "INDIVIDUAL")
+        : eligibleEvents.filter((e) => e.type === "TEAM");
+
+  const entryQuerySuffix = sessionIdFromUrl
+    ? `session_id=${encodeURIComponent(sessionIdFromUrl)}`
+    : "";
+
   const entryUserFacing = existingEntry
     ? getEntryUserFacingStatus({
         status: existingEntry.status,
@@ -811,7 +883,9 @@ export default async function CompetitionEntryPage({
             {isCompetitionEligible ? (
               <div className="mt-2 flex gap-2 text-sm">
                 <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                <p className="leading-snug text-foreground">資格要件を満たしています。種目を選んで手続きを進められます。</p>
+                <p className="leading-snug text-foreground">
+                  資格要件を満たしています。下の画面の案内に従って手続きを進められます。
+                </p>
               </div>
             ) : (
               <div className="mt-2 space-y-2">
@@ -849,13 +923,90 @@ export default async function CompetitionEntryPage({
         </Card>
       ) : null}
 
+      {pickingPersonalEntryMode ? (
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="border-b border-border/60 bg-muted/20 px-4 py-4 sm:px-5">
+            <CardTitle className="text-base font-semibold">エントリーする内容を選んでください</CardTitle>
+            <CardDescription className="text-xs sm:text-sm leading-relaxed">
+              個人種目に出る場合と、チーム種目にのみ出場する場合では手続きが分かれます。
+              チーム枠の登録やチーム名は、クラブ権限者が「チームエントリー」で行います。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 px-4 py-4 sm:px-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
+              <p className="text-xs text-muted-foreground">
+                クラブのチーム枠・チーム名は代表者が登録します。
+              </p>
+              <Button variant="outline" size="sm" className="w-full shrink-0 sm:w-auto" asChild>
+                <Link href={appRoutes.competitions.legacyTeamEntry(competition.id)}>
+                  クラブのチームエントリーへ
+                </Link>
+              </Button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {hasEligibleIndividualForPicker ? (
+                <Button variant="outline" className="h-auto min-h-[5.5rem] flex-col gap-2 px-4 py-4" asChild>
+                  <Link
+                    href={`/competitions/${competition.id}/entry?mode=individual${
+                      entryQuerySuffix ? `&${entryQuerySuffix}` : ""
+                    }`}
+                  >
+                    <User className="h-6 w-6 text-primary" aria-hidden />
+                    <span className="text-sm font-semibold">個人種目にエントリー</span>
+                    <span className="text-center text-xs font-normal leading-snug text-muted-foreground">
+                      プール／オーシャン等の個人種目のみ
+                    </span>
+                  </Link>
+                </Button>
+              ) : null}
+              {hasEligibleTeamForPicker && requireClubMembership ? (
+                <Button variant="outline" className="h-auto min-h-[5.5rem] flex-col gap-2 px-4 py-4" asChild>
+                  <Link
+                    href={`/competitions/${competition.id}/entry?mode=team-only${
+                      entryQuerySuffix ? `&${entryQuerySuffix}` : ""
+                    }`}
+                  >
+                    <UsersRound className="h-6 w-6 text-primary" aria-hidden />
+                    <span className="text-sm font-semibold">チーム種目のみ</span>
+                    <span className="text-center text-xs font-normal leading-snug text-muted-foreground">
+                      個人種目には出ません。配属はクラブのメンバー割当で行われます。
+                    </span>
+                  </Link>
+                </Button>
+              ) : hasEligibleTeamForPicker && !requireClubMembership ? (
+                <div className="rounded-lg border border-dashed border-border bg-muted/40 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+                  チーム種目はこの大会では所属クラブ必須です。承認済みのクラブがある場合に選べます。
+                </div>
+              ) : null}
+            </div>
+            {!hasEligibleIndividualForPicker && !hasEligibleTeamForPicker ? (
+              <p className="text-xs text-muted-foreground">この条件ではエントリーできる種目がありません。</p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {!pickingPersonalEntryMode &&
+      eventsForPersonalEntryForm.length === 0 &&
+      isCompetitionEligible &&
+      isEntryWindowOpen &&
+      !entryCancelled ? (
+        <Card className="border-border/80">
+          <CardContent className="px-4 py-4 text-sm text-muted-foreground">
+            {personalEntryMode === "team-only"
+              ? "この大会では、条件に合うチーム種目がないか、個人エントリーでのチーム種目受付が無効です。"
+              : legacyMixedPersisted || personalEntryMode === "legacy-mixed"
+                ? "表示できる種目がありません。ページを更新しても改善しない場合は主催者へお問い合わせください。"
+                : "この条件では個人種目がありません。"}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {!pickingPersonalEntryMode && eventsForPersonalEntryForm.length > 0 ? (
       <CompetitionEntryForm
         competitionId={competition.id}
-        events={eligibleEvents}
-        individualEntryOnly
-        reservedTeamSlotsForEntryLimit={
-          Array.isArray(initialEntry?.teamEntries) ? initialEntry.teamEntries.length : 0
-        }
+        events={eventsForPersonalEntryForm}
+        personalEntryMode={personalEntryMode}
         memberships={memberships}
         entryWindowOpen={isEntryWindowOpen}
         entryFee={competition.entryFee as unknown as CompetitionEntryFormProps["entryFee"]}
@@ -901,6 +1052,7 @@ export default async function CompetitionEntryPage({
         }
         cardProcessingFeeBps={getStripeProcessingFeeBpsFromEnv()}
       />
+      ) : null}
     </div>
   );
 }
