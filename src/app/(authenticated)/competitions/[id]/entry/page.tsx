@@ -733,7 +733,7 @@ export default async function CompetitionEntryPage({
       ? eligibleEvents
       : personalEntryMode === "individual"
         ? eligibleEvents.filter((e) => e.type === "INDIVIDUAL")
-        : eligibleEvents.filter((e) => e.type === "TEAM");
+        : [];
 
   const entryQuerySuffix = sessionIdFromUrl
     ? `session_id=${encodeURIComponent(sessionIdFromUrl)}`
@@ -969,7 +969,7 @@ export default async function CompetitionEntryPage({
                     <UsersRound className="h-6 w-6 text-primary" aria-hidden />
                     <span className="text-sm font-semibold">チーム種目のみ</span>
                     <span className="text-center text-xs font-normal leading-snug text-muted-foreground">
-                      個人種目には出ません。配属はクラブのメンバー割当で行われます。
+                      個人種目には出ません。ここでは種目を選択せず、配属候補として登録します。
                     </span>
                   </Link>
                 </Button>
@@ -988,21 +988,21 @@ export default async function CompetitionEntryPage({
 
       {!pickingPersonalEntryMode &&
       eventsForPersonalEntryForm.length === 0 &&
+      personalEntryMode !== "team-only" &&
       isCompetitionEligible &&
       isEntryWindowOpen &&
       !entryCancelled ? (
         <Card className="border-border/80">
           <CardContent className="px-4 py-4 text-sm text-muted-foreground">
-            {personalEntryMode === "team-only"
-              ? "この大会では、条件に合うチーム種目がないか、個人エントリーでのチーム種目受付が無効です。"
-              : legacyMixedPersisted || personalEntryMode === "legacy-mixed"
-                ? "表示できる種目がありません。ページを更新しても改善しない場合は主催者へお問い合わせください。"
-                : "この条件では個人種目がありません。"}
+            {legacyMixedPersisted || personalEntryMode === "legacy-mixed"
+              ? "表示できる種目がありません。ページを更新しても改善しない場合は主催者へお問い合わせください。"
+              : "この条件では個人種目がありません。"}
           </CardContent>
         </Card>
       ) : null}
 
-      {!pickingPersonalEntryMode && eventsForPersonalEntryForm.length > 0 ? (
+      {!pickingPersonalEntryMode &&
+      (eventsForPersonalEntryForm.length > 0 || personalEntryMode === "team-only") ? (
       <CompetitionEntryForm
         competitionId={competition.id}
         events={eventsForPersonalEntryForm}

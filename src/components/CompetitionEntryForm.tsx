@@ -265,6 +265,7 @@ export default function CompetitionEntryForm({
   const selectedTeamEvents = selectedEvents.filter((event) => event.type === "TEAM");
   const selectedIndividualEvents = selectedEvents.filter((event) => event.type === "INDIVIDUAL");
   const selectedCount = selectedEvents.length;
+  const isTeamOnlyMode = personalEntryMode === "team-only";
   const totalEntrySlots =
     personalEntryMode === "individual"
       ? selectedIndividualEvents.length
@@ -480,7 +481,7 @@ export default function CompetitionEntryForm({
       toast.error("このエントリーは取消済みのため送信できません");
       return;
     }
-    if (totalEntrySlots === 0) {
+    if (!isTeamOnlyMode && totalEntrySlots === 0) {
       toast.error("種目を1つ以上選択してください");
       return;
     }
@@ -537,11 +538,13 @@ export default function CompetitionEntryForm({
           notes: notes.trim() || null,
           confirmed,
           ...(entryPledge ? { pledgeAccepted } : {}),
-          items: selectedEvents.map((event) => ({
-            eventId: event.id,
-            entryTime:
-              event.type === "INDIVIDUAL" ? entryTimes[event.id]?.trim() || null : null,
-          })),
+          items: isTeamOnlyMode
+            ? []
+            : selectedEvents.map((event) => ({
+                eventId: event.id,
+                entryTime:
+                  event.type === "INDIVIDUAL" ? entryTimes[event.id]?.trim() || null : null,
+              })),
         }),
       });
 
@@ -987,7 +990,12 @@ export default function CompetitionEntryForm({
                     </div>
                   ) : null}
 
-                  {!hasAnyEventsToShow ? (
+                  {isTeamOnlyMode ? (
+                    <div className="rounded-lg border border-border/70 bg-muted/20 px-4 py-4 text-xs leading-relaxed text-muted-foreground">
+                      チーム種目の選択はここでは行いません。送信すると「チーム種目の割り当て候補」として登録されます。
+                      実際に出場する種目・チーム名・メンバー配属は、クラブ管理者が「チームエントリー / メンバー割当」で設定します。
+                    </div>
+                  ) : !hasAnyEventsToShow ? (
                     <div className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
                       現在、エントリー可能な個人種目がありません。条件（性別・年齢・資格など）をご確認ください。
                     </div>
@@ -1242,7 +1250,11 @@ export default function CompetitionEntryForm({
                       {selectedCount}
                     </Badge>
                   </div>
-                  {selectedEvents.length === 0 ? (
+                  {isTeamOnlyMode ? (
+                    <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                      この手続きでは種目は選択しません。送信後、クラブ側のメンバー割当でチーム種目に配属されます。
+                    </p>
+                  ) : selectedEvents.length === 0 ? (
                     <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                       種目のリストでチェックを入れると、ここに一覧表示されます。
                     </p>

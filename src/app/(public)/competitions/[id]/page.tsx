@@ -667,7 +667,7 @@ export default async function CompetitionDetailPage({
                         className={`text-[11px] leading-relaxed ${isEntryWindowOpen ? "text-emerald-800 dark:text-emerald-300/90" : "text-muted-foreground"}`}
                       >
                         {isEntryWindowOpen
-                          ? "この時間帯はエントリー手続き・決済が可能です。個人でのエントリーでは、個人種目またはチーム種目のみを選んで申し込みます。"
+                          ? "この時間帯はエントリー手続き・決済が可能です。個人でのエントリーでは、個人種目に出場するか、チーム種目の割り当て候補として登録するかを選べます。"
                           : "表示の期間外でも、主催の設定により手続きできる場合があります。詳細は手続き画面でご確認ください。"}
                       </p>
                     ) : null}

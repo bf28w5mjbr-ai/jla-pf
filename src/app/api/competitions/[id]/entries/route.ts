@@ -118,6 +118,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const hasTeamEntriesField = "teamEntries" in (body ?? {});
     const teamEntriesArray =
       hasTeamEntriesField && Array.isArray(teamEntries) ? teamEntries : [];
+    const teamOnlyIntentWithoutItemSelection =
+      !hasTeamEntriesField &&
+      itemsArray.length === 0 &&
+      typeof clubId === "string" &&
+      clubId.trim().length > 0;
 
     const preservedTeamEntriesFromSnapshot: { eventId: string; teamName: string }[] = [];
     let snapshotClubIdForPreservedTeams: string | null = null;
@@ -162,7 +167,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       itemsArray.length +
       (hasTeamEntriesField ? teamEntriesArray.length : preservedTeamEntriesFromSnapshot.length);
 
-    if (selectedCount === 0) {
+    if (selectedCount === 0 && !teamOnlyIntentWithoutItemSelection) {
       return NextResponse.json(
         { message: "種目を1つ以上選択してください" },
         { status: 400 }

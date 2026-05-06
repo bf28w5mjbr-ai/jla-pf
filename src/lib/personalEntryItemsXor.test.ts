@@ -50,6 +50,16 @@ describe("shouldBlockPersonalEntryItemsXorForGeneralUser", () => {
     ).toBe(false);
   });
 
+  it("allows team-only intent with empty items", () => {
+    expect(
+      shouldBlockPersonalEntryItemsXorForGeneralUser({
+        isAdmin: false,
+        incomingItemTypes: [],
+        persistedSubmittedItemTypes: ["TEAM"],
+      })
+    ).toBe(false);
+  });
+
   it("blocks mixed for general user without legacy row", () => {
     expect(
       shouldBlockPersonalEntryItemsXorForGeneralUser({
