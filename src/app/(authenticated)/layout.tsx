@@ -5,8 +5,7 @@ import {
   getAuthenticatedLayoutUser,
   getCachedUnreadNotificationCount,
 } from "@/lib/authenticatedLayoutData";
-import { GlobalNotificationBell } from "@/components/GlobalNotificationBell";
-import Sidebar from "@/components/Sidebar";
+import { AuthenticatedAppShell } from "@/components/AuthenticatedAppShell";
 import React from "react";
 import { isClubAdminRole } from "@/lib/roleScopes";
 
@@ -40,18 +39,15 @@ export default async function AuthenticatedLayout({
     .sort((a, b) => a.name.localeCompare(b.name, "ja"));
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <Sidebar
-        userRole={user.role}
-        isClubAdmin={isClubAdmin}
-        isAssociationAdmin={isAssociationAdmin}
-        organizations={userOrganizations}
-        managedClubs={user.memberships.map((membership) => membership.club)}
-      />
-      <GlobalNotificationBell unreadCount={unreadNotificationCount} />
-      <main className="app-main-canvas min-h-screen min-w-0 flex-1 pb-[var(--safe-area-bottom)] px-[var(--app-fab-gutter)] pt-[calc(var(--safe-area-top)+4rem)] lg:pt-[var(--safe-area-top)]">
-        {children}
-      </main>
-    </div>
+    <AuthenticatedAppShell
+      userRole={user.role}
+      isClubAdmin={isClubAdmin}
+      isAssociationAdmin={isAssociationAdmin}
+      organizations={userOrganizations}
+      managedClubs={user.memberships.map((membership) => membership.club)}
+      unreadNotificationCount={unreadNotificationCount}
+    >
+      {children}
+    </AuthenticatedAppShell>
   );
 }

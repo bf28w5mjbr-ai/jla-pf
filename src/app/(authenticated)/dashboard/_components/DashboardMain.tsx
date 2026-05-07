@@ -222,12 +222,12 @@ export async function DashboardMain({ userId }: { userId: string }) {
 
   return (
     <div className="space-y-8">
-      <header className="space-y-2 border-b border-border/80 pb-8">
+      <header className="space-y-2 border-b border-border/80 pb-6 sm:pb-8">
         <div className="flex items-center gap-2 text-primary">
           <LayoutDashboard className="h-5 w-5" strokeWidth={1.75} aria-hidden />
           <span className="text-sm font-medium">マイページ</span>
         </div>
-        <h1 className="text-balance text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+        <h1 className="text-balance text-xl font-semibold tracking-tight text-foreground sm:text-2xl lg:text-3xl">
           ダッシュボード
         </h1>
         <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
@@ -262,7 +262,7 @@ export async function DashboardMain({ userId }: { userId: string }) {
             <div className="min-w-0 space-y-5">
               <div>
                 <div className="flex flex-wrap items-baseline gap-3">
-                  <h2 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+                  <h2 className="text-lg font-semibold tracking-tight text-foreground sm:text-xl lg:text-2xl">
                     {user.familyName} {user.givenName}
                   </h2>
                   <span className="text-sm text-muted-foreground">{calcAge(user.dateOfBirth)}歳</span>

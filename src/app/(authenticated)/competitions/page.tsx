@@ -306,8 +306,8 @@ export default async function CompetitionsPage({
     const dateRange = formatCompactJaDateRange(competition.startDate, competition.endDate);
     return (
       <Card className="overflow-hidden border-border/80 shadow-sm transition hover:border-primary/30 hover:shadow-md">
-        <CardContent className="p-4 sm:p-5">
-          <div className="flex items-start gap-4">
+        <CardContent className="p-3.5 sm:p-5">
+          <div className="flex items-start gap-3 sm:gap-4">
             <div className="hidden shrink-0 sm:block">
               <OrganizationLogoImage
                 key={`${competition.id}-${competition.organization.logoUrl ?? ""}`}
@@ -386,7 +386,7 @@ export default async function CompetitionsPage({
   };
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+    <div className="mx-auto w-full max-w-6xl space-y-6 px-3 py-6 sm:space-y-8 sm:px-5 sm:py-8 lg:px-8 lg:py-10">
       <header className="space-y-4 border-b border-border/80 pb-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="space-y-2">
@@ -394,7 +394,7 @@ export default async function CompetitionsPage({
               <Trophy className="h-5 w-5" strokeWidth={1.75} aria-hidden />
               <span className="text-sm font-medium">大会</span>
             </div>
-            <h1 className="text-balance text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            <h1 className="text-balance text-xl font-semibold tracking-tight text-foreground sm:text-2xl lg:text-3xl">
               大会一覧
             </h1>
             <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">

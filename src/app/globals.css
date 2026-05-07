@@ -25,11 +25,14 @@
   --safe-area-left: env(safe-area-inset-left);
   --app-content-max-width: 112rem;
   --app-shell-gap: 1rem;
-  /*
-   * 認証レイアウト main 用: 固定の通知ベル（右・w-11）と同程度の余白を左右対称に取り、
-   * mx-auto コンテンツの視覚的中心がモバイルで左に寄るのを防ぐ。
-   */
-  --app-fab-gutter: max(1rem, var(--safe-area-left), calc(var(--safe-area-right) + 2.75rem));
+  /* 認証レイアウト main 用: 安全領域を含む左右ガター（モバイルは狭め、lg でやや広げる） */
+  --app-content-gutter: max(0.75rem, var(--safe-area-left), var(--safe-area-right));
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --app-content-gutter: max(1rem, var(--safe-area-left), var(--safe-area-right));
+  }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -93,7 +96,7 @@ body {
   width: 100%;
   max-width: var(--app-content-max-width);
   margin-inline: auto;
-  padding-inline: clamp(1rem, 1.5vw, 1.75rem);
+  padding-inline: clamp(0.75rem, 2vw, 1.5rem);
 }
 
 .app-section {

@@ -20,7 +20,6 @@ import {
   ChevronDown,
   Landmark,
   LayoutDashboard,
-  Menu,
   Megaphone,
   PlusCircle,
   Shield,
@@ -48,6 +47,9 @@ interface SidebarProps {
   isAssociationAdmin?: boolean;
   organizations?: Organization[];
   managedClubs?: Organization[];
+  /** 制御モードで開閉状態を外部から管理する場合に指定 */
+  open?: boolean;
+  onOpenChange?: (next: boolean) => void;
 }
 
 const navLinkClass = (active: boolean) =>
@@ -98,9 +100,19 @@ export default function Sidebar({
   isAssociationAdmin,
   organizations = [],
   managedClubs = [],
+  open,
+  onOpenChange,
 }: SidebarProps = {}) {
   const pathname = usePathname();
-  const [isOpen, setIsOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = typeof open === "boolean";
+  const isOpen = isControlled ? open : internalOpen;
+  const setIsOpen = (next: boolean) => {
+    if (!isControlled) {
+      setInternalOpen(next);
+    }
+    onOpenChange?.(next);
+  };
   const [isClubListOpen, setIsClubListOpen] = useState(true);
   const [isOrgListOpen, setIsOrgListOpen] = useState(true);
 
@@ -206,26 +218,10 @@ export default function Sidebar({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setIsOpen(true)}
-        className={cn(
-          "fixed z-50 flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/25 bg-card text-primary shadow-lg shadow-primary/10 backdrop-blur-sm transition-[transform,box-shadow] active:scale-[0.98] dark:shadow-black/40",
-          "left-[max(1rem,var(--safe-area-left))] top-[calc(var(--safe-area-top)+0.75rem)]",
-          isOpen ? "hidden" : "flex",
-          "lg:hidden"
-        )}
-        aria-label="メニューを開く"
-        aria-expanded={isOpen}
-        aria-controls="app-sidebar-nav"
-      >
-        <Menu className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-      </button>
-
       {isOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-30 bg-black/45 backdrop-blur-[3px] lg:hidden"
+          className="fixed inset-0 z-[35] bg-black/45 backdrop-blur-[3px] lg:hidden"
           aria-label="オーバーレイを閉じる"
           onClick={() => setIsOpen(false)}
         />
