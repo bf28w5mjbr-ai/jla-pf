@@ -23,7 +23,7 @@ import {
 } from "@/lib/datetimeLocal";
 import { EntryDeadlineCountdown } from "@/components/competitions/EntryDeadlineCountdown";
 import CompetitionEntryForm from "@/components/CompetitionEntryForm";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import { hasOrgAdminAccess, isClubAdminRole } from "@/lib/roleScopes";
 import { stripe } from "@/lib/stripe";
 import { buildEntryCompletionReceipt } from "@/lib/entryCompletionReceipt";
 import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
@@ -407,6 +407,9 @@ export default async function CompetitionEntryPage({
       },
     },
   });
+  const hasTeamEntryAdminMembership = memberships.some((membership) =>
+    isClubAdminRole(membership.role)
+  );
 
   const user = await prisma.user.findUnique({
     where: { id: session.userId },
@@ -942,11 +945,13 @@ export default async function CompetitionEntryPage({
               <p className="text-xs text-muted-foreground">
                 クラブのチーム枠・チーム名は代表者が登録します。
               </p>
-              <Button variant="outline" size="sm" className="w-full shrink-0 sm:w-auto" asChild>
-                <Link href={appRoutes.competitions.teamEntry(competition.id)}>
-                  クラブのチームエントリーへ
-                </Link>
-              </Button>
+              {hasTeamEntryAdminMembership ? (
+                <Button variant="outline" size="sm" className="w-full shrink-0 sm:w-auto" asChild>
+                  <Link href={appRoutes.competitions.teamEntry(competition.id)}>
+                    クラブのチームエントリーへ
+                  </Link>
+                </Button>
+              ) : null}
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {hasEligibleIndividualForPicker ? (
