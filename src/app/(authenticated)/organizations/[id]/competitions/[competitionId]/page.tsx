@@ -458,7 +458,7 @@ export default async function CompetitionDetailPage({
       </header>
 
       <CompetitionManagementTabsClient activeTab={activeTab}>
-        <div className="sticky top-[max(0.25rem,var(--safe-area-top,0px))] z-20 -mx-4 mb-0.5 border-b border-border/60 bg-background/95 px-4 pb-2.5 pt-1 backdrop-blur-sm sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <div className="sticky top-[calc(var(--safe-area-top,0px)+4.5rem)] z-20 -mx-4 mb-0.5 border-b border-border/60 bg-background/95 px-4 pb-2.5 pt-1 backdrop-blur-sm sm:-mx-6 sm:px-6 lg:-mx-8 lg:top-2 lg:px-8">
           <TabsList
             className="grid h-auto w-full grid-cols-2 gap-1 rounded-lg border border-border bg-muted/40 p-1 sm:grid-cols-4"
             aria-label="大会管理のセクション"
