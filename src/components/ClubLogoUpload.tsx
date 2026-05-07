@@ -1,126 +1,278 @@
 "use client";
 
-import { useState, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import Image from 'next/image';
+import { useState, useEffect, useId } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { OrganizationLogoImage } from "@/components/OrganizationLogoImage";
+import { downscaleRasterLogoFileIfLarge, fetchWithConnectionRetry } from "@/lib/browserUploadHelpers";
+import { Loader2, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ClubLogoUploadProps {
   clubId: string;
-  currentLogoUrl: string | null;
+  currentLogoUrl?: string | null;
   clubName: string;
+  canEdit?: boolean;
+  /** 一覧・ヒーロー省スペース向け（団体の OrganizationLogoManager と同じ） */
+  variant?: "default" | "compact";
+  className?: string;
 }
 
-export default function ClubLogoUpload({ clubId, currentLogoUrl, clubName }: ClubLogoUploadProps) {
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+
+function formatLogoUploadError(error: unknown): string {
+  if (error instanceof TypeError) {
+    return "通信がタイムアウトまたは切断されました。回線を確認のうえ、しばらくしてから再度お試しください。";
+  }
+  if (
+    error instanceof DOMException &&
+    (error.name === "NotReadableError" ||
+      /could not be read|permission problems/i.test(error.message))
+  ) {
+    return "ファイルを読み取れませんでした。ほかのアプリで開いている場合は閉じるか、クラウド同期の完了後にもう一度お試しください。";
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return "ロゴのアップロードに失敗しました";
+}
+
+export default function ClubLogoUpload({
+  clubId,
+  currentLogoUrl,
+  clubName,
+  canEdit = false,
+  variant = "default",
+  className,
+}: ClubLogoUploadProps) {
   const router = useRouter();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
   const [uploading, setUploading] = useState(false);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [isHovered, setIsHovered] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [preview, setPreview] = useState<string | null>(currentLogoUrl || null);
+
+  useEffect(() => {
+    setPreview(currentLogoUrl || null);
+  }, [currentLogoUrl]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const picked = e.target.files?.[0];
+    if (!picked) return;
 
-    // ファイルサイズチェック (5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      alert('ファイルサイズは5MB以下にしてください');
+    if (picked.size > MAX_UPLOAD_BYTES) {
+      toast.error("ファイルサイズは8MB以下にしてください");
       return;
     }
 
-    // プレビュー表示
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setPreview(e.target?.result as string);
-    };
-    reader.readAsDataURL(file);
+    if (!picked.type.startsWith("image/") && !picked.name.toLowerCase().endsWith(".svg")) {
+      toast.error("画像ファイルを選択してください");
+      return;
+    }
 
-    // アップロード
+    let file: File;
+    try {
+      file = new File([await picked.arrayBuffer()], picked.name, {
+        type: picked.type || "application/octet-stream",
+        lastModified: picked.lastModified,
+      });
+    } catch (err) {
+      console.error("Logo file snapshot:", err);
+      toast.error(formatLogoUploadError(err));
+      e.target.value = "";
+      return;
+    }
+
+    try {
+      const previewDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (typeof reader.result === "string") {
+            resolve(reader.result);
+          } else {
+            reject(new DOMException("プレビューを読み込めませんでした", "NotReadableError"));
+          }
+        };
+        reader.onerror = () => reject(reader.error ?? new Error("プレビューを読み込めませんでした"));
+        reader.readAsDataURL(file);
+      });
+      setPreview(previewDataUrl);
+    } catch (err) {
+      console.error("Logo preview:", err);
+      toast.error(formatLogoUploadError(err));
+      e.target.value = "";
+      return;
+    }
+
     setUploading(true);
     try {
+      const uploadFile = await downscaleRasterLogoFileIfLarge(file);
       const formData = new FormData();
-      formData.append('file', file);
-      formData.append('clubId', clubId);
+      formData.append("file", uploadFile);
+      formData.append("clubId", clubId);
 
-      const res = await fetch('/api/upload/club-logo', {
-        method: 'POST',
-        body: formData,
-      });
+      const response = await fetchWithConnectionRetry(
+        "/api/upload/club-logo",
+        {
+          method: "POST",
+          body: formData,
+        },
+        { attempts: 4, baseDelayMs: 600 },
+      );
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'アップロードに失敗しました');
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(typeof data.error === "string" ? data.error : "アップロードに失敗しました");
       }
 
-      await res.json();
-      
-      // 成功時は画面をリフレッシュ
+      const data = (await response.json().catch(() => ({}))) as { logoUrl?: string };
+      const logoUrl = typeof data.logoUrl === "string" ? data.logoUrl : null;
+      if (!logoUrl) {
+        throw new Error("アップロードに失敗しました");
+      }
+
+      setPreview(logoUrl);
+      toast.success("クラブロゴを更新しました");
       router.refresh();
-      setPreview(null);
     } catch (error) {
-      console.error('Upload error:', error);
-      alert(error instanceof Error ? error.message : 'アップロードに失敗しました');
-      setPreview(null);
+      console.error("Upload error:", error);
+      toast.error(formatLogoUploadError(error));
+      setPreview(currentLogoUrl || null);
     } finally {
       setUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+      e.target.value = "";
+    }
+  };
+
+  const clearLogo = async () => {
+    if (!confirm("ロゴを削除しますか？")) return;
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/clubs/${clubId}/logo/delete`, {
+        method: "DELETE",
+      });
+      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(typeof data.error === "string" ? data.error : "削除に失敗しました");
       }
+      setPreview(null);
+      toast.success("ロゴを削除しました");
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "削除に失敗しました");
+    } finally {
+      setDeleting(false);
     }
   };
 
-  const handleClick = () => {
-    if (!uploading) {
-      fileInputRef.current?.click();
-    }
-  };
+  const isCompact = variant === "compact";
+  const frameClass = isCompact ? "h-16 w-16" : "h-24 w-24";
+  const thumbRadius = isCompact ? "rounded-lg" : "rounded-xl";
 
-  const displayUrl = preview || currentLogoUrl;
+  if (!canEdit) {
+    return (
+      <OrganizationLogoImage
+        key={currentLogoUrl ?? "no-logo"}
+        logoUrl={currentLogoUrl}
+        organizationName={clubName}
+        frameClassName={frameClass}
+        className={cn(thumbRadius, "shadow-sm")}
+      />
+    );
+  }
+
+  const showDelete = Boolean(preview || currentLogoUrl);
 
   return (
-    <div>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleFileChange}
-        className="hidden"
-      />
-      <div
-        onClick={handleClick}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        style={{
-          backgroundImage: displayUrl ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)' : undefined,
-          backgroundSize: displayUrl ? '20px 20px' : undefined,
-          backgroundPosition: displayUrl ? '0 0, 0 10px, 10px -10px, -10px 0px' : undefined,
-        }}
-        className="relative w-32 h-32 rounded-lg border-2 border-gray-300 dark:border-gray-600 overflow-hidden cursor-pointer hover:border-orange-500 dark:hover:border-orange-400 transition-colors"
-      >
-        {displayUrl ? (
-          <Image
-            src={displayUrl}
-            alt={`${clubName}のロゴ`}
-            fill
-            className="object-contain"
+    <div
+      className={cn(
+        "flex flex-col sm:flex-row sm:items-start",
+        isCompact ? "max-w-none gap-2 sm:gap-3" : "max-w-md gap-3",
+        className,
+      )}
+    >
+      <div className="relative shrink-0">
+        <label
+          htmlFor={inputId}
+          className={cn(
+            "group relative block cursor-pointer outline-none transition",
+            thumbRadius,
+            uploading && "pointer-events-none opacity-60",
+          )}
+        >
+          <OrganizationLogoImage
+            key={preview ?? "empty"}
+            logoUrl={preview}
+            organizationName={clubName}
+            frameClassName={frameClass}
+            className={cn(thumbRadius, "shadow-sm")}
           />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gray-100 dark:bg-gray-800">
-            <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          </div>
-        )}
-        {(isHovered || uploading) && (
-          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-            <span className="text-white text-sm font-medium">
-              {uploading ? 'アップロード中...' : '変更'}
-            </span>
+          <span
+            className={cn(
+              "pointer-events-none absolute inset-0 flex items-center justify-center bg-black/0 font-medium text-white opacity-0 transition group-hover:bg-black/45 group-hover:opacity-100 group-focus-within:bg-black/45 group-focus-within:opacity-100 group-focus-visible:bg-black/45 group-focus-visible:opacity-100",
+              thumbRadius,
+              isCompact ? "px-1 text-[10px] leading-tight" : "text-xs",
+            )}
+            aria-hidden
+          >
+            画像を変更
+          </span>
+        </label>
+        {showDelete ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="icon"
+            title="ロゴを削除"
+            aria-label="ロゴを削除"
+            disabled={deleting || uploading}
+            className={cn(
+              "absolute z-10 border border-border/70 bg-background/95 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-destructive/15 hover:text-destructive",
+              isCompact
+                ? "bottom-0 right-0 h-6 w-6 rounded-md [&_svg]:size-3"
+                : "bottom-1 right-1 h-7 w-7 rounded-md [&_svg]:size-3.5",
+            )}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void clearLogo();
+            }}
+          >
+            {deleting ? (
+              <Loader2 className={cn("animate-spin", isCompact ? "size-3" : "size-3.5")} aria-hidden />
+            ) : (
+              <Trash2 aria-hidden />
+            )}
+          </Button>
+        ) : null}
+        <input
+          id={inputId}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif,image/avif,image/svg+xml,.svg"
+          onChange={handleFileChange}
+          disabled={uploading}
+          className="sr-only"
+        />
+        {uploading && (
+          <div
+            className={cn(
+              "pointer-events-none absolute inset-0 flex items-center justify-center bg-background/70 font-medium backdrop-blur-[1px]",
+              thumbRadius,
+              isCompact ? "text-[10px] leading-tight" : "text-xs",
+            )}
+          >
+            アップロード中…
           </div>
         )}
       </div>
-      <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-        クリックしてロゴをアップロード (最大5MB)
-      </p>
+
+      {!isCompact ? (
+        <div className="min-w-0 flex-1 space-y-2">
+          <p className="text-xs text-muted-foreground">
+            プレビューはロゴの色に合わせて背景が変わります。透過画像は枠を抑えた表示になります。
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }

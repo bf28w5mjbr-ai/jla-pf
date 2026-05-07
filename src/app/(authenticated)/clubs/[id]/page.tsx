@@ -31,7 +31,6 @@ import {
   ClipboardList,
   ExternalLink,
   History,
-  ImageIcon,
   MapPin,
   Phone,
   Trophy,
@@ -629,26 +628,13 @@ export default async function ClubDetailPage({
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
               <div className="inline-flex shrink-0 flex-col items-center rounded-lg border border-border/50 bg-muted/10 p-1.5 shadow-sm">
-                {isClubAdmin ? (
-                  <ClubLogoUpload
-                    clubId={club.id}
-                    currentLogoUrl={club.logoUrl}
-                    clubName={club.name}
-                  />
-                ) : club.logoUrl ? (
-                  <div className="h-28 w-28 overflow-hidden rounded-lg border border-border shadow-sm sm:h-32 sm:w-32">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={club.logoUrl}
-                      alt={`${club.name}のロゴ`}
-                      className="h-full w-full object-cover"
-                    />
-                  </div>
-                ) : (
-                  <div className="flex h-28 w-28 items-center justify-center rounded-lg border border-dashed border-border bg-muted/50 sm:h-32 sm:w-32">
-                    <ImageIcon className="h-9 w-9 text-muted-foreground/70 sm:h-10 sm:w-10" aria-hidden />
-                  </div>
-                )}
+                <ClubLogoUpload
+                  clubId={club.id}
+                  currentLogoUrl={club.logoUrl}
+                  clubName={club.name}
+                  canEdit={isClubAdmin}
+                  variant="compact"
+                />
               </div>
               <div className="min-w-0 flex-1 space-y-1">
                 <h1 className="text-balance text-lg font-semibold tracking-tight text-foreground sm:text-xl">
@@ -657,17 +643,22 @@ export default async function ClubDetailPage({
                 {club.nameKana ? (
                   <p className="text-xs text-muted-foreground sm:text-sm">{club.nameKana}</p>
                 ) : null}
-                {[club.representativeFamilyName, club.representativeGivenName].some((s) => s?.trim()) ? (
-                  <div className="min-w-0 pt-0.5">
-                    <span className="text-[11px] font-medium text-muted-foreground">代表者</span>
-                    <p className="font-medium text-foreground">
-                      {[club.representativeFamilyName, club.representativeGivenName]
-                        .map((s) => s?.trim())
-                        .filter(Boolean)
-                        .join(" ")}
-                    </p>
-                  </div>
-                ) : null}
+                <ClubRepresentativeSelector
+                  clubId={club.id}
+                  currentRepresentativeUserId={club.representativeUserId}
+                  isClubAdmin={isClubAdmin}
+                  layout="inline"
+                  representativeNameFallback={
+                    [club.representativeFamilyName, club.representativeGivenName]
+                      .map((s) => s?.trim())
+                      .filter(Boolean)
+                      .join(" ") || null
+                  }
+                  members={approvedMembers.map((m) => ({
+                    userId: m.userId,
+                    name: `${m.user.familyName} ${m.user.givenName}`,
+                  }))}
+                />
               </div>
             </div>
 
@@ -779,26 +770,11 @@ export default async function ClubDetailPage({
               </div>
             </div>
 
-            <div className="border-t border-border/60 pt-2.5 sm:pt-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                <div className="min-w-0 flex-1">
-                  <ClubRepresentativeSelector
-                    clubId={club.id}
-                    currentRepresentativeUserId={club.representativeUserId}
-                    isClubAdmin={isClubAdmin}
-                    members={approvedMembers.map((m) => ({
-                      userId: m.userId,
-                      name: `${m.user.familyName} ${m.user.givenName}`,
-                    }))}
-                  />
-                </div>
-                {userMembership?.status === "APPROVED" ? (
-                  <div className="shrink-0">
-                    <LeaveClubButton clubId={club.id} clubName={club.name} />
-                  </div>
-                ) : null}
+            {userMembership?.status === "APPROVED" ? (
+              <div className="flex justify-end border-t border-border/60 pt-2.5 sm:pt-3">
+                <LeaveClubButton clubId={club.id} clubName={club.name} />
               </div>
-            </div>
+            ) : null}
           </div>
         </div>
       </header>
