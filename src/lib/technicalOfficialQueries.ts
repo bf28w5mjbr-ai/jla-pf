@@ -33,13 +33,17 @@ export async function countValidTechnicalOfficialAssignments(
   prisma: PrismaClient,
   competitionId: string,
   clubId: string,
-  requireQualificationFilter: boolean
+  requireQualificationFilter: boolean,
+  options?: {
+    clubNameHint?: string;
+  }
 ): Promise<number> {
   const detail = await countValidTechnicalOfficialAssignmentsDetailed(
     prisma,
     competitionId,
     clubId,
-    requireQualificationFilter
+    requireQualificationFilter,
+    options
   );
   return detail.assigned;
 }
@@ -58,7 +62,10 @@ export async function countValidTechnicalOfficialAssignmentsDetailed(
   prisma: PrismaClient,
   competitionId: string,
   clubId: string,
-  requireQualificationFilter: boolean
+  requireQualificationFilter: boolean,
+  options?: {
+    clubNameHint?: string;
+  }
 ): Promise<{ assigned: number; diagnostics: TechnicalOfficialAssignmentDiagnostics }> {
   const assignments = await prisma.competitionTechnicalOfficialAssignment.findMany({
     where: { competitionId, clubId },
@@ -123,11 +130,14 @@ export async function countValidTechnicalOfficialAssignmentsDetailed(
       },
     };
   }
+  const normalizedClubNameHint = options?.clubNameHint?.normalize("NFKC").trim() || null;
   const approvedToApps = await prisma.competitionOfficialApplication.findMany({
     where: {
       competitionId,
       status: "APPROVED",
-      positionName: { startsWith: "テクニカルオフィシャル（" },
+      positionName: normalizedClubNameHint
+        ? { startsWith: `テクニカルオフィシャル（${normalizedClubNameHint}` }
+        : { startsWith: "テクニカルオフィシャル（" },
     },
     select: {
       userId: true,
@@ -141,25 +151,60 @@ export async function countValidTechnicalOfficialAssignmentsDetailed(
       },
     },
   });
+  let needsStrictResolve = false;
+  if (normalizedClubNameHint) {
+    const sameNameClubCount = await prisma.club.count({
+      where: { name: normalizedClubNameHint },
+    });
+    needsStrictResolve = sameNameClubCount > 1;
+  }
   for (const app of approvedToApps) {
     approvedExaminedCount += 1;
     if (countedUserIds.has(app.userId)) {
       duplicateUserSkippedCount += 1;
       continue;
     }
-    const resolved = await resolveClubIdForTechnicalOfficialApplicationWithDiagnostic(prisma, {
-      competitionId,
-      userId: app.userId,
-      positionName: app.positionName,
-      competition: competitionForResolve,
-    });
-    if (!resolved.clubId) {
-      unresolvedApprovedCount += 1;
-      continue;
-    }
-    if (resolved.clubId !== clubId) {
-      approvedResolvedOtherClubCount += 1;
-      continue;
+    if (normalizedClubNameHint) {
+      const displayName = app.positionName
+        .replace(/^テクニカルオフィシャル[（(]/, "")
+        .replace(/[)）]$/, "")
+        .normalize("NFKC")
+        .trim();
+      if (displayName !== normalizedClubNameHint) {
+        approvedResolvedOtherClubCount += 1;
+        continue;
+      }
+      if (needsStrictResolve) {
+        const resolved = await resolveClubIdForTechnicalOfficialApplicationWithDiagnostic(prisma, {
+          competitionId,
+          userId: app.userId,
+          positionName: app.positionName,
+          competition: competitionForResolve,
+        });
+        if (!resolved.clubId) {
+          unresolvedApprovedCount += 1;
+          continue;
+        }
+        if (resolved.clubId !== clubId) {
+          approvedResolvedOtherClubCount += 1;
+          continue;
+        }
+      }
+    } else {
+      const resolved = await resolveClubIdForTechnicalOfficialApplicationWithDiagnostic(prisma, {
+        competitionId,
+        userId: app.userId,
+        positionName: app.positionName,
+        competition: competitionForResolve,
+      });
+      if (!resolved.clubId) {
+        unresolvedApprovedCount += 1;
+        continue;
+      }
+      if (resolved.clubId !== clubId) {
+        approvedResolvedOtherClubCount += 1;
+        continue;
+      }
     }
     const ok = requireQualificationFilter
       ? hasRequiredOfficialQualifications(
@@ -298,15 +343,21 @@ export async function getTechnicalOfficialStatusForClub(
   tiers: ReturnType<typeof parseTechnicalOfficialTiers>;
   diagnostics: TechnicalOfficialAssignmentDiagnostics;
 } | null> {
-  const competition = await prisma.competition.findUnique({
-    where: { id: competitionId },
-    select: {
-      officialRecruitmentEnabled: true,
-      technicalOfficialRecruitmentEnabled: true,
-      officialQualificationFilterEnabled: true,
-      technicalOfficialTiers: true,
-    },
-  });
+  const [competition, club] = await Promise.all([
+    prisma.competition.findUnique({
+      where: { id: competitionId },
+      select: {
+        officialRecruitmentEnabled: true,
+        technicalOfficialRecruitmentEnabled: true,
+        officialQualificationFilterEnabled: true,
+        technicalOfficialTiers: true,
+      },
+    }),
+    prisma.club.findUnique({
+      where: { id: clubId },
+      select: { name: true },
+    }),
+  ]);
 
   if (
     !competition?.officialRecruitmentEnabled ||
@@ -322,7 +373,8 @@ export async function getTechnicalOfficialStatusForClub(
     prisma,
     competitionId,
     clubId,
-    Boolean(competition.officialQualificationFilterEnabled)
+    Boolean(competition.officialQualificationFilterEnabled),
+    { clubNameHint: club?.name ?? undefined }
   );
   const assigned = assignment.assigned;
 

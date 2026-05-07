@@ -631,11 +631,9 @@ export default async function CompetitionDetailPage({
                         >
                           <Link
                             href={withLoginRedirect(
-                              appRoutes.clubs.competition.team(
-                                firstAdminClubForTeamEntry.id,
-                                competition.id,
-                                { tab: "entry" }
-                              )
+                              appRoutes.competitions.teamEntry(competition.id, {
+                                clubId: firstAdminClubForTeamEntry.id,
+                              })
                             )}
                           >
                             チームエントリー

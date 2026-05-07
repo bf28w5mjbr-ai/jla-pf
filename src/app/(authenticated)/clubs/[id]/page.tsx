@@ -1101,13 +1101,13 @@ export default async function ClubDetailPage({
                           <ClubParticipationSection
                             sectionId={`comp-individual-${row.id}`}
                             title="クラブ所属の個人エントリー"
-                            description="このクラブを所属として提出された個人種目のエントリーを一覧で確認できます。"
+                            description="閲覧専用: このクラブを所属として提出された個人種目のエントリー一覧です。"
                             icon={User}
                           >
-                            <div className="space-y-2.5 sm:space-y-3">
+                            <div className="space-y-2">
                               {rosterIndividual.length === 0 ? (
                                 <p className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
-                                  まだ当クラブ所属の個人種目エントリーはありません。申込は下のボタンから大会の個人エントリーページへ進めます。
+                                  まだ当クラブ所属の個人種目エントリーはありません。
                                 </p>
                               ) : (
                                 <ClubRosterCollapsibleBlock
@@ -1115,20 +1115,14 @@ export default async function ClubDetailPage({
                                   listLabel="個人種目エントリー一覧"
                                 />
                               )}
-                              <Button variant="outline" size="sm" className="w-full sm:w-fit" asChild>
-                                <Link href={appRoutes.competitions.entry(row.id)} className="gap-2">
-                                  個人エントリー申込ページを開く
-                                  <ArrowRight className="h-4 w-4" aria-hidden />
-                                </Link>
-                              </Button>
                             </div>
                           </ClubParticipationSection>
 
                           {/* チーム種目（ハブ） */}
                           <ClubParticipationSection
                             sectionId={`comp-team-${row.id}`}
-                            title="チーム種目"
-                            description="エントリー・請求・履歴とメンバー割当を、同じページでまとめて操作できます。"
+                            title="チーム進捗"
+                            description="登録チーム数と割り当て状況を確認し、割り当て専用ページへ進めます。"
                             icon={Users}
                           >
                             <div className="space-y-2.5 sm:space-y-3">
@@ -1172,15 +1166,15 @@ export default async function ClubDetailPage({
                                       asChild
                                     >
                                       <Link
-                                        href={appRoutes.clubs.competition.team(id, row.id)}
+                                        href={appRoutes.clubs.competition.assignments(id, row.id)}
                                         className="gap-2"
                                       >
-                                        チーム種目へ
+                                        割り当てへ
                                         <ArrowRight className="h-4 w-4" aria-hidden />
                                       </Link>
                                     </Button>
                                     <p className="text-left text-[11px] leading-snug text-muted-foreground sm:text-left">
-                                      タブでエントリーと割当を切替
+                                      クラブ詳細配下の割り当て専用ページ
                                     </p>
                                   </div>
                                 ) : (

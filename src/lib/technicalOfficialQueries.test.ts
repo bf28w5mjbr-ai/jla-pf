@@ -30,7 +30,10 @@ describe("getTechnicalOfficialStatusForClub", () => {
       officialQualificationFilterEnabled: false,
       technicalOfficialTiers: [{ minEntries: 1, requiredCount: 1 }],
     });
-    const prisma = { competition: { findUnique } } as never;
+    const prisma = {
+      competition: { findUnique },
+      club: { findUnique: vi.fn().mockResolvedValue({ name: "x" }), count: vi.fn().mockResolvedValue(1) },
+    } as never;
     const st = await getTechnicalOfficialStatusForClub(prisma, "c", "club");
     expect(st).toBeNull();
   });
@@ -47,6 +50,10 @@ describe("getTechnicalOfficialStatusForClub", () => {
     const appFindMany = vi.fn().mockResolvedValue([]);
     const prisma = {
       competition: { findUnique },
+      club: {
+        findUnique: vi.fn().mockResolvedValue({ name: "x" }),
+        count: vi.fn().mockResolvedValue(1),
+      },
       competitionEntry: { count },
       competitionTechnicalOfficialAssignment: { findMany },
       competitionOfficialApplication: { findMany: appFindMany },

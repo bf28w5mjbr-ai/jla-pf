@@ -938,7 +938,7 @@ export default async function CompetitionEntryPage({
                 クラブのチーム枠・チーム名は代表者が登録します。
               </p>
               <Button variant="outline" size="sm" className="w-full shrink-0 sm:w-auto" asChild>
-                <Link href={appRoutes.competitions.legacyTeamEntry(competition.id)}>
+                <Link href={appRoutes.competitions.teamEntry(competition.id)}>
                   クラブのチームエントリーへ
                 </Link>
               </Button>

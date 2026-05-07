@@ -109,6 +109,9 @@ export default async function ClubCompetitionTeamHubPage({
   const { id: clubId, competitionId } = await params;
   const { tab: tabRaw } = await searchParams;
   const tab = tabRaw === "assignment" ? "assignment" : "entry";
+  if (tab === "entry") {
+    redirect(appRoutes.competitions.teamEntry(competitionId, { clubId }));
+  }
 
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
@@ -476,7 +479,6 @@ export default async function ClubCompetitionTeamHubPage({
     ])
   );
 
-  const linkEntry = appRoutes.clubs.competition.team(club.id, competition.id, { tab: "entry" });
   const linkAssignment = appRoutes.clubs.competition.team(club.id, competition.id, {
     tab: "assignment",
   });
@@ -498,14 +500,14 @@ export default async function ClubCompetitionTeamHubPage({
       <div className="space-y-4 border-b border-border/60 pb-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            チーム種目（{club.name}）
+            チーム割り当て（{club.name}）
             {adminClubs.length > 1 ? " · 他クラブも選択可" : ""}
           </p>
           <h1 className="mt-1 text-balance text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             {competition.name}
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            エントリー・請求・履歴とメンバー割当を、この大会のチーム種目向けにまとめています。
+            クラブ運用向けのメンバー割り当てページです。チーム申込・請求・履歴は大会配下のチームエントリーページで操作します。
             {adminClubs.length > 1 ? (
               <>
                 {" "}
@@ -517,16 +519,6 @@ export default async function ClubCompetitionTeamHubPage({
 
         <nav className="flex flex-wrap gap-2" aria-label="チーム種目の区切り">
           <Button
-            variant={tab === "entry" ? "default" : "outline"}
-            size="sm"
-            className="rounded-full"
-            asChild
-          >
-            <Link href={linkEntry} scroll={false}>
-              エントリー・履歴
-            </Link>
-          </Button>
-          <Button
             variant={tab === "assignment" ? "default" : "outline"}
             size="sm"
             className="rounded-full"
@@ -534,6 +526,11 @@ export default async function ClubCompetitionTeamHubPage({
           >
             <Link href={linkAssignment} scroll={false}>
               メンバー割当
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" className="rounded-full" asChild>
+            <Link href={appRoutes.competitions.teamEntry(competition.id, { clubId: club.id })}>
+              申込・請求ページへ
             </Link>
           </Button>
         </nav>

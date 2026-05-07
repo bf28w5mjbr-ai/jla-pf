@@ -213,15 +213,8 @@ export default function ClubTechnicalOfficialRow({
     <Card className="border-border/80">
       <CardHeader className="space-y-1 pb-2">
         <CardTitle className="text-base font-semibold">TO依頼状況</CardTitle>
-        <CardDescription className="text-xs leading-relaxed">
-          <span className="block text-muted-foreground">
-            件数は<strong className="font-medium text-foreground">当クラブの個人エントリー合計（キャンセル除く）</strong>
-            。チーム種目の件数は含みません。段階は<strong className="font-medium text-foreground">最も高い閾値の行のみ</strong>
-            適用されます。
-          </span>
-          <span className="mt-1.5 block text-muted-foreground">
-            メンバーが大会のオフィシャル応募で「TOとして応募」し保存した場合は、ここから依頼しなくても任命が付き、充足人数に含まれます（招待で付いた任命と合わせて数えます）。
-          </span>
+        <CardDescription className="text-xs leading-relaxed text-muted-foreground">
+          まず不足人数を確認し、必要なときだけ依頼を追加してください。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3.5 text-sm">
@@ -253,13 +246,16 @@ export default function ClubTechnicalOfficialRow({
         </div>
 
         {st.tiers.length > 0 ? (
-          <ul className="rounded-lg border border-border/70 bg-background px-3 py-2 text-xs text-muted-foreground">
-            {st.tiers.map((t, i) => (
-              <li key={i} className={i > 0 ? "mt-1" : undefined}>
-                個人エントリー合計 {t.minEntries} 件以上 → {t.requiredCount} 人
-              </li>
-            ))}
-          </ul>
+          <details className="rounded-lg border border-border/70 bg-background px-3 py-2 text-xs text-muted-foreground">
+            <summary className="cursor-pointer select-none font-medium text-foreground">人数段階の詳細を表示</summary>
+            <ul className="mt-2">
+              {st.tiers.map((t, i) => (
+                <li key={i} className={i > 0 ? "mt-1" : undefined}>
+                  個人エントリー合計 {t.minEntries} 件以上 → {t.requiredCount} 人
+                </li>
+              ))}
+            </ul>
+          </details>
         ) : null}
 
         {isClubAdmin && st.shortage > 0 ? (

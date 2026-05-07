@@ -46,6 +46,8 @@ export const appRoutes = {
         if (t === "entry") return `${base}?tab=entry`;
         return base;
       },
+      assignments: (clubId: string, competitionId: string) =>
+        `/clubs/${clubId}/competitions/${competitionId}/assignments`,
       /** @deprecated `team` + `tab` に統合。互換リダイレクト用 */
       teamAssignment: (clubId: string, competitionId: string) =>
         `/clubs/${clubId}/competitions/${competitionId}/team-assignment`,
@@ -58,6 +60,12 @@ export const appRoutes = {
   competitions: {
     root: (competitionId: string) => `/competitions/${competitionId}`,
     entry: (competitionId: string) => `/competitions/${competitionId}/entry`,
+    teamEntry: (competitionId: string, options?: { clubId?: string }) => {
+      const base = `/competitions/${competitionId}/team-entry`;
+      const clubId = options?.clubId?.trim();
+      if (!clubId) return base;
+      return `${base}?clubId=${encodeURIComponent(clubId)}`;
+    },
     officialEntry: (competitionId: string) => `/competitions/${competitionId}/official-entry`,
     results: (competitionId: string) => `/competitions/${competitionId}/results`,
     resultsManage: (competitionId: string) => `/competitions/${competitionId}/results/manage`,
