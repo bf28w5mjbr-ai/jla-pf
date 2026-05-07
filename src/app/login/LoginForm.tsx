@@ -194,6 +194,17 @@ export default function LoginForm() {
       const verifyData = await verifyRes.json();
 
       if (!verifyRes.ok) {
+        if (verifyRes.status === 429) {
+          const sec = parseRetryAfterSeconds(verifyRes, verifyData);
+          if (sec != null) {
+            setPasskeyRetryRemainingSec(sec);
+            setError(null);
+            toast.error("パスキー認証の試行上限に達しました", {
+              description: `再試行可能まであと ${formatJaRemainingDuration(sec)}`,
+            });
+            return;
+          }
+        }
         const msg = verifyData?.error ?? "パスキー認証に失敗しました";
         setError(msg);
         toast.error("パスキー認証失敗", { description: msg });
@@ -279,7 +290,7 @@ export default function LoginForm() {
               id="login-email"
               type="email"
               inputMode="email"
-              autoComplete="email"
+              autoComplete="username webauthn"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required

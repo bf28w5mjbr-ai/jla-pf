@@ -17,6 +17,10 @@ export const SMS_LOGIN_START_IP_WINDOW_MS = 60 * 60 * 1000;
 export const PASSKEY_AUTH_OPTIONS_IP_MAX = 40;
 export const PASSKEY_AUTH_OPTIONS_IP_WINDOW_MS = 60 * 60 * 1000;
 
+/** パスキー認証検証: IP あたりの失敗カウント（15 分） */
+export const PASSKEY_AUTH_VERIFY_IP_MAX = 30;
+export const PASSKEY_AUTH_VERIFY_IP_WINDOW_MS = 15 * 60 * 1000;
+
 /** 新規登録 SMS 送信（開始・再送）: IP あたり（1 時間） */
 export const REGISTRATION_START_IP_MAX = 25;
 export const REGISTRATION_START_IP_WINDOW_MS = 60 * 60 * 1000;
@@ -54,6 +58,10 @@ export function throttleKeySmsStartIp(ip: string): string {
 
 export function throttleKeyPasskeyAuthOptionsIp(ip: string): string {
   return `passkeyopt:ip:${ip}`;
+}
+
+export function throttleKeyPasskeyAuthVerifyIp(ip: string): string {
+  return `passkeyverify:ip:${ip}`;
 }
 
 export function throttleKeyRegistrationStartIp(ip: string): string {

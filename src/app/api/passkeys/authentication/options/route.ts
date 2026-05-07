@@ -14,8 +14,22 @@ import {
   PASSKEY_AUTH_OPTIONS_IP_MAX,
   PASSKEY_AUTH_OPTIONS_IP_WINDOW_MS,
 } from "@/lib/loginThrottle";
+import { webAuthnRequireUserVerification } from "@/lib/webauthnServer";
 
 const CHALLENGE_COOKIE = "passkey_auth_challenge";
+
+const WEBAUTHN_TRANSPORTS = new Set(["usb", "nfc", "ble", "internal", "hybrid"]);
+
+function parseStoredTransports(value: unknown): ("usb" | "nfc" | "ble" | "internal" | "hybrid")[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const out: ("usb" | "nfc" | "ble" | "internal" | "hybrid")[] = [];
+  for (const t of value) {
+    if (typeof t === "string" && WEBAUTHN_TRANSPORTS.has(t)) {
+      out.push(t as "usb" | "nfc" | "ble" | "internal" | "hybrid");
+    }
+  }
+  return out.length > 0 ? out : undefined;
+}
 
 const BodySchema = z.object({
   email: z.string().email().max(320),
@@ -69,7 +83,7 @@ export async function POST(req: NextRequest) {
     const credentials = user
       ? await prisma.passkeyCredential.findMany({
           where: { userId: user.id },
-          select: { credentialId: true },
+          select: { credentialId: true, transports: true },
         })
       : [];
 
@@ -85,11 +99,15 @@ export async function POST(req: NextRequest) {
 
     const options = await generateAuthenticationOptions({
       rpID,
-      userVerification: "required",
-      allowCredentials: credentials.map((credential) => ({
-        id: isoBase64URL.fromBuffer(credential.credentialId),
-        type: "public-key",
-      })),
+      userVerification: webAuthnRequireUserVerification() ? "required" : "preferred",
+      allowCredentials: credentials.map((credential) => {
+        const transports = parseStoredTransports(credential.transports);
+        return {
+          id: isoBase64URL.fromBuffer(credential.credentialId),
+          type: "public-key" as const,
+          ...(transports ? { transports } : {}),
+        };
+      }),
     });
 
     const jar = await cookies();

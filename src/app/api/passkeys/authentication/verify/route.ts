@@ -15,6 +15,15 @@ import {
   tryWebAuthnVerifyErrorResponse,
   webAuthnRequireUserVerification,
 } from "@/lib/webauthnServer";
+import { getTrustedClientIp, isLoginIpBlocklisted } from "@/lib/clientIp";
+import {
+  isThrottleBlocked,
+  recordThrottleFailure,
+  resetThrottleKeys,
+  throttleKeyPasskeyAuthVerifyIp,
+  PASSKEY_AUTH_VERIFY_IP_MAX,
+  PASSKEY_AUTH_VERIFY_IP_WINDOW_MS,
+} from "@/lib/loginThrottle";
 
 type PasskeyWithUser = {
   id: string;
@@ -40,15 +49,73 @@ const VerifySchema = z.object({
 
 const CHALLENGE_COOKIE = "passkey_auth_challenge";
 
+function skipPasskeyVerifyIpThrottle(ip: string): boolean {
+  return ip === "127.0.0.1" || ip === "::1";
+}
+
+async function notePasskeyVerifyFailure(ip: string): Promise<void> {
+  if (skipPasskeyVerifyIpThrottle(ip)) return;
+  await recordThrottleFailure(
+    throttleKeyPasskeyAuthVerifyIp(ip),
+    PASSKEY_AUTH_VERIFY_IP_MAX,
+    PASSKEY_AUTH_VERIFY_IP_WINDOW_MS
+  );
+}
+
+async function notePasskeyVerifySuccess(ip: string): Promise<void> {
+  if (skipPasskeyVerifyIpThrottle(ip)) return;
+  await resetThrottleKeys([throttleKeyPasskeyAuthVerifyIp(ip)]);
+}
+
 export async function POST(req: NextRequest) {
   try {
+    const ip = getTrustedClientIp(req);
+    if (isLoginIpBlocklisted(ip)) {
+      return NextResponse.json(
+        { error: "現在このネットワークからはログインできません" },
+        { status: 403 }
+      );
+    }
+
+    if (!skipPasskeyVerifyIpThrottle(ip)) {
+      const verifyKey = throttleKeyPasskeyAuthVerifyIp(ip);
+      const blocked = await isThrottleBlocked(
+        verifyKey,
+        PASSKEY_AUTH_VERIFY_IP_MAX,
+        PASSKEY_AUTH_VERIFY_IP_WINDOW_MS
+      );
+      if (blocked.blocked) {
+        return NextResponse.json(
+          {
+            error:
+              "パスキー認証の試行回数が上限に達しました。しばらく時間をおいてから再度お試しください。",
+            retryAfterSec: blocked.retryAfterSec,
+          },
+          {
+            status: 429,
+            headers: { "Retry-After": String(blocked.retryAfterSec) },
+          }
+        );
+      }
+    }
+
     const body = await req.json().catch(() => ({}));
-    const data = VerifySchema.parse(body);
+    let data: z.infer<typeof VerifySchema>;
+    try {
+      data = VerifySchema.parse(body);
+    } catch (e) {
+      if (e instanceof z.ZodError) {
+        await notePasskeyVerifyFailure(ip);
+        return NextResponse.json(zodErrorJsonBody(e), { status: 400 });
+      }
+      throw e;
+    }
 
     const jar = await cookies();
     const expectedChallenge = jar.get(CHALLENGE_COOKIE)?.value;
 
     if (!expectedChallenge) {
+      await notePasskeyVerifyFailure(ip);
       return NextResponse.json({ error: "認証セッションが見つかりません" }, { status: 400 });
     }
 
@@ -64,6 +131,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!credential) {
+      await notePasskeyVerifyFailure(ip);
       return NextResponse.json({ error: "パスキーが見つかりません" }, { status: 404 });
     }
 
@@ -81,6 +149,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!verification.verified || !verification.authenticationInfo) {
+      await notePasskeyVerifyFailure(ip);
       return NextResponse.json({ error: "パスキー認証に失敗しました" }, { status: 400 });
     }
 
@@ -111,14 +180,17 @@ export async function POST(req: NextRequest) {
 
     await onAuthLoginSuccess(credential.userId, req, { channel: "PASSKEY" });
 
+    await notePasskeyVerifySuccess(ip);
+
     return NextResponse.json({ ok: true });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(zodErrorJsonBody(error), { status: 400 });
-    }
+    const ip = getTrustedClientIp(req);
 
     const mapped = tryWebAuthnVerifyErrorResponse(error);
-    if (mapped) return mapped;
+    if (mapped) {
+      await notePasskeyVerifyFailure(ip);
+      return mapped;
+    }
 
     return jsonInternalError500(
       "POST api/passkeys/authentication/verify/route.ts",

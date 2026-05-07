@@ -71,10 +71,11 @@ export async function onAuthLoginSuccess(
 
   try {
     const to = phoneToE164Loose(user.phoneNumber);
-    await sendSecurityNoticeSms(
-      to,
-      `Bluvium: 新しい環境からログインがありました（IPの一部: ${maskIpForDisplay(ip)}）。心当たりがない場合はパスワード・電話番号を確認してください。`
-    );
+    const securityHint =
+      channel === "PASSKEY"
+        ? `Bluvium: 新しい環境からログインがありました（IPの一部: ${maskIpForDisplay(ip)}）。心当たりがない場合はプロフィールのセキュリティ設定でパスキーを確認するか、パスワード・電話番号をご確認ください。`
+        : `Bluvium: 新しい環境からログインがありました（IPの一部: ${maskIpForDisplay(ip)}）。心当たりがない場合はパスワード・電話番号を確認してください。`;
+    await sendSecurityNoticeSms(to, securityHint);
   } catch (e) {
     console.error("Security login SMS alert failed:", e);
   }
