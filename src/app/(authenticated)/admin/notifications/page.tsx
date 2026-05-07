@@ -1,22 +1,16 @@
-import { cookies } from "next/headers";
+
 import { redirect } from "next/navigation";
-import { verifySessionCached } from "@/lib/auth";
+import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { requirePfAdmin } from "@/lib/accessControl";
 import AdminNotificationBroadcastForm from "@/components/admin/AdminNotificationBroadcastForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminNotificationsPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
-  const session = await verifySessionCached(token);
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
+  const userId = await getRequiredAuthenticatedUserId();
 
   try {
-    await requirePfAdmin(session.userId);
+    await requirePfAdmin(userId);
   } catch {
     redirect("/dashboard");
   }

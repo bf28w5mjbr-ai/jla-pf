@@ -13,6 +13,7 @@ import {
   Users,
 } from "lucide-react";
 import { appRoutes } from "@/lib/appRoutes";
+import { getAuthenticatedAppUser } from "@/lib/authenticatedLayoutData";
 import { prisma } from "@/server/db";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -45,49 +46,7 @@ type OfficialAttendanceAggRow = {
 
 export async function DashboardMain({ userId }: { userId: string }) {
   const [user, entries, attendancePreview, attendanceAggRows, qualificationTemplates] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        familyName: true,
-        givenName: true,
-        familyNameKana: true,
-        givenNameKana: true,
-        phoneNumber: true,
-        dateOfBirth: true,
-        jlaMemberNumber: true,
-        nfcTagId: true,
-        profilePhotoUrl: true,
-        _count: { select: { passkeyCredentials: true } },
-        memberships: {
-          orderBy: { createdAt: "desc" },
-          select: {
-            id: true,
-            status: true,
-            createdAt: true,
-            club: {
-              select: {
-                id: true,
-                name: true,
-                abbreviation: true,
-              },
-            },
-          },
-        },
-        qualifications: {
-          orderBy: { createdAt: "desc" },
-          select: {
-            id: true,
-            kind: true,
-            status: true,
-            expiryDate: true,
-            createdAt: true,
-            recordOrigin: true,
-          },
-        },
-      },
-    }),
+    getAuthenticatedAppUser(userId),
     prisma.competitionEntry.findMany({
       where: { userId },
       select: {

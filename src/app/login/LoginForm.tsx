@@ -183,12 +183,20 @@ export default function LoginForm() {
         return;
       }
 
+      const attemptId = typeof options?.attemptId === "string" ? options.attemptId : null;
+      if (!attemptId) {
+        const msg = "パスキー認証の準備に失敗しました。もう一度お試しください";
+        setError(msg);
+        toast.error("パスキー認証失敗", { description: msg });
+        return;
+      }
+
       const assertion = await startAuthentication(options);
 
       const verifyRes = await fetch("/api/passkeys/authentication/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ credential: assertion }),
+        body: JSON.stringify({ credential: assertion, attemptId }),
       });
 
       const verifyData = await verifyRes.json();
@@ -205,7 +213,7 @@ export default function LoginForm() {
             return;
           }
         }
-        const msg = verifyData?.error ?? "パスキー認証に失敗しました";
+        const msg = verifyData?.error ?? "パスキー認証に失敗しました。もう一度最初からお試しください";
         setError(msg);
         toast.error("パスキー認証失敗", { description: msg });
         return;

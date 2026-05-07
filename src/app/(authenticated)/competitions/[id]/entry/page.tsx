@@ -2,10 +2,10 @@ import type { ComponentProps } from "react";
 import type Stripe from "stripe";
 import { Metadata } from "next";
 import Link from "next/link";
-import { cookies } from "next/headers";
+
 import { redirect, notFound } from "next/navigation";
 import { appRoutes } from "@/lib/appRoutes";
-import { verifySessionCached } from "@/lib/auth";
+import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import {
   Card,
@@ -129,13 +129,7 @@ export default async function CompetitionEntryPage({
       : Array.isArray(rawSessionId)
         ? rawSessionId[0]
         : undefined;
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
-  const session = await verifySessionCached(token);
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
+  const userId = await getRequiredAuthenticatedUserId();
 
   const competition = await prisma.competition.findUnique({
     where: { id },
@@ -143,7 +137,7 @@ export default async function CompetitionEntryPage({
       organization: {
         include: {
           admins: {
-            where: { userId: session.userId },
+            where: { userId: userId },
           },
         },
       },
@@ -182,7 +176,7 @@ export default async function CompetitionEntryPage({
   let existingEntry = await prisma.competitionEntry.findFirst({
     where: {
       competitionId: competition.id,
-      userId: session.userId,
+      userId: userId,
       status: { in: ["SUBMITTED", "CANCELLED"] },
     },
     orderBy: { updatedAt: "desc" },
@@ -390,7 +384,7 @@ export default async function CompetitionEntryPage({
 
   const memberships = await prisma.membership.findMany({
     where: {
-      userId: session.userId,
+      userId: userId,
       status: "APPROVED",
     },
     include: {
@@ -412,7 +406,7 @@ export default async function CompetitionEntryPage({
   );
 
   const user = await prisma.user.findUnique({
-    where: { id: session.userId },
+    where: { id: userId },
     select: {
       sex: true,
       dateOfBirth: true,
@@ -622,7 +616,7 @@ export default async function CompetitionEntryPage({
           where: {
             competitionId: competition.id,
             clubId: existingEntry.clubId,
-            coveredUserId: session.userId,
+            coveredUserId: userId,
             status: "DEFERRED_POST_CLOSE",
           },
           select: { id: true },

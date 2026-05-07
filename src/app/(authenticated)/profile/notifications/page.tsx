@@ -1,23 +1,17 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
-import { verifySessionCached } from "@/lib/auth";
+
+import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import NotificationCenter from "@/components/NotificationCenter";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProfileNotificationsPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
-  const session = await verifySessionCached(token);
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
+  const userId = await getRequiredAuthenticatedUserId();
 
   const [items, unreadCount] = await Promise.all([
     prisma.notification.findMany({
-      where: { userId: session.userId },
+      where: { userId: userId },
       orderBy: { createdAt: "desc" },
       take: 100,
       select: {
@@ -32,7 +26,7 @@ export default async function ProfileNotificationsPage() {
       },
     }),
     prisma.notification.count({
-      where: { userId: session.userId, read: false },
+      where: { userId: userId, read: false },
     }),
   ]);
 

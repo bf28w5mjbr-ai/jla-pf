@@ -1,8 +1,6 @@
 import { Metadata } from "next";
 import { Suspense } from "react";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-import { verifySessionCached } from "@/lib/auth";
+import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { DashboardMain } from "./_components/DashboardMain";
 import { DashboardTechnicalOfficialBannerSlot } from "./_components/DashboardTechnicalOfficialBannerSlot";
 
@@ -33,12 +31,7 @@ function DashboardMainSkeleton() {
 }
 
 export default async function DashboardPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
-  const sess = await verifySessionCached(token);
-  if (!sess?.userId) redirect("/login");
-
-  const userId = sess.userId;
+  const userId = await getRequiredAuthenticatedUserId();
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-3 py-6 sm:space-y-8 sm:px-5 sm:py-8 lg:px-8 lg:py-10">

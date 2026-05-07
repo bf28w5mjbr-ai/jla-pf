@@ -1,7 +1,5 @@
 import { Metadata } from "next";
 import Link from "next/link";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import {
   Building2,
   Calendar,
@@ -13,7 +11,6 @@ import {
   Sparkles,
   Trophy,
 } from "lucide-react";
-import { verifySessionCached } from "@/lib/auth";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { Button } from "@/components/ui/button";
@@ -97,14 +94,6 @@ export default async function CompetitionsPage({
     sort?: string;
   }>;
 }) {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
-  const session = await verifySessionCached(token);
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
-
   const params = await searchParams;
   const categoryFilter = params.category;
   const selectedCategory =
@@ -139,24 +128,76 @@ export default async function CompetitionsPage({
     ];
   }
 
-  const [competitions, categoryGroups] = await Promise.all([
-    prisma.competition.findMany({
-      where: whereCondition,
-      include: {
-        organization: {
-          select: {
-            id: true,
-            name: true,
-            abbreviation: true,
-            logoUrl: true,
-          },
-        },
-        _count: {
-          select: { entries: true, teamEntries: true },
-        },
+  const listInclude = {
+    organization: {
+      select: {
+        id: true,
+        name: true,
+        abbreviation: true,
+        logoUrl: true,
       },
-      orderBy: { startDate: "desc" },
-    }),
+    },
+    _count: {
+      select: { entries: true, teamEntries: true },
+    },
+  } as const;
+
+  type CompetitionListItem = Prisma.CompetitionGetPayload<{ include: typeof listInclude }>;
+
+  const now = new Date();
+  const upcomingWhere: Prisma.CompetitionWhereInput = {
+    ...whereCondition,
+    startDate: { gte: now },
+  };
+  const pastWhere: Prisma.CompetitionWhereInput = {
+    ...whereCondition,
+    startDate: { lt: now },
+  };
+
+  /** 一覧の最大行数（TTFB とレスポンス肥大化を抑える） */
+  const MAX_BUCKET_ALL_VIEW = 120;
+  const MAX_BUCKET_SINGLE_VIEW = 400;
+
+  const upcomingTake =
+    selectedView === "past"
+      ? 0
+      : selectedView === "all"
+        ? MAX_BUCKET_ALL_VIEW
+        : MAX_BUCKET_SINGLE_VIEW;
+  const pastTake =
+    selectedView === "upcoming"
+      ? 0
+      : selectedView === "all"
+        ? MAX_BUCKET_ALL_VIEW
+        : MAX_BUCKET_SINGLE_VIEW;
+
+  const [
+    upcomingRows,
+    pastRows,
+    totalCount,
+    upcomingCount,
+    pastCount,
+    categoryGroups,
+  ] = await Promise.all([
+    upcomingTake > 0
+      ? prisma.competition.findMany({
+          where: upcomingWhere,
+          include: listInclude,
+          orderBy: { startDate: "asc" },
+          take: upcomingTake,
+        })
+      : Promise.resolve([] as CompetitionListItem[]),
+    pastTake > 0
+      ? prisma.competition.findMany({
+          where: pastWhere,
+          include: listInclude,
+          orderBy: { startDate: "desc" },
+          take: pastTake,
+        })
+      : Promise.resolve([] as CompetitionListItem[]),
+    prisma.competition.count({ where: whereCondition }),
+    prisma.competition.count({ where: upcomingWhere }),
+    prisma.competition.count({ where: pastWhere }),
     prisma.competition.groupBy({
       by: ["category"],
       where: {
@@ -166,16 +207,17 @@ export default async function CompetitionsPage({
       },
     }),
   ]);
+
   const availableCategories = categoryGroups
     .map((item) => item.category?.trim() ?? "")
     .filter((value): value is string => value.length > 0)
     .sort((a, b) => a.localeCompare(b, "ja"));
 
-  const now = new Date();
-  const upcomingCompetitions = competitions.filter(
-    (c) => new Date(c.startDate) >= now
-  );
-  const pastCompetitions = competitions.filter((c) => new Date(c.startDate) < now);
+  const upcomingCompetitions = upcomingRows;
+  const pastCompetitions = pastRows;
+  const listTruncated =
+    selectedView === "all" &&
+    (upcomingCount > upcomingCompetitions.length || pastCount > pastCompetitions.length);
   const visibleUpcomingCompetitions =
     selectedView === "past"
       ? []
@@ -285,7 +327,7 @@ export default async function CompetitionsPage({
     }
   };
 
-  const CompetitionCard = ({ competition }: { competition: (typeof competitions)[0] }) => {
+  const CompetitionCard = ({ competition }: { competition: CompetitionListItem }) => {
     const hostAbbr = competitionHostAbbreviation(competition);
     const entryStart = competition.entryStartDate ? new Date(competition.entryStartDate) : null;
     const entryEnd = competition.entryEndDate ? new Date(competition.entryEndDate) : null;
@@ -403,19 +445,19 @@ export default async function CompetitionsPage({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="secondary" className="border border-border/80 px-2.5 py-1 font-normal">
-              合計 {competitions.length}
+              合計 {totalCount}
             </Badge>
             <Badge
               variant="secondary"
               className="border border-emerald-200/80 bg-emerald-50 font-normal text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100"
             >
-              予定 {upcomingCompetitions.length}
+              予定 {upcomingCount}
             </Badge>
             <Badge
               variant="secondary"
               className="border border-border bg-muted/60 font-normal text-foreground"
             >
-              過去 {pastCompetitions.length}
+              過去 {pastCount}
             </Badge>
           </div>
         </div>
@@ -436,6 +478,13 @@ export default async function CompetitionsPage({
         />
         </div>
       </div>
+
+      {listTruncated ? (
+        <p className="mx-auto max-w-6xl px-3 text-xs text-muted-foreground sm:px-5 lg:px-8">
+          「すべて」表示では開催予定・過去それぞれ最大 {MAX_BUCKET_ALL_VIEW}{" "}
+          件まで読み込みます。絞り込みや「開催予定のみ」「過去のみ」で表示件数を増やせます。
+        </p>
+      ) : null}
 
       <div className="space-y-8">
         {visibleUpcomingCompetitions.length > 0 ? (
@@ -478,7 +527,7 @@ export default async function CompetitionsPage({
           </section>
         ) : null}
 
-        {competitions.length === 0 ? (
+        {totalCount === 0 ? (
           <Card className="border-dashed border-border/90 bg-muted/15">
             <CardContent className="flex flex-col items-center gap-2 py-14 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
@@ -491,7 +540,7 @@ export default async function CompetitionsPage({
             </CardContent>
           </Card>
         ) : null}
-        {competitions.length > 0 &&
+        {totalCount > 0 &&
         visibleUpcomingCompetitions.length === 0 &&
         visiblePastCompetitions.length === 0 ? (
           <Card className="border-dashed border-border/90 bg-muted/15">

@@ -1,9 +1,9 @@
 import { Metadata } from "next";
 import Link from "next/link";
-import { cookies } from "next/headers";
+
 import { redirect, notFound } from "next/navigation";
 import { appRoutes } from "@/lib/appRoutes";
-import { verifySessionCached } from "@/lib/auth";
+import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -41,13 +41,7 @@ export default async function CompetitionOfficialEntryPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
-  const session = await verifySessionCached(token);
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
+  const userId = await getRequiredAuthenticatedUserId();
 
   const competition = await prisma.competition.findUnique({
     where: { id },
@@ -55,12 +49,12 @@ export default async function CompetitionOfficialEntryPage({
       organization: {
         include: {
           admins: {
-            where: { userId: session.userId },
+            where: { userId: userId },
           },
         },
       },
       officialApplications: {
-        where: { userId: session.userId },
+        where: { userId: userId },
         select: { status: true, positionName: true, message: true },
         take: 1,
       },
@@ -99,7 +93,7 @@ export default async function CompetitionOfficialEntryPage({
       distinct: ["clubId"],
     }),
     prisma.membership.findMany({
-      where: { userId: session.userId, status: "APPROVED" },
+      where: { userId: userId, status: "APPROVED" },
       select: { clubId: true },
     }),
   ]);

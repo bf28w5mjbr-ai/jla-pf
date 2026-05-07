@@ -59,13 +59,7 @@ export default function CompetitionNameInlineEditor({ competitionId, canEdit, in
       const res = await fetch(`/api/competitions/${competitionId}/update`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: trimmed,
-          category: initialData.category,
-          startDate: initialData.startDate,
-          endDate: initialData.endDate,
-          venue: initialData.venue,
-        }),
+        body: JSON.stringify({ name: trimmed }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { error?: string } | null;

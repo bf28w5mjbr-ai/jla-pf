@@ -1,4 +1,6 @@
 import { cache } from "react";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
 import { prisma } from "@/server/db";
 
@@ -69,6 +71,23 @@ export const verifySessionCached = cache(
     return verifySession(token);
   }
 );
+
+/**
+ * `(authenticated)` 配下のページ用。同一リクエスト内は {@link verifySessionCached} と合わせてメモ化される。
+ */
+export const getRequiredAuthenticatedUserId = cache(async (): Promise<string> => {
+  const token = (await cookies()).get("session")?.value;
+  const session = await verifySessionCached(token);
+  if (!session?.userId) redirect("/login");
+  return session.userId;
+});
+
+/** メタデータ等: 未ログインでもよいときの userId（リクエスト内メモ化） */
+export const getOptionalAuthenticatedUserId = cache(async (): Promise<string | null> => {
+  const token = (await cookies()).get("session")?.value;
+  const session = await verifySessionCached(token);
+  return session?.userId ?? null;
+});
 
 export async function isAssociationAdmin(userId: string): Promise<boolean> {
   const associationAdmin = await prisma.associationAdmin.findFirst({

@@ -1,7 +1,7 @@
 import { Metadata } from "next";
-import { cookies } from "next/headers";
+
 import { redirect } from "next/navigation";
-import { verifySessionCached } from "@/lib/auth";
+import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import CreateAssociationForm from "@/components/CreateAssociationForm";
 
@@ -13,16 +13,10 @@ export const metadata: Metadata = {
 };
 
 export default async function CreateAssociationPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
-  const session = await verifySessionCached(token);
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
+  const userId = await getRequiredAuthenticatedUserId();
 
   const user = await prisma.user.findUnique({
-    where: { id: session.userId },
+    where: { id: userId },
     select: { role: true },
   });
 

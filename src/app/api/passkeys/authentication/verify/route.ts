@@ -24,6 +24,7 @@ import {
   PASSKEY_AUTH_VERIFY_IP_MAX,
   PASSKEY_AUTH_VERIFY_IP_WINDOW_MS,
 } from "@/lib/loginThrottle";
+import { consumePasskeyAuthAttempt } from "@/lib/passkeyAuthAttemptCookie";
 
 type PasskeyWithUser = {
   id: string;
@@ -45,6 +46,7 @@ const passkeyPrisma = prisma as PasskeyPrismaClient;
 
 const VerifySchema = z.object({
   credential: z.any(),
+  attemptId: z.string().uuid(),
 });
 
 const CHALLENGE_COOKIE = "passkey_auth_challenge";
@@ -112,11 +114,34 @@ export async function POST(req: NextRequest) {
     }
 
     const jar = await cookies();
-    const expectedChallenge = jar.get(CHALLENGE_COOKIE)?.value;
+    const consumed = consumePasskeyAuthAttempt(
+      jar.get(CHALLENGE_COOKIE)?.value,
+      data.attemptId
+    );
+    if (consumed.cookieValue) {
+      jar.set(CHALLENGE_COOKIE, consumed.cookieValue, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 60 * 5,
+      });
+    } else {
+      jar.set(CHALLENGE_COOKIE, "", {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 0,
+      });
+    }
 
+    const expectedChallenge = consumed.challenge;
     if (!expectedChallenge) {
-      await notePasskeyVerifyFailure(ip);
-      return NextResponse.json({ error: "認証セッションが見つかりません" }, { status: 400 });
+      return NextResponse.json(
+        { error: "認証セッションの有効期限が切れました。もう一度パスキー認証を開始してください" },
+        { status: 400 }
+      );
     }
 
     const host = req.headers.get("host") ?? "localhost";
@@ -159,14 +184,6 @@ export async function POST(req: NextRequest) {
         counter: verification.authenticationInfo.newCounter,
         lastUsedAt: new Date(),
       },
-    });
-
-    jar.set(CHALLENGE_COOKIE, "", {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 0,
     });
 
     const token = await signSession({ userId: credential.userId });

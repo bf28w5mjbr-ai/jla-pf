@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect, notFound } from "next/navigation";
-import { verifySessionCached } from "@/lib/auth";
+import { getRequiredAuthenticatedUserId, verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { organizerYearlySubscriptionAmountYen, stripe } from "@/lib/stripe";
 import { finalizeOrganizerSubscriptionCheckoutSession } from "@/lib/organizerSubscriptionStripe";
@@ -154,13 +154,7 @@ export default async function OrganizationDetailPage({
   const { payment, session_id: sessionId, tab: tabParam, stripe_connect: stripeConnect } =
     await searchParams;
   const activeTab = parseOrganizationDetailTab(tabParam);
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
-  const session = await verifySessionCached(token);
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
+  const userId = await getRequiredAuthenticatedUserId();
 
   if (payment === "success") {
     try {
@@ -224,7 +218,7 @@ export default async function OrganizationDetailPage({
 
   // 現在のユーザーの役割を取得
   const userRole = organization.admins.find(
-    (admin) => admin.userId === session.userId
+    (admin) => admin.userId === userId
   )?.role;
 
   const isOrgAdmin = isOrgAdminRole(userRole);
@@ -669,7 +663,7 @@ export default async function OrganizationDetailPage({
                   organizationId={organization.id}
                   members={organization.admins}
                   userRole={userRole}
-                  currentUserId={session.userId}
+                  currentUserId={userId}
                 />
               </CardContent>
             </Card>

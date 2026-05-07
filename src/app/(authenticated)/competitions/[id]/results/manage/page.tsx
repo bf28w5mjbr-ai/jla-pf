@@ -1,9 +1,9 @@
 import { Metadata } from "next";
 import Link from "next/link";
-import { cookies } from "next/headers";
+
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { verifySessionCached } from "@/lib/auth";
+import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { OfficialResultManager } from "@/components/OfficialResultManager";
@@ -32,13 +32,7 @@ export default async function CompetitionResultManagePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
-  const session = await verifySessionCached(token);
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
+  const userId = await getRequiredAuthenticatedUserId();
 
   const competition = await prisma.competition.findUnique({
     where: { id },
@@ -46,7 +40,7 @@ export default async function CompetitionResultManagePage({
       organization: {
         include: {
           admins: {
-            where: { userId: session.userId },
+            where: { userId: userId },
           },
         },
       },

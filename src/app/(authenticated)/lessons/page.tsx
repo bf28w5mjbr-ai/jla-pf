@@ -1,10 +1,10 @@
 import { Metadata } from "next";
 import Link from "next/link";
-import { cookies } from "next/headers";
+
 import { redirect } from "next/navigation";
 
 import { Card } from "@/components/ui/card";
-import { verifySessionCached } from "@/lib/auth";
+import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { prisma } from "@/server/db";
 
 export const dynamic = "force-dynamic";
@@ -27,16 +27,10 @@ export default async function LessonsPage({
   const filters = qualificationParams.map((v) => v.trim()).filter((v) => v.length > 0);
   const isRenewalOnly = params.renewal === "1" || params.renewal === "true";
 
-  const jar = await cookies();
-  const token = jar.get("session")?.value ?? null;
-  const sess = await verifySessionCached(token);
-
-  if (!sess?.userId) {
-    redirect("/login");
-  }
+  const userId = await getRequiredAuthenticatedUserId();
 
   const user = await prisma.user.findUnique({
-    where: { id: sess.userId },
+    where: { id: userId },
     select: {
       id: true,
       role: true,
@@ -49,7 +43,6 @@ export default async function LessonsPage({
   if (!user) {
     redirect("/login");
   }
-
 
   const lessons = await prisma.qualificationTemplate.findMany({
     where: {

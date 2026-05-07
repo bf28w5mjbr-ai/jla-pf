@@ -1,9 +1,9 @@
 import { Metadata } from "next";
 import Link from "next/link";
-import { cookies } from "next/headers";
+
 import { redirect } from "next/navigation";
 import { ArrowLeft, ChevronRight, Landmark, LayoutDashboard, ShieldAlert } from "lucide-react";
-import { isPfOrAccAdmin, verifySessionCached } from "@/lib/auth";
+import { getRequiredAuthenticatedUserId, isPfOrAccAdmin } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { findManyPendingCsvExportRequestsForPfAdmin } from "@/lib/competitionEntryCsvExport";
 import type { PendingCsvExportRequestRow } from "@/components/admin/EntryCsvExportRequestsAdminPanel";
@@ -29,15 +29,9 @@ export default async function AccountAdminPage({
   const sp = await searchParams;
   const initialTab: AccountAdminTabValue = sp.tab === "host" ? "host" : "association";
 
-  const jar = await cookies();
-  const token = jar.get("session")?.value ?? null;
-  const sess = await verifySessionCached(token);
+  const userId = await getRequiredAuthenticatedUserId();
 
-  if (!sess?.userId) {
-    redirect("/login");
-  }
-
-  if (!(await isPfOrAccAdmin(sess.userId))) {
+  if (!(await isPfOrAccAdmin(userId))) {
     return (
       <div className="mx-auto flex max-w-lg flex-col items-center justify-center px-4 py-16 lg:py-24">
         <Card className="w-full overflow-hidden border-border/90 text-center shadow-sm">
@@ -64,7 +58,7 @@ export default async function AccountAdminPage({
   }
 
   const currentUser = await prisma.user.findUnique({
-    where: { id: sess.userId },
+    where: { id: userId },
     select: { role: true },
   });
 
@@ -82,7 +76,7 @@ export default async function AccountAdminPage({
           : {
               admins: {
                 some: {
-                  userId: sess.userId,
+                  userId: userId,
                 },
               },
             },
@@ -108,7 +102,7 @@ export default async function AccountAdminPage({
           ? {}
           : {
               admins: {
-                some: { userId: sess.userId },
+                some: { userId: userId },
               },
             },
         orderBy: [{ name: "asc" }],

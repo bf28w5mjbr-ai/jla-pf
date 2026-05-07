@@ -14,7 +14,7 @@ export const SMS_LOGIN_START_IP_MAX = 30;
 export const SMS_LOGIN_START_IP_WINDOW_MS = 60 * 60 * 1000;
 
 /** パスキー認証オプション取得: IP あたり（1 時間） */
-export const PASSKEY_AUTH_OPTIONS_IP_MAX = 40;
+export const PASSKEY_AUTH_OPTIONS_IP_MAX = 80;
 export const PASSKEY_AUTH_OPTIONS_IP_WINDOW_MS = 60 * 60 * 1000;
 
 /** パスキー認証検証: IP あたりの失敗カウント（15 分） */

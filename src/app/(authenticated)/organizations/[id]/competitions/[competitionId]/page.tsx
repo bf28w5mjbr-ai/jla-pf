@@ -15,7 +15,7 @@ import {
   Settings2,
   UserCog,
 } from "lucide-react";
-import { verifySessionCached } from "@/lib/auth";
+import { getRequiredAuthenticatedUserId, verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -187,21 +187,15 @@ export default async function CompetitionDetailPage({
   const { id: organizationId, competitionId } = await params;
   const { tab: tabParam } = await searchParams;
   const activeTab = parseCompetitionManagementTab(tabParam);
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
-  const session = await verifySessionCached(token);
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
+  const userId = await getRequiredAuthenticatedUserId();
 
   const loadOfficialTab = activeTab === "official";
 
   const [access, competition, entryMutationState] = await Promise.all([
-    getCompetitionManagementAccess(organizationId, competitionId, session.userId),
+    getCompetitionManagementAccess(organizationId, competitionId, userId),
     prisma.competition.findUnique({
       where: { id: competitionId },
-      include: buildCompetitionManagementInclude(session.userId, activeTab),
+      include: buildCompetitionManagementInclude(userId, activeTab),
     }),
     loadCompetitionMutationState(competitionId),
   ]);

@@ -1,10 +1,10 @@
 import { Metadata } from "next";
 import Link from "next/link";
-import { cookies } from "next/headers";
+
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { appRoutes } from "@/lib/appRoutes";
-import { verifySessionCached } from "@/lib/auth";
+import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { loadEntryHistoryForClub } from "@/lib/entryHistory";
 import EntryHistoryList from "@/components/EntryHistoryList";
@@ -34,17 +34,11 @@ export default async function ClubEntryHistoryPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: clubId } = await params;
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
-  const session = await verifySessionCached(token);
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
+  const userId = await getRequiredAuthenticatedUserId();
 
   const membership = await prisma.membership.findFirst({
     where: {
-      userId: session.userId,
+      userId: userId,
       clubId,
       status: "APPROVED",
     },
@@ -62,7 +56,7 @@ export default async function ClubEntryHistoryPage({
     notFound();
   }
 
-  const entries = await loadEntryHistoryForClub(session.userId, clubId);
+  const entries = await loadEntryHistoryForClub(userId, clubId);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6">

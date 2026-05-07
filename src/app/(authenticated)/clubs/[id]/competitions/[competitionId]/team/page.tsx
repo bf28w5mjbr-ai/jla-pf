@@ -1,9 +1,9 @@
 import { Metadata } from "next";
 import Link from "next/link";
-import { cookies } from "next/headers";
+
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { verifySessionCached } from "@/lib/auth";
+import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -112,17 +112,11 @@ export default async function ClubCompetitionTeamHubPage({
     redirect(appRoutes.competitions.teamEntry(competitionId, { clubId }));
   }
 
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
-  const session = await verifySessionCached(token);
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
+  const userId = await getRequiredAuthenticatedUserId();
 
   const adminMemberships = await prisma.membership.findMany({
     where: {
-      userId: session.userId,
+      userId: userId,
       status: "APPROVED",
       role: "ADMIN",
     },
@@ -153,7 +147,7 @@ export default async function ClubCompetitionTeamHubPage({
       organization: {
         include: {
           admins: {
-            where: { userId: session.userId },
+            where: { userId: userId },
           },
         },
       },

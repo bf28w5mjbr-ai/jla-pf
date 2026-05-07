@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { verifySessionCached } from "@/lib/auth";
+import { getRequiredAuthenticatedUserId, verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -72,17 +72,11 @@ export default async function CompetitionEntriesPage({
   params: Promise<{ id: string; competitionId: string }>;
 }) {
   const { id: organizationId, competitionId } = await params;
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
-  const session = await verifySessionCached(token);
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
+  const userId = await getRequiredAuthenticatedUserId();
 
   const orgAdmin = await prisma.orgAdmin.findFirst({
     where: {
-      userId: session.userId,
+      userId: userId,
       organizationId,
     },
     select: { id: true, role: true },

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
-import { verifySessionCached } from "@/lib/auth";
+
+import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { isOrgAdminRole } from "@/lib/roleScopes";
 
@@ -12,18 +12,12 @@ export default async function CreateCompetitionPage({ params }: PageProps) {
   const { id: organizationId } = await params;
 
   // セッション確認
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
-  const session = await verifySessionCached(token);
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
+  const userId = await getRequiredAuthenticatedUserId();
 
   // 団体への権限を確認（管理者のみ）
   const orgAdmin = await prisma.orgAdmin.findFirst({
     where: {
-      userId: session.userId,
+      userId: userId,
       organizationId,
     },
     include: {

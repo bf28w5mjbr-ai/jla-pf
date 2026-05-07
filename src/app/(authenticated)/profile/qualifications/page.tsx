@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { Metadata } from "next";
-import { cookies } from "next/headers";
+
 import { redirect } from "next/navigation";
 import { ArrowLeft, ArrowRight, Award, BookOpen, GraduationCap, ListChecks } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { verifySessionCached } from "@/lib/auth";
+import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP } from "@/lib/competitionEntryAgeTiered";
 import { isRegistrationQualificationKind } from "@/lib/qualificationRegistrationKinds";
@@ -20,16 +20,10 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function ProfileQualificationsPage() {
-  const jar = await cookies();
-  const token = jar.get("session")?.value ?? null;
-  const sess = await verifySessionCached(token);
-
-  if (!sess?.userId) {
-    redirect("/login");
-  }
+  const userId = await getRequiredAuthenticatedUserId();
 
   const user = await prisma.user.findUnique({
-    where: { id: sess.userId },
+    where: { id: userId },
     select: {
       id: true,
       jlaMemberNumber: true,
@@ -42,7 +36,7 @@ export default async function ProfileQualificationsPage() {
 
   const [qualifications, rawTemplates] = await Promise.all([
     prisma.qualification.findMany({
-      where: { userId: sess.userId },
+      where: { userId: userId },
       orderBy: { createdAt: "desc" },
     }),
     prisma.qualificationTemplate.findMany({

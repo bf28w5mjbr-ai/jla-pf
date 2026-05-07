@@ -15,6 +15,7 @@ import {
   PASSKEY_AUTH_OPTIONS_IP_WINDOW_MS,
 } from "@/lib/loginThrottle";
 import { webAuthnRequireUserVerification } from "@/lib/webauthnServer";
+import { issuePasskeyAuthAttempt } from "@/lib/passkeyAuthAttemptCookie";
 
 const CHALLENGE_COOKIE = "passkey_auth_challenge";
 
@@ -45,6 +46,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const body = await req.json().catch(() => ({}));
+    const parsed = BodySchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "メールアドレスの形式が正しくありません" }, { status: 400 });
+    }
+
+    const email = parsed.data.email.trim().toLowerCase();
+
     const skipIpSlot = ip === "127.0.0.1" || ip === "::1";
     if (!skipIpSlot) {
       const slot = await tryConsumeRateSlot(
@@ -66,14 +75,6 @@ export async function POST(req: NextRequest) {
         );
       }
     }
-
-    const body = await req.json().catch(() => ({}));
-    const parsed = BodySchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json({ error: "メールアドレスの形式が正しくありません" }, { status: 400 });
-    }
-
-    const email = parsed.data.email.trim().toLowerCase();
 
     const user = await prisma.user.findUnique({
       where: { email },
@@ -111,7 +112,9 @@ export async function POST(req: NextRequest) {
     });
 
     const jar = await cookies();
-    jar.set(CHALLENGE_COOKIE, options.challenge, {
+    const current = jar.get(CHALLENGE_COOKIE)?.value;
+    const issued = issuePasskeyAuthAttempt(current, options.challenge);
+    jar.set(CHALLENGE_COOKIE, issued.cookieValue, {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
@@ -119,7 +122,7 @@ export async function POST(req: NextRequest) {
       maxAge: 60 * 5,
     });
 
-    return NextResponse.json(options);
+    return NextResponse.json({ ...options, attemptId: issued.attemptId });
   } catch (error) {
     return jsonInternalError500("POST api/passkeys/authentication/options/route.ts", error);
   }

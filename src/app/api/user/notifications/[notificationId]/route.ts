@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { verifySession } from "@/lib/auth";
+import { notificationUnreadCountTag } from "@/lib/cacheTags";
 import { prisma } from "@/server/db";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 
@@ -30,6 +32,8 @@ export async function PATCH(
     if (updated.count === 0) {
       return NextResponse.json({ error: "Notification not found" }, { status: 404 });
     }
+
+    revalidateTag(notificationUnreadCountTag(session.userId), "max");
 
     return NextResponse.json({ success: true });
   } catch (error) {

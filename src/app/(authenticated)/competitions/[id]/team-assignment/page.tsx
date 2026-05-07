@@ -1,10 +1,10 @@
 import { Metadata } from "next";
 import Link from "next/link";
-import { cookies } from "next/headers";
+
 import { redirect } from "next/navigation";
 import { ArrowLeft, Users } from "lucide-react";
 import { appRoutes } from "@/lib/appRoutes";
-import { verifySessionCached } from "@/lib/auth";
+import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -40,13 +40,7 @@ export default async function LegacyCompetitionTeamAssignmentRedirect({
 }) {
   const { id: competitionId } = await params;
   const { clubId: clubIdFromQuery } = await searchParams;
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
-  const session = await verifySessionCached(token);
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
+  const userId = await getRequiredAuthenticatedUserId();
 
   const competition = await prisma.competition.findUnique({
     where: { id: competitionId },
@@ -59,7 +53,7 @@ export default async function LegacyCompetitionTeamAssignmentRedirect({
 
   const clubMemberships = await prisma.membership.findMany({
     where: {
-      userId: session.userId,
+      userId: userId,
       status: "APPROVED",
     },
     include: {

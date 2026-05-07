@@ -1,7 +1,7 @@
 import { Metadata } from "next";
-import { cookies } from "next/headers";
+
 import { redirect } from "next/navigation";
-import { verifySessionCached } from "@/lib/auth";
+import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import CreateOrganizationForm from "@/components/CreateOrganizationForm";
 import { organizerYearlySubscriptionAmountYen } from "@/lib/stripe";
 
@@ -13,13 +13,7 @@ export const metadata: Metadata = {
 };
 
 export default async function CreateOrganizationPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
-  const session = await verifySessionCached(token);
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
+  const userId = await getRequiredAuthenticatedUserId();
 
   const onboardingFeeAmount = organizerYearlySubscriptionAmountYen();
 

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
-import { verifySessionCached } from "@/lib/auth";
+
+import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import EditOrganizationForm from "@/components/EditOrganizationForm";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
@@ -13,20 +13,14 @@ export default async function EditOrganizationPage({ params }: PageProps) {
   const { id } = await params;
 
   // セッション確認
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
-  const session = await verifySessionCached(token);
-
-  if (!session?.userId) {
-    redirect("/login");
-  }
+  const userId = await getRequiredAuthenticatedUserId();
 
   // 団体取得
   const organization = await prisma.organization.findUnique({
     where: { id },
     include: {
       admins: {
-        where: { userId: session.userId },
+        where: { userId: userId },
       },
     },
   });

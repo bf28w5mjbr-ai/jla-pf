@@ -4,6 +4,10 @@ import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
 
+function isOwnProp(obj: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -48,7 +52,40 @@ export async function PUT(
       );
     }
 
-    const body = await request.json();
+    const body = (await request.json()) as Record<string, unknown>;
+
+    const touchesBasicBundle =
+      isOwnProp(body, "venue") ||
+      isOwnProp(body, "category") ||
+      isOwnProp(body, "startDate") ||
+      isOwnProp(body, "endDate");
+
+    /** 基本情報カード以外からの大会名のみ更新（未入力の場所・カテゴリがあっても可） */
+    if (!touchesBasicBundle) {
+      if (!isOwnProp(body, "name") || typeof body.name !== "string") {
+        return NextResponse.json({ error: "大会名が必要です" }, { status: 400 });
+      }
+      const nextName = body.name.trim();
+      if (!nextName) {
+        return NextResponse.json({ error: "大会名を入力してください" }, { status: 400 });
+      }
+
+      const data: { name: string; nameKana?: string | null } = { name: nextName };
+      if (isOwnProp(body, "nameKana") && typeof body.nameKana === "string") {
+        data.nameKana = body.nameKana.trim() || null;
+      }
+
+      const updatedCompetition = await prisma.competition.update({
+        where: { id: competitionId },
+        data,
+      });
+
+      return NextResponse.json({
+        message: "大会を更新しました",
+        competition: updatedCompetition,
+      });
+    }
+
     const {
       name,
       nameKana,
@@ -82,7 +119,7 @@ export async function PUT(
     const nextVenue =
       typeof venue === "string" ? venue.trim() : competition.venue?.trim() ?? "";
 
-    // 必須フィールドのバリデーション
+    // 必須フィールドのバリデーション（基本情報カードの一括更新）
     if (
       !nextName ||
       !nextStartDateRaw ||
