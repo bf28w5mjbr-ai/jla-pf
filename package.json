@@ -41,6 +41,7 @@
     "backfill:to-assignment-from-official-apps": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-to-assignment-from-official-applications.ts",
     "backfill:to-assignment-from-official-apps:dry": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-to-assignment-from-official-applications.ts --dry-run",
     "diagnose:club-to-reflection": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/diagnose-club-to-reflection.ts",
+    "crosscheck:to-app-vs-assignment": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/crosscheck-to-application-vs-assignment.ts",
     "backfill:entry-club-id-from-snapshot": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-competition-entry-club-id-from-snapshot.ts",
     "backfill:entry-club-id-from-snapshot:dry": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-competition-entry-club-id-from-snapshot.ts --dry-run"
   },

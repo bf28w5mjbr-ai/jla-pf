@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { mergeApprovedTechnicalOfficialApplicationCompetitionIdsIntoMap } from "@/lib/resolveTechnicalOfficialApplicationClub";
 import {
   hasRequiredOfficialQualifications,
   parseTechnicalOfficialTiers,
@@ -270,6 +271,12 @@ export async function listClubAdminTechnicalOfficialAlerts(
   for (const r of toInvClubPairs) {
     competitionsByClub.get(r.clubId)?.add(r.competitionId);
   }
+
+  await mergeApprovedTechnicalOfficialApplicationCompetitionIdsIntoMap(
+    prisma,
+    competitionsByClub,
+    adminMemberships.map((m) => ({ clubId: m.clubId, clubName: m.club.name }))
+  );
 
   const allCompetitionIds = new Set<string>();
   for (const set of competitionsByClub.values()) {

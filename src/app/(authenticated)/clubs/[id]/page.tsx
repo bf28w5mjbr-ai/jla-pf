@@ -41,6 +41,7 @@ import {
 import { appRoutes } from "@/lib/appRoutes";
 import { cn } from "@/lib/utils";
 import ClubTechnicalOfficialRow from "@/components/ClubTechnicalOfficialRow";
+import { competitionIdsForClubFromApprovedTechnicalOfficialApplications } from "@/lib/resolveTechnicalOfficialApplicationClub";
 import {
   buildClubCompetitionRosterMap,
   splitRosterByEntryKind,
@@ -353,7 +354,7 @@ export default async function ClubDetailPage({
 
   const now = new Date();
 
-  const [clubTeamEntries, individualEntriesForClub, toAssignments, toInvitations] =
+  const [clubTeamEntries, individualEntriesForClub, toAssignments, toInvitations, toAppCompetitionIds] =
     await Promise.all([
       prisma.teamEntry.findMany({
         where: { clubId: id },
@@ -389,6 +390,7 @@ export default async function ClubDetailPage({
         select: { competitionId: true },
         distinct: ["competitionId"],
       }),
+      competitionIdsForClubFromApprovedTechnicalOfficialApplications(prisma, id, club.name),
     ]);
 
   const competitionIdsFromPlayerEntries = new Set([
@@ -412,6 +414,7 @@ export default async function ClubDetailPage({
       ...competitionIdsFromPlayerEntries,
       ...toAssignments.map((r) => r.competitionId),
       ...toInvitations.map((r) => r.competitionId),
+      ...toAppCompetitionIds,
     ]),
   ];
 

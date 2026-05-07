@@ -7,12 +7,12 @@
  *   pnpm exec tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-to-assignment-from-official-applications.ts --dry-run
  *   pnpm exec tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-to-assignment-from-official-applications.ts
  */
-import type { OfficialApplicationCompetitionForSubmit } from "@/lib/officialApplicationSubmit";
-import { resolveOfficialApplicationPositionName } from "@/lib/officialApplicationSubmit";
+import {
+  loadCompetitionForTechnicalOfficialApplicationResolve,
+  resolveClubIdForTechnicalOfficialApplication,
+} from "@/lib/resolveTechnicalOfficialApplicationClub";
 import { syncTechnicalOfficialAssignmentFromOfficialApplication } from "@/lib/syncTechnicalOfficialAssignmentFromOfficialApplication";
 import { prisma } from "@/server/db";
-
-const TO_POSITION = /^テクニカルオフィシャル（([^）]+)）$/;
 
 function parseArgs() {
   let dryRun = false;
@@ -21,72 +21,6 @@ function parseArgs() {
     if (a === "--dry-run") dryRun = true;
   }
   return { dryRun };
-}
-
-function extractClubDisplayName(positionName: string): string | null {
-  const m = positionName.match(TO_POSITION);
-  const name = m?.[1]?.trim();
-  return name && name.length > 0 ? name : null;
-}
-
-async function loadCompetitionForResolve(
-  competitionId: string
-): Promise<OfficialApplicationCompetitionForSubmit | null> {
-  const c = await prisma.competition.findUnique({
-    where: { id: competitionId },
-    select: {
-      id: true,
-      status: true,
-      entryStartDate: true,
-      entryEndDate: true,
-      officialRecruitmentEnabled: true,
-      officialQualificationFilterEnabled: true,
-      technicalOfficialRecruitmentEnabled: true,
-    },
-  });
-  if (!c) return null;
-  return {
-    id: c.id,
-    status: c.status,
-    entryStartDate: c.entryStartDate,
-    entryEndDate: c.entryEndDate,
-    officialRecruitmentEnabled: c.officialRecruitmentEnabled,
-    officialQualificationFilterEnabled: c.officialQualificationFilterEnabled,
-    technicalOfficialRecruitmentEnabled: c.technicalOfficialRecruitmentEnabled ?? true,
-    organization: { admins: [] },
-  };
-}
-
-async function resolveClubIdForApplication(params: {
-  competition: OfficialApplicationCompetitionForSubmit;
-  competitionId: string;
-  userId: string;
-  positionName: string;
-}): Promise<string | null> {
-  const displayName = extractClubDisplayName(params.positionName);
-  if (!displayName) return null;
-
-  const clubs = await prisma.club.findMany({
-    where: { name: displayName },
-    select: { id: true },
-  });
-  if (clubs.length === 0) return null;
-
-  const eligible: string[] = [];
-  for (const { id } of clubs) {
-    const pos = await resolveOfficialApplicationPositionName(
-      prisma,
-      params.competitionId,
-      params.competition,
-      "TECHNICAL",
-      id,
-      params.userId
-    );
-    if (pos.ok) eligible.push(id);
-  }
-
-  if (eligible.length !== 1) return null;
-  return eligible[0]!;
 }
 
 async function main() {
@@ -109,12 +43,18 @@ async function main() {
   let applied = 0;
   let skipped = 0;
 
-  const competitionCache = new Map<string, OfficialApplicationCompetitionForSubmit | null>();
+  const competitionCache = new Map<
+    string,
+    Awaited<ReturnType<typeof loadCompetitionForTechnicalOfficialApplicationResolve>>
+  >();
 
   for (const app of applications) {
     let competition = competitionCache.get(app.competitionId);
     if (competition === undefined) {
-      competition = await loadCompetitionForResolve(app.competitionId);
+      competition = await loadCompetitionForTechnicalOfficialApplicationResolve(
+        prisma,
+        app.competitionId
+      );
       competitionCache.set(app.competitionId, competition);
     }
     if (!competition?.technicalOfficialRecruitmentEnabled) {
@@ -122,7 +62,7 @@ async function main() {
       continue;
     }
 
-    const clubId = await resolveClubIdForApplication({
+    const clubId = await resolveClubIdForTechnicalOfficialApplication(prisma, {
       competition,
       competitionId: app.competitionId,
       userId: app.userId,

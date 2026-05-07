@@ -7,6 +7,12 @@
  */
 import { parseTechnicalOfficialTiers } from "@/lib/technicalOfficialRules";
 import { extractClubIdFromEntrySnapshotData } from "@/lib/entrySnapshotClubId";
+import {
+  competitionIdsForClubFromApprovedTechnicalOfficialApplications,
+  loadCompetitionForTechnicalOfficialApplicationResolve,
+  resolveClubIdForTechnicalOfficialApplication,
+  extractTechnicalOfficialClubDisplayNameFromPosition,
+} from "@/lib/resolveTechnicalOfficialApplicationClub";
 import { prisma } from "@/server/db";
 
 function parseArgs() {
@@ -196,6 +202,82 @@ async function main() {
     }
     console.log(
       "\nヒント: TO 任命が無い場合は pnpm run backfill:to-assignment-from-official-apps:dry を確認してください。"
+    );
+  }
+
+  const idsFromToApps = await competitionIdsForClubFromApprovedTechnicalOfficialApplications(
+    prisma,
+    club.id,
+    club.name
+  );
+  console.log("\n--- TO 公式応募から解決した大会 ID（クラブページにマージされる） ---");
+  console.log(`件数: ${idsFromToApps.length}`);
+  if (idsFromToApps.length > 0) {
+    console.log(idsFromToApps.join(", "));
+  }
+
+  const toAppsForClub = await prisma.competitionOfficialApplication.findMany({
+    where: {
+      status: "APPROVED",
+      positionName: {
+        startsWith: `テクニカルオフィシャル（${club.name.trim()}`,
+      },
+      ...(competitionId ? { competitionId } : {}),
+    },
+    select: { id: true, competitionId: true, userId: true, positionName: true },
+  });
+  const compCache = new Map<
+    string,
+    Awaited<ReturnType<typeof loadCompetitionForTechnicalOfficialApplicationResolve>>
+  >();
+  const missingAssignment: { applicationId: string; competitionId: string; userId: string }[] = [];
+  for (const app of toAppsForClub) {
+    const dn = extractTechnicalOfficialClubDisplayNameFromPosition(app.positionName);
+    if (dn !== club.name.trim()) continue;
+    let c = compCache.get(app.competitionId);
+    if (c === undefined) {
+      c = await loadCompetitionForTechnicalOfficialApplicationResolve(prisma, app.competitionId);
+      compCache.set(app.competitionId, c);
+    }
+    if (!c?.technicalOfficialRecruitmentEnabled) continue;
+    const resolved = await resolveClubIdForTechnicalOfficialApplication(prisma, {
+      competitionId: app.competitionId,
+      userId: app.userId,
+      positionName: app.positionName,
+      competition: c,
+    });
+    if (resolved !== club.id) continue;
+    const row = await prisma.competitionTechnicalOfficialAssignment.findUnique({
+      where: {
+        competitionId_clubId_userId: {
+          competitionId: app.competitionId,
+          clubId: club.id,
+          userId: app.userId,
+        },
+      },
+      select: { id: true },
+    });
+    if (!row) {
+      missingAssignment.push({
+        applicationId: app.id,
+        competitionId: app.competitionId,
+        userId: app.userId,
+      });
+    }
+  }
+  console.log("\n--- 当クラブ向け TO 応募で CompetitionTechnicalOfficialAssignment が無い行 ---");
+  console.log(`件数: ${missingAssignment.length}`);
+  for (const m of missingAssignment.slice(0, 30)) {
+    console.log(
+      `  application=${m.applicationId} competition=${m.competitionId} user=${m.userId}`
+    );
+  }
+  if (missingAssignment.length > 30) {
+    console.log(`  ... 他 ${missingAssignment.length - 30} 件`);
+  }
+  if (missingAssignment.length > 0) {
+    console.log(
+      "\nヒント: pnpm run backfill:to-assignment-from-official-apps:dry で一括作成できる場合があります。"
     );
   }
 
