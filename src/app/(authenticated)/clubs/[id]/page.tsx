@@ -9,7 +9,7 @@ import { prisma } from "@/server/db";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataTable } from "@/components/ui/DataTable";
 import ClubLogoUpload from "@/components/ClubLogoUpload";
 import MemberActions from "@/components/MemberActions";
@@ -21,15 +21,19 @@ import LeaveClubButton from "@/components/LeaveClubButton";
 import { resolveTeamAssignmentDeadline } from "@/lib/startListSettings";
 import { getTeamEntryMarshalAssignmentBlockedMap } from "@/lib/teamMemberAssignmentWindow";
 import {
+  ArrowLeft,
   ArrowRight,
   Calendar,
   CalendarClock,
   ChevronDown,
+  ChevronRight,
+  CircleDot,
   ClipboardList,
   ExternalLink,
   History,
   ImageIcon,
   MapPin,
+  Phone,
   Trophy,
   User,
   UserCog,
@@ -43,6 +47,9 @@ import {
   splitRosterByEntryKind,
   type ClubCompetitionRosterParticipant,
 } from "@/lib/clubCompetitionRoster";
+import { membershipRoleLabelJa } from "@/lib/membershipDisplay";
+import { parseClubDetailTab } from "@/lib/clubDetailTab";
+import ClubDetailTabsClient from "@/components/ClubDetailTabsClient";
 
 export const dynamic = "force-dynamic";
 
@@ -159,12 +166,6 @@ function ClubParticipationSection({
       </div>
     </section>
   );
-}
-
-function membershipRoleLabel(role: string): string {
-  if (role === "ADMIN") return "管理者";
-  if (role === "MEMBER") return "メンバー";
-  return role;
 }
 
 function membershipStatusLabel(status: string): string {
@@ -576,7 +577,16 @@ export default async function ClubDetailPage({
     technicalOfficialCompetitions.map((c) => c.id)
   );
 
-  const activeTab = tab === "competitions" ? "competitions" : "members";
+  const competitionSectionCount = competitionRows.length;
+  const officeAddressParts = [
+    club.officePostalCode ? `〒${club.officePostalCode}` : null,
+    [club.officePrefecture, club.officeCity].filter(Boolean).join(""),
+    club.officeAddressLine1?.trim() || null,
+    club.officeAddressLine2?.trim() || null,
+  ].filter(Boolean) as string[];
+  const officeAddressLine = officeAddressParts.join("");
+
+  const activeTab = parseClubDetailTab(tab);
 
   const clubStatusBadgeClass = {
     APPLYING: "border-amber-200 bg-amber-100 text-amber-900 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-100",
@@ -588,167 +598,242 @@ export default async function ClubDetailPage({
   } as const;
 
   return (
-    <div className="app-page mx-auto max-w-4xl space-y-6 px-4 py-6 md:px-6 md:py-8">
-      <Card className="overflow-hidden border-border/80 shadow-sm">
-        <CardHeader className="border-b border-border/60 bg-muted/25 pb-4">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">クラブ</p>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0 space-y-1">
-              <CardTitle className="text-2xl font-semibold tracking-tight text-foreground">
-                {club.name}
-              </CardTitle>
-              {club.nameKana ? (
-                <CardDescription className="text-base font-normal">{club.nameKana}</CardDescription>
-              ) : null}
+    <div className="app-page mx-auto w-full max-w-6xl space-y-4 px-3 py-4 sm:space-y-5 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
+      <header>
+        <div className="overflow-hidden rounded-xl border border-border/70 bg-gradient-to-br from-muted/35 via-background to-muted/25 shadow-sm">
+          <div className="space-y-2 p-3 sm:space-y-2.5 sm:p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 px-2.5 text-xs sm:text-sm" asChild>
+                <Link href={appRoutes.clubs.list()}>
+                  <ArrowLeft className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" aria-hidden />
+                  <span className="max-sm:sr-only">クラブ一覧に戻る</span>
+                  <span className="sm:hidden">戻る</span>
+                </Link>
+              </Button>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+                {isClubAdmin ? (
+                  <Button variant="outline" size="sm" className="h-8 gap-1 px-2.5 text-xs sm:gap-1.5 sm:px-3 sm:text-sm" asChild>
+                    <Link href={appRoutes.clubs.edit(club.id)}>
+                      クラブ情報を編集
+                      <ChevronRight className="h-3.5 w-3.5 opacity-70 sm:h-4 sm:w-4" aria-hidden />
+                    </Link>
+                  </Button>
+                ) : null}
+              </div>
             </div>
-            <Badge
-              variant="outline"
-              className={cn(
-                "shrink-0 self-start text-sm font-medium",
-                clubStatusBadgeClass[club.status as keyof typeof clubStatusBadgeClass] ??
-                  "border-border bg-muted text-muted-foreground"
-              )}
-            >
-              {clubStatusLabel[club.status as keyof typeof clubStatusLabel] ?? club.status}
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <div className="flex flex-col gap-8 md:flex-row">
-            <div className="flex shrink-0 justify-center md:justify-start">
-              {isClubAdmin ? (
-                <ClubLogoUpload
-                  clubId={club.id}
-                  currentLogoUrl={club.logoUrl}
-                  clubName={club.name}
-                />
-              ) : club.logoUrl ? (
-                <div className="h-32 w-32 overflow-hidden rounded-xl border-2 border-border shadow-sm">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={club.logoUrl}
-                    alt={`${club.name}のロゴ`}
-                    className="h-full w-full object-cover"
+
+            <div className="flex items-center gap-1.5 text-primary">
+              <Users className="h-4 w-4 shrink-0 sm:h-[1.125rem] sm:w-[1.125rem]" strokeWidth={1.75} aria-hidden />
+              <span className="text-xs font-medium sm:text-sm">クラブ</span>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+              <div className="inline-flex shrink-0 flex-col items-center rounded-lg border border-border/50 bg-muted/10 p-1.5 shadow-sm">
+                {isClubAdmin ? (
+                  <ClubLogoUpload
+                    clubId={club.id}
+                    currentLogoUrl={club.logoUrl}
+                    clubName={club.name}
                   />
-                </div>
-              ) : (
-                <div className="flex h-32 w-32 items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/50">
-                  <ImageIcon className="h-10 w-10 text-muted-foreground/70" aria-hidden />
-                </div>
-              )}
-            </div>
-
-            <div className="min-w-0 flex-1 space-y-6">
-              <div className="space-y-6 text-sm">
-                <div className="grid grid-cols-1 gap-x-10 gap-y-4 md:grid-cols-2">
-                  <div className="space-y-3">
-                    {(club.representativeFamilyName || club.representativeGivenName) && (
-                      <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                        <span className="text-muted-foreground">代表者</span>
-                        <span className="font-medium text-foreground">
-                          {club.representativeFamilyName} {club.representativeGivenName}
-                        </span>
-                      </div>
-                    )}
-                    {club.representativePhone && (
-                      <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                        <span className="text-muted-foreground">代表者TEL</span>
-                        <span className="text-foreground">{club.representativePhone}</span>
-                      </div>
-                    )}
-                    {club.officePhone && (
-                      <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                        <span className="text-muted-foreground">事務局TEL</span>
-                        <span className="text-foreground">{club.officePhone}</span>
-                      </div>
-                    )}
+                ) : club.logoUrl ? (
+                  <div className="h-28 w-28 overflow-hidden rounded-lg border border-border shadow-sm sm:h-32 sm:w-32">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={club.logoUrl}
+                      alt={`${club.name}のロゴ`}
+                      className="h-full w-full object-cover"
+                    />
                   </div>
-
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                      <span className="text-muted-foreground">メンバー数</span>
-                      <span className="font-medium tabular-nums text-foreground">
-                        {approvedMembers.length} 名
-                      </span>
-                    </div>
-                    {club.patrolLocation && (
-                      <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                        <span className="text-muted-foreground">監視場所</span>
-                        <span className="text-foreground">{club.patrolLocation}</span>
-                      </div>
-                    )}
-                    {club.establishedYear && (
-                      <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                        <span className="text-muted-foreground">設立年</span>
-                        <span className="tabular-nums text-foreground">{club.establishedYear} 年</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {(club.officePrefecture || club.officeCity || club.officeAddressLine1) && (
-                  <div className="space-y-1 border-t border-border/60 pt-6">
-                    <span className="text-muted-foreground">事務局住所</span>
-                    <p className="text-foreground">
-                      {club.officePostalCode && `〒${club.officePostalCode} `}
-                      {club.officePrefecture}
-                      {club.officeCity}
-                      {club.officeAddressLine1}
-                      {club.officeAddressLine2}
-                    </p>
+                ) : (
+                  <div className="flex h-28 w-28 items-center justify-center rounded-lg border border-dashed border-border bg-muted/50 sm:h-32 sm:w-32">
+                    <ImageIcon className="h-9 w-9 text-muted-foreground/70 sm:h-10 sm:w-10" aria-hidden />
                   </div>
                 )}
               </div>
+              <div className="min-w-0 flex-1 space-y-1">
+                <h1 className="text-balance text-lg font-semibold tracking-tight text-foreground sm:text-xl">
+                  {club.name}
+                </h1>
+                {club.nameKana ? (
+                  <p className="text-xs text-muted-foreground sm:text-sm">{club.nameKana}</p>
+                ) : null}
+                {[club.representativeFamilyName, club.representativeGivenName].some((s) => s?.trim()) ? (
+                  <div className="min-w-0 pt-0.5">
+                    <span className="text-[11px] font-medium text-muted-foreground">代表者</span>
+                    <p className="font-medium text-foreground">
+                      {[club.representativeFamilyName, club.representativeGivenName]
+                        .map((s) => s?.trim())
+                        .filter(Boolean)
+                        .join(" ")}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            </div>
 
-              <ClubRepresentativeSelector
-                clubId={club.id}
-                currentRepresentativeUserId={club.representativeUserId}
-                isClubAdmin={isClubAdmin}
-                members={approvedMembers.map((m) => ({
-                  userId: m.userId,
-                  name: `${m.user.familyName} ${m.user.givenName}`,
-                }))}
-              />
+            <div
+              className="grid gap-1.5 border-t border-border/60 pt-2.5 sm:grid-cols-3 sm:pt-3"
+              role="group"
+              aria-label="クラブの概要"
+            >
+              <div className="flex min-h-0 items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 sm:min-h-[2.5rem] sm:gap-2 sm:px-2.5">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary sm:h-8 sm:w-8">
+                  <CircleDot className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={1.75} aria-hidden />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-[11px] font-medium text-muted-foreground">状態</span>
+                  <div className="mt-0.5">
+                    <span
+                      className={cn(
+                        "inline-flex w-fit max-w-full items-center rounded-full border px-2 py-0.5 text-xs font-semibold",
+                        clubStatusBadgeClass[club.status as keyof typeof clubStatusBadgeClass] ??
+                          "border-border bg-muted text-muted-foreground"
+                      )}
+                    >
+                      {clubStatusLabel[club.status as keyof typeof clubStatusLabel] ?? club.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex min-h-0 items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 sm:min-h-[2.5rem] sm:gap-2 sm:px-2.5">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary sm:h-8 sm:w-8">
+                  <Trophy className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={1.75} aria-hidden />
+                </div>
+                <div>
+                  <span className="text-[11px] font-medium text-muted-foreground">参加大会</span>
+                  <p className="text-xs font-semibold tabular-nums text-foreground sm:text-sm">
+                    {competitionSectionCount.toLocaleString("ja-JP")}
+                    <span className="ml-1 text-[10px] font-normal text-muted-foreground sm:text-xs">件</span>
+                  </p>
+                </div>
+              </div>
+              <div className="flex min-h-0 items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 sm:min-h-[2.5rem] sm:gap-2 sm:px-2.5">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary sm:h-8 sm:w-8">
+                  <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={1.75} aria-hidden />
+                </div>
+                <div>
+                  <span className="text-[11px] font-medium text-muted-foreground">メンバー</span>
+                  <p className="text-xs font-semibold tabular-nums text-foreground sm:text-sm">
+                    {approvedMembers.length.toLocaleString("ja-JP")}
+                    <span className="ml-1 text-[10px] font-normal text-muted-foreground sm:text-xs">名</span>
+                  </p>
+                </div>
+              </div>
+            </div>
 
-              <div className="flex flex-wrap gap-3 border-t border-border/60 pt-6">
-                {isClubAdmin && (
-                  <Button asChild>
-                    <Link href={appRoutes.clubs.edit(club.id)}>クラブ情報を編集</Link>
-                  </Button>
-                )}
+            <div className="border-t border-border/60 pt-2.5 sm:pt-3">
+              <p className="mb-2 text-[11px] leading-snug text-muted-foreground sm:text-xs">
+                大会エントリーやお問い合わせの際に参照されることがあります。
+              </p>
+              <div className="rounded-lg border border-border/40 bg-background/40 p-2 sm:p-2.5">
+                <div className="grid gap-1.5 text-sm sm:grid-cols-2 sm:gap-x-3 sm:gap-y-2 lg:grid-cols-3">
+                  {club.representativePhone ? (
+                    <div className="flex min-w-0 items-start gap-1.5">
+                      <Phone className="mt-0.5 h-3 w-3 shrink-0 text-primary/70" aria-hidden />
+                      <div className="min-w-0 leading-snug">
+                        <span className="text-[11px] font-medium text-muted-foreground">代表者TEL</span>
+                        <p className="tabular-nums font-medium text-foreground">{club.representativePhone}</p>
+                      </div>
+                    </div>
+                  ) : null}
+                  {club.officePhone ? (
+                    <div className="flex min-w-0 items-start gap-1.5">
+                      <Phone className="mt-0.5 h-3 w-3 shrink-0 text-primary/70" aria-hidden />
+                      <div className="min-w-0 leading-snug">
+                        <span className="text-[11px] font-medium text-muted-foreground">事務局TEL</span>
+                        <p className="tabular-nums font-medium text-foreground">{club.officePhone}</p>
+                      </div>
+                    </div>
+                  ) : null}
+                  {club.establishedYear ? (
+                    <div className="flex min-w-0 items-start gap-1.5">
+                      <Calendar className="mt-0.5 h-3 w-3 shrink-0 text-primary/70" aria-hidden />
+                      <div className="leading-snug">
+                        <span className="text-[11px] font-medium text-muted-foreground">設立年</span>
+                        <p className="tabular-nums font-medium text-foreground">{club.establishedYear}年</p>
+                      </div>
+                    </div>
+                  ) : null}
+                  {club.patrolLocation ? (
+                    <div className="flex min-w-0 items-start gap-1.5 sm:col-span-2 lg:col-span-1">
+                      <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-primary/70" aria-hidden />
+                      <div className="min-w-0 leading-snug">
+                        <span className="text-[11px] font-medium text-muted-foreground">監視場所</span>
+                        <p className="text-sm font-medium leading-snug text-foreground">{club.patrolLocation}</p>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                {officeAddressLine ? (
+                  <div className="mt-2.5 flex min-w-0 items-start gap-1.5 border-t border-border/50 pt-2.5">
+                    <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-primary/70" aria-hidden />
+                    <div className="min-w-0 leading-snug">
+                      <span className="text-[11px] font-medium text-muted-foreground">事務局所在地</span>
+                      <p className="text-xs font-medium leading-snug text-foreground sm:text-sm">
+                        {officeAddressLine}
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="border-t border-border/60 pt-2.5 sm:pt-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                <div className="min-w-0 flex-1">
+                  <ClubRepresentativeSelector
+                    clubId={club.id}
+                    currentRepresentativeUserId={club.representativeUserId}
+                    isClubAdmin={isClubAdmin}
+                    members={approvedMembers.map((m) => ({
+                      userId: m.userId,
+                      name: `${m.user.familyName} ${m.user.givenName}`,
+                    }))}
+                  />
+                </div>
                 {userMembership?.status === "APPROVED" ? (
-                  <LeaveClubButton clubId={club.id} clubName={club.name} />
+                  <div className="shrink-0">
+                    <LeaveClubButton clubId={club.id} clubName={club.name} />
+                  </div>
                 ) : null}
               </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </header>
 
-      <Tabs key={activeTab} defaultValue={activeTab} className="w-full scroll-mt-4">
-        <TabsList className="h-auto w-full flex-wrap justify-start gap-1 rounded-xl border border-border/80 bg-muted/35 p-1">
-          <TabsTrigger
-            value="members"
-            className="gap-1.5 rounded-lg px-4 py-2 text-sm font-medium data-[state=active]:shadow-sm"
-            asChild
-          >
-            {/* クエリだけ変わる遷移で先頭へスクロールしない（Next のデフォルト挙動） */}
-            <Link href={appRoutes.clubs.tab(id, "members")} scroll={false}>
-              メンバー
-            </Link>
-          </TabsTrigger>
-          <TabsTrigger
-            value="competitions"
-            className="gap-1.5 rounded-lg px-4 py-2 text-sm font-medium data-[state=active]:shadow-sm"
-            asChild
-          >
-            <Link href={appRoutes.clubs.tab(id, "competitions")} scroll={false}>
-              大会
-            </Link>
-          </TabsTrigger>
-        </TabsList>
+      <div className="mt-3 space-y-4">
+        <ClubDetailTabsClient activeTab={activeTab}>
+          <div className="sticky top-[calc(var(--safe-area-top,0px)+0.5rem)] z-10 -mx-3 border-y border-border/60 bg-background/95 px-3 py-1.5 backdrop-blur-md sm:static sm:mx-0 sm:rounded-lg sm:border sm:bg-muted/35 sm:px-1 sm:py-1 sm:backdrop-blur-none">
+            <TabsList
+              className="flex h-auto w-full items-stretch gap-0.5 overflow-x-auto bg-transparent p-0 sm:gap-1"
+              aria-label="クラブ管理の区分"
+            >
+              <TabsTrigger
+                value="members"
+                className="min-w-[6.5rem] flex-1 gap-1 rounded-md px-1.5 py-1.5 text-[11px] data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:min-w-[7.5rem] sm:gap-1.5 sm:rounded-lg sm:px-2 sm:py-2 sm:text-xs md:text-sm"
+              >
+                <Users className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+                <span>メンバー</span>
+                <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground data-[state=active]:bg-background">
+                  {approvedMembers.length}
+                </span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="competitions"
+                className="min-w-[6.5rem] flex-1 gap-1 rounded-md px-1.5 py-1.5 text-[11px] data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:min-w-[7.5rem] sm:gap-1.5 sm:rounded-lg sm:px-2 sm:py-2 sm:text-xs md:text-sm"
+              >
+                <Trophy className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+                <span>大会</span>
+                <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground data-[state=active]:bg-background">
+                  {competitionSectionCount}
+                </span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
-        <TabsContent value="members" className="mt-5 space-y-6 sm:space-y-8">
+        <TabsContent value="members" className="space-y-3 pt-1.5 sm:space-y-4 sm:pt-2">
           {userMembership && (
             <ClubAnnouncements
               clubId={club.id}
@@ -844,7 +929,7 @@ export default async function ClubDetailPage({
                         variant={isClubAdminRole(m.role) ? "default" : "secondary"}
                         className="font-normal"
                       >
-                        {membershipRoleLabel(m.role)}
+                        {membershipRoleLabelJa(m.role)}
                       </Badge>
                     ),
                   },
@@ -892,7 +977,7 @@ export default async function ClubDetailPage({
           </div>
         </TabsContent>
 
-        <TabsContent value="competitions" className="mt-6 space-y-6">
+        <TabsContent value="competitions" className="space-y-3 pt-1.5 sm:space-y-4 sm:pt-2">
           <div id="club-team-assignment" className="scroll-mt-24 space-y-6">
             <Card className="overflow-hidden border-border/80 shadow-md">
               <CardHeader className="border-b border-border/60 bg-gradient-to-br from-primary/[0.06] via-muted/30 to-transparent px-4 py-5 sm:px-6">
@@ -1185,7 +1270,8 @@ export default async function ClubDetailPage({
             </Card>
           </div>
         </TabsContent>
-      </Tabs>
+        </ClubDetailTabsClient>
+      </div>
     </div>
   );
 }

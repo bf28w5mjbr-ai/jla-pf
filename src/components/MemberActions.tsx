@@ -1,8 +1,21 @@
 "use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { isClubAdminRole } from '@/lib/roleScopes';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { isClubAdminRole } from "@/lib/roleScopes";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+type ConfirmAction = "approve" | "reject" | "remove" | "promote" | "demote";
 
 interface MemberActionsProps {
   membershipId: string;
@@ -11,8 +24,42 @@ interface MemberActionsProps {
   role: string;
   currentUserId: string;
   targetUserId: string;
-  currentUserRole: string; // 現在のユーザーの役割
+  currentUserRole: string;
 }
+
+const confirmCopy: Record<
+  ConfirmAction,
+  { title: string; description: string; confirmLabel: string; destructive?: boolean }
+> = {
+  approve: {
+    title: "参加を承認しますか？",
+    description: "このメンバーをクラブの承認済みメンバーとして受け入れます。",
+    confirmLabel: "承認する",
+  },
+  reject: {
+    title: "参加を拒否しますか？",
+    description: "この申請を拒否します。メンバーには反映されません。",
+    confirmLabel: "拒否する",
+    destructive: true,
+  },
+  remove: {
+    title: "メンバーを削除しますか？",
+    description: "このメンバーをクラブから外します。この操作は取り消せません。",
+    confirmLabel: "削除する",
+    destructive: true,
+  },
+  promote: {
+    title: "管理者に昇格しますか？",
+    description: "このメンバーにクラブ管理者の権限を付与します。",
+    confirmLabel: "昇格する",
+  },
+  demote: {
+    title: "一般メンバーに降格しますか？",
+    description: "このメンバーから管理者権限を外します。",
+    confirmLabel: "降格する",
+    destructive: true,
+  },
+};
 
 export default function MemberActions({
   membershipId,
@@ -25,186 +72,188 @@ export default function MemberActions({
 }: MemberActionsProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
 
-  // 自分自身には操作できない
   if (currentUserId === targetUserId) {
-    return <span className="text-xs text-gray-400">-</span>;
+    return <span className="text-xs text-muted-foreground">-</span>;
   }
 
-  // 管理者のみが役割を変更できる
   const isAdmin = isClubAdminRole(currentUserRole);
 
-  const handleApprove = async () => {
-    if (!confirm('このメンバーを承認しますか？')) return;
-    
+  const runConfirmed = async () => {
+    if (!confirmAction) return;
+    const action = confirmAction;
+    setConfirmAction(null);
     setLoading(true);
     try {
-      const res = await fetch(`/api/clubs/${clubId}/members/${membershipId}/approve`, {
-        method: 'POST',
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || '承認に失敗しました');
+      switch (action) {
+        case "approve": {
+          const res = await fetch(`/api/clubs/${clubId}/members/${membershipId}/approve`, {
+            method: "POST",
+          });
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error((errorData as { error?: string }).error || "承認に失敗しました");
+          }
+          toast.success("承認しました");
+          break;
+        }
+        case "reject": {
+          const res = await fetch(`/api/clubs/${clubId}/members/${membershipId}/reject`, {
+            method: "POST",
+          });
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error((errorData as { error?: string }).error || "拒否に失敗しました");
+          }
+          toast.success("拒否しました");
+          break;
+        }
+        case "remove": {
+          const res = await fetch(`/api/clubs/${clubId}/members/${membershipId}`, {
+            method: "DELETE",
+          });
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error((errorData as { error?: string }).error || "削除に失敗しました");
+          }
+          toast.success("削除しました");
+          break;
+        }
+        case "promote": {
+          const res = await fetch(`/api/clubs/${clubId}/members/${membershipId}/role`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ role: "ADMIN" }),
+          });
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error((errorData as { error?: string }).error || "役割の変更に失敗しました");
+          }
+          toast.success("管理者に変更しました");
+          break;
+        }
+        case "demote": {
+          const res = await fetch(`/api/clubs/${clubId}/members/${membershipId}/role`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ role: "MEMBER" }),
+          });
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error((errorData as { error?: string }).error || "役割の変更に失敗しました");
+          }
+          toast.success("メンバーに変更しました");
+          break;
+        }
+        default:
+          break;
       }
-
       router.refresh();
     } catch (error) {
-      console.error('Approve error:', error);
-      alert(error instanceof Error ? error.message : '承認に失敗しました');
+      console.error("Member action error:", error);
+      toast.error(error instanceof Error ? error.message : "操作に失敗しました");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleReject = async () => {
-    if (!confirm('このメンバーを拒否しますか？')) return;
-    
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/clubs/${clubId}/members/${membershipId}/reject`, {
-        method: 'POST',
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || '拒否に失敗しました');
-      }
-
-      router.refresh();
-    } catch (error) {
-      console.error('Reject error:', error);
-      alert(error instanceof Error ? error.message : '拒否に失敗しました');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRemove = async () => {
-    if (!confirm('このメンバーを削除しますか？この操作は取り消せません。')) return;
-    
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/clubs/${clubId}/members/${membershipId}`, {
-        method: 'DELETE',
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || '削除に失敗しました');
-      }
-
-      router.refresh();
-    } catch (error) {
-      console.error('Remove error:', error);
-      alert(error instanceof Error ? error.message : '削除に失敗しました');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handlePromoteToAdmin = async () => {
-    if (!confirm('このメンバーを管理者に昇格しますか？')) return;
-    
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/clubs/${clubId}/members/${membershipId}/role`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: 'ADMIN' }),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || '役割の変更に失敗しました');
-      }
-
-      router.refresh();
-    } catch (error) {
-      console.error('Promote error:', error);
-      alert(error instanceof Error ? error.message : '役割の変更に失敗しました');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDemoteToMember = async () => {
-    if (!confirm('この管理者を一般メンバーに降格しますか？')) return;
-    
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/clubs/${clubId}/members/${membershipId}/role`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: 'MEMBER' }),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || '役割の変更に失敗しました');
-      }
-
-      router.refresh();
-    } catch (error) {
-      console.error('Demote error:', error);
-      alert(error instanceof Error ? error.message : '役割の変更に失敗しました');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const copy = confirmAction ? confirmCopy[confirmAction] : null;
 
   return (
-    <div className="flex gap-2">
-      {status === 'PENDING' && (
-        <>
-          <button
-            onClick={handleApprove}
-            disabled={loading}
-            className="text-xs px-2 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            承認
-          </button>
-          <button
-            onClick={handleReject}
-            disabled={loading}
-            className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            拒否
-          </button>
-        </>
-      )}
-      {status === 'APPROVED' && (
-        <>
-          {isAdmin && role === 'MEMBER' && (
-            <button
-              onClick={handlePromoteToAdmin}
+    <>
+      <AlertDialog
+        open={confirmAction !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmAction(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{copy?.title}</AlertDialogTitle>
+            <AlertDialogDescription>{copy?.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={loading}>キャンセル</AlertDialogCancel>
+            <Button
+              type="button"
               disabled={loading}
-              className="text-xs px-2 py-1 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              variant={copy?.destructive ? "destructive" : "default"}
+              onClick={() => void runConfirmed()}
             >
-              管理者に昇格
-            </button>
-          )}
-          {isAdmin && role === 'ADMIN' && (
-            <button
-              onClick={handleDemoteToMember}
+              {copy?.confirmLabel}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <div className="flex flex-wrap gap-2">
+        {status === "PENDING" && (
+          <>
+            <Button
+              type="button"
+              size="sm"
+              variant="default"
+              className="h-8 text-xs"
               disabled={loading}
-              className="text-xs px-2 py-1 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => setConfirmAction("approve")}
             >
-              メンバーに降格
-            </button>
-          )}
-          <button
-            onClick={handleRemove}
-            disabled={loading}
-            className="text-xs px-2 py-1 rounded bg-gray-600 text-white hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            削除
-          </button>
-        </>
-      )}
-      {status === 'REJECTED' && (
-        <span className="text-xs text-gray-400">-</span>
-      )}
-    </div>
+              承認
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              className="h-8 text-xs"
+              disabled={loading}
+              onClick={() => setConfirmAction("reject")}
+            >
+              拒否
+            </Button>
+          </>
+        )}
+        {status === "APPROVED" && (
+          <>
+            {isAdmin && role === "MEMBER" && (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-8 text-xs"
+                disabled={loading}
+                onClick={() => setConfirmAction("promote")}
+              >
+                管理者に昇格
+              </Button>
+            )}
+            {isAdmin && role === "ADMIN" && (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-8 text-xs"
+                disabled={loading}
+                onClick={() => setConfirmAction("demote")}
+              >
+                メンバーに降格
+              </Button>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs"
+              disabled={loading}
+              onClick={() => setConfirmAction("remove")}
+            >
+              削除
+            </Button>
+          </>
+        )}
+        {status === "REJECTED" && (
+          <span className="text-xs text-muted-foreground">-</span>
+        )}
+      </div>
+    </>
   );
 }

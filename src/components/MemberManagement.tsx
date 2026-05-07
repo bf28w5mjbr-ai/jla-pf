@@ -33,6 +33,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Loader2, UserPlus, Trash2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { membershipRoleLabelJa } from "@/lib/membershipDisplay";
 
 type SearchUser = {
   id: string;
@@ -378,20 +380,19 @@ export default function MemberManagement({
           return (
             <div
               key={member.id}
-              className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+              className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 px-3 py-3 shadow-sm"
             >
-              <div className="flex-1">
-                <p className="font-medium">
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-foreground">
                   {member.user.familyName} {member.user.givenName}
                   {isSelf && (
-                    <span className="text-sm text-gray-500 ml-2">（あなた）</span>
+                    <span className="ml-2 text-sm text-muted-foreground">（あなた）</span>
                   )}
                 </p>
-                <p className="text-sm text-gray-500">{member.user.email}</p>
+                <p className="text-sm text-muted-foreground">{member.user.email}</p>
               </div>
 
-              <div className="flex items-center gap-2">
-                {/* 役割バッジ or 役割変更セレクト */}
+              <div className="flex shrink-0 items-center gap-2">
                 {canChangeRole ? (
                   <Select
                     value={member.role}
@@ -407,18 +408,14 @@ export default function MemberManagement({
                     </SelectContent>
                   </Select>
                 ) : (
-                  <span
-                    className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium ${
-                      member.role === "ADMIN"
-                        ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400"
-                        : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400"
-                    }`}
+                  <Badge
+                    variant={member.role === "ADMIN" ? "default" : "secondary"}
+                    className="font-normal"
                   >
-                    {member.role}
-                  </span>
+                    {membershipRoleLabelJa(member.role)}
+                  </Badge>
                 )}
 
-                {/* 削除ボタン */}
                 {canRemove && (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
@@ -426,8 +423,11 @@ export default function MemberManagement({
                         variant="ghost"
                         size="sm"
                         disabled={!!removeLoading}
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        title="メンバーを削除"
+                        aria-label="メンバーを削除"
                       >
-                        <Trash2 className="h-4 w-4 text-red-600" />
+                        <Trash2 className="h-4 w-4" aria-hidden />
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
