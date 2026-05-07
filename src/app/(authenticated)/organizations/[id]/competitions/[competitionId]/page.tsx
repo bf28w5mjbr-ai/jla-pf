@@ -33,6 +33,7 @@ import TechnicalOfficialSettingsEditor from "@/components/TechnicalOfficialSetti
 import OfficialAttendanceSection from "@/components/OfficialAttendanceSection";
 import CompetitionStatusToggleButton from "@/components/CompetitionStatusToggleButton";
 import CompetitionBasicInfoEditor from "@/components/CompetitionBasicInfoEditor";
+import CompetitionNameInlineEditor from "@/components/CompetitionNameInlineEditor";
 import { loadCompetitionMutationState } from "@/lib/competitionPublishedEditRules";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -368,13 +369,17 @@ export default async function CompetitionDetailPage({
         </Button>
 
         <div className="space-y-4">
-          <h1 className="text-balance text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            {competition.name}
-          </h1>
-
-          {competition.nameKana ? (
-            <p className="text-sm text-muted-foreground">{competition.nameKana}</p>
-          ) : null}
+          <CompetitionNameInlineEditor
+            competitionId={competition.id}
+            canEdit={canEdit}
+            initialData={{
+              name: competition.name,
+              category: competition.category,
+              startDate: competition.startDate.toISOString().slice(0, 10),
+              endDate: competition.endDate.toISOString().slice(0, 10),
+              venue: competition.venue,
+            }}
+          />
 
           <div className="flex flex-wrap items-center gap-2">
             {competition.category ? (
@@ -458,35 +463,35 @@ export default async function CompetitionDetailPage({
       </header>
 
       <CompetitionManagementTabsClient activeTab={activeTab}>
-        <div className="sticky top-[calc(var(--safe-area-top,0px)+4.5rem)] z-20 -mx-4 mb-0.5 border-b border-border/60 bg-background/95 px-4 pb-2.5 pt-1 backdrop-blur-sm sm:-mx-6 sm:px-6 lg:-mx-8 lg:top-2 lg:px-8">
+        <div className="sticky top-[calc(var(--safe-area-top,0px)+2.75rem)] z-20 -mx-4 bg-transparent px-4 py-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:top-2 lg:px-8">
           <TabsList
-            className="grid h-auto w-full grid-cols-2 gap-1 rounded-lg border border-border bg-muted/40 p-1 sm:grid-cols-4"
+            className="grid h-auto w-full grid-cols-2 gap-1 bg-transparent p-0 sm:grid-cols-4"
             aria-label="大会管理のセクション"
           >
             <TabsTrigger
               value="page"
-              className="gap-1.5 rounded-md px-2 py-2.5 text-xs font-medium data-[state=active]:bg-background data-[state=active]:shadow-sm sm:px-3 sm:text-sm"
+              className="gap-1.5 rounded-md border border-transparent bg-background/50 px-2 py-2.5 text-xs font-medium transition-colors hover:bg-background/70 data-[state=active]:border-border data-[state=active]:bg-background data-[state=active]:shadow-sm sm:px-3 sm:text-sm"
             >
               <Settings2 className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
               <span>大会設定</span>
             </TabsTrigger>
             <TabsTrigger
               value="official"
-              className="gap-1.5 rounded-md px-2 py-2.5 text-xs font-medium data-[state=active]:bg-background data-[state=active]:shadow-sm sm:px-3 sm:text-sm"
+              className="gap-1.5 rounded-md border border-transparent bg-background/50 px-2 py-2.5 text-xs font-medium transition-colors hover:bg-background/70 data-[state=active]:border-border data-[state=active]:bg-background data-[state=active]:shadow-sm sm:px-3 sm:text-sm"
             >
               <UserCog className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
               <span>オフィシャル</span>
             </TabsTrigger>
             <TabsTrigger
               value="entries"
-              className="gap-1.5 rounded-md px-2 py-2.5 text-xs font-medium data-[state=active]:bg-background data-[state=active]:shadow-sm sm:px-3 sm:text-sm"
+              className="gap-1.5 rounded-md border border-transparent bg-background/50 px-2 py-2.5 text-xs font-medium transition-colors hover:bg-background/70 data-[state=active]:border-border data-[state=active]:bg-background data-[state=active]:shadow-sm sm:px-3 sm:text-sm"
             >
               <ClipboardList className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
               <span>エントリー</span>
             </TabsTrigger>
             <TabsTrigger
               value="finance"
-              className="gap-1.5 rounded-md px-2 py-2.5 text-xs font-medium data-[state=active]:bg-background data-[state=active]:shadow-sm sm:px-3 sm:text-sm"
+              className="gap-1.5 rounded-md border border-transparent bg-background/50 px-2 py-2.5 text-xs font-medium transition-colors hover:bg-background/70 data-[state=active]:border-border data-[state=active]:bg-background data-[state=active]:shadow-sm sm:px-3 sm:text-sm"
             >
               <PieChart className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
               <span>収支</span>
@@ -501,12 +506,12 @@ export default async function CompetitionDetailPage({
             canEdit={canEdit}
             initialData={{
               name: competition.name,
-              nameKana: competition.nameKana,
               category: competition.category,
               startDate: competition.startDate.toISOString().slice(0, 10),
               endDate: competition.endDate.toISOString().slice(0, 10),
+              entryStartDate: competition.entryStartDate?.toISOString().slice(0, 10) ?? "",
+              entryEndDate: competition.entryEndDate?.toISOString().slice(0, 10) ?? "",
               venue: competition.venue,
-              venueAddress: competition.venueAddress,
             }}
           />
 

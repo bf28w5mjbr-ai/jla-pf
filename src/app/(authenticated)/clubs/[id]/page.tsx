@@ -784,14 +784,14 @@ export default async function ClubDetailPage({
 
       <div className="mt-3 space-y-4">
         <ClubDetailTabsClient activeTab={activeTab}>
-          <div className="sticky top-[calc(var(--safe-area-top,0px)+0.5rem)] z-10 -mx-3 border-y border-border/60 bg-background/95 px-3 py-1.5 backdrop-blur-md sm:static sm:mx-0 sm:rounded-lg sm:border sm:bg-muted/35 sm:px-1 sm:py-1 sm:backdrop-blur-none">
+          <div className="sticky top-[calc(var(--safe-area-top,0px)+2.75rem)] z-20 -mx-3 border-y border-border/60 bg-background/95 px-3 py-1 shadow-[0_10px_22px_-18px_rgba(0,0,0,0.45)] backdrop-blur-md supports-[backdrop-filter]:bg-background/80 sm:static sm:mx-0 sm:rounded-lg sm:border sm:bg-muted/35 sm:px-1 sm:py-1 sm:shadow-none sm:backdrop-blur-none">
             <TabsList
-              className="flex h-auto w-full items-stretch gap-0.5 overflow-x-auto bg-transparent p-0 sm:gap-1"
+              className="flex h-auto w-full items-stretch gap-0.5 overflow-x-auto bg-transparent p-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:gap-1"
               aria-label="クラブ管理の区分"
             >
               <TabsTrigger
                 value="members"
-                className="min-w-[6.5rem] flex-1 gap-1 rounded-md px-1.5 py-1.5 text-[11px] data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:min-w-[7.5rem] sm:gap-1.5 sm:rounded-lg sm:px-2 sm:py-2 sm:text-xs md:text-sm"
+                className="min-w-[6.5rem] flex-1 gap-1 whitespace-nowrap rounded-md px-1.5 py-1 text-[11px] transition-colors hover:bg-muted/60 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:min-w-[7.5rem] sm:gap-1.5 sm:rounded-lg sm:px-2 sm:py-2 sm:text-xs md:text-sm"
               >
                 <Users className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
                 <span>メンバー</span>
@@ -801,7 +801,7 @@ export default async function ClubDetailPage({
               </TabsTrigger>
               <TabsTrigger
                 value="competitions"
-                className="min-w-[6.5rem] flex-1 gap-1 rounded-md px-1.5 py-1.5 text-[11px] data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:min-w-[7.5rem] sm:gap-1.5 sm:rounded-lg sm:px-2 sm:py-2 sm:text-xs md:text-sm"
+                className="min-w-[6.5rem] flex-1 gap-1 whitespace-nowrap rounded-md px-1.5 py-1 text-[11px] transition-colors hover:bg-muted/60 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:min-w-[7.5rem] sm:gap-1.5 sm:rounded-lg sm:px-2 sm:py-2 sm:text-xs md:text-sm"
               >
                 <Trophy className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
                 <span>大会</span>
@@ -895,11 +895,6 @@ export default async function ClubDetailPage({
                     header: "氏名",
                     accessor: (m) => `${m.user.familyName} ${m.user.givenName}`,
                     className: "font-medium text-foreground",
-                  },
-                  {
-                    header: "メール",
-                    accessor: (m) => m.user.email,
-                    className: "font-mono text-sm text-muted-foreground",
                   },
                   {
                     header: "役割",

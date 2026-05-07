@@ -57,18 +57,37 @@ export async function PUT(
       endDate,
       venue,
       venueAddress,
-    } = body;
+    } = body as {
+      name?: unknown;
+      nameKana?: unknown;
+      category?: unknown;
+      startDate?: unknown;
+      endDate?: unknown;
+      venue?: unknown;
+      venueAddress?: unknown;
+    };
+
+    const nextName =
+      typeof name === "string" ? name.trim() : competition.name?.trim() ?? "";
+    const nextCategory =
+      typeof category === "string" ? category.trim() : competition.category?.trim() ?? "";
+    const nextStartDateRaw =
+      typeof startDate === "string"
+        ? startDate.trim()
+        : competition.startDate.toISOString().slice(0, 10);
+    const nextEndDateRaw =
+      typeof endDate === "string"
+        ? endDate.trim()
+        : competition.endDate.toISOString().slice(0, 10);
+    const nextVenue =
+      typeof venue === "string" ? venue.trim() : competition.venue?.trim() ?? "";
 
     // 必須フィールドのバリデーション
     if (
-      typeof name !== "string" ||
-      typeof startDate !== "string" ||
-      typeof endDate !== "string" ||
-      typeof venue !== "string" ||
-      !name.trim() ||
-      !startDate.trim() ||
-      !endDate.trim() ||
-      !venue.trim()
+      !nextName ||
+      !nextStartDateRaw ||
+      !nextEndDateRaw ||
+      !nextVenue
     ) {
       return NextResponse.json(
         { error: "必須項目が入力されていません" },
@@ -76,15 +95,15 @@ export async function PUT(
       );
     }
 
-    if (typeof category !== "string" || (category.trim() !== "プール" && category.trim() !== "オーシャン")) {
+    if (nextCategory !== "プール" && nextCategory !== "オーシャン") {
       return NextResponse.json(
         { error: "大会カテゴリはプールまたはオーシャンを指定してください" },
         { status: 400 }
       );
     }
 
-    const parsedStartDate = new Date(startDate);
-    const parsedEndDate = new Date(endDate);
+    const parsedStartDate = new Date(nextStartDateRaw);
+    const parsedEndDate = new Date(nextEndDateRaw);
     if (
       Number.isNaN(parsedStartDate.getTime()) ||
       Number.isNaN(parsedEndDate.getTime())
@@ -105,14 +124,19 @@ export async function PUT(
     const updatedCompetition = await prisma.competition.update({
       where: { id: competitionId },
       data: {
-        name: name.trim(),
-        nameKana: typeof nameKana === "string" ? nameKana.trim() || null : null,
-        category: category.trim(),
+        name: nextName,
+        nameKana:
+          typeof nameKana === "string"
+            ? nameKana.trim() || null
+            : competition.nameKana,
+        category: nextCategory,
         startDate: parsedStartDate,
         endDate: parsedEndDate,
-        venue: venue.trim(),
+        venue: nextVenue,
         venueAddress:
-          typeof venueAddress === "string" ? venueAddress.trim() || null : null,
+          typeof venueAddress === "string"
+            ? venueAddress.trim() || null
+            : competition.venueAddress,
       },
     });
 

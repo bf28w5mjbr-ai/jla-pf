@@ -11,7 +11,6 @@ import CopyEntrySettingsFromCompetition, {
   type SiblingCompetitionOption,
 } from "@/components/CopyEntrySettingsFromCompetition";
 import { buildEntrySettingsReadinessItems } from "@/lib/entrySettingsReadiness";
-import { formatCompetitionEntryPeriodRangeJa } from "@/lib/datetimeLocal";
 import { cn } from "@/lib/utils";
 import { User, UsersRound } from "lucide-react";
 import {
@@ -113,9 +112,6 @@ function CompetitionEntrySettingsEditorInner({
       teamEventCount,
     ]
   );
-
-  const formatEntryPeriodSummary = (start: Date | null, end: Date | null) =>
-    formatCompetitionEntryPeriodRangeJa(start, end) ?? "未設定";
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("ja-JP").format(value);
@@ -437,12 +433,6 @@ function CompetitionEntrySettingsEditorInner({
 
         <div className="space-y-2">
           <p className="text-xs font-medium text-muted-foreground">各項目</p>
-          {row(
-            "period",
-            <p className="text-sm font-medium leading-snug">
-              {formatEntryPeriodSummary(initialData.entryStartDate, initialData.entryEndDate)}
-            </p>
-          )}
           {row(
             "events",
             <div className="space-y-3">
