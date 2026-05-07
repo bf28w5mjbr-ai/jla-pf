@@ -252,6 +252,25 @@ export async function listClubAdminTechnicalOfficialAlerts(
     competitionsByClub.get(r.clubId)?.add(r.competitionId);
   }
 
+  const [toAssignClubPairs, toInvClubPairs] = await Promise.all([
+    prisma.competitionTechnicalOfficialAssignment.findMany({
+      where: { clubId: { in: clubIds } },
+      select: { clubId: true, competitionId: true },
+      distinct: ["clubId", "competitionId"],
+    }),
+    prisma.competitionTechnicalOfficialInvitation.findMany({
+      where: { clubId: { in: clubIds }, status: "PENDING" },
+      select: { clubId: true, competitionId: true },
+      distinct: ["clubId", "competitionId"],
+    }),
+  ]);
+  for (const r of toAssignClubPairs) {
+    competitionsByClub.get(r.clubId)?.add(r.competitionId);
+  }
+  for (const r of toInvClubPairs) {
+    competitionsByClub.get(r.clubId)?.add(r.competitionId);
+  }
+
   const allCompetitionIds = new Set<string>();
   for (const set of competitionsByClub.values()) {
     for (const cid of set) allCompetitionIds.add(cid);

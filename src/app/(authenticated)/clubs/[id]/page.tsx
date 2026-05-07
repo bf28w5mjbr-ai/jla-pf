@@ -353,37 +353,65 @@ export default async function ClubDetailPage({
 
   const now = new Date();
 
-  const [clubTeamEntries, individualEntriesForClub] = await Promise.all([
-    prisma.teamEntry.findMany({
-      where: { clubId: id },
-      select: {
-        id: true,
-        eventId: true,
-        competitionId: true,
-        competition: {
-          select: {
-            id: true,
-            name: true,
-            venue: true,
-            startDate: true,
-            entryStartDate: true,
-            entryEndDate: true,
-            startListSettings: true,
-            status: true,
+  const [clubTeamEntries, individualEntriesForClub, toAssignments, toInvitations] =
+    await Promise.all([
+      prisma.teamEntry.findMany({
+        where: { clubId: id },
+        select: {
+          id: true,
+          eventId: true,
+          competitionId: true,
+          competition: {
+            select: {
+              id: true,
+              name: true,
+              venue: true,
+              startDate: true,
+              entryStartDate: true,
+              entryEndDate: true,
+              startListSettings: true,
+              status: true,
+            },
           },
         },
-      },
-    }),
-    prisma.competitionEntry.findMany({
-      where: { clubId: id, status: { not: "CANCELLED" } },
-      select: { competitionId: true },
-    }),
+      }),
+      prisma.competitionEntry.findMany({
+        where: { clubId: id, status: { not: "CANCELLED" } },
+        select: { competitionId: true },
+      }),
+      prisma.competitionTechnicalOfficialAssignment.findMany({
+        where: { clubId: id },
+        select: { competitionId: true },
+        distinct: ["competitionId"],
+      }),
+      prisma.competitionTechnicalOfficialInvitation.findMany({
+        where: { clubId: id, status: "PENDING" },
+        select: { competitionId: true },
+        distinct: ["competitionId"],
+      }),
+    ]);
+
+  const competitionIdsFromPlayerEntries = new Set([
+    ...clubTeamEntries.map((t) => t.competitionId),
+    ...individualEntriesForClub.map((e) => e.competitionId),
   ]);
+  const competitionIdsFromToOnly = new Set<string>();
+  for (const r of toAssignments) {
+    if (!competitionIdsFromPlayerEntries.has(r.competitionId)) {
+      competitionIdsFromToOnly.add(r.competitionId);
+    }
+  }
+  for (const r of toInvitations) {
+    if (!competitionIdsFromPlayerEntries.has(r.competitionId)) {
+      competitionIdsFromToOnly.add(r.competitionId);
+    }
+  }
 
   const candidateCompetitionIds = [
     ...new Set([
-      ...clubTeamEntries.map((t) => t.competitionId),
-      ...individualEntriesForClub.map((e) => e.competitionId),
+      ...competitionIdsFromPlayerEntries,
+      ...toAssignments.map((r) => r.competitionId),
+      ...toInvitations.map((r) => r.competitionId),
     ]),
   ];
 
@@ -453,6 +481,11 @@ export default async function ClubDetailPage({
       if (!map.has(c.id)) {
         map.set(c.id, { competition: c, entries: [] });
       }
+    }
+    for (const cid of candidateCompetitionIds) {
+      const c = eligibleCompetitionById.get(cid);
+      if (!c || map.has(c.id)) continue;
+      map.set(c.id, { competition: c, entries: [] });
     }
     return [...map.values()].sort(
       (a, b) => b.competition.startDate.getTime() - a.competition.startDate.getTime()
@@ -995,6 +1028,11 @@ export default async function ClubDetailPage({
                         </div>
 
                         <div className="space-y-4 p-4 sm:p-5">
+                          {competitionIdsFromToOnly.has(row.id) ? (
+                            <p className="rounded-lg border border-border/70 bg-muted/25 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                              個人・チームの競技エントリーはまだありませんが、この大会ではテクニカルオフィシャル（TO）の記録または保留中の依頼があります。
+                            </p>
+                          ) : null}
                           {/* クラブ所属の個人エントリー一覧 */}
                           <ClubParticipationSection
                             sectionId={`comp-individual-${row.id}`}
