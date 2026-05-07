@@ -108,8 +108,7 @@ export default async function ClubCompetitionTeamHubPage({
 }) {
   const { id: clubId, competitionId } = await params;
   const { tab: tabRaw } = await searchParams;
-  const tab = tabRaw === "assignment" ? "assignment" : "entry";
-  if (tab === "entry") {
+  if (tabRaw !== "assignment") {
     redirect(appRoutes.competitions.teamEntry(competitionId, { clubId }));
   }
 
@@ -519,7 +518,7 @@ export default async function ClubCompetitionTeamHubPage({
 
         <nav className="flex flex-wrap gap-2" aria-label="チーム種目の区切り">
           <Button
-            variant={tab === "assignment" ? "default" : "outline"}
+            variant="default"
             size="sm"
             className="rounded-full"
             asChild
@@ -536,103 +535,7 @@ export default async function ClubCompetitionTeamHubPage({
         </nav>
       </div>
 
-      {tab === "entry" ? (
-        <>
-          <Card className="overflow-hidden shadow-sm">
-            <CardHeader className="flex flex-col gap-4 border-b border-border/60 bg-gradient-to-b from-muted/40 to-transparent sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className={entryWindowBadgeClass}>
-                    {entryWindowLabel}
-                  </Badge>
-                </div>
-                <CardTitle className="text-lg font-semibold leading-tight sm:text-xl">
-                  エントリー・請求
-                </CardTitle>
-                <CardDescription className="text-sm leading-relaxed">
-                  {entryWindowOpen
-                    ? "チーム登録・保存とクラブ単位の請求・決済を行います。保存・決済時に大会側へ反映されます。"
-                    : "エントリー受付は終了しています。登録内容の確認のみです。"}
-                </CardDescription>
-                {entryStart && entryEnd ? (
-                  <p className="text-xs text-muted-foreground">
-                    エントリー期間: {formatCompetitionEntryPeriodRangeJa(entryStart, entryEnd)}
-                  </p>
-                ) : null}
-              </div>
-              <Link href={appRoutes.competitions.root(competition.id)} className="shrink-0">
-                <Button variant="outline" size="sm" className="gap-2">
-                  <ArrowLeft className="h-4 w-4" />
-                  大会ページへ戻る
-                </Button>
-              </Link>
-            </CardHeader>
-          </Card>
-
-          {!entryWindowOpen && (
-            <Card className="border-amber-200/80 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20">
-              <CardContent className="px-4 py-4 text-sm text-amber-950 dark:text-amber-100">
-                <p className="font-medium">エントリー受付は終了しています</p>
-                <p className="mt-1.5 leading-relaxed text-amber-900/90 dark:text-amber-200/90">
-                  登録内容の閲覧のみです。メンバー割当は上の「メンバー割当」タブから開いてください。
-                </p>
-              </CardContent>
-            </Card>
-          )}
-
-          <TeamEntryHistoryPanel
-            competitionId={competition.id}
-            competitionName={competition.name}
-            teamEntryFeePerTeam={teamEntryFeePerTeam}
-            clubs={adminClubs}
-            events={competition.events.map((event) => ({
-              id: event.id,
-              name: event.name,
-              sex: event.sex,
-              category: event.category,
-            }))}
-            teamEntries={teamEntriesForHistory}
-            billingByClub={billingByClub}
-            viewOnly={!entryWindowOpen}
-          />
-
-          {!entryWindowOpen && teamEntriesFull.length === 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">チームエントリー</CardTitle>
-                <CardDescription className="text-xs">
-                  この大会・このクラブでは、保存済みのチーム登録がありません。
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          ) : null}
-
-          {entryWindowOpen ? (
-            <CompetitionTeamEntryManager
-              competitionId={competition.id}
-              clubs={adminClubs}
-              initialSelectedClubId={clubId}
-              teamEvents={competition.events.map((event) => ({
-                id: event.id,
-                name: event.name,
-                sex: event.sex,
-                category: event.category,
-                maxTeamEntriesPerClub: event.maxTeamEntriesPerClub ?? null,
-              }))}
-              initialEntriesByClub={initialEntriesByClub}
-              teamEntryFeePerTeam={teamEntryFeePerTeam}
-              entryWindowOpen={entryWindowOpen}
-              billingByClub={billingByClub}
-              competitionCategory={competition.category}
-              cardProcessingFeeBps={getStripeProcessingFeeBpsFromEnv()}
-              clubIndividualEntryBillingTiming={clubIndividualEntryBillingTiming}
-              prepaidMemberOptionsByClub={prepaidMemberOptionsByClub}
-              initialPrepaidIndividualUserIdsByClub={initialPrepaidIndividualUserIdsByClub}
-            />
-          ) : null}
-        </>
-      ) : (
-        <>
+      <>
           <header className="space-y-2 border-b border-border/60 pb-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               メンバー割当
@@ -662,8 +565,7 @@ export default async function ClubCompetitionTeamHubPage({
             teamAssignmentCompetition={teamAssignmentCompetition}
             teamAssignmentEventsById={teamAssignmentEventsById}
           />
-        </>
-      )}
+      </>
     </div>
   );
 }
