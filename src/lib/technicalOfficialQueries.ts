@@ -1,5 +1,9 @@
 import type { PrismaClient } from "@prisma/client";
-import { mergeApprovedTechnicalOfficialApplicationCompetitionIdsIntoMap } from "@/lib/resolveTechnicalOfficialApplicationClub";
+import {
+  loadCompetitionForTechnicalOfficialApplicationResolve,
+  mergeApprovedTechnicalOfficialApplicationCompetitionIdsIntoMap,
+  resolveClubIdForTechnicalOfficialApplication,
+} from "@/lib/resolveTechnicalOfficialApplicationClub";
 import {
   hasRequiredOfficialQualifications,
   parseTechnicalOfficialTiers,
@@ -45,6 +49,7 @@ export async function countValidTechnicalOfficialAssignments(
   });
 
   let n = 0;
+  const countedUserIds = new Set<string>();
   for (const a of assignments) {
     const ok = requireQualificationFilter
       ? hasRequiredOfficialQualifications(
@@ -55,7 +60,60 @@ export async function countValidTechnicalOfficialAssignments(
           }))
         )
       : true;
-    if (ok) n += 1;
+    if (ok) {
+      n += 1;
+      countedUserIds.add(a.userId);
+    }
+  }
+
+  // 既存大会では、承認済み TO 応募があるが Assignment が未同期の行が残ることがある。
+  // クラブ解決できる応募をフォールバックで加算し、クラブ詳細/アラートの充足表示を実態に近づける。
+  const competitionForResolve = await loadCompetitionForTechnicalOfficialApplicationResolve(
+    prisma,
+    competitionId
+  );
+  if (!competitionForResolve?.technicalOfficialRecruitmentEnabled) {
+    return n;
+  }
+  const approvedToApps = await prisma.competitionOfficialApplication.findMany({
+    where: {
+      competitionId,
+      status: "APPROVED",
+      positionName: { startsWith: "テクニカルオフィシャル（" },
+    },
+    select: {
+      userId: true,
+      positionName: true,
+      user: {
+        select: {
+          qualifications: {
+            select: { kind: true, status: true, expiryDate: true },
+          },
+        },
+      },
+    },
+  });
+  for (const app of approvedToApps) {
+    if (countedUserIds.has(app.userId)) continue;
+    const resolvedClubId = await resolveClubIdForTechnicalOfficialApplication(prisma, {
+      competitionId,
+      userId: app.userId,
+      positionName: app.positionName,
+      competition: competitionForResolve,
+    });
+    if (resolvedClubId !== clubId) continue;
+    const ok = requireQualificationFilter
+      ? hasRequiredOfficialQualifications(
+          app.user.qualifications.map((q) => ({
+            kind: q.kind,
+            status: q.status,
+            expiryDate: q.expiryDate,
+          }))
+        )
+      : true;
+    if (!ok) continue;
+    n += 1;
+    countedUserIds.add(app.userId);
   }
   return n;
 }
