@@ -950,14 +950,18 @@ export default async function CompetitionEntryPage({
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {hasEligibleIndividualForPicker ? (
-                <Button variant="outline" className="h-auto min-h-[5.5rem] flex-col gap-2 px-4 py-4" asChild>
+                <Button
+                  variant="outline"
+                  className="h-auto min-h-[5.5rem] flex-col gap-2 whitespace-normal px-4 py-4 text-center"
+                  asChild
+                >
                   <Link
                     href={`/competitions/${competition.id}/entry?mode=individual${
                       entryQuerySuffix ? `&${entryQuerySuffix}` : ""
                     }`}
                   >
                     <User className="h-6 w-6 text-primary" aria-hidden />
-                    <span className="text-sm font-semibold">個人種目にエントリー</span>
+                    <span className="text-sm font-semibold leading-snug">個人種目にエントリー</span>
                     <span className="text-center text-xs font-normal leading-snug text-muted-foreground">
                       プール／オーシャン等の個人種目のみ
                     </span>
@@ -965,14 +969,18 @@ export default async function CompetitionEntryPage({
                 </Button>
               ) : null}
               {hasEligibleTeamForPicker && requireClubMembership ? (
-                <Button variant="outline" className="h-auto min-h-[5.5rem] flex-col gap-2 px-4 py-4" asChild>
+                <Button
+                  variant="outline"
+                  className="h-auto min-h-[5.5rem] flex-col gap-2 whitespace-normal px-4 py-4 text-center"
+                  asChild
+                >
                   <Link
                     href={`/competitions/${competition.id}/entry?mode=team-only${
                       entryQuerySuffix ? `&${entryQuerySuffix}` : ""
                     }`}
                   >
                     <UsersRound className="h-6 w-6 text-primary" aria-hidden />
-                    <span className="text-sm font-semibold">チーム種目のみ</span>
+                    <span className="text-sm font-semibold leading-snug">チーム種目のみ</span>
                     <span className="text-center text-xs font-normal leading-snug text-muted-foreground">
                       個人種目には出ません。ここでは種目を選択せず、配属候補として登録します。
                     </span>
