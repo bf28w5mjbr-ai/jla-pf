@@ -10,9 +10,10 @@ import { extractClubIdFromEntrySnapshotData } from "@/lib/entrySnapshotClubId";
 import {
   competitionIdsForClubFromApprovedTechnicalOfficialApplications,
   loadCompetitionForTechnicalOfficialApplicationResolve,
-  resolveClubIdForTechnicalOfficialApplication,
+  resolveClubIdForTechnicalOfficialApplicationWithDiagnostic,
   extractTechnicalOfficialClubDisplayNameFromPosition,
 } from "@/lib/resolveTechnicalOfficialApplicationClub";
+import { countValidTechnicalOfficialAssignmentsDetailed } from "@/lib/technicalOfficialQueries";
 import { prisma } from "@/server/db";
 
 function parseArgs() {
@@ -240,13 +241,13 @@ async function main() {
       compCache.set(app.competitionId, c);
     }
     if (!c?.technicalOfficialRecruitmentEnabled) continue;
-    const resolved = await resolveClubIdForTechnicalOfficialApplication(prisma, {
+    const resolved = await resolveClubIdForTechnicalOfficialApplicationWithDiagnostic(prisma, {
       competitionId: app.competitionId,
       userId: app.userId,
       positionName: app.positionName,
       competition: c,
     });
-    if (resolved !== club.id) continue;
+    if (resolved.clubId !== club.id) continue;
     const row = await prisma.competitionTechnicalOfficialAssignment.findUnique({
       where: {
         competitionId_clubId_userId: {
@@ -279,6 +280,59 @@ async function main() {
     console.log(
       "\nヒント: pnpm run backfill:to-assignment-from-official-apps:dry で一括作成できる場合があります。"
     );
+  }
+
+  const diagnoseCompetitionIds = competitionId
+    ? [competitionId]
+    : [...new Set([...idsFromToApps, ...toAssign.map((x) => x.competitionId)])];
+  if (diagnoseCompetitionIds.length > 0) {
+    console.log("\n--- 充足集計の診断内訳（クラブ別） ---");
+    for (const cid of diagnoseCompetitionIds.slice(0, 20)) {
+      const comp = await prisma.competition.findUnique({
+        where: { id: cid },
+        select: { officialQualificationFilterEnabled: true, name: true },
+      });
+      if (!comp) continue;
+      const detail = await countValidTechnicalOfficialAssignmentsDetailed(
+        prisma,
+        cid,
+        club.id,
+        Boolean(comp.officialQualificationFilterEnabled)
+      );
+      console.log(
+        `- ${comp.name} (${cid}): assigned=${detail.assigned} assignment=${detail.diagnostics.assignmentCount} fallback=${detail.diagnostics.fallbackApprovedCount} unresolved=${detail.diagnostics.unresolvedApprovedCount}`
+      );
+    }
+  }
+
+  const unresolvedReasonCount = new Map<string, number>();
+  for (const app of toAppsForClub) {
+    const dn = extractTechnicalOfficialClubDisplayNameFromPosition(app.positionName);
+    if (dn !== club.name.trim()) continue;
+    let c = compCache.get(app.competitionId);
+    if (c === undefined) {
+      c = await loadCompetitionForTechnicalOfficialApplicationResolve(prisma, app.competitionId);
+      compCache.set(app.competitionId, c);
+    }
+    if (!c?.technicalOfficialRecruitmentEnabled) continue;
+    const resolved = await resolveClubIdForTechnicalOfficialApplicationWithDiagnostic(prisma, {
+      competitionId: app.competitionId,
+      userId: app.userId,
+      positionName: app.positionName,
+      competition: c,
+    });
+    if (!resolved.clubId) {
+      unresolvedReasonCount.set(
+        resolved.reason,
+        (unresolvedReasonCount.get(resolved.reason) ?? 0) + 1
+      );
+    }
+  }
+  if (unresolvedReasonCount.size > 0) {
+    console.log("\n--- TO応募のクラブ解決失敗理由 ---");
+    for (const [reason, count] of [...unresolvedReasonCount.entries()].sort((a, b) => b[1] - a[1])) {
+      console.log(`  ${reason}: ${count}`);
+    }
   }
 
   console.log("\n診断完了。");

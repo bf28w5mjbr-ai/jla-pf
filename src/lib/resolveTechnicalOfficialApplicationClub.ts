@@ -4,11 +4,19 @@ import {
   resolveOfficialApplicationPositionName,
 } from "@/lib/officialApplicationSubmit";
 
-const TO_POSITION = /^テクニカルオフィシャル（([^）]+)）$/;
+const TO_POSITION = /^テクニカルオフィシャル[（(]([^)）]+)[)）]$/;
+
+function normalizeClubDisplayName(input: string): string {
+  return input
+    .normalize("NFKC")
+    .replace(/\u3000/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 export function extractTechnicalOfficialClubDisplayNameFromPosition(positionName: string): string | null {
   const m = positionName.match(TO_POSITION);
-  const name = m?.[1]?.trim();
+  const name = normalizeClubDisplayName(m?.[1] ?? "");
   return name && name.length > 0 ? name : null;
 }
 
@@ -41,11 +49,22 @@ export async function loadCompetitionForTechnicalOfficialApplicationResolve(
   };
 }
 
-/**
- * 承認済み TO 応募の positionName と応募者から、割当クラブ ID を一意に解決する。
- * バックフィル・クラブ UI・アラートで共有（resolveOfficialApplicationPositionName と同じゲート）。
- */
-export async function resolveClubIdForTechnicalOfficialApplication(
+export type ResolveTechnicalOfficialClubDiagnosticReason =
+  | "ok"
+  | "invalid_position_name"
+  | "no_name_match"
+  | "not_eligible"
+  | "ambiguous_eligible";
+
+export type ResolveTechnicalOfficialClubDiagnostic = {
+  clubId: string | null;
+  reason: ResolveTechnicalOfficialClubDiagnosticReason;
+  displayName: string | null;
+  candidateClubIds: string[];
+  eligibleClubIds: string[];
+};
+
+export async function resolveClubIdForTechnicalOfficialApplicationWithDiagnostic(
   prisma: PrismaClient,
   params: {
     competitionId: string;
@@ -53,15 +72,38 @@ export async function resolveClubIdForTechnicalOfficialApplication(
     positionName: string;
     competition: OfficialApplicationCompetitionForSubmit;
   }
-): Promise<string | null> {
+): Promise<ResolveTechnicalOfficialClubDiagnostic> {
   const displayName = extractTechnicalOfficialClubDisplayNameFromPosition(params.positionName);
-  if (!displayName) return null;
+  if (!displayName) {
+    return {
+      clubId: null,
+      reason: "invalid_position_name",
+      displayName: null,
+      candidateClubIds: [],
+      eligibleClubIds: [],
+    };
+  }
 
-  const clubs = await prisma.club.findMany({
+  const normalizedDisplay = normalizeClubDisplayName(displayName);
+  let clubs = await prisma.club.findMany({
     where: { name: displayName },
-    select: { id: true },
+    select: { id: true, name: true },
   });
-  if (clubs.length === 0) return null;
+  if (clubs.length === 0) {
+    const allClubs = await prisma.club.findMany({
+      select: { id: true, name: true },
+    });
+    clubs = allClubs.filter((c) => normalizeClubDisplayName(c.name) === normalizedDisplay);
+  }
+  if (clubs.length === 0) {
+    return {
+      clubId: null,
+      reason: "no_name_match",
+      displayName,
+      candidateClubIds: [],
+      eligibleClubIds: [],
+    };
+  }
 
   const eligible: string[] = [];
   for (const { id } of clubs) {
@@ -76,8 +118,39 @@ export async function resolveClubIdForTechnicalOfficialApplication(
     if (pos.ok) eligible.push(id);
   }
 
-  if (eligible.length !== 1) return null;
-  return eligible[0]!;
+  if (eligible.length === 1) {
+    return {
+      clubId: eligible[0]!,
+      reason: "ok",
+      displayName,
+      candidateClubIds: clubs.map((c) => c.id),
+      eligibleClubIds: eligible,
+    };
+  }
+  return {
+    clubId: null,
+    reason: eligible.length === 0 ? "not_eligible" : "ambiguous_eligible",
+    displayName,
+    candidateClubIds: clubs.map((c) => c.id),
+    eligibleClubIds: eligible,
+  };
+}
+
+/**
+ * 承認済み TO 応募の positionName と応募者から、割当クラブ ID を一意に解決する。
+ * バックフィル・クラブ UI・アラートで共有（resolveOfficialApplicationPositionName と同じゲート）。
+ */
+export async function resolveClubIdForTechnicalOfficialApplication(
+  prisma: PrismaClient,
+  params: {
+    competitionId: string;
+    userId: string;
+    positionName: string;
+    competition: OfficialApplicationCompetitionForSubmit;
+  }
+): Promise<string | null> {
+  const resolved = await resolveClubIdForTechnicalOfficialApplicationWithDiagnostic(prisma, params);
+  return resolved.clubId;
 }
 
 /**

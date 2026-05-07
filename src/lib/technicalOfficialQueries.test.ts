@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   countValidTechnicalOfficialAssignments,
+  countValidTechnicalOfficialAssignmentsDetailed,
   countClubIndividualEntryRows,
   getTechnicalOfficialStatusForClub,
 } from "@/lib/technicalOfficialQueries";
@@ -98,5 +99,55 @@ describe("countValidTechnicalOfficialAssignments", () => {
 
     const n = await countValidTechnicalOfficialAssignments(prisma, "comp", "club-west", true);
     expect(n).toBe(1);
+  });
+
+  it("provides diagnostics and de-duplicates by userId", async () => {
+    const assignmentFindMany = vi.fn().mockResolvedValue([
+      {
+        userId: "u1",
+        user: { qualifications: [{ kind: "BLS", status: "APPROVED", expiryDate: null }] },
+      },
+    ]);
+    const appFindMany = vi.fn().mockResolvedValue([
+      {
+        userId: "u1",
+        positionName: "テクニカルオフィシャル（西浜）",
+        user: { qualifications: [{ kind: "BLS", status: "APPROVED", expiryDate: null }] },
+      },
+      {
+        userId: "u2",
+        positionName: "テクニカルオフィシャル（西浜）",
+        user: { qualifications: [{ kind: "BLS", status: "APPROVED", expiryDate: null }] },
+      },
+    ]);
+    const competitionFindUnique = vi.fn().mockResolvedValue({
+      id: "comp",
+      status: "OPEN",
+      entryStartDate: null,
+      entryEndDate: null,
+      officialRecruitmentEnabled: true,
+      officialQualificationFilterEnabled: false,
+      technicalOfficialRecruitmentEnabled: true,
+    });
+    const clubFindMany = vi.fn().mockImplementation(({ where }: { where?: { name?: string } }) => {
+      if (where?.name === "西浜") return [{ id: "club-west", name: "西浜" }];
+      return [];
+    });
+    const clubFindUnique = vi.fn().mockResolvedValue({ id: "club-west", name: "西浜" });
+    const prisma = {
+      competitionTechnicalOfficialAssignment: { findMany: assignmentFindMany },
+      competitionOfficialApplication: { findMany: appFindMany },
+      competition: { findUnique: competitionFindUnique },
+      club: { findMany: clubFindMany, findUnique: clubFindUnique },
+      membership: { findFirst: vi.fn().mockResolvedValue({ id: "m1" }) },
+      teamEntry: { findFirst: vi.fn().mockResolvedValue({ id: "te1" }) },
+      competitionEntry: { findFirst: vi.fn().mockResolvedValue({ id: "ce1" }) },
+    } as never;
+
+    const detail = await countValidTechnicalOfficialAssignmentsDetailed(prisma, "comp", "club-west", false);
+    expect(detail.assigned).toBe(2);
+    expect(detail.diagnostics.assignmentCount).toBe(1);
+    expect(detail.diagnostics.fallbackApprovedCount).toBe(1);
+    expect(detail.diagnostics.duplicateUserSkippedCount).toBe(1);
   });
 });

@@ -27,6 +27,15 @@ type InvitationsPayload = {
     assigned: number;
     shortage: number;
     tiers: { minEntries: number; requiredCount: number }[];
+    diagnostics?: {
+      assignmentCount: number;
+      fallbackApprovedCount: number;
+      approvedExaminedCount: number;
+      approvedResolvedOtherClubCount: number;
+      unresolvedApprovedCount: number;
+      qualificationFilteredOutCount: number;
+      duplicateUserSkippedCount: number;
+    };
   };
   invitations?: {
     id: string;
@@ -235,6 +244,12 @@ export default function ClubTechnicalOfficialRow({
           <p className="mt-0.5">
             個人エントリー合計 {st.entryCount} 件 → 必要 {st.required} 人 / 充足 {st.assigned} 人
           </p>
+          {isClubAdmin && st.diagnostics ? (
+            <p className="mt-1 text-[11px]">
+              内訳: 任命 {st.diagnostics.assignmentCount} / 承認応募補完 {st.diagnostics.fallbackApprovedCount}
+              {" "}（未解決応募 {st.diagnostics.unresolvedApprovedCount}）
+            </p>
+          ) : null}
         </div>
 
         {st.tiers.length > 0 ? (

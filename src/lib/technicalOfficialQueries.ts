@@ -2,7 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import {
   loadCompetitionForTechnicalOfficialApplicationResolve,
   mergeApprovedTechnicalOfficialApplicationCompetitionIdsIntoMap,
-  resolveClubIdForTechnicalOfficialApplication,
+  resolveClubIdForTechnicalOfficialApplicationWithDiagnostic,
 } from "@/lib/resolveTechnicalOfficialApplicationClub";
 import {
   hasRequiredOfficialQualifications,
@@ -35,6 +35,31 @@ export async function countValidTechnicalOfficialAssignments(
   clubId: string,
   requireQualificationFilter: boolean
 ): Promise<number> {
+  const detail = await countValidTechnicalOfficialAssignmentsDetailed(
+    prisma,
+    competitionId,
+    clubId,
+    requireQualificationFilter
+  );
+  return detail.assigned;
+}
+
+export type TechnicalOfficialAssignmentDiagnostics = {
+  assignmentCount: number;
+  fallbackApprovedCount: number;
+  approvedExaminedCount: number;
+  approvedResolvedOtherClubCount: number;
+  unresolvedApprovedCount: number;
+  qualificationFilteredOutCount: number;
+  duplicateUserSkippedCount: number;
+};
+
+export async function countValidTechnicalOfficialAssignmentsDetailed(
+  prisma: PrismaClient,
+  competitionId: string,
+  clubId: string,
+  requireQualificationFilter: boolean
+): Promise<{ assigned: number; diagnostics: TechnicalOfficialAssignmentDiagnostics }> {
   const assignments = await prisma.competitionTechnicalOfficialAssignment.findMany({
     where: { competitionId, clubId },
     include: {
@@ -48,9 +73,19 @@ export async function countValidTechnicalOfficialAssignments(
     },
   });
 
-  let n = 0;
+  let assignmentCount = 0;
+  let fallbackApprovedCount = 0;
+  let approvedExaminedCount = 0;
+  let approvedResolvedOtherClubCount = 0;
+  let unresolvedApprovedCount = 0;
+  let qualificationFilteredOutCount = 0;
+  let duplicateUserSkippedCount = 0;
   const countedUserIds = new Set<string>();
   for (const a of assignments) {
+    if (countedUserIds.has(a.userId)) {
+      duplicateUserSkippedCount += 1;
+      continue;
+    }
     const ok = requireQualificationFilter
       ? hasRequiredOfficialQualifications(
           a.user.qualifications.map((q) => ({
@@ -61,8 +96,10 @@ export async function countValidTechnicalOfficialAssignments(
         )
       : true;
     if (ok) {
-      n += 1;
+      assignmentCount += 1;
       countedUserIds.add(a.userId);
+    } else {
+      qualificationFilteredOutCount += 1;
     }
   }
 
@@ -73,7 +110,18 @@ export async function countValidTechnicalOfficialAssignments(
     competitionId
   );
   if (!competitionForResolve?.technicalOfficialRecruitmentEnabled) {
-    return n;
+    return {
+      assigned: assignmentCount,
+      diagnostics: {
+        assignmentCount,
+        fallbackApprovedCount,
+        approvedExaminedCount,
+        approvedResolvedOtherClubCount,
+        unresolvedApprovedCount,
+        qualificationFilteredOutCount,
+        duplicateUserSkippedCount,
+      },
+    };
   }
   const approvedToApps = await prisma.competitionOfficialApplication.findMany({
     where: {
@@ -94,14 +142,25 @@ export async function countValidTechnicalOfficialAssignments(
     },
   });
   for (const app of approvedToApps) {
-    if (countedUserIds.has(app.userId)) continue;
-    const resolvedClubId = await resolveClubIdForTechnicalOfficialApplication(prisma, {
+    approvedExaminedCount += 1;
+    if (countedUserIds.has(app.userId)) {
+      duplicateUserSkippedCount += 1;
+      continue;
+    }
+    const resolved = await resolveClubIdForTechnicalOfficialApplicationWithDiagnostic(prisma, {
       competitionId,
       userId: app.userId,
       positionName: app.positionName,
       competition: competitionForResolve,
     });
-    if (resolvedClubId !== clubId) continue;
+    if (!resolved.clubId) {
+      unresolvedApprovedCount += 1;
+      continue;
+    }
+    if (resolved.clubId !== clubId) {
+      approvedResolvedOtherClubCount += 1;
+      continue;
+    }
     const ok = requireQualificationFilter
       ? hasRequiredOfficialQualifications(
           app.user.qualifications.map((q) => ({
@@ -111,11 +170,25 @@ export async function countValidTechnicalOfficialAssignments(
           }))
         )
       : true;
-    if (!ok) continue;
-    n += 1;
+    if (!ok) {
+      qualificationFilteredOutCount += 1;
+      continue;
+    }
+    fallbackApprovedCount += 1;
     countedUserIds.add(app.userId);
   }
-  return n;
+  return {
+    assigned: assignmentCount + fallbackApprovedCount,
+    diagnostics: {
+      assignmentCount,
+      fallbackApprovedCount,
+      approvedExaminedCount,
+      approvedResolvedOtherClubCount,
+      unresolvedApprovedCount,
+      qualificationFilteredOutCount,
+      duplicateUserSkippedCount,
+    },
+  };
 }
 
 export type TechnicalOfficialShortageRow = {
@@ -223,6 +296,7 @@ export async function getTechnicalOfficialStatusForClub(
   assigned: number;
   shortage: number;
   tiers: ReturnType<typeof parseTechnicalOfficialTiers>;
+  diagnostics: TechnicalOfficialAssignmentDiagnostics;
 } | null> {
   const competition = await prisma.competition.findUnique({
     where: { id: competitionId },
@@ -244,12 +318,13 @@ export async function getTechnicalOfficialStatusForClub(
   const tiers = parseTechnicalOfficialTiers(competition.technicalOfficialTiers);
   const entryCount = await countClubIndividualEntryRows(prisma, competitionId, clubId);
   const required = requiredTechnicalOfficialCount(entryCount, tiers);
-  const assigned = await countValidTechnicalOfficialAssignments(
+  const assignment = await countValidTechnicalOfficialAssignmentsDetailed(
     prisma,
     competitionId,
     clubId,
     Boolean(competition.officialQualificationFilterEnabled)
   );
+  const assigned = assignment.assigned;
 
   return {
     configured: tiers.length > 0,
@@ -259,6 +334,7 @@ export async function getTechnicalOfficialStatusForClub(
     assigned,
     shortage: Math.max(0, required - assigned),
     tiers,
+    diagnostics: assignment.diagnostics,
   };
 }
 
@@ -381,59 +457,26 @@ export async function listClubAdminTechnicalOfficialAlerts(
     pairChunks.push(pairs.slice(i, i + PAIR_CHUNK));
   }
 
-  const [entryGroupParts, assignmentParts] = await Promise.all([
-    Promise.all(
-      pairChunks.map((part) =>
-        prisma.competitionEntry.groupBy({
-          by: ["competitionId", "clubId"],
-          where: {
-            status: { not: "CANCELLED" },
-            clubId: { not: null },
-            OR: part.map((p) => ({ competitionId: p.competitionId, clubId: p.clubId })),
-          },
-          _count: { _all: true },
-        })
-      )
-    ),
-    Promise.all(
-      pairChunks.map((part) =>
-        prisma.competitionTechnicalOfficialAssignment.findMany({
-          where: { OR: part.map((p) => ({ competitionId: p.competitionId, clubId: p.clubId })) },
-          select: {
-            competitionId: true,
-            clubId: true,
-            user: {
-              select: {
-                qualifications: {
-                  select: { kind: true, status: true, expiryDate: true },
-                },
-              },
-            },
-          },
-        })
-      )
-    ),
-  ]);
+  const entryGroupParts = await Promise.all(
+    pairChunks.map((part) =>
+      prisma.competitionEntry.groupBy({
+        by: ["competitionId", "clubId"],
+        where: {
+          status: { not: "CANCELLED" },
+          clubId: { not: null },
+          OR: part.map((p) => ({ competitionId: p.competitionId, clubId: p.clubId })),
+        },
+        _count: { _all: true },
+      })
+    )
+  );
 
   const entryGroups = entryGroupParts.flat();
-  const assignments = assignmentParts.flat();
 
   const entryCountByPair = new Map<string, number>();
   for (const g of entryGroups) {
     if (g.clubId === null) continue;
     entryCountByPair.set(pairKey({ competitionId: g.competitionId, clubId: g.clubId }), g._count._all);
-  }
-
-  type AssignmentRow = (typeof assignments)[number];
-  const assignmentsByPair = new Map<string, AssignmentRow[]>();
-  for (const a of assignments) {
-    const k = pairKey({ competitionId: a.competitionId, clubId: a.clubId });
-    let bucket = assignmentsByPair.get(k);
-    if (!bucket) {
-      bucket = [];
-      assignmentsByPair.set(k, bucket);
-    }
-    bucket.push(a);
   }
 
   const alerts: ClubAdminTechnicalOfficialAlert[] = [];
@@ -449,21 +492,12 @@ export async function listClubAdminTechnicalOfficialAlerts(
     const required = requiredTechnicalOfficialCount(entryCount, tiers);
     if (required <= 0) continue;
 
-    const requireQualificationFilter = Boolean(comp.officialQualificationFilterEnabled);
-    const assignRows = assignmentsByPair.get(k) ?? [];
-    let assigned = 0;
-    for (const a of assignRows) {
-      const ok = requireQualificationFilter
-        ? hasRequiredOfficialQualifications(
-            a.user.qualifications.map((q) => ({
-              kind: q.kind,
-              status: q.status,
-              expiryDate: q.expiryDate,
-            }))
-          )
-        : true;
-      if (ok) assigned += 1;
-    }
+    const assigned = await countValidTechnicalOfficialAssignments(
+      prisma,
+      p.competitionId,
+      p.clubId,
+      Boolean(comp.officialQualificationFilterEnabled)
+    );
 
     const shortage = Math.max(0, required - assigned);
     if (shortage <= 0) continue;

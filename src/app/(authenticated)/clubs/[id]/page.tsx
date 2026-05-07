@@ -1028,9 +1028,9 @@ export default async function ClubDetailPage({
                       >
                         {/* 大会情報（ヒーロー） */}
                         <div className="bg-gradient-to-br from-primary/[0.07] via-muted/25 to-background px-4 py-4 sm:px-5 sm:py-5">
-                          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="flex flex-col gap-3.5 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                             <div className="min-w-0 flex-1 space-y-3">
-                              <div className="flex flex-wrap items-start gap-3">
+                              <div className="flex flex-wrap items-start gap-2.5 sm:gap-3">
                                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-800 shadow-sm ring-1 ring-amber-500/20 dark:bg-amber-400/10 dark:text-amber-200">
                                   <Trophy className="h-5 w-5" strokeWidth={1.75} aria-hidden />
                                 </span>
@@ -1038,10 +1038,10 @@ export default async function ClubDetailPage({
                                   <p className="text-lg font-semibold leading-snug tracking-tight text-foreground">
                                     {row.name}
                                   </p>
-                                  <div className="flex flex-wrap gap-2">
+                                  <div className="flex flex-wrap items-start gap-1.5 sm:gap-2">
                                     <Badge
                                       variant="outline"
-                                      className={cn("text-[11px] font-normal", entryBadge.className)}
+                                      className={cn("max-w-full break-words text-[11px] font-normal", entryBadge.className)}
                                     >
                                       {entryBadge.label}
                                     </Badge>
@@ -1049,7 +1049,7 @@ export default async function ClubDetailPage({
                                       <Badge
                                         variant="outline"
                                         className={cn(
-                                          "text-[11px] font-normal",
+                                          "max-w-full break-words text-[11px] font-normal",
                                           teamAssignBadge.className
                                         )}
                                       >
@@ -1058,16 +1058,16 @@ export default async function ClubDetailPage({
                                     ) : null}
                                   </div>
                                   <div className="flex flex-col gap-1.5 text-sm text-muted-foreground">
-                                    <span className="inline-flex flex-wrap items-center gap-2">
+                                    <span className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
                                       <Calendar className="h-4 w-4 shrink-0 text-primary/80" aria-hidden />
                                       <span className="text-foreground/85">
                                         開催 {row.startDate.toLocaleDateString("ja-JP")}
                                       </span>
                                     </span>
                                     {competition.venue ? (
-                                      <span className="inline-flex flex-wrap items-start gap-2">
+                                      <span className="flex min-w-0 items-start gap-1.5 sm:gap-2">
                                         <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary/80" aria-hidden />
-                                        <span className="leading-relaxed">{competition.venue}</span>
+                                        <span className="min-w-0 break-words leading-relaxed">{competition.venue}</span>
                                       </span>
                                     ) : null}
                                   </div>
@@ -1091,7 +1091,7 @@ export default async function ClubDetailPage({
                           </div>
                         </div>
 
-                        <div className="space-y-4 p-4 sm:p-5">
+                        <div className="space-y-3.5 p-3.5 sm:space-y-4 sm:p-5">
                           {competitionIdsFromToOnly.has(row.id) ? (
                             <p className="rounded-lg border border-border/70 bg-muted/25 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
                               個人・チームの競技エントリーはまだありませんが、この大会ではテクニカルオフィシャル（TO）の記録または保留中の依頼があります。
@@ -1104,7 +1104,7 @@ export default async function ClubDetailPage({
                             description="このクラブを所属として提出された個人種目のエントリーを一覧で確認できます。"
                             icon={User}
                           >
-                            <div className="space-y-3">
+                            <div className="space-y-2.5 sm:space-y-3">
                               {rosterIndividual.length === 0 ? (
                                 <p className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
                                   まだ当クラブ所属の個人種目エントリーはありません。申込は下のボタンから大会の個人エントリーページへ進めます。
@@ -1131,14 +1131,14 @@ export default async function ClubDetailPage({
                             description="エントリー・請求・履歴とメンバー割当を、同じページでまとめて操作できます。"
                             icon={Users}
                           >
-                            <div className="space-y-3">
-                              <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch sm:justify-between sm:gap-4">
-                                <div className="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-primary/20 bg-gradient-to-br from-primary/[0.07] via-background/80 to-muted/35 px-4 py-3 shadow-sm ring-1 ring-primary/10">
+                            <div className="space-y-2.5 sm:space-y-3">
+                              <div className="flex flex-col gap-2.5 sm:flex-row sm:items-stretch sm:justify-between sm:gap-4">
+                                <div className="flex min-w-0 flex-1 items-start gap-2.5 rounded-xl border border-primary/20 bg-gradient-to-br from-primary/[0.07] via-background/80 to-muted/35 px-3 py-2.5 shadow-sm ring-1 ring-primary/10 sm:items-center sm:gap-3 sm:px-4 sm:py-3">
                                   <span
-                                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/12 text-primary shadow-inner ring-1 ring-primary/15"
+                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary shadow-inner ring-1 ring-primary/15 sm:h-11 sm:w-11 sm:rounded-2xl"
                                     aria-hidden
                                   >
-                                    <Users className="h-5 w-5" strokeWidth={1.75} />
+                                    <Users className="h-4.5 w-4.5 sm:h-5 sm:w-5" strokeWidth={1.75} />
                                   </span>
                                   <div className="min-w-0 flex-1">
                                     <div className="flex flex-wrap items-center gap-2">
@@ -1155,7 +1155,7 @@ export default async function ClubDetailPage({
                                       ) : null}
                                     </div>
                                     <p className="mt-1 flex items-baseline gap-1.5">
-                                      <span className="text-2xl font-bold tabular-nums tracking-tight text-foreground">
+                                      <span className="text-xl font-bold tabular-nums tracking-tight text-foreground sm:text-2xl">
                                         {row.teamCount}
                                       </span>
                                       <span className="text-sm font-medium text-muted-foreground">組</span>
@@ -1164,7 +1164,7 @@ export default async function ClubDetailPage({
                                 </div>
 
                                 {isClubAdmin ? (
-                                  <div className="flex w-full flex-col justify-center gap-1.5 sm:w-auto sm:min-w-[11rem]">
+                                  <div className="flex w-full flex-col gap-1.5 sm:w-auto sm:min-w-[11rem] sm:justify-center">
                                     <Button
                                       variant="default"
                                       size="sm"
@@ -1179,7 +1179,7 @@ export default async function ClubDetailPage({
                                         <ArrowRight className="h-4 w-4" aria-hidden />
                                       </Link>
                                     </Button>
-                                    <p className="text-center text-[11px] leading-snug text-muted-foreground sm:text-left">
+                                    <p className="text-left text-[11px] leading-snug text-muted-foreground sm:text-left">
                                       タブでエントリーと割当を切替
                                     </p>
                                   </div>
@@ -1200,14 +1200,14 @@ export default async function ClubDetailPage({
 
                               {row.teamCount > 0 ? (
                                 <div className="space-y-2 pt-0.5">
-                                  <div className="flex gap-3 rounded-xl border border-border/60 bg-muted/20 px-3.5 py-3 text-xs leading-relaxed">
+                                  <div className="flex min-w-0 gap-2.5 rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5 text-xs leading-relaxed sm:gap-3 sm:px-3.5 sm:py-3">
                                     <CalendarClock
                                       className="mt-0.5 h-4 w-4 shrink-0 text-primary"
                                       aria-hidden
                                     />
-                                    <div>
+                                    <div className="min-w-0">
                                       <p className="font-medium text-foreground">メンバー割当の目安（通知用）</p>
-                                      <p className="mt-0.5 text-muted-foreground">
+                                      <p className="mt-0.5 break-words text-muted-foreground">
                                         {row.assignmentDeadline
                                           ? row.assignmentDeadline.toLocaleString("ja-JP")
                                           : "未設定"}

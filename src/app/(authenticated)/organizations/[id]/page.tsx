@@ -543,7 +543,7 @@ export default async function OrganizationDetailPage({
 
       <div className="mt-3 space-y-4">
         <OrganizationDetailTabsClient activeTab={activeTab}>
-          <div className="sticky top-[calc(var(--safe-area-top,0px)+0.5rem)] z-10 -mx-3 border-y border-border/60 bg-background/95 px-3 py-1.5 backdrop-blur-md sm:static sm:mx-0 sm:rounded-lg sm:border sm:bg-muted/35 sm:px-1 sm:py-1 sm:backdrop-blur-none">
+          <div className="sticky top-[calc(var(--safe-area-top,0px)+3.75rem)] z-20 -mx-3 border-y border-border/60 bg-background/95 px-3 py-1.5 backdrop-blur-md sm:static sm:mx-0 sm:rounded-lg sm:border sm:bg-muted/35 sm:px-1 sm:py-1 sm:backdrop-blur-none">
             <TabsList
               className="flex h-auto w-full items-stretch gap-0.5 overflow-x-auto bg-transparent p-0 sm:gap-1"
               aria-label="団体管理の区分"

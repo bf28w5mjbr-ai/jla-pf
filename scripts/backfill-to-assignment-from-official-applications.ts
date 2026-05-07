@@ -9,7 +9,8 @@
  */
 import {
   loadCompetitionForTechnicalOfficialApplicationResolve,
-  resolveClubIdForTechnicalOfficialApplication,
+  resolveClubIdForTechnicalOfficialApplicationWithDiagnostic,
+  type ResolveTechnicalOfficialClubDiagnosticReason,
 } from "@/lib/resolveTechnicalOfficialApplicationClub";
 import { syncTechnicalOfficialAssignmentFromOfficialApplication } from "@/lib/syncTechnicalOfficialAssignmentFromOfficialApplication";
 import { prisma } from "@/server/db";
@@ -42,6 +43,7 @@ async function main() {
 
   let applied = 0;
   let skipped = 0;
+  const skippedReasonCount = new Map<ResolveTechnicalOfficialClubDiagnosticReason, number>();
 
   const competitionCache = new Map<
     string,
@@ -62,16 +64,18 @@ async function main() {
       continue;
     }
 
-    const clubId = await resolveClubIdForTechnicalOfficialApplication(prisma, {
+    const resolved = await resolveClubIdForTechnicalOfficialApplicationWithDiagnostic(prisma, {
       competition,
       competitionId: app.competitionId,
       userId: app.userId,
       positionName: app.positionName,
     });
+    const clubId = resolved.clubId;
     if (!clubId) {
       skipped += 1;
+      skippedReasonCount.set(resolved.reason, (skippedReasonCount.get(resolved.reason) ?? 0) + 1);
       console.warn(
-        `[skip] application ${app.id} competition=${app.competitionId} user=${app.userId} position="${app.positionName}"`
+        `[skip:${resolved.reason}] application ${app.id} competition=${app.competitionId} user=${app.userId} position="${app.positionName}"`
       );
       continue;
     }
@@ -95,6 +99,15 @@ async function main() {
 
   console.log(
     dryRun ? `Done (dry-run). Would apply ${applied}, skipped ${skipped}.` : `Done. Applied ${applied}, skipped ${skipped}.`
+  );
+  if (skippedReasonCount.size > 0) {
+    console.log("Skipped reason summary:");
+    for (const [reason, count] of [...skippedReasonCount.entries()].sort((a, b) => b[1] - a[1])) {
+      console.log(`  - ${reason}: ${count}`);
+    }
+  }
+  console.log(
+    "Next: run diagnose script before/after apply to verify unresolved rows are reduced."
   );
 }
 

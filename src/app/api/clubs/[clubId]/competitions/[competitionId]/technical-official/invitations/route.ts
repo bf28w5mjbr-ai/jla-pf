@@ -376,9 +376,16 @@ export async function GET(
           }))
       : [];
 
+    const statusForResponse = viewerIsAdmin
+      ? status
+      : {
+          ...status,
+          diagnostics: undefined,
+        };
+
     return NextResponse.json({
       configured: status.configured,
-      status,
+      status: statusForResponse,
       invitations: invitations.map((i) => ({
         id: i.id,
         status: i.status,
