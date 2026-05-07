@@ -90,7 +90,7 @@ function FormSection({
       aria-labelledby={headingId}
       className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm ring-1 ring-black/[0.03] dark:ring-white/[0.06]"
     >
-      <div className="flex items-start gap-3 border-b border-border/60 bg-muted/25 px-4 py-3 sm:px-4 sm:py-3.5">
+      <div className="flex items-start gap-3 border-b border-border/60 bg-muted/25 px-3.5 py-3 sm:px-4 sm:py-3.5">
         <div
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
           aria-hidden
@@ -108,7 +108,7 @@ function FormSection({
           {description ? <div className={sectionLeadClass(leadDensity)}>{description}</div> : null}
         </div>
       </div>
-      <div className="space-y-3 p-4 sm:p-5">{children}</div>
+      <div className="space-y-3 p-3.5 sm:p-5">{children}</div>
     </section>
   );
 }
@@ -622,7 +622,7 @@ export default function CompetitionEntryForm({
                 >
                   <input
                     type="checkbox"
-                    className="mt-1 h-4 w-4 shrink-0 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
+                    className="mt-0.5 h-5 w-5 shrink-0 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
                     checked={isSelected}
                     onChange={() => toggleEvent(event.id)}
                     disabled={isTeamRestricted || fieldsLocked}
@@ -666,7 +666,7 @@ export default function CompetitionEntryForm({
                       }))
                     }
                     placeholder="例: 2:05.32"
-                    className="mt-2 h-9 text-sm"
+                    className="mt-2 h-10 text-sm sm:h-9"
                     disabled={fieldsLocked}
                   />
                 </div>
@@ -692,7 +692,7 @@ export default function CompetitionEntryForm({
         <CardTitle className="text-base font-semibold sm:text-lg">{entryCardTitle}</CardTitle>
         <CardDescription className="text-xs sm:text-sm">{entryCardDescription}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-5 px-4 py-4 sm:space-y-6 sm:px-5 sm:py-5">
+      <CardContent className="space-y-4 px-4 py-4 sm:space-y-6 sm:px-5 sm:py-5">
         {showFullForm && !entryWindowOpen ? (
           <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2.5 text-xs text-yellow-900 dark:border-yellow-900/40 dark:bg-yellow-900/20 dark:text-yellow-200">
             受付期間外のため送信できません。
@@ -973,8 +973,8 @@ export default function CompetitionEntryForm({
               </div>
             ) : null}
 
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-start lg:gap-8">
-              <div className="space-y-5">
+            <div className="grid gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-start lg:gap-8">
+              <div className="space-y-4 sm:space-y-5">
                 <FormSection
                   sectionId="entry-events"
                   icon={ListChecks}
@@ -1139,7 +1139,7 @@ export default function CompetitionEntryForm({
                   <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border/70 bg-muted/15 px-4 py-3.5 transition-colors hover:bg-muted/25 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
                     <input
                       type="checkbox"
-                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
+                      className="mt-0.5 h-5 w-5 shrink-0 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
                       checked={confirmed}
                       onChange={(e) => setConfirmed(e.target.checked)}
                       disabled={fieldsLocked}
@@ -1151,7 +1151,7 @@ export default function CompetitionEntryForm({
 
                   <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                     {estimatedFee != null && estimatedFee > 0 && !isSubmitDisabled ? (
-                      <p className={cn(fieldHintClass("guided"), "sm:max-w-[14rem]")}>
+                      <p className={cn(fieldHintClass("guided"), "hidden sm:block sm:max-w-[14rem]")}>
                         「決済へ進む」から外部の決済画面に進みます。
                         {estimatedProcessingFeeYen > 0 ? (
                           <>
@@ -1163,6 +1163,11 @@ export default function CompetitionEntryForm({
                     ) : (
                       <span className="hidden sm:block sm:flex-1" />
                     )}
+                    {estimatedFee != null && estimatedFee > 0 && !isSubmitDisabled ? (
+                      <p className="text-xs leading-relaxed text-muted-foreground sm:hidden">
+                        送信後に決済画面へ移動します。
+                      </p>
+                    ) : null}
                     <Button
                       size="lg"
                       className="h-11 w-full gap-2 text-sm font-semibold sm:h-10 sm:w-auto sm:min-w-[8.5rem]"
@@ -1187,7 +1192,7 @@ export default function CompetitionEntryForm({
               </div>
 
               <aside className="space-y-3 lg:sticky lg:top-4 lg:self-start">
-                <div className="rounded-xl border border-border/80 bg-muted/35 p-4 text-foreground shadow-sm">
+                <div className="order-2 rounded-xl border border-border/80 bg-muted/35 p-4 text-foreground shadow-sm lg:order-1">
                   {entryFeeSummary ? (
                     <>
                       <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -1242,7 +1247,7 @@ export default function CompetitionEntryForm({
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-border/80 bg-card p-4 text-foreground shadow-sm">
+                <div className="order-1 rounded-xl border border-border/80 bg-card p-4 text-foreground shadow-sm lg:order-2">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     <CheckCircle2 className="h-3.5 w-3.5 text-primary" aria-hidden />
                     選択中の種目

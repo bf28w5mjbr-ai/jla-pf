@@ -857,7 +857,12 @@ export default async function CompetitionEntryPage({
                 </div>
               </div>
             </div>
-            <Button variant="outline" size="sm" className="h-9 shrink-0 gap-1.5 px-3 text-xs sm:self-start" asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 gap-1.5 text-sm sm:self-start sm:text-xs"
+              asChild
+            >
               <Link href={appRoutes.competitions.root(competition.id)}>
                 <ArrowLeft className="h-3.5 w-3.5" />
                 大会ページへ
@@ -927,7 +932,7 @@ export default async function CompetitionEntryPage({
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="border-b border-border/60 bg-muted/20 px-4 py-4 sm:px-5">
             <CardTitle className="text-base font-semibold">エントリーする内容を選んでください</CardTitle>
-            <CardDescription className="text-xs sm:text-sm leading-relaxed">
+            <CardDescription className="text-xs leading-relaxed sm:text-sm">
               個人種目に出る場合と、チーム種目にのみ出場する場合では手続きが分かれます。
               チーム枠の登録やチーム名は、クラブ権限者が「チームエントリー」で行います。
             </CardDescription>
