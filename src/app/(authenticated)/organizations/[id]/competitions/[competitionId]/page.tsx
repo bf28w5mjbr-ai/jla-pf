@@ -499,12 +499,11 @@ export default async function CompetitionDetailPage({
             competitionId={competition.id}
             canEdit={canEdit}
             initialData={{
-              name: competition.name,
               category: competition.category,
               startDate: competition.startDate.toISOString().slice(0, 10),
               endDate: competition.endDate.toISOString().slice(0, 10),
-              entryStartDate: competition.entryStartDate?.toISOString().slice(0, 10) ?? "",
-              entryEndDate: competition.entryEndDate?.toISOString().slice(0, 10) ?? "",
+              entryStartDate: competition.entryStartDate?.toISOString() ?? "",
+              entryEndDate: competition.entryEndDate?.toISOString() ?? "",
               venue: competition.venue,
             }}
           />
