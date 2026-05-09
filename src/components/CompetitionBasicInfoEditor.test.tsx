@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import CompetitionBasicInfoEditor from "./CompetitionBasicInfoEditor";
 
 const refresh = vi.fn();
@@ -36,6 +36,11 @@ describe("CompetitionBasicInfoEditor", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     refresh.mockReset();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
   });
 
   it("does not send competition name when saving basic info", async () => {
