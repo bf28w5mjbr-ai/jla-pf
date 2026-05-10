@@ -19,6 +19,7 @@ import {
 } from "@/lib/qualificationLabels";
 import { normalizeQualificationKind } from "@/lib/qualificationTemplateRules";
 import { appRoutes } from "@/lib/appRoutes";
+import { userFacingApiErrorMessage } from "@/lib/userFacingApiError";
 
 type TemplateRow = {
   id: string;
@@ -202,9 +203,9 @@ export default function QualificationsSelectionClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      const data = (await res.json().catch(() => ({}))) as unknown;
       if (!res.ok) {
-        throw new Error(data.error || "保存に失敗しました");
+        throw new Error(userFacingApiErrorMessage(data, "保存に失敗しました"));
       }
       toast.success("申請資格を保存しました");
       router.push(appRoutes.dashboard());

@@ -710,29 +710,40 @@ export default function CompetitionTeamEntryManager({
               disabled={!entryWindowOpen}
               className="mt-1"
             />
-            <div className="min-w-0 flex-1 space-y-1">
+            <div className="min-w-0 flex-1 space-y-2">
               <Label htmlFor="club-prepaid-individual" className="text-sm font-medium text-foreground">
                 クラブによる個人エントリー
               </Label>
               <p className="text-xs leading-relaxed text-muted-foreground">
+                個人種目に出る部員の参加費を<strong className="font-medium text-foreground">クラブがまとめて負担</strong>
+                するときに使います。部費でまとめたい・選手本人にカード決済をさせたくない、といった場合にチェックし、下の一覧で対象者を指定してください。
+              </p>
+              <p className="text-xs leading-relaxed text-muted-foreground">
                 {clubIndividualEntryBillingTiming === "POST_CLOSE_INVOICE" ? (
                   <>
-                    指定したメンバーは<strong className="font-medium text-foreground">本人のエントリーでカード決済を省略</strong>
-                    し、エントリー締切後に主催者が確定した請求でクラブがまとめて支払います（チーム参加費と合算）。
+                    <strong className="font-medium text-foreground">本人</strong>
+                    は大会の個人エントリーで種目を選ぶだけでよく、ここで指定したメンバーは
+                    <strong className="font-medium text-foreground">カード払いしません</strong>。
+                    <strong className="font-medium text-foreground">クラブ</strong>
+                    は、エントリー締切後に主催者が確定した請求で、チーム参加費とあわせて個人分もまとめて支払います。
                   </>
                 ) : (
                   <>
-                    指定したメンバー分の個人参加費を<strong className="font-medium text-foreground">チーム請求に上乗せ</strong>
-                    します。先にチーム請求を支払うと、本人は個人エントリー画面で参加費が相殺されます。
+                    <strong className="font-medium text-foreground">クラブ</strong>
+                    がチーム請求を支払うとき、ここで指定した人数ぶんの個人参加費が
+                    <strong className="font-medium text-foreground">チーム請求の金額に含まれます</strong>。
+                    そのあと<strong className="font-medium text-foreground">本人</strong>
+                    が個人エントリーで種目を選ぶと、個人分の<strong className="font-medium text-foreground">追加のカード決済は不要</strong>
+                    です。
                   </>
                 )}
               </p>
               {clubIndividualEntryBillingTiming === "POST_CLOSE_INVOICE" ? (
-                <Badge variant="outline" className="mt-1 font-normal">
+                <Badge variant="outline" className="font-normal">
                   個人分: 締切後請求
                 </Badge>
               ) : (
-                <Badge variant="outline" className="mt-1 font-normal">
+                <Badge variant="outline" className="font-normal">
                   個人分: 先払い（チーム決済に含む）
                 </Badge>
               )}

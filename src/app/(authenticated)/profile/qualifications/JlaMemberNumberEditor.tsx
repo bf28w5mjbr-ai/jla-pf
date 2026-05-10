@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { isValidJlaMemberNumber, normalizeJlaMemberNumber } from "@/lib/jlaMemberNumber";
+import { userFacingApiErrorMessage } from "@/lib/userFacingApiError";
 
 interface JlaMemberNumberEditorProps {
   initialValue: string | null;
@@ -39,9 +40,13 @@ export default function JlaMemberNumberEditor({ initialValue }: JlaMemberNumberE
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jlaMemberNumber: normalized }),
       });
-      const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string; jlaMemberNumber?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+        jlaMemberNumber?: string;
+      };
       if (!res.ok) {
-        throw new Error(data.error || "保存に失敗しました");
+        throw new Error(userFacingApiErrorMessage(data, "保存に失敗しました"));
       }
       if (data.jlaMemberNumber) {
         setValue(data.jlaMemberNumber);

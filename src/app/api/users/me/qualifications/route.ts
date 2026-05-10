@@ -7,6 +7,7 @@ import { verifySession } from "@/lib/auth";
 import { syncUserHeldQualifications } from "@/lib/qualificationSelfServiceSync";
 import { normalizeJlaMemberNumber } from "@/lib/jlaMemberNumber";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 
 const PutBodySchema = z.object({
@@ -45,6 +46,12 @@ export async function PUT(req: NextRequest) {
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(zodErrorJsonBody(err, "validation_message_ja"), { status: 400 });
+    }
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return NextResponse.json(
+        { error: "このJLAメンバーIDは既に使用されています" },
+        { status: 400 }
+      );
     }
     return jsonInternalError500("PUT api/users/me/qualifications/route.ts", err);
   }

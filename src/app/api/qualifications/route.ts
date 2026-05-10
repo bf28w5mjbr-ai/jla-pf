@@ -21,6 +21,22 @@ import {
   parseQualificationTemplateMeta,
 } from "@/lib/qualificationTemplateRules";
 
+const DEFAULT_QUALIFICATION_PAGE_LIMIT = 20;
+const MAX_QUALIFICATION_PAGE_LIMIT = 200;
+
+function clampQualificationPagination(limitRaw: number, offsetRaw: number): {
+  limit: number;
+  offset: number;
+} {
+  const limit =
+    Number.isFinite(limitRaw) && limitRaw >= 1
+      ? Math.min(Math.floor(limitRaw), MAX_QUALIFICATION_PAGE_LIMIT)
+      : DEFAULT_QUALIFICATION_PAGE_LIMIT;
+  const offset =
+    Number.isFinite(offsetRaw) && offsetRaw >= 0 ? Math.floor(offsetRaw) : 0;
+  return { limit, offset };
+}
+
 // GET /api/qualifications - 資格一覧取得
 export async function GET(req: NextRequest) {
   try {
@@ -36,8 +52,10 @@ export async function GET(req: NextRequest) {
     const userId = searchParams.get('userId');
     const kind = searchParams.get('kind');
     const status = searchParams.get('status'); // 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED'
-    const limit = parseInt(searchParams.get('limit') || '20');
-    const offset = parseInt(searchParams.get('offset') || '0');
+    const { limit, offset } = clampQualificationPagination(
+      parseInt(searchParams.get("limit") || String(DEFAULT_QUALIFICATION_PAGE_LIMIT), 10),
+      parseInt(searchParams.get("offset") || "0", 10)
+    );
 
     const where: Prisma.QualificationWhereInput = {};
 
