@@ -1,5 +1,6 @@
 import type { Competition } from "@prisma/client";
 import {
+  buildEntryPeriodExtensionAnnouncement,
   isPeriodShortening,
   PUBLISHED_ENTRY_PERIOD_SHORTEN_FORBIDDEN_MESSAGE,
 } from "@/lib/autoEntryChangeAnnouncement";
@@ -94,7 +95,7 @@ export type EntrySettingsBody = {
   requireClubMembership?: unknown;
   minAge?: unknown;
   maxAge?: unknown;
-  /** 公開後かつエントリー成立後の緩和・延長時に必須 */
+  /** 公開後かつエントリー成立後の緩和・延長時の参加者向け告知（任意・未送信時は API で自動補完することがある） */
   announcementMessage?: unknown;
 };
 
@@ -135,6 +136,49 @@ function isPeriodExtension(
   return false;
 }
 
+/**
+ * 公開済みかつエントリー成立後の受付延長・前倒しで、クライアントが告知を付け損ねた場合に
+ * 管理画面と同一文言の announcementMessage を補完する（API 単体でも保存可能にする）。
+ */
+export function augmentEntrySettingsBodyWithAutoAnnouncement(
+  competition: Competition,
+  body: Record<string, unknown>,
+  state: CompetitionMutationState
+): Record<string, unknown> {
+  if (!state.isPublished || !state.hasEstablishedEntry) {
+    return body;
+  }
+
+  const newStart = mergeDate(body.entryStartDate, competition.entryStartDate);
+  const newEnd = mergeDate(body.entryEndDate, competition.entryEndDate);
+  if (!isPeriodExtension(competition.entryStartDate, competition.entryEndDate, newStart, newEnd)) {
+    return body;
+  }
+
+  const userAnnounce =
+    typeof body.announcementMessage === "string" && body.announcementMessage.trim().length > 0;
+  if (userAnnounce) {
+    return body;
+  }
+
+  if (newStart == null || newEnd == null) {
+    return body;
+  }
+
+  const auto = buildEntryPeriodExtensionAnnouncement(
+    competition.entryStartDate,
+    competition.entryEndDate,
+    newStart.toISOString(),
+    newEnd.toISOString(),
+    true
+  );
+  if (!auto) {
+    return body;
+  }
+
+  return { ...body, announcementMessage: auto };
+}
+
 function isAgeTightening(
   oldMin: number | null,
   oldMax: number | null,
@@ -172,16 +216,6 @@ export function assertEntrySettingsChange(
   if (isPeriodShortening(oldStart, oldEnd, newStart, newEnd)) {
     throw new CompetitionEditForbiddenError(
       PUBLISHED_ENTRY_PERIOD_SHORTEN_FORBIDDEN_MESSAGE
-    );
-  }
-
-  const extension = isPeriodExtension(oldStart, oldEnd, newStart, newEnd);
-  const announce =
-    typeof body.announcementMessage === "string" && body.announcementMessage.trim().length > 0;
-
-  if (extension && state.hasEstablishedEntry && !announce) {
-    throw new CompetitionEditForbiddenError(
-      "エントリーが成立しているため、受付期間の延長・前倒しを行う場合は announcementMessage で参加者への告知内容を入力してください。"
     );
   }
 

@@ -47,6 +47,7 @@ import {
 import { meetsCompetitionEventAgeEligibility } from "@/lib/underAgeEventEligibility";
 import { resolveEffectiveUnderBandAllowListForEvent } from "@/lib/underBandAllowList";
 import { getStripeProcessingFeeBpsFromEnv } from "@/lib/stripeProcessingFee";
+import { reconcileTeamOnlyIntentZeroTotalFeeEntry } from "@/lib/teamOnlyIntentZeroFeeReconcile";
 
 type CompetitionEntryFormProps = ComponentProps<typeof CompetitionEntryForm>;
 
@@ -416,6 +417,37 @@ export default async function CompetitionEntryPage({
       },
     },
   });
+
+  if (
+    existingEntry?.status === "SUBMITTED" &&
+    existingEntry.totalFee === 0 &&
+    existingEntry.items.length === 0
+  ) {
+    const reconciled = await reconcileTeamOnlyIntentZeroTotalFeeEntry(existingEntry.id);
+    if (reconciled) {
+      const refreshed = await prisma.competitionEntry.findUnique({
+        where: { id: existingEntry.id },
+        include: {
+          items: true,
+          snapshot: true,
+          club: { select: { name: true } },
+          checkoutSessions: {
+            orderBy: { createdAt: "desc" },
+          },
+          participantStatuses: {
+            select: {
+              eventId: true,
+              status: true,
+              reason: true,
+            },
+          },
+        },
+      });
+      if (refreshed) {
+        existingEntry = refreshed;
+      }
+    }
+  }
 
   const matchesQualification = (value: string, required: string) => {
     const normalizedValue = safeNormalizeComparable(value);

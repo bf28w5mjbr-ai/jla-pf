@@ -37,7 +37,11 @@ import CompetitionNameInlineEditor from "@/components/CompetitionNameInlineEdito
 import { loadCompetitionMutationState } from "@/lib/competitionPublishedEditRules";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { formatCompactJaDateRange } from "@/lib/datetimeLocal";
+import {
+  COMPETITION_ADMIN_DATE_TIME_ZONE,
+  formatCompactJaDateRange,
+  formatDateForDatetimeLocalInput,
+} from "@/lib/datetimeLocal";
 import { relationLogosWithDisplaySrc } from "@/lib/relationLogos";
 import {
   parseCompetitionManagementTab,
@@ -503,8 +507,16 @@ export default async function CompetitionDetailPage({
               category: competition.category,
               startDate: competition.startDate.toISOString().slice(0, 10),
               endDate: competition.endDate.toISOString().slice(0, 10),
-              entryStartDate: competition.entryStartDate?.toISOString().slice(0, 10) ?? "",
-              entryEndDate: competition.entryEndDate?.toISOString().slice(0, 10) ?? "",
+              entryStartDate: competition.entryStartDate
+                ? formatDateForDatetimeLocalInput(competition.entryStartDate, {
+                    timeZone: COMPETITION_ADMIN_DATE_TIME_ZONE,
+                  })
+                : "",
+              entryEndDate: competition.entryEndDate
+                ? formatDateForDatetimeLocalInput(competition.entryEndDate, {
+                    timeZone: COMPETITION_ADMIN_DATE_TIME_ZONE,
+                  })
+                : "",
               venue: competition.venue,
             }}
           />

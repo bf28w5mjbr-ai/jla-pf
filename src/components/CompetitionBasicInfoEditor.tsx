@@ -7,6 +7,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MapPin } from "lucide-react";
 import { toast } from "sonner";
+import {
+  buildEntryPeriodExtensionAnnouncement,
+  isPeriodExtension,
+} from "@/lib/autoEntryChangeAnnouncement";
+import {
+  COMPETITION_ADMIN_DATE_TIME_ZONE,
+  datetimeLocalInputValueToUtcIsoString,
+  formatCompetitionEntryPeriodRangeJa,
+} from "@/lib/datetimeLocal";
 
 type Props = {
   competitionId: string;
@@ -26,6 +35,8 @@ const CATEGORY_OPTIONS = [
   { value: "プール", label: "プール" },
   { value: "オーシャン", label: "オーシャン" },
 ] as const;
+
+const ENTRY_DATETIME_LOCAL_OPTS = { timeZone: COMPETITION_ADMIN_DATE_TIME_ZONE } as const;
 
 export default function CompetitionBasicInfoEditor({ competitionId, canEdit, initialData }: Props) {
   const router = useRouter();
@@ -169,34 +180,86 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
     ) {
       return;
     }
-    if ((nextEntryStartDate && !nextEntryEndDate) || (!nextEntryStartDate && nextEntryEndDate)) {
-      toast.error("エントリー期間は開始日と終了日を両方入力してください");
-      setStatusText("エントリー期間は開始日と終了日を両方入力してください");
+    const nextStartTrim = nextEntryStartDate.trim();
+    const nextEndTrim = nextEntryEndDate.trim();
+    if ((nextStartTrim && !nextEndTrim) || (!nextStartTrim && nextEndTrim)) {
+      toast.error("エントリー期間は開始と終了の日時を両方入力してください");
+      setStatusText("エントリー期間は開始と終了の日時を両方入力してください");
       setStatusTone("error");
       return;
     }
-    if (
-      nextEntryStartDate &&
-      nextEntryEndDate &&
-      new Date(nextEntryStartDate) > new Date(nextEntryEndDate)
-    ) {
-      toast.error("エントリー期間の終了日は開始日以降にしてください");
-      setStatusText("エントリー期間の終了日は開始日以降にしてください");
-      setStatusTone("error");
-      return;
+
+    let entryStartUtcIso: string | null = null;
+    let entryEndUtcIso: string | null = null;
+    if (nextStartTrim && nextEndTrim) {
+      entryStartUtcIso = datetimeLocalInputValueToUtcIsoString(nextStartTrim, ENTRY_DATETIME_LOCAL_OPTS);
+      entryEndUtcIso = datetimeLocalInputValueToUtcIsoString(nextEndTrim, ENTRY_DATETIME_LOCAL_OPTS);
+      if (!entryStartUtcIso || !entryEndUtcIso) {
+        toast.error("エントリー期間の日時形式が正しくありません");
+        setStatusText("エントリー期間の日時形式が正しくありません");
+        setStatusTone("error");
+        return;
+      }
+      if (new Date(entryStartUtcIso) > new Date(entryEndUtcIso)) {
+        toast.error("エントリー終了日時は開始日時より後にしてください");
+        setStatusText("エントリー終了日時は開始日時より後にしてください");
+        setStatusTone("error");
+        return;
+      }
     }
 
     try {
       setIsSaving(true);
       setStatusText("保存中…");
       setStatusTone("muted");
+
+      let entryPayload: Record<string, unknown> =
+        nextStartTrim && nextEndTrim && entryStartUtcIso && entryEndUtcIso
+          ? {
+              entryStartDate: entryStartUtcIso,
+              entryEndDate: entryEndUtcIso,
+            }
+          : {
+              entryStartDate: "",
+              entryEndDate: "",
+            };
+
+      const oldStartIso =
+        lastSaved.entryStartDate.trim().length > 0
+          ? datetimeLocalInputValueToUtcIsoString(lastSaved.entryStartDate, ENTRY_DATETIME_LOCAL_OPTS)
+          : null;
+      const oldEndIso =
+        lastSaved.entryEndDate.trim().length > 0
+          ? datetimeLocalInputValueToUtcIsoString(lastSaved.entryEndDate, ENTRY_DATETIME_LOCAL_OPTS)
+          : null;
+      if (
+        oldStartIso &&
+        oldEndIso &&
+        entryStartUtcIso &&
+        entryEndUtcIso &&
+        isPeriodExtension(
+          new Date(oldStartIso),
+          new Date(oldEndIso),
+          new Date(entryStartUtcIso),
+          new Date(entryEndUtcIso)
+        )
+      ) {
+        const announce = buildEntryPeriodExtensionAnnouncement(
+          new Date(oldStartIso),
+          new Date(oldEndIso),
+          entryStartUtcIso,
+          entryEndUtcIso,
+          true
+        );
+        if (announce) {
+          entryPayload = { ...entryPayload, announcementMessage: announce };
+        }
+      }
+
       const response = await fetch(`/api/competitions/${competitionId}/entry-settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          entryStartDate: nextEntryStartDate,
-          entryEndDate: nextEntryEndDate,
-        }),
+        body: JSON.stringify(entryPayload),
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({} as { message?: string }));
@@ -204,9 +267,11 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
       }
       setLastSaved((prev) => ({
         ...prev,
-        entryStartDate: nextEntryStartDate,
-        entryEndDate: nextEntryEndDate,
+        entryStartDate: nextStartTrim,
+        entryEndDate: nextEndTrim,
       }));
+      setEntryStartDate(nextStartTrim);
+      setEntryEndDate(nextEndTrim);
       setStatusText("保存しました");
       setStatusTone("success");
       router.refresh();
@@ -237,9 +302,18 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
           <div className="rounded-md border border-border bg-muted/20 px-2.5 py-2">
             <p className="text-[11px] text-muted-foreground">エントリー期間</p>
             <p className="text-sm font-medium">
-              {entryStartDate && entryEndDate
-                ? `${new Date(entryStartDate).toLocaleDateString("ja-JP")} 〜 ${new Date(entryEndDate).toLocaleDateString("ja-JP")}`
-                : "未設定"}
+              {(() => {
+                const sIso = entryStartDate.trim()
+                  ? datetimeLocalInputValueToUtcIsoString(entryStartDate, ENTRY_DATETIME_LOCAL_OPTS)
+                  : null;
+                const eIso = entryEndDate.trim()
+                  ? datetimeLocalInputValueToUtcIsoString(entryEndDate, ENTRY_DATETIME_LOCAL_OPTS)
+                  : null;
+                if (!sIso || !eIso) return "未設定";
+                return (
+                  formatCompetitionEntryPeriodRangeJa(new Date(sIso), new Date(eIso)) ?? "未設定"
+                );
+              })()}
             </p>
           </div>
 
@@ -343,27 +417,29 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
               }
             }}
           >
-            <Label className="text-xs">エントリー期間</Label>
-            <div className="flex items-center gap-2 rounded-md border border-input bg-background px-2.5 py-1.5">
+            <Label className="text-xs">エントリー期間（日本時間）</Label>
+            <div className="flex flex-col gap-2 rounded-md border border-input bg-background px-2.5 py-2 sm:flex-row sm:items-center">
               <Input
                 id="entryStartDate"
-                type="date"
+                type="datetime-local"
                 value={entryStartDate}
                 onChange={(e) => setEntryStartDate(e.target.value)}
-                className="h-8 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"
+                className="h-9 min-w-0 flex-1 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"
                 disabled={isSaving}
               />
-              <span className="text-xs text-muted-foreground">〜</span>
+              <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">〜</span>
               <Input
                 id="entryEndDate"
-                type="date"
+                type="datetime-local"
                 value={entryEndDate}
                 onChange={(e) => setEntryEndDate(e.target.value)}
-                className="h-8 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"
+                className="h-9 min-w-0 flex-1 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"
                 disabled={isSaving}
               />
             </div>
-            <p className="text-xs text-muted-foreground">未入力にするとエントリー期間は未設定になります。</p>
+            <p className="text-xs text-muted-foreground">
+              日時は日本時間（Asia/Tokyo）の壁時計で入力され、エントリー設定タブのエントリー期間と同じ基準で保存されます。両方未入力にするとエントリー期間は未設定になります。
+            </p>
           </div>
 
           <div>

@@ -6,6 +6,7 @@ import {
   assertEventAddAllowed,
   assertEventDeletionAllowed,
   assertRequiredQualificationsChange,
+  augmentEntrySettingsBodyWithAutoAnnouncement,
   CompetitionEditForbiddenError,
 } from "./competitionPublishedEditRules";
 
@@ -88,7 +89,7 @@ describe("competitionPublishedEditRules", () => {
     ).not.toThrow();
   });
 
-  it("blocks period extension after established entry when no announcement", () => {
+  it("allows period extension after established entry without announcementMessage", () => {
     const competition = createCompetition({
       isPublished: true,
     });
@@ -102,7 +103,24 @@ describe("competitionPublishedEditRules", () => {
           hasEstablishedEntry: true,
         }
       )
-    ).toThrowError(CompetitionEditForbiddenError);
+    ).not.toThrow();
+  });
+
+  it("allows period extension after established entry when body is augmented with auto announcement", () => {
+    const competition = createCompetition({
+      isPublished: true,
+    });
+    const state = {
+      isPublished: true,
+      hasPaymentFlowStarted: true,
+      hasEstablishedEntry: true,
+    };
+    const raw = { entryEndDate: "2026-07-25T23:59:59.000Z" };
+    const augmented = augmentEntrySettingsBodyWithAutoAnnouncement(competition, raw, state);
+    expect(augmented.announcementMessage).toEqual(
+      expect.stringContaining("エントリー受付期間を変更しました")
+    );
+    expect(() => assertEntrySettingsChange(competition, augmented, state)).not.toThrow();
   });
 
   it("allows qualification relaxation with announcement", () => {

@@ -6,6 +6,7 @@ import { prisma } from "@/server/db";
 import {
   announceCompetitionRuleChange,
   assertEntrySettingsChange,
+  augmentEntrySettingsBodyWithAutoAnnouncement,
   CompetitionEditForbiddenError,
   loadCompetitionMutationState,
 } from "@/lib/competitionPublishedEditRules";
@@ -71,8 +72,13 @@ export async function PUT(
     }
 
     const mutationState = await loadCompetitionMutationState(competitionId);
+    const bodyForAssert = augmentEntrySettingsBodyWithAutoAnnouncement(
+      competition,
+      body,
+      mutationState
+    );
     try {
-      assertEntrySettingsChange(competition, body, mutationState);
+      assertEntrySettingsChange(competition, bodyForAssert, mutationState);
     } catch (e) {
       if (e instanceof CompetitionEditForbiddenError) {
         return NextResponse.json({ message: e.message }, { status: 400 });
@@ -170,8 +176,8 @@ export async function PUT(
     }
 
     const announce =
-      typeof body.announcementMessage === "string"
-        ? body.announcementMessage.trim()
+      typeof bodyForAssert.announcementMessage === "string"
+        ? bodyForAssert.announcementMessage.trim()
         : "";
 
     if (Object.keys(data).length === 0) {
