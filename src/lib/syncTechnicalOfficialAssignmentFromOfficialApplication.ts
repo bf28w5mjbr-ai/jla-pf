@@ -47,3 +47,14 @@ export async function syncTechnicalOfficialAssignmentFromOfficialApplication(
     update: {},
   });
 }
+
+/** 大会オフィシャル応募の取り消し: 公式応募経由の任命のみ削除（招待経由の行は残す） */
+export async function clearTechnicalOfficialAssignmentsFromOfficialApplicationWithdraw(
+  tx: Prisma.TransactionClient,
+  params: { competitionId: string; userId: string }
+): Promise<void> {
+  const { competitionId, userId } = params;
+  await tx.competitionTechnicalOfficialAssignment.deleteMany({
+    where: { competitionId, userId, invitationId: null },
+  });
+}

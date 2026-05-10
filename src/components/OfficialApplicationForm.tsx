@@ -3,6 +3,15 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -72,6 +81,8 @@ export function OfficialApplicationForm({
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawPending, setWithdrawPending] = useState(false);
 
   const hasApplication = Boolean(initialApplication);
   const isApprovedOrPending =
@@ -119,6 +130,27 @@ export function OfficialApplicationForm({
         toast.error(err instanceof Error ? err.message : "送信に失敗しました");
       }
     });
+  };
+
+  const withdraw = async () => {
+    if (withdrawPending) return;
+    setWithdrawPending(true);
+    try {
+      const res = await fetch(`/api/competitions/${competitionId}/official-applications`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof data.error === "string" ? data.error : "取り消しに失敗しました");
+      }
+      toast.success("オフィシャル応募を取り消しました");
+      setWithdrawOpen(false);
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "取り消しに失敗しました");
+    } finally {
+      setWithdrawPending(false);
+    }
   };
 
   if (showReadOnlyAfterSubmit) {
@@ -190,7 +222,9 @@ export function OfficialApplicationForm({
       <CardContent>
         {usePatch ? (
           <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-950 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-100">
-            受付期間内であれば、応募内容を更新できます。
+            {
+              "受付期間内であれば、応募内容を更新できます。応募そのものを取り消すこともできます（取り消し後は未応募扱いで再応募できます。TOとして応募している場合は、応募から付いたクラブ任命も解除されます）。"
+            }
           </p>
         ) : null}
         <AutofillSyncForm onSubmit={submit} className="space-y-4">
@@ -313,6 +347,49 @@ export function OfficialApplicationForm({
             {isPending ? "送信中…" : usePatch ? "応募内容を更新" : "応募する"}
           </Button>
         </AutofillSyncForm>
+
+        {usePatch && canSubmit ? (
+          <>
+            <div className="mt-6 border-t border-border/80 pt-5">
+              <p className="mb-2 text-xs text-muted-foreground">応募の取り消し</p>
+              <Button
+                type="button"
+                variant="outline"
+                className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                disabled={isPending || withdrawPending}
+                onClick={() => setWithdrawOpen(true)}
+              >
+                応募を取り消す
+              </Button>
+            </div>
+            <AlertDialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>オフィシャル応募を取り消しますか？</AlertDialogTitle>
+                  <AlertDialogDescription className="space-y-2 text-left">
+                    <span className="block">
+                      取り消すとこの大会へのオフィシャル応募はなくなり、必要なら再度「応募する」から登録できます。
+                    </span>
+                    <span className="block">
+                      TOとして応募している場合、当該大会でのクラブ任命（応募から付いたもの）も解除されます。招待で付いた任命はそのままです。
+                    </span>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={withdrawPending}>キャンセル</AlertDialogCancel>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={withdrawPending}
+                    onClick={() => void withdraw()}
+                  >
+                    {withdrawPending ? "取り消し中…" : "取り消す"}
+                  </Button>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </>
+        ) : null}
       </CardContent>
     </Card>
   );

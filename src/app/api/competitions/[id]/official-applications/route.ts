@@ -8,7 +8,10 @@ import {
   loadOfficialApplicationCompetition,
   parseOfficialApplicationBody,
 } from "@/lib/officialApplicationSubmit";
-import { syncTechnicalOfficialAssignmentFromOfficialApplication } from "@/lib/syncTechnicalOfficialAssignmentFromOfficialApplication";
+import {
+  clearTechnicalOfficialAssignmentsFromOfficialApplicationWithdraw,
+  syncTechnicalOfficialAssignmentFromOfficialApplication,
+} from "@/lib/syncTechnicalOfficialAssignmentFromOfficialApplication";
 
 export async function POST(
   req: NextRequest,
@@ -175,5 +178,55 @@ export async function PATCH(
     return NextResponse.json({ success: true, application: row });
   } catch (e) {
     return jsonInternalError500("PATCH api/competitions/[id]/official-applications/route.ts", e);
+  }
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: competitionId } = await params;
+    const cookieStore = await cookies();
+    const token = cookieStore.get("session")?.value;
+    const session = token ? await verifySession(token) : null;
+    if (!session?.userId) {
+      return NextResponse.json({ error: "未認証です" }, { status: 401 });
+    }
+
+    const loaded = await loadOfficialApplicationCompetition(prisma, competitionId, session.userId);
+    if (!loaded.ok) {
+      return NextResponse.json({ error: loaded.error }, { status: loaded.status });
+    }
+
+    const existing = await prisma.competitionOfficialApplication.findUnique({
+      where: {
+        competitionId_userId: { competitionId, userId: session.userId },
+      },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: "応募が見つかりません" }, { status: 404 });
+    }
+    if (existing.status !== "APPROVED" && existing.status !== "PENDING") {
+      return NextResponse.json(
+        { error: "取り消せる応募がありません（見送り済みの応募は取り消し不要です）" },
+        { status: 400 }
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await clearTechnicalOfficialAssignmentsFromOfficialApplicationWithdraw(tx, {
+        competitionId,
+        userId: session.userId,
+      });
+      await tx.competitionOfficialApplication.delete({
+        where: { id: existing.id },
+      });
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (e) {
+    return jsonInternalError500("DELETE api/competitions/[id]/official-applications/route.ts", e);
   }
 }

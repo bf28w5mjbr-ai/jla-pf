@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { syncTechnicalOfficialAssignmentFromOfficialApplication } from "@/lib/syncTechnicalOfficialAssignmentFromOfficialApplication";
+import {
+  clearTechnicalOfficialAssignmentsFromOfficialApplicationWithdraw,
+  syncTechnicalOfficialAssignmentFromOfficialApplication,
+} from "@/lib/syncTechnicalOfficialAssignmentFromOfficialApplication";
 
 function makeTx() {
   return {
@@ -63,5 +66,19 @@ describe("syncTechnicalOfficialAssignmentFromOfficialApplication", () => {
     });
     expect(tx.competitionTechnicalOfficialAssignment.deleteMany).not.toHaveBeenCalled();
     expect(tx.competitionTechnicalOfficialAssignment.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe("clearTechnicalOfficialAssignmentsFromOfficialApplicationWithdraw", () => {
+  it("deletes invitation-null assignments for user and competition", async () => {
+    const tx = makeTx();
+    await clearTechnicalOfficialAssignmentsFromOfficialApplicationWithdraw(tx as never, {
+      competitionId: "c1",
+      userId: "u1",
+    });
+    expect(tx.competitionTechnicalOfficialAssignment.deleteMany).toHaveBeenCalledTimes(1);
+    expect(tx.competitionTechnicalOfficialAssignment.deleteMany).toHaveBeenCalledWith({
+      where: { competitionId: "c1", userId: "u1", invitationId: null },
+    });
   });
 });
