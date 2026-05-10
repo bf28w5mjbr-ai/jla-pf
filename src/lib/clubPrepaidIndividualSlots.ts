@@ -1,4 +1,8 @@
 import type { PrismaClient } from "@prisma/client";
+import {
+  loadCompetitionForPrepaidReconcile,
+  reconcileRetroactiveClubPrepaidSlotsForUsersInTx,
+} from "@/lib/clubPrepaidIndividualSlotRetroactiveReconcile";
 import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import { resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
@@ -130,6 +134,26 @@ export async function applyClubTeamAndPrepaidStripeSideEffects(
         : null;
 
     if (!clubId || !competitionId) return;
+
+    const competition = await loadCompetitionForPrepaidReconcile(tx, competitionId);
+    if (competition) {
+      const activeWaiverUsers = await tx.clubCompetitionPrepaidIndividualSlot.findMany({
+        where: {
+          clubPaymentId: paymentId,
+          status: "ACTIVE_WAIVER",
+          consumedByEntryId: null,
+        },
+        select: { coveredUserId: true },
+      });
+      const activeIds = [...new Set(activeWaiverUsers.map((r) => r.coveredUserId))];
+      if (activeIds.length > 0) {
+        await reconcileRetroactiveClubPrepaidSlotsForUsersInTx(tx, {
+          competition,
+          clubId,
+          coveredUserIds: activeIds,
+        });
+      }
+    }
 
     const deferredSlots = await tx.clubCompetitionPrepaidIndividualSlot.findMany({
       where: {

@@ -1,6 +1,8 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
+import { ENTRY_CHECKOUT_PAID_STATUSES } from "@/lib/entryCheckoutSessionPaid";
+import { reconcileRetroactiveClubPrepaidSlotsAfterTeamEntrySave } from "@/lib/clubPrepaidIndividualSlotRetroactiveReconcile";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { isClubAdminRole } from "@/lib/roleScopes";
@@ -237,6 +239,28 @@ export async function PUT(request: NextRequest, context: RouteContext) {
           { status: 400 }
         );
       }
+
+      const prepaidAlreadyPaid = await prisma.competitionEntry.findFirst({
+        where: {
+          competitionId,
+          clubId,
+          userId: { in: prepaidIndividualUserIds },
+          status: "SUBMITTED",
+          checkoutSessions: {
+            some: { status: { in: [...ENTRY_CHECKOUT_PAID_STATUSES] } },
+          },
+        },
+        select: { userId: true },
+      });
+      if (prepaidAlreadyPaid) {
+        return NextResponse.json(
+          {
+            message:
+              "個人のカード決済が済んでいる選手はクラブ個人枠に含められません。該当ユーザーをリストから除外してください（返金が必要な場合は運営へお問い合わせください）。",
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const clubIndividualBillingTiming = resolveClubIndividualEntryBillingTiming(competition.entryFee);
@@ -436,6 +460,14 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     },
       { maxWait: 20_000, timeout: 55_000 }
     );
+
+    if (prepaidIndividualUserIds.length > 0) {
+      await reconcileRetroactiveClubPrepaidSlotsAfterTeamEntrySave(prisma, {
+        competitionId,
+        clubId,
+        coveredUserIds: prepaidIndividualUserIds,
+      });
+    }
 
     const teamEntries = await prisma.teamEntry.findMany({
       where: {
