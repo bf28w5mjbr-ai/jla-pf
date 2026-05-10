@@ -7,12 +7,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MapPin } from "lucide-react";
 import { toast } from "sonner";
+import {
+  COMPETITION_ADMIN_DATE_TIME_ZONE,
+  datetimeLocalInputValueToUtcIsoString,
+  formatCompetitionEntryPeriodRangeJa,
+  formatDateForDatetimeLocalInput,
+} from "@/lib/datetimeLocal";
 
 type Props = {
   competitionId: string;
   canEdit: boolean;
   initialData: {
-    name: string;
     category: string | null;
     startDate: string;
     endDate: string;
@@ -27,21 +32,34 @@ const CATEGORY_OPTIONS = [
   { value: "オーシャン", label: "オーシャン" },
 ] as const;
 
+function formatEntryPeriodInput(value: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return formatDateForDatetimeLocalInput(date, {
+    timeZone: COMPETITION_ADMIN_DATE_TIME_ZONE,
+  });
+}
+
 export default function CompetitionBasicInfoEditor({ competitionId, canEdit, initialData }: Props) {
   const router = useRouter();
   const [isSaving, setIsSaving] = useState(false);
   const [category, setCategory] = useState(initialData.category ?? "");
   const [startDate, setStartDate] = useState(initialData.startDate);
   const [endDate, setEndDate] = useState(initialData.endDate);
-  const [entryStartDate, setEntryStartDate] = useState(initialData.entryStartDate);
-  const [entryEndDate, setEntryEndDate] = useState(initialData.entryEndDate);
+  const [entryStartDate, setEntryStartDate] = useState(
+    formatEntryPeriodInput(initialData.entryStartDate)
+  );
+  const [entryEndDate, setEntryEndDate] = useState(
+    formatEntryPeriodInput(initialData.entryEndDate)
+  );
   const [venue, setVenue] = useState(initialData.venue);
   const [lastSaved, setLastSaved] = useState({
     category: initialData.category ?? "",
     startDate: initialData.startDate,
     endDate: initialData.endDate,
-    entryStartDate: initialData.entryStartDate,
-    entryEndDate: initialData.entryEndDate,
+    entryStartDate: formatEntryPeriodInput(initialData.entryStartDate),
+    entryEndDate: formatEntryPeriodInput(initialData.entryEndDate),
     venue: initialData.venue,
   });
   const [statusText, setStatusText] = useState<string>("");
@@ -54,15 +72,17 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
     setCategory(initialData.category ?? "");
     setStartDate(initialData.startDate);
     setEndDate(initialData.endDate);
-    setEntryStartDate(initialData.entryStartDate);
-    setEntryEndDate(initialData.entryEndDate);
+    const nextEntryStartDate = formatEntryPeriodInput(initialData.entryStartDate);
+    const nextEntryEndDate = formatEntryPeriodInput(initialData.entryEndDate);
+    setEntryStartDate(nextEntryStartDate);
+    setEntryEndDate(nextEntryEndDate);
     setVenue(initialData.venue);
     setLastSaved({
       category: initialData.category ?? "",
       startDate: initialData.startDate,
       endDate: initialData.endDate,
-      entryStartDate: initialData.entryStartDate,
-      entryEndDate: initialData.entryEndDate,
+      entryStartDate: nextEntryStartDate,
+      entryEndDate: nextEntryEndDate,
       venue: initialData.venue,
     });
     setStatusText("");
@@ -126,7 +146,6 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: initialData.name.trim(),
           category: nextCategory,
           startDate: nextStartDate,
           endDate: nextEndDate,
@@ -175,10 +194,26 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
       setStatusTone("error");
       return;
     }
+    const nextEntryStartDateIso = nextEntryStartDate
+      ? datetimeLocalInputValueToUtcIsoString(nextEntryStartDate, {
+          timeZone: COMPETITION_ADMIN_DATE_TIME_ZONE,
+        })
+      : null;
+    const nextEntryEndDateIso = nextEntryEndDate
+      ? datetimeLocalInputValueToUtcIsoString(nextEntryEndDate, {
+          timeZone: COMPETITION_ADMIN_DATE_TIME_ZONE,
+        })
+      : null;
+    if ((nextEntryStartDate && !nextEntryStartDateIso) || (nextEntryEndDate && !nextEntryEndDateIso)) {
+      toast.error("エントリー期間の日時形式が正しくありません");
+      setStatusText("エントリー期間の日時形式が正しくありません");
+      setStatusTone("error");
+      return;
+    }
     if (
-      nextEntryStartDate &&
-      nextEntryEndDate &&
-      new Date(nextEntryStartDate) > new Date(nextEntryEndDate)
+      nextEntryStartDateIso &&
+      nextEntryEndDateIso &&
+      new Date(nextEntryStartDateIso) > new Date(nextEntryEndDateIso)
     ) {
       toast.error("エントリー期間の終了日は開始日以降にしてください");
       setStatusText("エントリー期間の終了日は開始日以降にしてください");
@@ -194,8 +229,8 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          entryStartDate: nextEntryStartDate,
-          entryEndDate: nextEntryEndDate,
+          entryStartDate: nextEntryStartDateIso,
+          entryEndDate: nextEntryEndDateIso,
         }),
       });
       if (!response.ok) {
@@ -237,9 +272,10 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
           <div className="rounded-md border border-border bg-muted/20 px-2.5 py-2">
             <p className="text-[11px] text-muted-foreground">エントリー期間</p>
             <p className="text-sm font-medium">
-              {entryStartDate && entryEndDate
-                ? `${new Date(entryStartDate).toLocaleDateString("ja-JP")} 〜 ${new Date(entryEndDate).toLocaleDateString("ja-JP")}`
-                : "未設定"}
+              {formatCompetitionEntryPeriodRangeJa(
+                initialData.entryStartDate,
+                initialData.entryEndDate
+              ) ?? "未設定"}
             </p>
           </div>
 
@@ -343,11 +379,12 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
               }
             }}
           >
-            <Label className="text-xs">エントリー期間</Label>
+            <Label className="text-xs">エントリー期間（日本時間）</Label>
             <div className="flex items-center gap-2 rounded-md border border-input bg-background px-2.5 py-1.5">
               <Input
                 id="entryStartDate"
-                type="date"
+                type="datetime-local"
+                aria-label="エントリー開始日時"
                 value={entryStartDate}
                 onChange={(e) => setEntryStartDate(e.target.value)}
                 className="h-8 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"
@@ -356,7 +393,8 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
               <span className="text-xs text-muted-foreground">〜</span>
               <Input
                 id="entryEndDate"
-                type="date"
+                type="datetime-local"
+                aria-label="エントリー終了日時"
                 value={entryEndDate}
                 onChange={(e) => setEntryEndDate(e.target.value)}
                 className="h-8 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"

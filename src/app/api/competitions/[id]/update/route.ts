@@ -87,16 +87,12 @@ export async function PUT(
     }
 
     const {
-      name,
-      nameKana,
       category,
       startDate,
       endDate,
       venue,
       venueAddress,
     } = body as {
-      name?: unknown;
-      nameKana?: unknown;
       category?: unknown;
       startDate?: unknown;
       endDate?: unknown;
@@ -104,8 +100,6 @@ export async function PUT(
       venueAddress?: unknown;
     };
 
-    const nextName =
-      typeof name === "string" ? name.trim() : competition.name?.trim() ?? "";
     const nextCategory =
       typeof category === "string" ? category.trim() : competition.category?.trim() ?? "";
     const nextStartDateRaw =
@@ -121,7 +115,6 @@ export async function PUT(
 
     // 必須フィールドのバリデーション（基本情報カードの一括更新）
     if (
-      !nextName ||
       !nextStartDateRaw ||
       !nextEndDateRaw ||
       !nextVenue
@@ -161,11 +154,6 @@ export async function PUT(
     const updatedCompetition = await prisma.competition.update({
       where: { id: competitionId },
       data: {
-        name: nextName,
-        nameKana:
-          typeof nameKana === "string"
-            ? nameKana.trim() || null
-            : competition.nameKana,
         category: nextCategory,
         startDate: parsedStartDate,
         endDate: parsedEndDate,
