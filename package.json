@@ -43,7 +43,9 @@
     "diagnose:club-to-reflection": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/diagnose-club-to-reflection.ts",
     "crosscheck:to-app-vs-assignment": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/crosscheck-to-application-vs-assignment.ts",
     "backfill:entry-club-id-from-snapshot": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-competition-entry-club-id-from-snapshot.ts",
-    "backfill:entry-club-id-from-snapshot:dry": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-competition-entry-club-id-from-snapshot.ts --dry-run"
+    "backfill:entry-club-id-from-snapshot:dry": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-competition-entry-club-id-from-snapshot.ts --dry-run",
+    "delete:kanagawa28-entries:dry": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/delete-competition-entries-kanagawa28-two-users.ts --dry-run",
+    "delete:kanagawa28-entries": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/delete-competition-entries-kanagawa28-two-users.ts --execute"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1024.0",
