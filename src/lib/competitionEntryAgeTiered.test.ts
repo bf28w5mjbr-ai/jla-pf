@@ -7,6 +7,7 @@ import {
   ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
   isQualificationRelaxedMulti,
   isQualificationTighteningMulti,
+  maxIndividualEntryFeeUnitAcrossTiers,
   normalizeEntryRequiredQualifications,
   parseAgeCategoryFeeTiers,
   parseAgeFeeTiers,
@@ -264,5 +265,15 @@ describe("competitionEntryAgeTiered", () => {
       }
     );
     expect(normalized).toEqual(["認定ライフセーバー", "IRBクルー"]);
+  });
+
+  it("maxIndividualEntryFeeUnitAcrossTiers returns max individual fee across age tiers", () => {
+    const fee = {
+      ageFeeTiers: [
+        { minAge: 0, maxAge: 12, individualEntryFee: 1000, teamEntryFeePerTeam: 2000 },
+        { minAge: 13, maxAge: null, individualEntryFee: 5000, teamEntryFeePerTeam: 8000 },
+      ],
+    };
+    expect(maxIndividualEntryFeeUnitAcrossTiers(fee)).toBe(5000);
   });
 });

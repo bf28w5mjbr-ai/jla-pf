@@ -340,6 +340,26 @@ export function maxTeamEntryFeeUnitAcrossTiers(entryFee: unknown): number | null
   return null;
 }
 
+/**
+ * 年齢カテゴリ別／アンダー別／年齢帯別の各ティアに載っている individualEntryFee の最大値。
+ * 個人エントリーでチーム種目のみかつティア解決不能時のフォールバックに使う（{@link maxTeamEntryFeeUnitAcrossTiers} と対称）。
+ */
+export function maxIndividualEntryFeeUnitAcrossTiers(entryFee: unknown): number | null {
+  const cat = parseAgeCategoryFeeTiers(entryFee);
+  if (cat && cat.length > 0) {
+    return Math.max(...cat.map((t) => t.individualEntryFee));
+  }
+  const under = parseUnderFeeTiers(entryFee);
+  if (under && under.length > 0) {
+    return Math.max(...under.map((t) => t.individualEntryFee));
+  }
+  const age = parseAgeFeeTiers(entryFee);
+  if (age && age.length > 0) {
+    return Math.max(...age.map((t) => t.individualEntryFee));
+  }
+  return null;
+}
+
 export function flattenFlatEntryFeeUnits(entryFee: unknown): {
   individual: number;
   team: number;

@@ -39,7 +39,7 @@ import { resolveEffectiveUnderBandAllowListForEvent } from "@/lib/underBandAllow
 import {
   isTieredEntryFee,
   isTieredRequiredQualifications,
-  maxTeamEntryFeeUnitAcrossTiers,
+  maxIndividualEntryFeeUnitAcrossTiers,
   parseAgeCategoryFeeTiers,
   parseUnderFeeTiers,
   resolveEntryFeeUnits,
@@ -597,14 +597,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     let baseEntryFee: number;
     if (clubAdminTeamOnlyFeeBypass && feeUnits.ageTierMissing && isTieredEntryFee(competition.entryFee)) {
-      const fallbackTeamUnit = maxTeamEntryFeeUnitAcrossTiers(competition.entryFee);
-      if (fallbackTeamUnit == null) {
+      const fallbackIndividualUnit = maxIndividualEntryFeeUnitAcrossTiers(competition.entryFee);
+      if (fallbackIndividualUnit == null) {
         return NextResponse.json(
-          { message: "参加費のチーム単価を解決できません。主催者へお問い合わせください。" },
+          { message: "参加費の個人単価を解決できません。主催者へお問い合わせください。" },
           { status: 400 }
         );
       }
-      baseEntryFee = fallbackTeamUnit * teamEntriesData.length;
+      baseEntryFee = fallbackIndividualUnit;
     } else {
       baseEntryFee = calculateCompetitionEntryFee(
         competition.entryFee as CompetitionEntryFeeConfig | number | null,
@@ -638,7 +638,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
         },
         select: { id: true },
       });
-      if (deferredSlot && clubIndividualBillingTiming === "POST_CLOSE_INVOICE") {
+      if (
+        deferredSlot &&
+        clubIndividualBillingTiming === "POST_CLOSE_INVOICE" &&
+        entryItemsData.length > 0
+      ) {
         skipIndividualCheckoutForDeferred = true;
       }
 

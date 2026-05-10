@@ -63,5 +63,10 @@ export function calculateCompetitionEntryFee(
   );
   if (ageTierMissing) return 0;
 
+  // 個人エントリーでチーム種目のみ: 個人1枠分と同額（チーム組数は上乗せしない）
+  if (teamCount > 0 && individualCount === 0) {
+    return individualUnit;
+  }
+
   return (individualCount > 0 ? individualUnit : 0) + teamUnit * teamCount;
 }
