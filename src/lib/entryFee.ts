@@ -32,6 +32,28 @@ export type CompetitionEntryFeeConfig = {
   }>;
 };
 
+/**
+ * 個人エントリー POST の `calculateCompetitionEntryFee` に渡す件数。
+ * チーム種目のみの参加意思（items 空・teamEntries キーなし）でクラブのみ選んだとき、`teamCount` を 1 にするのは
+ * {@link calculateCompetitionEntryFee} で個人単価のみを取るための課金用トリガーであり、チームロスターが 1 件増えたことを意味しない。
+ */
+export function billingCountsForPersonalEntryPost(options: {
+  teamOnlyIntentWithoutItemSelection: boolean;
+  entryItemsCount: number;
+  teamEntriesCount: number;
+}): { individualCount: number; teamCount: number } {
+  let individualCount = Math.max(0, options.entryItemsCount);
+  let teamCount = Math.max(0, options.teamEntriesCount);
+  if (
+    options.teamOnlyIntentWithoutItemSelection &&
+    individualCount === 0 &&
+    teamCount === 0
+  ) {
+    teamCount = 1;
+  }
+  return { individualCount, teamCount };
+}
+
 export function calculateCompetitionEntryFee(
   entryFee: CompetitionEntryFeeConfig | number | null | undefined,
   counts: {

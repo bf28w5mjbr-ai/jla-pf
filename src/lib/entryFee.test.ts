@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateCompetitionEntryFee } from "./entryFee";
+import { billingCountsForPersonalEntryPost, calculateCompetitionEntryFee } from "./entryFee";
 
 describe("calculateCompetitionEntryFee", () => {
   const tieredFee = {
@@ -47,5 +47,47 @@ describe("calculateCompetitionEntryFee", () => {
         {}
       )
     ).toBe(5000);
+  });
+
+  it("billing slot teamCount=1 yields same as one individual unit (tiered)", () => {
+    expect(
+      calculateCompetitionEntryFee(
+        tieredFee,
+        { individualCount: 0, teamCount: 1 },
+        { userAgeYearsAtCompetitionStart: 20 }
+      )
+    ).toBe(3000);
+  });
+});
+
+describe("billingCountsForPersonalEntryPost", () => {
+  it("synthesizes teamCount=1 for team-only intent with no items/team rows (fee trigger only)", () => {
+    expect(
+      billingCountsForPersonalEntryPost({
+        teamOnlyIntentWithoutItemSelection: true,
+        entryItemsCount: 0,
+        teamEntriesCount: 0,
+      })
+    ).toEqual({ individualCount: 0, teamCount: 1 });
+  });
+
+  it("does not synthesize when intent flag is false", () => {
+    expect(
+      billingCountsForPersonalEntryPost({
+        teamOnlyIntentWithoutItemSelection: false,
+        entryItemsCount: 0,
+        teamEntriesCount: 0,
+      })
+    ).toEqual({ individualCount: 0, teamCount: 0 });
+  });
+
+  it("does not override when items exist", () => {
+    expect(
+      billingCountsForPersonalEntryPost({
+        teamOnlyIntentWithoutItemSelection: true,
+        entryItemsCount: 1,
+        teamEntriesCount: 0,
+      })
+    ).toEqual({ individualCount: 1, teamCount: 0 });
   });
 });

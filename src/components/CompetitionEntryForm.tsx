@@ -41,7 +41,7 @@ import {
   Send,
   Wallet,
 } from "lucide-react";
-import { calculateCompetitionEntryFee } from "@/lib/entryFee";
+import { billingCountsForPersonalEntryPost, calculateCompetitionEntryFee } from "@/lib/entryFee";
 import { stripeProcessingFeeSurchargeYenFromBps } from "@/lib/stripeProcessingFee";
 import { isTieredEntryFee, resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
 import { partitionUnderAgeBands } from "@/lib/competitionUnderAgeSystem";
@@ -295,11 +295,16 @@ export default function CompetitionEntryForm({
 
   const estimatedFee = useMemo(() => {
     let individualCount = 0;
-    const teamCount = 0;
-    if (personalEntryMode === "individual") {
+    let teamCount = 0;
+    if (personalEntryMode === "team-only") {
+      // 種目は選ばないが参加費は個人1枠分。{0,1} は calculateCompetitionEntryFee 用の課金トリガー（チーム実体+1ではない）。
+      ({ individualCount, teamCount } = billingCountsForPersonalEntryPost({
+        teamOnlyIntentWithoutItemSelection: true,
+        entryItemsCount: 0,
+        teamEntriesCount: 0,
+      }));
+    } else if (personalEntryMode === "individual") {
       individualCount = selectedIndividualEvents.length;
-    } else if (personalEntryMode === "team-only") {
-      individualCount = selectedTeamEvents.length;
     } else {
       individualCount = selectedIndividualEvents.length + selectedTeamEvents.length;
     }

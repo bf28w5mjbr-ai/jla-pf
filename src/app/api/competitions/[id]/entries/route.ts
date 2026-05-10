@@ -28,7 +28,11 @@ import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheck
 import { refreshStartListSnapshotAfterEligibleEntryChange } from "@/lib/startListSnapshot";
 import { clearIndividualWithdrawalParticipantStatusesForEvents } from "@/lib/entryWithdrawalReinstatement";
 import { hasOrgAdminAccess, isClubAdminRole } from "@/lib/roleScopes";
-import { calculateCompetitionEntryFee, type CompetitionEntryFeeConfig } from "@/lib/entryFee";
+import {
+  billingCountsForPersonalEntryPost,
+  calculateCompetitionEntryFee,
+  type CompetitionEntryFeeConfig,
+} from "@/lib/entryFee";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import {
   competitionUsesUnderAgeSystem,
@@ -556,6 +560,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
         })
       : preservedTeamEntriesFromSnapshot;
 
+    const { individualCount: feeIndividualCount, teamCount: feeTeamCount } =
+      billingCountsForPersonalEntryPost({
+        teamOnlyIntentWithoutItemSelection,
+        entryItemsCount: entryItemsData.length,
+        teamEntriesCount: teamEntriesData.length,
+      });
+
     const userDob = user?.dateOfBirth ? new Date(user.dateOfBirth) : null;
     const feeUnits = resolveEntryFeeUnits(competition.entryFee, userAge, {
       userDateOfBirth: userDob,
@@ -572,7 +583,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (
       feeUnits.ageTierMissing &&
       isTieredEntryFee(competition.entryFee) &&
-      entryItemsData.length + teamEntriesData.length > 0 &&
+      feeIndividualCount + feeTeamCount > 0 &&
       !clubAdminTeamOnlyFeeBypass
     ) {
       const isCat = parseAgeCategoryFeeTiers(competition.entryFee) !== null;
@@ -609,8 +620,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       baseEntryFee = calculateCompetitionEntryFee(
         competition.entryFee as CompetitionEntryFeeConfig | number | null,
         {
-          individualCount: entryItemsData.length,
-          teamCount: teamEntriesData.length,
+          individualCount: feeIndividualCount,
+          teamCount: feeTeamCount,
         },
         {
           userAgeYearsAtCompetitionStart: userAge,
