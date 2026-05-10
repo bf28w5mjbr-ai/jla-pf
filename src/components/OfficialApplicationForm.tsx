@@ -50,9 +50,9 @@ function deriveInitialEntryType(
   app: InitialApplication,
   technicalOfficialEnabled: boolean
 ): "GENERAL" | "TECHNICAL" {
-  if (!technicalOfficialEnabled) return "GENERAL";
   const pn = app?.positionName;
   if (pn && pn.startsWith("テクニカルオフィシャル（")) return "TECHNICAL";
+  if (!technicalOfficialEnabled) return "GENERAL";
   return "GENERAL";
 }
 
@@ -91,6 +91,11 @@ export function OfficialApplicationForm({
   const canEditExisting = Boolean(isApprovedOrPending && canSubmit);
   const showReadOnlyAfterSubmit = Boolean(isApprovedOrPending && !canSubmit);
   const usePatch = canEditExisting;
+  const isExistingTechnicalApplication = Boolean(
+    initialApplication?.positionName?.startsWith("テクニカルオフィシャル（")
+  );
+  const blockTechnicalUpdateWhileDisabled =
+    usePatch && isExistingTechnicalApplication && !technicalOfficialEnabled;
 
   const [message, setMessage] = useState(initialApplication?.message ?? "");
   const [confirmed, setConfirmed] = useState(false);
@@ -103,6 +108,10 @@ export function OfficialApplicationForm({
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (blockTechnicalUpdateWhileDisabled) {
+      toast.error("TO募集が停止中のため応募内容を変更できません。取り消す場合は下のボタンを利用してください。");
+      return;
+    }
     if (entryType === "TECHNICAL" && !selectedClubId) {
       toast.error("TO応募ではクラブ選択が必要です");
       return;
@@ -236,6 +245,11 @@ export function OfficialApplicationForm({
           <div className="rounded-md border border-border/80 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
             {usePatch ? "変更後の応募内容を選択してください。" : "エントリー内容を選択してください。"}
           </div>
+          {blockTechnicalUpdateWhileDisabled ? (
+            <p className="rounded-md border border-amber-300/70 bg-amber-50/60 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
+              この大会では現在TO募集が停止中のため、既存のTO応募内容は変更できません。応募をやめる場合は「応募を取り消す」を利用してください。
+            </p>
+          ) : null}
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">応募種別</Label>
             <RadioGroup
@@ -253,7 +267,7 @@ export function OfficialApplicationForm({
                   <span className="text-muted-foreground">通常のオフィシャル参加</span>
                 </span>
               </Label>
-              {technicalOfficialEnabled ? (
+              {technicalOfficialEnabled || isExistingTechnicalApplication ? (
                 <Label
                   htmlFor="official-type-technical"
                   className="flex cursor-pointer items-start gap-2 rounded-md border border-border/80 bg-background px-3 py-2"
@@ -340,6 +354,7 @@ export function OfficialApplicationForm({
               isPending ||
               !confirmed ||
               !canSubmit ||
+              blockTechnicalUpdateWhileDisabled ||
               (entryType === "TECHNICAL" && (!selectedClubId || technicalClubs.length === 0))
             }
             className="w-full sm:w-auto"

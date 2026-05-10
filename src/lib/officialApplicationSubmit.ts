@@ -8,6 +8,22 @@ import { OFFICIAL_RECRUITMENT_REQUIRED_LIFESAVING_KINDS } from "@/lib/technicalO
 
 export type OfficialApplicationEntryType = "GENERAL" | "TECHNICAL";
 
+export function isTechnicalOfficialPositionName(positionName: string | null | undefined): boolean {
+  return Boolean(positionName?.startsWith("テクニカルオフィシャル（"));
+}
+
+export function shouldBlockDisabledTechnicalOfficialDowngrade(params: {
+  existingPositionName: string | null | undefined;
+  nextEntryType: OfficialApplicationEntryType;
+  technicalOfficialRecruitmentEnabled: boolean;
+}): boolean {
+  return (
+    isTechnicalOfficialPositionName(params.existingPositionName) &&
+    params.nextEntryType === "GENERAL" &&
+    !params.technicalOfficialRecruitmentEnabled
+  );
+}
+
 export type OfficialApplicationCompetitionForSubmit = {
   id: string;
   status: string;
