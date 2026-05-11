@@ -26,28 +26,44 @@ export async function findCompetitionScopeForStripeDispute(args: {
   });
   if (entrySession) return "INDIVIDUAL_ENTRY";
 
-  const prefix = `competition-team-entry:${competitionId}:`;
-  const teamPayment = await prisma.payment.findFirst({
+  const teamPrefix = `competition-team-entry:${competitionId}:`;
+  const prepaidPrefix = `competition-club-prepaid-individual:${competitionId}:`;
+  const clubEntryPayment = await prisma.payment.findFirst({
     where: {
       stripeDisputeId: disputeId,
       type: "COMPETITION_ENTRY_FEE",
       ownerType: "CLUB",
-      ownerId: { startsWith: prefix },
+      OR: [{ ownerId: { startsWith: teamPrefix } }, { ownerId: { startsWith: prepaidPrefix } }],
     },
     select: { id: true },
   });
-  if (teamPayment) return "TEAM_ENTRY_FEE";
+  if (clubEntryPayment) return "TEAM_ENTRY_FEE";
 
   return null;
 }
 
-/** ownerId からチーム請求の clubId を取り出す（形式不一致時は null） */
+/** チーム請求・クラブ個人枠請求の ownerId から clubId を取り出す（形式不一致時は null） */
+export function parseClubIdFromClubCompetitionEntryFeeOwnerId(
+  competitionId: string,
+  ownerId: string
+): string | null {
+  const teamPrefix = `competition-team-entry:${competitionId}:`;
+  const prepaidPrefix = `competition-club-prepaid-individual:${competitionId}:`;
+  if (ownerId.startsWith(teamPrefix)) {
+    const clubId = ownerId.slice(teamPrefix.length);
+    return clubId.length > 0 ? clubId : null;
+  }
+  if (ownerId.startsWith(prepaidPrefix)) {
+    const clubId = ownerId.slice(prepaidPrefix.length);
+    return clubId.length > 0 ? clubId : null;
+  }
+  return null;
+}
+
+/** @deprecated parseClubIdFromClubCompetitionEntryFeeOwnerId を使用 */
 export function parseClubIdFromTeamEntryPaymentOwnerId(
   competitionId: string,
   ownerId: string
 ): string | null {
-  const expectedPrefix = `competition-team-entry:${competitionId}:`;
-  if (!ownerId.startsWith(expectedPrefix)) return null;
-  const clubId = ownerId.slice(expectedPrefix.length);
-  return clubId.length > 0 ? clubId : null;
+  return parseClubIdFromClubCompetitionEntryFeeOwnerId(competitionId, ownerId);
 }

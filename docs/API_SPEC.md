@@ -125,12 +125,14 @@
 - `PUT /api/competitions/[id]/entry-settings`
 - `PUT /api/competitions/[id]/entry-fee`
 
-### 大会：エントリー / チーム請求（クラブ一括個人分を含む）
+### 大会：エントリー / チーム請求とクラブ個人枠請求（分離）
 - `POST /api/competitions/[id]/entries`（`clubIndividualFeePaidAt`・クラブ先払い枠／締切後一括の扱い。詳細は `route.ts`）
-- `PUT /api/competitions/[id]/team-entries`（任意 `prepaidIndividualUserIds: string[]` でクラブによる個人エントリー対象を保存し、請求額に反映）
-- `POST /api/competitions/[id]/team-billing/checkout`
-- `POST /api/competitions/[id]/team-billing/finalize`（チーム件数に加え、締切後モードの未払い個人エントリー分を請求額へ集計）
-- `GET /api/competitions/[id]/team-billing/receipt`
+- `PUT /api/competitions/[id]/team-entries`（任意 `prepaidIndividualUserIds: string[]`。チーム種目分とクラブ個人枠分は別 `Payment.ownerId` に upsert。先払い枠の `clubPaymentId` は個人枠用 `Payment` のみ）
+- `POST /api/competitions/[id]/team-billing/checkout`（JSON に `billingScope`: `"team"` | `"prepaid"`。省略時は `"team"`）
+- `POST /api/competitions/[id]/team-billing/finalize`（チーム用・個人枠用の2行に分割して確定。締切後の未払い個人分は個人枠行へ）
+- `GET /api/competitions/[id]/team-billing/receipt`（`billingScope=team`（既定）または `prepaid` で対象の領収書）
+
+**移行（旧1件合算 `Payment`）**: デプロイ後にクラブが「チームエントリー保存」を実行すると、新しい2行の `Payment` に置き換わる（先払い枠は保存時に `replaceClubPrepaidSlotsForSave` で再紐付け）。保存できない期間のデータだけ別途バックフィルを検討。
 
 ### 大会：イベント
 - `GET /api/competitions/[id]/events`

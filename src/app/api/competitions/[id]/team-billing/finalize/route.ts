@@ -3,7 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { isOrgAdminRole } from "@/lib/roleScopes";
-import { buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
+import {
+  buildClubPrepaidIndividualPaymentOwnerId,
+  buildTeamEntryPaymentOwnerId,
+  CLUB_PREPAID_INDIVIDUAL_BILLING_SCOPE,
+  TEAM_ENTRY_BILLING_SCOPE,
+} from "@/lib/teamEntryPayments";
+import { sumInstantPrepaidIndividualsYen } from "@/lib/clubPrepaidIndividualSlots";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import { resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
 import { partitionUnderBandsForCompetition } from "@/lib/competitionUnderAgeSettings";
@@ -13,6 +19,11 @@ import { sumDeferredUnpaidIndividualEntryFeesYen } from "@/lib/clubPrepaidIndivi
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
+
+function toSafeNonNegativeIntYen(n: number): number {
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(Math.floor(n), 2_147_000_000);
+}
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const { id: competitionId } = await context.params;
@@ -132,100 +143,226 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }).teamUnit;
 
       for (const targetClubId of targetClubIds) {
-        const teamCount = teamCounts.get(targetClubId) ?? 0;
-        const deferredIndividualSubtotalYen = await sumDeferredUnpaidIndividualEntryFeesYen(tx, {
-          competitionId,
-          clubId: targetClubId,
-        });
-        const ownerId = buildTeamEntryPaymentOwnerId(competitionId, targetClubId);
+        const teamOwnerId = buildTeamEntryPaymentOwnerId(competitionId, targetClubId);
+        const prepaidOwnerId = buildClubPrepaidIndividualPaymentOwnerId(competitionId, targetClubId);
 
-        const existingPayment = await tx.payment.findUnique({
-          where: {
-            ownerType_ownerId_type: {
-              ownerType: "CLUB",
-              ownerId,
-              type: "COMPETITION_ENTRY_FEE",
+        const [existingTeamPayment, existingPrepaidPayment] = await Promise.all([
+          tx.payment.findUnique({
+            where: {
+              ownerType_ownerId_type: {
+                ownerType: "CLUB",
+                ownerId: teamOwnerId,
+                type: "COMPETITION_ENTRY_FEE",
+              },
             },
-          },
-          select: {
-            id: true,
-            status: true,
-            metadata: true,
-          },
-        });
+            select: { id: true, status: true, metadata: true },
+          }),
+          tx.payment.findUnique({
+            where: {
+              ownerType_ownerId_type: {
+                ownerType: "CLUB",
+                ownerId: prepaidOwnerId,
+                type: "COMPETITION_ENTRY_FEE",
+              },
+            },
+            select: { id: true, status: true, metadata: true },
+          }),
+        ]);
 
         let teamEntryFeePerTeam = defaultTeamUnit;
-        const meta = existingPayment?.metadata;
-        if (meta && typeof meta === "object" && !Array.isArray(meta)) {
-          const m = meta as Record<string, unknown>;
+        const teamMeta = existingTeamPayment?.metadata;
+        if (teamMeta && typeof teamMeta === "object" && !Array.isArray(teamMeta)) {
+          const m = teamMeta as Record<string, unknown>;
           if (typeof m.unitPrice === "number" && Number.isFinite(m.unitPrice) && m.unitPrice >= 0) {
             teamEntryFeePerTeam = m.unitPrice;
           }
         }
 
-        const amount = teamCount * teamEntryFeePerTeam + deferredIndividualSubtotalYen;
+        const teamCount = teamCounts.get(targetClubId) ?? 0;
+        const teamPart = toSafeNonNegativeIntYen(teamCount * teamEntryFeePerTeam);
+        const deferredIndividualSubtotalYen = await sumDeferredUnpaidIndividualEntryFeesYen(tx, {
+          competitionId,
+          clubId: targetClubId,
+        });
 
-        if (amount <= 0) {
+        const slotRows = await tx.clubCompetitionPrepaidIndividualSlot.findMany({
+          where: {
+            competitionId,
+            clubId: targetClubId,
+            status: {
+              in: ["PENDING_CLUB_CHECKOUT", "ACTIVE_WAIVER", "DEFERRED_POST_CLOSE"],
+            },
+            consumedByEntryId: null,
+          },
+          select: { coveredUserId: true },
+        });
+        const coveredUserIds = [...new Set(slotRows.map((r) => r.coveredUserId))];
+
+        const instantPrepaidPartRaw =
+          clubIndividualBillingTiming === "INSTANT_PREPAID"
+            ? await sumInstantPrepaidIndividualsYen(tx, {
+                startDate: new Date(competition.startDate),
+                entryFee: competition.entryFee,
+                underAge: {
+                  underAgeSystemEnabled: competition.underAgeSystemEnabled,
+                  underAgeUThresholds: competition.underAgeUThresholds,
+                  underAgeOpenEnabled: competition.underAgeOpenEnabled,
+                },
+                ageCategories: competition.ageCategories,
+                coveredUserIds,
+              })
+            : 0;
+        const instantPrepaidPart = toSafeNonNegativeIntYen(instantPrepaidPartRaw);
+
+        const prepaidPart =
+          clubIndividualBillingTiming === "POST_CLOSE_INVOICE"
+            ? toSafeNonNegativeIntYen(deferredIndividualSubtotalYen)
+            : instantPrepaidPart;
+
+        if (teamPart <= 0 && prepaidPart <= 0) {
           await tx.payment.deleteMany({
             where: {
               ownerType: "CLUB",
-              ownerId,
               type: "COMPETITION_ENTRY_FEE",
+              ownerId: { in: [teamOwnerId, prepaidOwnerId] },
             },
           });
           continue;
         }
-        const nextStatus =
-          existingPayment?.status === "SUCCEEDED" ||
-          existingPayment?.status === "REFUNDED" ||
-          existingPayment?.status === "DISPUTED"
-            ? existingPayment.status
+
+        const teamNextStatus =
+          existingTeamPayment?.status === "SUCCEEDED" ||
+          existingTeamPayment?.status === "REFUNDED" ||
+          existingTeamPayment?.status === "DISPUTED"
+            ? existingTeamPayment.status
             : "PENDING";
 
-        await tx.payment.upsert({
-          where: {
-            ownerType_ownerId_type: {
+        const prepaidNextStatus =
+          existingPrepaidPayment?.status === "SUCCEEDED" ||
+          existingPrepaidPayment?.status === "REFUNDED" ||
+          existingPrepaidPayment?.status === "DISPUTED"
+            ? existingPrepaidPayment.status
+            : "PENDING";
+
+        if (teamPart > 0) {
+          await tx.payment.upsert({
+            where: {
+              ownerType_ownerId_type: {
+                ownerType: "CLUB",
+                ownerId: teamOwnerId,
+                type: "COMPETITION_ENTRY_FEE",
+              },
+            },
+            create: {
               ownerType: "CLUB",
-              ownerId,
+              ownerId: teamOwnerId,
+              type: "COMPETITION_ENTRY_FEE",
+              userId: session.userId,
+              status: teamNextStatus,
+              amount: teamPart,
+              metadata: {
+                scope: TEAM_ENTRY_BILLING_SCOPE,
+                competitionId,
+                clubId: targetClubId,
+                teamCount,
+                unitPrice: teamEntryFeePerTeam,
+                deferredIndividualSubtotalYen,
+                prepaidIndividualSubtotalYen: 0,
+                clubIndividualBillingTiming,
+                finalizedAt,
+                finalizedByUserId: session.userId,
+              },
+            },
+            update: {
+              userId: session.userId,
+              status: teamNextStatus,
+              amount: teamPart,
+              metadata: {
+                scope: TEAM_ENTRY_BILLING_SCOPE,
+                competitionId,
+                clubId: targetClubId,
+                teamCount,
+                unitPrice: teamEntryFeePerTeam,
+                deferredIndividualSubtotalYen,
+                prepaidIndividualSubtotalYen: 0,
+                clubIndividualBillingTiming,
+                finalizedAt,
+                finalizedByUserId: session.userId,
+              },
+            },
+          });
+        } else {
+          await tx.payment.deleteMany({
+            where: {
+              ownerType: "CLUB",
+              ownerId: teamOwnerId,
               type: "COMPETITION_ENTRY_FEE",
             },
-          },
-          create: {
-            ownerType: "CLUB",
-            ownerId,
-            type: "COMPETITION_ENTRY_FEE",
-            userId: session.userId,
-            status: nextStatus,
-            amount,
-            metadata: {
-              scope: "TEAM_ENTRY",
-              competitionId,
-              clubId: targetClubId,
-              teamCount,
-              unitPrice: teamEntryFeePerTeam,
-              deferredIndividualSubtotalYen,
-              clubIndividualBillingTiming,
-              finalizedAt,
-              finalizedByUserId: session.userId,
+          });
+        }
+
+        if (prepaidPart > 0) {
+          await tx.payment.upsert({
+            where: {
+              ownerType_ownerId_type: {
+                ownerType: "CLUB",
+                ownerId: prepaidOwnerId,
+                type: "COMPETITION_ENTRY_FEE",
+              },
             },
-          },
-          update: {
-            userId: session.userId,
-            status: nextStatus,
-            amount,
-            metadata: {
-              scope: "TEAM_ENTRY",
-              competitionId,
-              clubId: targetClubId,
-              teamCount,
-              unitPrice: teamEntryFeePerTeam,
-              deferredIndividualSubtotalYen,
-              clubIndividualBillingTiming,
-              finalizedAt,
-              finalizedByUserId: session.userId,
+            create: {
+              ownerType: "CLUB",
+              ownerId: prepaidOwnerId,
+              type: "COMPETITION_ENTRY_FEE",
+              userId: session.userId,
+              status: prepaidNextStatus,
+              amount: prepaidPart,
+              metadata: {
+                scope: CLUB_PREPAID_INDIVIDUAL_BILLING_SCOPE,
+                competitionId,
+                clubId: targetClubId,
+                teamCount,
+                unitPrice: teamEntryFeePerTeam,
+                prepaidIndividualSubtotalYen: prepaidPart,
+                deferredIndividualSubtotalYen:
+                  clubIndividualBillingTiming === "POST_CLOSE_INVOICE"
+                    ? deferredIndividualSubtotalYen
+                    : 0,
+                clubIndividualBillingTiming,
+                finalizedAt,
+                finalizedByUserId: session.userId,
+              },
             },
-          },
-        });
+            update: {
+              userId: session.userId,
+              status: prepaidNextStatus,
+              amount: prepaidPart,
+              metadata: {
+                scope: CLUB_PREPAID_INDIVIDUAL_BILLING_SCOPE,
+                competitionId,
+                clubId: targetClubId,
+                teamCount,
+                unitPrice: teamEntryFeePerTeam,
+                prepaidIndividualSubtotalYen: prepaidPart,
+                deferredIndividualSubtotalYen:
+                  clubIndividualBillingTiming === "POST_CLOSE_INVOICE"
+                    ? deferredIndividualSubtotalYen
+                    : 0,
+                clubIndividualBillingTiming,
+                finalizedAt,
+                finalizedByUserId: session.userId,
+              },
+            },
+          });
+        } else {
+          await tx.payment.deleteMany({
+            where: {
+              ownerType: "CLUB",
+              ownerId: prepaidOwnerId,
+              type: "COMPETITION_ENTRY_FEE",
+            },
+          });
+        }
       }
     });
 

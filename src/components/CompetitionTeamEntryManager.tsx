@@ -12,6 +12,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { CheckCircle2, CreditCard, Droplets, Minus, Plus, Search, Users, Waves } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import type { ClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
+import type { ClubTeamAndPrepaidBillingPair, TeamBillingCheckoutScope } from "@/lib/teamEntryPayments";
 import { getTeamPaymentStatusLabel } from "@/lib/teamEntryPayments";
 import { resolveCompetitionEventCategoryScope } from "@/lib/competitionEventCategoryScope";
 import { cn } from "@/lib/utils";
@@ -55,15 +57,8 @@ type Props = {
   initialEntriesByClub: Record<string, ExistingTeamEntry[]>;
   teamEntryFeePerTeam: number;
   entryWindowOpen: boolean;
-  billingByClub?: Record<
-    string,
-    {
-      status: string;
-      amount: number;
-      finalizedAt?: string | null;
-      stripeCheckoutSessionId?: string | null;
-    } | undefined
-  >;
+  billingByClub?: Record<string, ClubTeamAndPrepaidBillingPair | undefined>;
+  clubIndividualEntryBillingTiming: ClubIndividualEntryBillingTiming;
   /** 大会の種別（プール／オーシャン）。表示するチーム種目の区分を決めます */
   competitionCategory?: string | null;
   /** カード決済の上乗せ率（basis points）。STRIPE_PROCESSING_FEE_BPS と一致 */
@@ -117,6 +112,7 @@ export default function CompetitionTeamEntryManager({
   teamEntryFeePerTeam,
   entryWindowOpen,
   billingByClub = {},
+  clubIndividualEntryBillingTiming,
   competitionCategory = null,
   cardProcessingFeeBps = 360,
   prepaidMemberOptionsByClub = {},
@@ -137,7 +133,9 @@ export default function CompetitionTeamEntryManager({
     )
   );
   const [isSaving, setIsSaving] = useState(false);
-  const [isStartingPayment, setIsStartingPayment] = useState(false);
+  const [checkoutScopePending, setCheckoutScopePending] = useState<TeamBillingCheckoutScope | null>(
+    null
+  );
 
   const [prepaidUserIds, setPrepaidUserIds] = useState<string[]>(() => {
     const ids = initialPrepaidIndividualUserIdsByClub[selectedClubId] ?? [];
@@ -224,21 +222,42 @@ export default function CompetitionTeamEntryManager({
   const selectedClubName = clubs.find((club) => club.id === selectedClubId)?.name ?? "";
   const totalTeamCount = entriesForSave.length;
   const estimatedFee = totalTeamCount * teamEntryFeePerTeam;
-  const billing = billingByClub[selectedClubId];
+  const clubBill = billingByClub[selectedClubId];
+  const teamBill = clubBill?.team;
+  const prepaidBill = clubBill?.prepaid;
   const paymentQuery = searchParams.get("payment");
-  const billingAmount = billing?.amount ?? estimatedFee;
+  const teamBillingAmount = teamBill?.amount ?? estimatedFee;
+  const prepaidBillingAmount = prepaidBill?.amount ?? 0;
   const teamProcessingFeeYen = useMemo(
-    () => stripeProcessingFeeSurchargeYenFromBps(billingAmount, cardProcessingFeeBps),
-    [billingAmount, cardProcessingFeeBps]
+    () => stripeProcessingFeeSurchargeYenFromBps(teamBillingAmount, cardProcessingFeeBps),
+    [teamBillingAmount, cardProcessingFeeBps]
   );
-  const teamCardTotalYen = billingAmount + teamProcessingFeeYen;
+  const prepaidProcessingFeeYen = useMemo(
+    () => stripeProcessingFeeSurchargeYenFromBps(prepaidBillingAmount, cardProcessingFeeBps),
+    [prepaidBillingAmount, cardProcessingFeeBps]
+  );
+  const teamCardTotalYen = teamBillingAmount + teamProcessingFeeYen;
+  const prepaidCardTotalYen = prepaidBillingAmount + prepaidProcessingFeeYen;
   const teamProcessingFeePercentLabel = (cardProcessingFeeBps / 100).toFixed(1);
   const isFreeTeamEntry = teamEntryFeePerTeam <= 0;
-  const canStartPayment = Boolean(
-    billing &&
-      billing.amount > 0 &&
-      (billing.finalizedAt || entryWindowOpen) &&
-      (billing.status === "PENDING" || billing.status === "FAILED" || billing.status === "EXPIRED")
+  const showPrepaidBillingUi =
+    clubIndividualEntryBillingTiming === "INSTANT_PREPAID" &&
+    (prepaidBill != null || prepaidUserIds.length > 0);
+  const canStartTeamPayment = Boolean(
+    teamBill &&
+      teamBill.amount > 0 &&
+      (teamBill.finalizedAt || entryWindowOpen) &&
+      (teamBill.status === "PENDING" ||
+        teamBill.status === "FAILED" ||
+        teamBill.status === "EXPIRED")
+  );
+  const canStartPrepaidPayment = Boolean(
+    prepaidBill &&
+      prepaidBill.amount > 0 &&
+      (prepaidBill.finalizedAt || entryWindowOpen) &&
+      (prepaidBill.status === "PENDING" ||
+        prepaidBill.status === "FAILED" ||
+        prepaidBill.status === "EXPIRED")
   );
 
   const groupedEvents = useMemo(
@@ -355,19 +374,19 @@ export default function CompetitionTeamEntryManager({
     }
   };
 
-  const handleStartPayment = async () => {
+  const handleStartPayment = async (scope: TeamBillingCheckoutScope) => {
     if (!selectedClubId) {
       toast.error("クラブを選択してください");
       return;
     }
-    setIsStartingPayment(true);
+    setCheckoutScopePending(scope);
     try {
       const response = await fetch(`/api/competitions/${competitionId}/team-billing/checkout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ clubId: selectedClubId }),
+        body: JSON.stringify({ clubId: selectedClubId, billingScope: scope }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -381,7 +400,7 @@ export default function CompetitionTeamEntryManager({
       console.error("Team billing checkout error:", error);
       toast.error(error instanceof Error ? error.message : "決済の開始に失敗しました");
     } finally {
-      setIsStartingPayment(false);
+      setCheckoutScopePending(null);
     }
   };
 
@@ -555,15 +574,16 @@ export default function CompetitionTeamEntryManager({
         </p>
         <p className="text-xs leading-relaxed text-muted-foreground">
           <strong className="font-medium text-foreground">クラブ</strong>
-          がチーム請求を支払うとき、ここで指定した人数ぶんの個人参加費が
-          <strong className="font-medium text-foreground">チーム請求の金額に含まれます</strong>。
+          が選んだ人数ぶんの個人参加費は、
+          <strong className="font-medium text-foreground">チーム請求とは別の請求</strong>
+          としてまとまります。どちらから先にカード決済しても構いません。
           そのあと<strong className="font-medium text-foreground">本人</strong>
           が個人エントリーで種目を選ぶと、個人分の
           <strong className="font-medium text-foreground">追加のカード決済は不要</strong>
           です。
         </p>
         <Badge variant="outline" className="font-normal">
-          個人分: 先払い（チーム決済に含む）
+          個人分: 先払い（クラブ請求が別枠）
         </Badge>
       </div>
 
@@ -682,6 +702,46 @@ export default function CompetitionTeamEntryManager({
             </p>
           ) : null}
           {prepaidFormBlock}
+          {showPrepaidBillingUi ? (
+            <div className="rounded-lg border border-border/80 bg-muted/20 px-4 py-4">
+              <p className="text-xs font-semibold text-muted-foreground">請求・決済（個人枠）</p>
+              {!prepaidBill && prepaidUserIds.length > 0 ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  金額は「チームエントリーを保存」のあとに確定します。
+                </p>
+              ) : null}
+              {prepaidBill ? (
+                <div className="mt-3 space-y-3 text-sm">
+                  <div className="flex items-baseline justify-between gap-2 border-b border-border/50 pb-2">
+                    <span className="text-muted-foreground">請求額</span>
+                    <span className="tabular-nums font-semibold">
+                      ¥{formatCurrency(prepaidBillingAmount)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">状態</span>
+                    <Badge
+                      variant="outline"
+                      className={cn("font-normal", paymentStatusBadgeClass(prepaidBill.status))}
+                    >
+                      {getTeamPaymentStatusLabel(prepaidBill.status)}
+                    </Badge>
+                  </div>
+                  {prepaidBill.status !== "SUCCEEDED" ? (
+                    <Button
+                      type="button"
+                      className="mt-1 h-10 w-full gap-2 font-semibold"
+                      onClick={() => void handleStartPayment("prepaid")}
+                      disabled={!canStartPrepaidPayment || checkoutScopePending !== null}
+                    >
+                      <CreditCard className="h-4 w-4" />
+                      {checkoutScopePending === "prepaid" ? "決済へ移動中…" : "個人枠の請求を支払う"}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {renderSaveFooter()}
         </CardContent>
       </Card>
@@ -838,6 +898,65 @@ export default function CompetitionTeamEntryManager({
                       </div>
                     </div>
                   )}
+                  {showPrepaidBillingUi ? (
+                    <div className="mt-6 space-y-3 border-t border-border/60 pt-4">
+                      <p className="text-xs font-semibold text-muted-foreground">クラブ個人枠（先払い）</p>
+                      {!prepaidBill && prepaidUserIds.length > 0 ? (
+                        <p className="text-[11px] leading-relaxed text-muted-foreground">
+                          金額は「チームエントリーを保存」のあとに確定します。
+                        </p>
+                      ) : null}
+                      {prepaidBill ? (
+                        <>
+                          <dl className="space-y-2 text-sm">
+                            <div className="flex items-baseline justify-between gap-2 border-b border-border/50 pb-2">
+                              <dt className="text-muted-foreground">請求額</dt>
+                              <dd className="tabular-nums font-semibold text-foreground">
+                                ¥{formatCurrency(prepaidBillingAmount)}
+                              </dd>
+                            </div>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <dt className="text-muted-foreground">状態</dt>
+                              <dd>
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "font-normal",
+                                    paymentStatusBadgeClass(prepaidBill.status)
+                                  )}
+                                >
+                                  {getTeamPaymentStatusLabel(prepaidBill.status)}
+                                </Badge>
+                              </dd>
+                            </div>
+                          </dl>
+                          {prepaidBill.status !== "SUCCEEDED" && (
+                            <div className="mt-2">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                className="h-9 w-full gap-2 text-sm font-semibold"
+                                onClick={() => void handleStartPayment("prepaid")}
+                                disabled={!canStartPrepaidPayment || checkoutScopePending !== null}
+                              >
+                                <CreditCard className="h-4 w-4" />
+                                {checkoutScopePending === "prepaid"
+                                  ? "決済へ移動中…"
+                                  : "個人枠の請求を支払う"}
+                              </Button>
+                              {!canStartPrepaidPayment && (
+                                <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+                                  {entryWindowOpen
+                                    ? "保存のうえ、請求額が0円より大きいときに決済できます。"
+                                    : "締切後は主催の請求確定後に決済できます。"}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <Button asChild variant="outline" className="mt-4 h-10 w-full">
                     <Link href={appRoutes.competitions.root(competitionId)}>大会ページへ戻る</Link>
                   </Button>
@@ -850,13 +969,13 @@ export default function CompetitionTeamEntryManager({
                       <dd className="tabular-nums font-semibold text-foreground">{totalTeamCount}</dd>
                     </div>
                     <div className="flex items-baseline justify-between gap-2 border-b border-border/50 pb-2">
-                      <dt className="text-muted-foreground">想定額</dt>
+                      <dt className="text-muted-foreground">想定額（チーム）</dt>
                       <dd className="tabular-nums font-medium">¥{formatCurrency(estimatedFee)}</dd>
                     </div>
                     <div className="flex items-baseline justify-between gap-2 border-b border-border/50 pb-2">
-                      <dt className="text-muted-foreground">参加費（請求額）</dt>
+                      <dt className="text-muted-foreground">チーム請求額</dt>
                       <dd className="tabular-nums font-semibold text-foreground">
-                        ¥{formatCurrency(billingAmount)}
+                        ¥{formatCurrency(teamBillingAmount)}
                       </dd>
                     </div>
                     {teamProcessingFeeYen > 0 ? (
@@ -870,7 +989,7 @@ export default function CompetitionTeamEntryManager({
                           </dd>
                         </div>
                         <div className="flex items-baseline justify-between gap-2 border-b border-border/50 pb-2">
-                          <dt className="font-medium text-foreground">カード決済時の合計</dt>
+                          <dt className="font-medium text-foreground">チーム分・カード合計</dt>
                           <dd className="tabular-nums text-base font-bold text-foreground">
                             ¥{formatCurrency(teamCardTotalYen)}
                           </dd>
@@ -882,21 +1001,21 @@ export default function CompetitionTeamEntryManager({
                       </>
                     ) : null}
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <dt className="text-muted-foreground">状態</dt>
+                      <dt className="text-muted-foreground">チーム請求の状態</dt>
                       <dd>
                         <Badge
                           variant="outline"
-                          className={cn("font-normal", paymentStatusBadgeClass(billing?.status))}
+                          className={cn("font-normal", paymentStatusBadgeClass(teamBill?.status))}
                         >
-                          {getTeamPaymentStatusLabel(billing?.status)}
+                          {getTeamPaymentStatusLabel(teamBill?.status)}
                         </Badge>
                       </dd>
                     </div>
                   </dl>
 
-                  {billing?.finalizedAt && (
+                  {teamBill?.finalizedAt && (
                     <p className="mt-3 text-[11px] text-muted-foreground">
-                      請求確定: {new Date(billing.finalizedAt).toLocaleString("ja-JP")}
+                      チーム請求の確定: {new Date(teamBill.finalizedAt).toLocaleString("ja-JP")}
                     </p>
                   )}
 
@@ -904,39 +1023,39 @@ export default function CompetitionTeamEntryManager({
                     単価: 1チームあたり ¥{formatCurrency(teamEntryFeePerTeam)}
                   </p>
 
-                  {billing?.status === "SUCCEEDED" && (
+                  {teamBill?.status === "SUCCEEDED" && (
                     <p className="mt-3 rounded-md border border-emerald-200/80 bg-emerald-50 px-2.5 py-2 text-xs text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-100">
-                      支払いは完了しています。追加のチームが確定した場合のみ、再請求・再決済の対象になることがあります。
+                      チーム請求の支払いは完了しています。追加のチームが確定した場合のみ、再請求・再決済の対象になることがあります。
                     </p>
                   )}
-                  {billing?.status === "PENDING" && billing?.finalizedAt && (
+                  {teamBill?.status === "PENDING" && teamBill?.finalizedAt && (
                     <p className="mt-3 rounded-md border border-orange-200/80 bg-orange-50 px-2.5 py-2 text-xs text-orange-900 dark:border-orange-900/50 dark:bg-orange-950/40 dark:text-orange-100">
-                      主催による請求確定済みです。下のボタンからカード決済を完了してください。
+                      主催による請求確定済みです。下のボタンからチーム分のカード決済を完了してください。
                     </p>
                   )}
-                  {billing?.status === "PENDING" && !billing?.finalizedAt && entryWindowOpen && (
+                  {teamBill?.status === "PENDING" && !teamBill?.finalizedAt && entryWindowOpen && (
                     <p className="mt-3 rounded-md border border-orange-200/80 bg-orange-50 px-2.5 py-2 text-xs text-orange-900 dark:border-orange-900/50 dark:bg-orange-950/40 dark:text-orange-100">
                       エントリー期間中です。登録を保存したうえで、いつでも下のボタンから決済できます。
                     </p>
                   )}
-                  {(billing?.status === "FAILED" || billing?.status === "EXPIRED") && (
+                  {(teamBill?.status === "FAILED" || teamBill?.status === "EXPIRED") && (
                     <p className="mt-3 rounded-md border border-amber-200/80 bg-amber-50 px-2.5 py-2 text-xs text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
-                      前回の決済は完了していません。もう一度お試しください。
+                      前回のチーム請求の決済は完了していません。もう一度お試しください。
                     </p>
                   )}
 
-                  {billing?.status !== "SUCCEEDED" && (
+                  {teamBill?.status !== "SUCCEEDED" && (
                     <div className="mt-4">
                       <Button
                         type="button"
                         className="h-10 w-full gap-2 font-semibold"
-                        onClick={handleStartPayment}
-                        disabled={!canStartPayment || isStartingPayment}
+                        onClick={() => void handleStartPayment("team")}
+                        disabled={!canStartTeamPayment || checkoutScopePending !== null}
                       >
                         <CreditCard className="h-4 w-4" />
-                        {isStartingPayment ? "決済へ移動中…" : "チーム請求を支払う"}
+                        {checkoutScopePending === "team" ? "決済へ移動中…" : "チーム請求を支払う"}
                       </Button>
-                      {!canStartPayment && (
+                      {!canStartTeamPayment && (
                         <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
                           {entryWindowOpen
                             ? "チームエントリーを保存し、請求額が0円より大きいときに決済できます。"
@@ -945,6 +1064,110 @@ export default function CompetitionTeamEntryManager({
                       )}
                     </div>
                   )}
+
+                  {showPrepaidBillingUi ? (
+                    <div className="mt-6 space-y-3 border-t border-border/60 pt-4">
+                      <p className="text-xs font-semibold text-muted-foreground">クラブ個人枠（先払い）</p>
+                      {!prepaidBill && prepaidUserIds.length > 0 ? (
+                        <p className="text-[11px] leading-relaxed text-muted-foreground">
+                          金額は保存後に確定します。チーム請求とは別に決済します。
+                        </p>
+                      ) : null}
+                      {prepaidBill ? (
+                        <>
+                          <dl className="space-y-2 text-sm">
+                            <div className="flex items-baseline justify-between gap-2 border-b border-border/50 pb-2">
+                              <dt className="text-muted-foreground">請求額</dt>
+                              <dd className="tabular-nums font-semibold text-foreground">
+                                ¥{formatCurrency(prepaidBillingAmount)}
+                              </dd>
+                            </div>
+                            {prepaidProcessingFeeYen > 0 ? (
+                              <>
+                                <div className="flex items-baseline justify-between gap-2 border-b border-border/50 pb-2">
+                                  <dt className="text-muted-foreground">
+                                    決済手数料（{teamProcessingFeePercentLabel}%）
+                                  </dt>
+                                  <dd className="tabular-nums font-medium text-foreground">
+                                    ¥{formatCurrency(prepaidProcessingFeeYen)}
+                                  </dd>
+                                </div>
+                                <div className="flex items-baseline justify-between gap-2 border-b border-border/50 pb-2">
+                                  <dt className="font-medium text-foreground">個人枠・カード合計</dt>
+                                  <dd className="tabular-nums text-base font-bold text-foreground">
+                                    ¥{formatCurrency(prepaidCardTotalYen)}
+                                  </dd>
+                                </div>
+                              </>
+                            ) : null}
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <dt className="text-muted-foreground">状態</dt>
+                              <dd>
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "font-normal",
+                                    paymentStatusBadgeClass(prepaidBill.status)
+                                  )}
+                                >
+                                  {getTeamPaymentStatusLabel(prepaidBill.status)}
+                                </Badge>
+                              </dd>
+                            </div>
+                          </dl>
+                          {prepaidBill.finalizedAt ? (
+                            <p className="text-[11px] text-muted-foreground">
+                              個人枠の請求確定:{" "}
+                              {new Date(prepaidBill.finalizedAt).toLocaleString("ja-JP")}
+                            </p>
+                          ) : null}
+                          {prepaidBill.status === "SUCCEEDED" && (
+                            <p className="rounded-md border border-emerald-200/80 bg-emerald-50 px-2.5 py-2 text-xs text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-100">
+                              個人枠の支払いは完了しています。対象者を変えた場合は、保存し直すと請求が更新されることがあります。
+                            </p>
+                          )}
+                          {prepaidBill.status === "PENDING" && prepaidBill.finalizedAt && (
+                            <p className="rounded-md border border-orange-200/80 bg-orange-50 px-2.5 py-2 text-xs text-orange-900 dark:border-orange-900/50 dark:bg-orange-950/40 dark:text-orange-100">
+                              主催による請求確定済みです。下のボタンから個人枠分の決済を完了してください。
+                            </p>
+                          )}
+                          {prepaidBill.status === "PENDING" && !prepaidBill.finalizedAt && entryWindowOpen && (
+                            <p className="rounded-md border border-orange-200/80 bg-orange-50 px-2.5 py-2 text-xs text-orange-900 dark:border-orange-900/50 dark:bg-orange-950/40 dark:text-orange-100">
+                              エントリー期間中です。保存後、個人枠だけ先に決済できます。
+                            </p>
+                          )}
+                          {(prepaidBill.status === "FAILED" || prepaidBill.status === "EXPIRED") && (
+                            <p className="rounded-md border border-amber-200/80 bg-amber-50 px-2.5 py-2 text-xs text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
+                              前回の個人枠の決済は完了していません。もう一度お試しください。
+                            </p>
+                          )}
+                          {prepaidBill.status !== "SUCCEEDED" && (
+                            <div className="mt-2">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                className="h-10 w-full gap-2 font-semibold"
+                                onClick={() => void handleStartPayment("prepaid")}
+                                disabled={!canStartPrepaidPayment || checkoutScopePending !== null}
+                              >
+                                <CreditCard className="h-4 w-4" />
+                                {checkoutScopePending === "prepaid"
+                                  ? "決済へ移動中…"
+                                  : "個人枠の請求を支払う"}
+                              </Button>
+                              {!canStartPrepaidPayment && (
+                                <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+                                  {entryWindowOpen
+                                    ? "保存のうえ、請求額が0円より大きいときに決済できます。"
+                                    : "締切後は主催の請求確定後に決済できます。"}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </>
               )}
             </div>

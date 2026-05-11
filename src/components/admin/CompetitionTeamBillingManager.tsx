@@ -8,8 +8,10 @@ type Bill = {
   clubId: string;
   clubName: string;
   teamCount: number;
-  amount: number;
-  status: string | null;
+  teamAmount: number;
+  teamStatus: string | null;
+  prepaidAmount: number;
+  prepaidStatus: string | null;
   finalizedAt: string | null;
   paidAt: string | null;
 };
@@ -101,7 +103,14 @@ export default function CompetitionTeamBillingManager({
                     {bill.clubName}
                   </p>
                   <p className="text-sm text-gray-500">登録チーム数: {bill.teamCount}</p>
-                  <p className="text-sm text-gray-500">請求状態: {statusLabel(bill.status, bill.finalizedAt)}</p>
+                  <p className="text-sm text-gray-500">
+                    チーム請求: {statusLabel(bill.teamStatus, bill.finalizedAt)}
+                  </p>
+                  {bill.prepaidAmount > 0 ? (
+                    <p className="text-sm text-gray-500">
+                      個人枠請求: {statusLabel(bill.prepaidStatus, bill.finalizedAt)}
+                    </p>
+                  ) : null}
                   {bill.finalizedAt && (
                     <p className="text-xs text-gray-500">
                       確定日時: {new Date(bill.finalizedAt).toLocaleString("ja-JP")}
@@ -115,8 +124,13 @@ export default function CompetitionTeamBillingManager({
                 </div>
                 <div className="text-right">
                   <p className="font-medium text-gray-900 dark:text-gray-100">
-                    ¥{formatCurrency(bill.amount)}
+                    チーム ¥{formatCurrency(bill.teamAmount)}
                   </p>
+                  {bill.prepaidAmount > 0 ? (
+                    <p className="mt-1 font-medium text-gray-900 dark:text-gray-100">
+                      個人枠 ¥{formatCurrency(bill.prepaidAmount)}
+                    </p>
+                  ) : null}
                   <Button
                     type="button"
                     variant="outline"

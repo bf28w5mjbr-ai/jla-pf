@@ -10,16 +10,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { appRoutes } from "@/lib/appRoutes";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
-import { buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
-import CompetitionTeamEntryManager from "@/components/CompetitionTeamEntryManager";
-import TeamEntryHistoryPanel from "@/components/TeamEntryHistoryPanel";
 import CompetitionTeamAssignmentManager from "@/components/CompetitionTeamAssignmentManager";
 import {
   getTeamEntryMarshalAssignmentBlockedMap,
   getTeamMemberAssignmentWindowState,
 } from "@/lib/teamMemberAssignmentWindow";
 import { formatCompetitionEntryPeriodRangeJa } from "@/lib/datetimeLocal";
-import { getStripeProcessingFeeBpsFromEnv } from "@/lib/stripeProcessingFee";
 import { competitionEntryPaidCheckoutWhere } from "@/lib/entryCheckoutSessionPaid";
 import {
   prismaCompetitionToTeamAssignmentCompetitionJson,
@@ -237,25 +233,6 @@ export default async function ClubCompetitionTeamHubPage({
     updatedAt: e.updatedAt,
   }));
 
-  const teamPaymentOwnerIds = adminClubIds.map((id) =>
-    buildTeamEntryPaymentOwnerId(competition.id, id)
-  );
-  const teamPayments = await prisma.payment.findMany({
-    where: {
-      ownerType: "CLUB",
-      ownerId: { in: teamPaymentOwnerIds },
-      type: "COMPETITION_ENTRY_FEE",
-    },
-    select: {
-      ownerId: true,
-      id: true,
-      status: true,
-      amount: true,
-      stripeCheckoutSessionId: true,
-      metadata: true,
-    },
-  });
-
   const eligibleEntries = await prisma.competitionEntry.findMany({
     where: {
       competitionId: competition.id,
@@ -276,63 +253,10 @@ export default async function ClubCompetitionTeamHubPage({
     orderBy: [{ clubId: "asc" }, { createdAt: "asc" }],
   });
 
-  const entryFee =
-    competition.entryFee && typeof competition.entryFee === "object"
-      ? (competition.entryFee as { teamEntryFeePerTeam?: number })
-      : null;
-  const teamEntryFeePerTeam = entryFee?.teamEntryFeePerTeam ?? 0;
-
-  const initialEntriesByClub = Object.fromEntries(
-    adminClubIds.map((cid) => [
-      cid,
-      teamEntriesFull
-        .filter((entry) => entry.clubId === cid)
-        .map((entry) => ({
-          id: entry.id,
-          eventId: entry.eventId,
-          teamName: entry.teamName,
-        })),
-    ])
-  ) as Record<string, { id: string; eventId: string; teamName: string }[]>;
-
   const now = new Date();
   const entryStart = competition.entryStartDate ? new Date(competition.entryStartDate) : null;
   const entryEnd = competition.entryEndDate ? new Date(competition.entryEndDate) : null;
   const entryWindowOpen = entryStart && entryEnd ? now >= entryStart && now <= entryEnd : false;
-
-  const billingByClub = Object.fromEntries(
-    adminClubIds.map((cid) => {
-      const ownerId = buildTeamEntryPaymentOwnerId(competition.id, cid);
-      const payment = teamPayments.find((item) => item.ownerId === ownerId);
-      return [
-        cid,
-        payment
-          ? {
-              id: payment.id,
-              status: payment.status,
-              amount: payment.amount,
-              stripeCheckoutSessionId: payment.stripeCheckoutSessionId,
-              finalizedAt:
-                payment.metadata &&
-                typeof payment.metadata === "object" &&
-                typeof (payment.metadata as { finalizedAt?: unknown }).finalizedAt === "string"
-                  ? ((payment.metadata as { finalizedAt?: string }).finalizedAt ?? null)
-                  : null,
-            }
-          : undefined,
-      ];
-    })
-  ) as Record<
-    string,
-    | {
-        id: string;
-        status: string;
-        amount: number;
-        stripeCheckoutSessionId: string | null;
-        finalizedAt: string | null;
-      }
-    | undefined
-  >;
 
   const entryWindowLabel =
     !entryStart || !entryEnd

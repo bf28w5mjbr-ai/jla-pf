@@ -7,7 +7,10 @@ import { getRequestContext, logAuditAction } from "@/lib/auditLog";
 import { ReceiptPDF } from "@/components/pdf/ReceiptPDF";
 import { generatePdfBuffer } from "@/lib/pdf-helper";
 import { fetchStripeReceiptUrlForCheckoutSessionId } from "@/lib/stripeEntryReceiptUrl";
-import { buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
+import {
+  buildClubPrepaidIndividualPaymentOwnerId,
+  buildTeamEntryPaymentOwnerId,
+} from "@/lib/teamEntryPayments";
 import { isClubAdminRole } from "@/lib/roleScopes";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import { resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
@@ -73,6 +76,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const url = new URL(request.url);
     const clubId = url.searchParams.get("clubId") ?? "";
     const format = url.searchParams.get("format");
+    const billingScope = url.searchParams.get("billingScope") === "prepaid" ? "prepaid" : "team";
 
     if (!clubId) {
       return NextResponse.json({ error: "clubId が必要です" }, { status: 400 });
@@ -99,7 +103,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "クラブ管理者権限が必要です" }, { status: 403 });
     }
 
-    const ownerId = buildTeamEntryPaymentOwnerId(competitionId, clubId);
+    const ownerId =
+      billingScope === "prepaid"
+        ? buildClubPrepaidIndividualPaymentOwnerId(competitionId, clubId)
+        : buildTeamEntryPaymentOwnerId(competitionId, clubId);
 
     const [competition, teamCount, payment, latestTeamUpdate] = await Promise.all([
       prisma.competition.findUnique({
@@ -167,7 +174,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });
     }
 
-    if (teamCount === 0) {
+    if (teamCount === 0 && billingScope === "team") {
       return NextResponse.json({ error: "チームエントリーがありません" }, { status: 400 });
     }
 
@@ -189,7 +196,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
       competitionAgeCategories: competition.ageCategories,
       underFeePartition: underPartition ?? null,
     }).teamUnit;
-    const totalFeeFromPricing = teamCount * teamUnit;
+    const totalFeeFromPricing =
+      billingScope === "prepaid" ? 0 : teamCount * teamUnit;
     const totalFee =
       typeof payment?.amount === "number" && payment.amount >= 0
         ? payment.amount
@@ -201,7 +209,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     if (!canIssuePdf) {
       return NextResponse.json(
-        { error: "決済完了後に領収書を発行できます（無料大会は登録済みのみ）" },
+        {
+          error:
+            billingScope === "prepaid"
+              ? "クラブ個人枠の決済完了後に領収書を発行できます"
+              : "決済完了後に領収書を発行できます（無料大会は登録済みのみ）",
+        },
         { status: 400 }
       );
     }
@@ -283,11 +296,19 @@ export async function GET(request: NextRequest, context: RouteContext) {
         hostOrganizationName: competition.hostOrganizationName,
         organization: { name: competition.organization.name },
       });
+      const subtitle =
+        billingScope === "prepaid"
+          ? `${hostIssuerName} 名義（クラブ個人枠先払い）`
+          : `${hostIssuerName} 名義（チームエントリー参加費）`;
+      const purposeLine =
+        billingScope === "prepaid"
+          ? `但、${competition.name} のクラブによる個人エントリー先払い分として`
+          : `但、${competition.name} のチーム種目参加申込に係るエントリー費として`;
       const pdfComponent = React.createElement(ReceiptPDF, {
         receiptNumber,
         issuedDate,
-        subtitle: `${hostIssuerName} 名義（チームエントリー参加費）`,
-        purposeLine: `但、${competition.name} のチーム種目参加申込に係るエントリー費として`,
+        subtitle,
+        purposeLine,
         referenceLabel: "請求識別子",
         referenceValue: ownerId,
         issuerSectionTitle: "発行元（主催団体）",
@@ -322,9 +343,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
         items: [
           {
             description:
-              displayAmount > 0
-                ? `${competition.name}／チーム種目エントリー（${teamCount}組）`
-                : `${competition.name}／チーム種目エントリー（参加費無料・${teamCount}組）`,
+              billingScope === "prepaid"
+                ? displayAmount > 0
+                  ? `${competition.name}／クラブによる個人エントリー先払い`
+                  : `${competition.name}／クラブによる個人エントリー先払い（0円）`
+                : displayAmount > 0
+                  ? `${competition.name}／チーム種目エントリー（${teamCount}組）`
+                  : `${competition.name}／チーム種目エントリー（参加費無料・${teamCount}組）`,
             quantity: 1,
             unitPrice: displayAmount,
             amount: displayAmount,

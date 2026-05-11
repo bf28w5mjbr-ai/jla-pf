@@ -2,7 +2,11 @@ import { notFound } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/server/db";
 import CompetitionHostInviteEntryPanel from "@/components/admin/CompetitionHostInviteEntryPanel";
-import { buildTeamEntryPaymentOwnerId, getTeamPaymentStatusLabel } from "@/lib/teamEntryPayments";
+import {
+  buildClubPrepaidIndividualPaymentOwnerId,
+  buildTeamEntryPaymentOwnerId,
+  getTeamPaymentStatusLabel,
+} from "@/lib/teamEntryPayments";
 import CompetitionEntryCsvExportControls from "@/components/admin/CompetitionEntryCsvExportControls";
 import type { EntryExportRow } from "@/components/admin/CompetitionEntriesSpreadsheetExportButton";
 import {
@@ -306,20 +310,22 @@ export default async function CompetitionEntriesTabContent({
   });
 
   const clubIds = [...new Set(teamEntries.map((t) => t.clubId))];
-  const teamPaymentOwnerIds = clubIds.map((cid) =>
-    buildTeamEntryPaymentOwnerId(competition.id, cid)
-  );
+  const teamAndPrepaidOwnerIds = clubIds.flatMap((cid) => [
+    buildTeamEntryPaymentOwnerId(competition.id, cid),
+    buildClubPrepaidIndividualPaymentOwnerId(competition.id, cid),
+  ]);
   const teamPayments =
-    teamPaymentOwnerIds.length > 0
+    teamAndPrepaidOwnerIds.length > 0
       ? await prisma.payment.findMany({
           where: {
             ownerType: "CLUB",
-            ownerId: { in: teamPaymentOwnerIds },
+            ownerId: { in: teamAndPrepaidOwnerIds },
             type: "COMPETITION_ENTRY_FEE",
           },
           select: {
             ownerId: true,
             status: true,
+            amount: true,
             updatedAt: true,
           },
           orderBy: { updatedAt: "desc" },
@@ -327,16 +333,25 @@ export default async function CompetitionEntriesTabContent({
       : [];
 
   const latestPaymentByOwnerId = new Map<string, string | null>();
+  const latestAmountByOwnerId = new Map<string, number>();
   for (const p of teamPayments) {
     if (!latestPaymentByOwnerId.has(p.ownerId)) {
       latestPaymentByOwnerId.set(p.ownerId, p.status);
+      latestAmountByOwnerId.set(p.ownerId, p.amount);
     }
   }
 
   const clubPaymentLabel = (clubId: string) => {
-    const ownerId = buildTeamEntryPaymentOwnerId(competition.id, clubId);
-    const status = latestPaymentByOwnerId.get(ownerId) ?? null;
-    return `クラブ請求: ${getTeamPaymentStatusLabel(status)}`;
+    const teamOid = buildTeamEntryPaymentOwnerId(competition.id, clubId);
+    const prepaidOid = buildClubPrepaidIndividualPaymentOwnerId(competition.id, clubId);
+    const teamStatus = latestPaymentByOwnerId.get(teamOid) ?? null;
+    const prepaidStatus = latestPaymentByOwnerId.get(prepaidOid) ?? null;
+    const prepaidAmt = latestAmountByOwnerId.get(prepaidOid) ?? 0;
+    const parts = [`チーム: ${getTeamPaymentStatusLabel(teamStatus)}`];
+    if (prepaidAmt > 0) {
+      parts.push(`個人枠: ${getTeamPaymentStatusLabel(prepaidStatus)}`);
+    }
+    return `クラブ請求: ${parts.join(" / ")}`;
   };
 
   const teamRowsMinimal: EntryMinimalRow[] = [];

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
+import type { ClubTeamAndPrepaidBillingPair } from "@/lib/teamEntryPayments";
 import CompetitionTeamEntryManager from "@/components/CompetitionTeamEntryManager";
 import TeamEntryHistoryPanel from "@/components/TeamEntryHistoryPanel";
 
@@ -46,18 +47,6 @@ type TeamEntryRow = {
   updatedAt: Date;
 };
 
-type BillingByClub = Record<
-  string,
-  | {
-      id: string;
-      status: string;
-      amount: number;
-      stripeCheckoutSessionId: string | null;
-      finalizedAt: string | null;
-    }
-  | undefined
->;
-
 type Props = {
   competitionId: string;
   competitionName: string;
@@ -69,7 +58,7 @@ type Props = {
   initialEntriesByClub: Record<string, { id: string; eventId: string; teamName: string }[]>;
   teamEntryFeePerTeam: number;
   entryWindowOpen: boolean;
-  billingByClub: BillingByClub;
+  billingByClub: Record<string, ClubTeamAndPrepaidBillingPair | undefined>;
   competitionCategory: string | null;
   cardProcessingFeeBps: number;
   clubIndividualEntryBillingTiming: ClubIndividualEntryBillingTiming;
@@ -91,12 +80,10 @@ export default function CompetitionTeamEntryWorkspace({
   billingByClub,
   competitionCategory,
   cardProcessingFeeBps,
-  // 親が解決結果を渡す互換用（常に即時。子の Manager では未使用だが page からの参照用に受け取る）
   clubIndividualEntryBillingTiming,
   prepaidMemberOptionsByClub,
   initialPrepaidIndividualUserIdsByClub,
 }: Props) {
-  void clubIndividualEntryBillingTiming;
   const [selectedClubId, setSelectedClubId] = useState(() => preferredClubId);
   const [tab, setTab] = useState<"team" | "prepaid">("team");
 
@@ -125,6 +112,7 @@ export default function CompetitionTeamEntryWorkspace({
     billingByClub,
     competitionCategory,
     cardProcessingFeeBps,
+    clubIndividualEntryBillingTiming,
     prepaidMemberOptionsByClub,
     initialPrepaidIndividualUserIdsByClub,
   } as const;

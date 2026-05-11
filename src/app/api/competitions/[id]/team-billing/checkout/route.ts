@@ -16,7 +16,14 @@ import {
   resolveEntryCheckoutStripeConnectParams,
 } from "@/lib/organizerBilling";
 import { refreshOrganizationStripeConnectFlags } from "@/lib/organizerStripeConnect";
-import { buildTeamEntryPaymentOwnerId, parseTeamEntryPaymentMetadata } from "@/lib/teamEntryPayments";
+import {
+  buildClubPrepaidIndividualPaymentOwnerId,
+  buildTeamEntryPaymentOwnerId,
+  CLUB_PREPAID_INDIVIDUAL_BILLING_SCOPE,
+  parseTeamEntryPaymentMetadata,
+  TEAM_ENTRY_BILLING_SCOPE,
+  type TeamBillingCheckoutScope,
+} from "@/lib/teamEntryPayments";
 import { isClubAdminRole } from "@/lib/roleScopes";
 
 type RouteContext = {
@@ -37,6 +44,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const body = await request.json().catch(() => ({}));
     const clubId = typeof body.clubId === "string" ? body.clubId : "";
+    const rawScope = body.billingScope;
+    const billingScope: TeamBillingCheckoutScope =
+      rawScope === "prepaid" ? "prepaid" : "team";
     if (!clubId) {
       return NextResponse.json({ message: "クラブが不正です" }, { status: 400 });
     }
@@ -87,7 +97,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ message: "クラブ管理者権限が必要です" }, { status: 403 });
     }
 
-    const ownerId = buildTeamEntryPaymentOwnerId(competitionId, clubId);
+    const ownerId =
+      billingScope === "prepaid"
+        ? buildClubPrepaidIndividualPaymentOwnerId(competitionId, clubId)
+        : buildTeamEntryPaymentOwnerId(competitionId, clubId);
     const payment = await prisma.payment.findUnique({
       where: {
         ownerType_ownerId_type: {
@@ -108,7 +121,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json(
         {
           message:
-            "請求データがありません。チームエントリーを保存してからお試しください。エントリー期間外の場合は、主催者の請求確定後に決済できます。",
+            billingScope === "prepaid"
+              ? "クラブ個人枠の請求データがありません。チームエントリーを保存して対象メンバーを選び直してからお試しください。エントリー期間外の場合は、主催者の請求確定後に決済できます。"
+              : "請求データがありません。チームエントリーを保存してからお試しください。エントリー期間外の場合は、主催者の請求確定後に決済できます。",
         },
         { status: 400 }
       );
@@ -166,7 +181,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       tab: "entry",
     });
     const skipConnectEnv = connectRequirementSkipped();
-    const baseYen = payment.amount; // チーム参加費（カード手数料行を除く）
+    const baseYen = payment.amount;
     const processingFeeBps = getStripeProcessingFeeBpsFromEnv();
     const processingFeeYen = stripeProcessingFeeSurchargeYenFromBps(baseYen, processingFeeBps);
     const checkoutTotalYen = baseYen + processingFeeYen;
@@ -180,15 +195,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
       applicationFeeWithProcessing,
     });
 
+    const productLabel =
+      billingScope === "prepaid"
+        ? `クラブ個人枠先払い: ${competition.name} / ${membership.club.name}`
+        : `チームエントリー費: ${competition.name} / ${membership.club.name}`;
     const checkoutSession = await createPaymentCheckout({
       organizationId: competition.organizationId,
       userId: session.userId,
       amount: checkoutTotalYen,
-      description: `チームエントリー費: ${competition.name} / ${membership.club.name}`,
+      description: productLabel,
       lineItemSplit:
         processingFeeYen > 0
           ? {
-              primaryProductName: `チームエントリー費: ${competition.name} / ${membership.club.name}`,
+              primaryProductName: productLabel,
               entryYen: baseYen,
               processingFeeYen,
             }
@@ -206,7 +225,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
         clubId,
         userId: session.userId,
         paymentId: payment.id,
-        scope: "TEAM_ENTRY",
+        scope:
+          billingScope === "prepaid"
+            ? CLUB_PREPAID_INDIVIDUAL_BILLING_SCOPE
+            : TEAM_ENTRY_BILLING_SCOPE,
         entryFeeYen: String(baseYen),
         processingFeeYen: String(processingFeeYen),
         processingFeeBps: String(processingFeeBps),

@@ -6,7 +6,12 @@ import { reconcileRetroactiveClubPrepaidSlotsAfterTeamEntrySave } from "@/lib/cl
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { isClubAdminRole } from "@/lib/roleScopes";
-import { buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
+import {
+  buildClubPrepaidIndividualPaymentOwnerId,
+  buildTeamEntryPaymentOwnerId,
+  CLUB_PREPAID_INDIVIDUAL_BILLING_SCOPE,
+  TEAM_ENTRY_BILLING_SCOPE,
+} from "@/lib/teamEntryPayments";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import {
   isTieredEntryFee,
@@ -284,18 +289,33 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     const clubIndividualBillingTiming = resolveClubIndividualEntryBillingTiming(competition.entryFee);
 
-    const paymentOwnerId = buildTeamEntryPaymentOwnerId(competitionId, clubId);
-    const existingTeamPayment = await prisma.payment.findUnique({
-      where: {
-        ownerType_ownerId_type: {
-          ownerType: "CLUB",
-          ownerId: paymentOwnerId,
-          type: "COMPETITION_ENTRY_FEE",
+    const teamPaymentOwnerId = buildTeamEntryPaymentOwnerId(competitionId, clubId);
+    const prepaidPaymentOwnerId = buildClubPrepaidIndividualPaymentOwnerId(competitionId, clubId);
+    const [existingTeamPayment, existingPrepaidPayment] = await Promise.all([
+      prisma.payment.findUnique({
+        where: {
+          ownerType_ownerId_type: {
+            ownerType: "CLUB",
+            ownerId: teamPaymentOwnerId,
+            type: "COMPETITION_ENTRY_FEE",
+          },
         },
-      },
-      select: { status: true },
-    });
-    const clearStripeRefsAfterSucceededPayment = existingTeamPayment?.status === "SUCCEEDED";
+        select: { status: true },
+      }),
+      prisma.payment.findUnique({
+        where: {
+          ownerType_ownerId_type: {
+            ownerType: "CLUB",
+            ownerId: prepaidPaymentOwnerId,
+            type: "COMPETITION_ENTRY_FEE",
+          },
+        },
+        select: { status: true },
+      }),
+    ]);
+    const clearStripeRefsAfterSucceededTeamPayment = existingTeamPayment?.status === "SUCCEEDED";
+    const clearStripeRefsAfterSucceededPrepaidPayment =
+      existingPrepaidPayment?.status === "SUCCEEDED";
 
     /**
      * 既定 ~5s のインタラクティブ TX タイムアウトを超えると
@@ -354,20 +374,28 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
       const prepaidSub = toSafeNonNegativeIntYen(prepaidSubtotalYenRaw);
       const teamTotalYen = toSafeNonNegativeIntYen(teamsToPersist.length * teamEntryFeePerTeam);
-      const totalAmount = toSafeNonNegativeIntYen(teamTotalYen + prepaidSub);
+      const hasPrepaidUsers = prepaidIndividualUserIds.length > 0;
+      const instantPrepaidWithAmount =
+        hasPrepaidUsers &&
+        clubIndividualBillingTiming === "INSTANT_PREPAID" &&
+        prepaidSub > 0;
 
-      if (
-        teamsToPersist.length === 0 &&
-        prepaidIndividualUserIds.length > 0 &&
-        clubIndividualBillingTiming === "POST_CLOSE_INVOICE"
-      ) {
+      const deleteBothClubEntryFeePayments = async () => {
         await tx.payment.deleteMany({
           where: {
             ownerType: "CLUB",
-            ownerId: paymentOwnerId,
             type: "COMPETITION_ENTRY_FEE",
+            ownerId: { in: [teamPaymentOwnerId, prepaidPaymentOwnerId] },
           },
         });
+      };
+
+      if (
+        teamsToPersist.length === 0 &&
+        hasPrepaidUsers &&
+        clubIndividualBillingTiming === "POST_CLOSE_INVOICE"
+      ) {
+        await deleteBothClubEntryFeePayments();
         await tx.clubCompetitionPrepaidIndividualSlot.deleteMany({
           where: {
             competitionId,
@@ -384,84 +412,142 @@ export async function PUT(request: NextRequest, context: RouteContext) {
           prepaidIndividualUserIds,
           billingTiming: clubIndividualBillingTiming,
         });
-      } else if (teamsToPersist.length === 0 && prepaidIndividualUserIds.length === 0) {
-        await tx.payment.deleteMany({
-          where: {
-            ownerType: "CLUB",
-            ownerId: paymentOwnerId,
-            type: "COMPETITION_ENTRY_FEE",
-          },
-        });
+      } else if (teamsToPersist.length === 0 && !hasPrepaidUsers) {
+        await deleteBothClubEntryFeePayments();
         await tx.clubCompetitionPrepaidIndividualSlot.deleteMany({
           where: { competitionId, clubId },
         });
-      } else if (totalAmount <= 0 && prepaidIndividualUserIds.length === 0) {
-        await tx.payment.deleteMany({
-          where: {
-            ownerType: "CLUB",
-            ownerId: paymentOwnerId,
-            type: "COMPETITION_ENTRY_FEE",
-          },
-        });
+      } else if (teamTotalYen + prepaidSub <= 0 && !hasPrepaidUsers) {
+        await deleteBothClubEntryFeePayments();
         await tx.clubCompetitionPrepaidIndividualSlot.deleteMany({
           where: { competitionId, clubId },
         });
       } else {
-        const payment = await tx.payment.upsert({
-          where: {
-            ownerType_ownerId_type: {
+        if (teamTotalYen > 0) {
+          await tx.payment.upsert({
+            where: {
+              ownerType_ownerId_type: {
+                ownerType: "CLUB",
+                ownerId: teamPaymentOwnerId,
+                type: "COMPETITION_ENTRY_FEE",
+              },
+            },
+            create: {
               ownerType: "CLUB",
-              ownerId: paymentOwnerId,
+              ownerId: teamPaymentOwnerId,
+              type: "COMPETITION_ENTRY_FEE",
+              userId: session.userId,
+              status: "PENDING",
+              amount: teamTotalYen,
+              metadata: {
+                scope: TEAM_ENTRY_BILLING_SCOPE,
+                competitionId,
+                clubId,
+                teamCount: teamsToPersist.length,
+                unitPrice: teamEntryFeePerTeam,
+                prepaidIndividualSubtotalYen: 0,
+                clubIndividualBillingTiming,
+              },
+            },
+            update: {
+              userId: session.userId,
+              status: "PENDING",
+              amount: teamTotalYen,
+              ...(clearStripeRefsAfterSucceededTeamPayment
+                ? {
+                    stripeCheckoutSessionId: null,
+                    stripePaymentIntentId: null,
+                    paidAt: null,
+                  }
+                : {}),
+              metadata: {
+                scope: TEAM_ENTRY_BILLING_SCOPE,
+                competitionId,
+                clubId,
+                teamCount: teamsToPersist.length,
+                unitPrice: teamEntryFeePerTeam,
+                prepaidIndividualSubtotalYen: 0,
+                clubIndividualBillingTiming,
+              },
+            },
+          });
+        } else {
+          await tx.payment.deleteMany({
+            where: {
+              ownerType: "CLUB",
+              ownerId: teamPaymentOwnerId,
               type: "COMPETITION_ENTRY_FEE",
             },
-          },
-          create: {
-            ownerType: "CLUB",
-            ownerId: paymentOwnerId,
-            type: "COMPETITION_ENTRY_FEE",
-            userId: session.userId,
-            status: "PENDING",
-            amount: totalAmount,
-            metadata: {
-              scope: "TEAM_ENTRY",
-              competitionId,
-              clubId,
-              teamCount: teamsToPersist.length,
-              unitPrice: teamEntryFeePerTeam,
-              prepaidIndividualSubtotalYen: prepaidSub,
-              clubIndividualBillingTiming,
-            },
-          },
-          update: {
-            userId: session.userId,
-            status: "PENDING",
-            amount: totalAmount,
-            ...(clearStripeRefsAfterSucceededPayment
-              ? {
-                  stripeCheckoutSessionId: null,
-                  stripePaymentIntentId: null,
-                  paidAt: null,
-                }
-              : {}),
-            metadata: {
-              scope: "TEAM_ENTRY",
-              competitionId,
-              clubId,
-              teamCount: teamsToPersist.length,
-              unitPrice: teamEntryFeePerTeam,
-              prepaidIndividualSubtotalYen: prepaidSub,
-              clubIndividualBillingTiming,
-            },
-          },
-        });
+          });
+        }
 
-        if (prepaidIndividualUserIds.length > 0) {
+        let prepaidPaymentIdForSlots: string | null = null;
+        if (instantPrepaidWithAmount) {
+          const prepaidRow = await tx.payment.upsert({
+            where: {
+              ownerType_ownerId_type: {
+                ownerType: "CLUB",
+                ownerId: prepaidPaymentOwnerId,
+                type: "COMPETITION_ENTRY_FEE",
+              },
+            },
+            create: {
+              ownerType: "CLUB",
+              ownerId: prepaidPaymentOwnerId,
+              type: "COMPETITION_ENTRY_FEE",
+              userId: session.userId,
+              status: "PENDING",
+              amount: prepaidSub,
+              metadata: {
+                scope: CLUB_PREPAID_INDIVIDUAL_BILLING_SCOPE,
+                competitionId,
+                clubId,
+                teamCount: teamsToPersist.length,
+                unitPrice: teamEntryFeePerTeam,
+                prepaidIndividualSubtotalYen: prepaidSub,
+                clubIndividualBillingTiming,
+              },
+            },
+            update: {
+              userId: session.userId,
+              status: "PENDING",
+              amount: prepaidSub,
+              ...(clearStripeRefsAfterSucceededPrepaidPayment
+                ? {
+                    stripeCheckoutSessionId: null,
+                    stripePaymentIntentId: null,
+                    paidAt: null,
+                  }
+                : {}),
+              metadata: {
+                scope: CLUB_PREPAID_INDIVIDUAL_BILLING_SCOPE,
+                competitionId,
+                clubId,
+                teamCount: teamsToPersist.length,
+                unitPrice: teamEntryFeePerTeam,
+                prepaidIndividualSubtotalYen: prepaidSub,
+                clubIndividualBillingTiming,
+              },
+            },
+          });
+          prepaidPaymentIdForSlots = prepaidRow.id;
+        } else {
+          await tx.payment.deleteMany({
+            where: {
+              ownerType: "CLUB",
+              ownerId: prepaidPaymentOwnerId,
+              type: "COMPETITION_ENTRY_FEE",
+            },
+          });
+        }
+
+        if (hasPrepaidUsers) {
           await replaceClubPrepaidSlotsForSave(tx, {
             competitionId,
             clubId,
             prepaidIndividualUserIds,
             billingTiming: clubIndividualBillingTiming,
-            paymentId: payment.id,
+            paymentId: prepaidPaymentIdForSlots ?? undefined,
           });
         } else {
           await tx.clubCompetitionPrepaidIndividualSlot.deleteMany({
@@ -510,7 +596,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     return NextResponse.json({
       message: "チームエントリーを更新しました",
       teamEntries,
-      paymentOwnerId: buildTeamEntryPaymentOwnerId(competitionId, clubId),
+      paymentOwnerId: teamPaymentOwnerId,
+      prepaidPaymentOwnerId: prepaidPaymentOwnerId,
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {

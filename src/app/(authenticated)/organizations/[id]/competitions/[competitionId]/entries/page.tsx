@@ -12,7 +12,11 @@ import StartListConfigurator from "@/components/admin/StartListConfigurator";
 import CompetitionTeamBillingManager from "@/components/admin/CompetitionTeamBillingManager";
 import CompetitionEntryAdminActions from "@/components/admin/CompetitionEntryAdminActions";
 import { hasOrgAdminAccess, isOrgAdminRole } from "@/lib/roleScopes";
-import { parseTeamEntryPaymentMetadata, buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
+import {
+  parseTeamEntryPaymentMetadata,
+  buildClubPrepaidIndividualPaymentOwnerId,
+  buildTeamEntryPaymentOwnerId,
+} from "@/lib/teamEntryPayments";
 import {
   getAdminEntryLifecycleStateLabel,
   getIndividualEventIdsFromEntry,
@@ -200,13 +204,19 @@ export default async function CompetitionEntriesPage({
       orderBy: { createdAt: "asc" },
     }),
   ]);
-  const teamPaymentOwnerIds = Array.from(new Set(teamEntries.map((entry) => buildTeamEntryPaymentOwnerId(competition.id, entry.clubId))));
-  const teamPayments = teamPaymentOwnerIds.length
+  const teamPaymentOwnerIds = Array.from(
+    new Set(teamEntries.map((entry) => buildTeamEntryPaymentOwnerId(competition.id, entry.clubId)))
+  );
+  const prepaidPaymentOwnerIds = Array.from(
+    new Set(teamEntries.map((entry) => buildClubPrepaidIndividualPaymentOwnerId(competition.id, entry.clubId)))
+  );
+  const allClubEntryOwnerIds = [...new Set([...teamPaymentOwnerIds, ...prepaidPaymentOwnerIds])];
+  const teamPayments = allClubEntryOwnerIds.length
     ? await prisma.payment.findMany({
         where: {
           ownerType: "CLUB",
           ownerId: {
-            in: teamPaymentOwnerIds,
+            in: allClubEntryOwnerIds,
           },
           type: "COMPETITION_ENTRY_FEE",
         },
@@ -274,25 +284,42 @@ export default async function CompetitionEntriesPage({
       clubId: string;
       clubName: string;
       teamCount: number;
-      amount: number;
-      status: string | null;
+      teamAmount: number;
+      teamStatus: string | null;
+      prepaidAmount: number;
+      prepaidStatus: string | null;
       finalizedAt: string | null;
       paidAt: string | null;
     }
   >();
   teamEntries.forEach((teamEntry) => {
-    const paymentOwnerId = buildTeamEntryPaymentOwnerId(competition.id, teamEntry.clubId);
-    const payment = teamPayments.find((item) => item.ownerId === paymentOwnerId);
+    const teamOwnerId = buildTeamEntryPaymentOwnerId(competition.id, teamEntry.clubId);
+    const prepaidOwnerId = buildClubPrepaidIndividualPaymentOwnerId(competition.id, teamEntry.clubId);
+    const teamPayment = teamPayments.find((item) => item.ownerId === teamOwnerId);
+    const prepaidPayment = teamPayments.find((item) => item.ownerId === prepaidOwnerId);
     const existing = teamBillingMap.get(teamEntry.clubId);
-    const metadata = parseTeamEntryPaymentMetadata(payment?.metadata);
+    const teamMeta = parseTeamEntryPaymentMetadata(teamPayment?.metadata);
+    const prepaidMeta = parseTeamEntryPaymentMetadata(prepaidPayment?.metadata);
+    const finalizedAt =
+      teamMeta.finalizedAt ??
+      prepaidMeta.finalizedAt ??
+      existing?.finalizedAt ??
+      null;
+    const paidAt =
+      teamPayment?.paidAt?.toISOString() ??
+      prepaidPayment?.paidAt?.toISOString() ??
+      existing?.paidAt ??
+      null;
     teamBillingMap.set(teamEntry.clubId, {
       clubId: teamEntry.clubId,
       clubName: teamEntry.club?.name ?? "クラブ不明",
       teamCount: (existing?.teamCount ?? 0) + 1,
-      amount: payment?.amount ?? ((existing?.teamCount ?? 0) + 1) * teamEntryFeePerTeam,
-      status: payment?.status ?? null,
-      finalizedAt: metadata.finalizedAt ?? existing?.finalizedAt ?? null,
-      paidAt: payment?.paidAt?.toISOString() ?? existing?.paidAt ?? null,
+      teamAmount: teamPayment?.amount ?? ((existing?.teamCount ?? 0) + 1) * teamEntryFeePerTeam,
+      teamStatus: teamPayment?.status ?? null,
+      prepaidAmount: prepaidPayment?.amount ?? 0,
+      prepaidStatus: prepaidPayment?.status ?? null,
+      finalizedAt,
+      paidAt,
     });
   });
   const teamBills = Array.from(teamBillingMap.values()).sort((a, b) =>

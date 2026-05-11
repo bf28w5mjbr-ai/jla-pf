@@ -1,10 +1,16 @@
 import { notFound } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/server/db";
-import { parseClubIdFromTeamEntryPaymentOwnerId } from "@/lib/competitionStripeDisputeAccess";
+import {
+  parseClubIdFromClubCompetitionEntryFeeOwnerId,
+} from "@/lib/competitionStripeDisputeAccess";
 import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
 import { stripe } from "@/lib/stripe";
-import { buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
+import {
+  buildClubPrepaidIndividualPaymentOwnerId,
+  buildTeamEntryPaymentOwnerId,
+  isClubPrepaidIndividualPaymentOwnerId,
+} from "@/lib/teamEntryPayments";
 import CompetitionDisputeEvidencePanel, {
   type DisputeEvidenceRow,
 } from "@/components/admin/CompetitionDisputeEvidencePanel";
@@ -138,15 +144,16 @@ export default async function CompetitionFinanceTabContent({
   }
 
   const clubIds = [...new Set(teamEntries.map((t) => t.clubId))];
-  const teamOwnerIds = clubIds.map((cid) =>
-    buildTeamEntryPaymentOwnerId(competition.id, cid)
-  );
+  const teamAndPrepaidOwnerIds = clubIds.flatMap((cid) => [
+    buildTeamEntryPaymentOwnerId(competition.id, cid),
+    buildClubPrepaidIndividualPaymentOwnerId(competition.id, cid),
+  ]);
   const teamPayments =
-    teamOwnerIds.length > 0
+    teamAndPrepaidOwnerIds.length > 0
       ? await prisma.payment.findMany({
           where: {
             ownerType: "CLUB",
-            ownerId: { in: teamOwnerIds },
+            ownerId: { in: teamAndPrepaidOwnerIds },
             type: "COMPETITION_ENTRY_FEE",
           },
           select: { ownerId: true, status: true, amount: true },
@@ -164,9 +171,16 @@ export default async function CompetitionFinanceTabContent({
   }
 
   const clubsWithTeamEntryButNoSucceededPayment = clubIds.filter((cid) => {
-    const oid = buildTeamEntryPaymentOwnerId(competition.id, cid);
-    const pay = teamPayments.find((x) => x.ownerId === oid);
-    return !pay || pay.status !== "SUCCEEDED";
+    const teamOid = buildTeamEntryPaymentOwnerId(competition.id, cid);
+    const prepaidOid = buildClubPrepaidIndividualPaymentOwnerId(competition.id, cid);
+    const teamPay = teamPayments.find((x) => x.ownerId === teamOid);
+    const prepaidPay = teamPayments.find((x) => x.ownerId === prepaidOid);
+    const teamOk = teamPay?.status === "SUCCEEDED" || (teamPay?.amount ?? 0) <= 0;
+    const prepaidOk =
+      !prepaidPay ||
+      prepaidPay.amount <= 0 ||
+      prepaidPay.status === "SUCCEEDED";
+    return !(teamOk && prepaidOk);
   }).length;
 
   const expensePaidTotal = expenses
@@ -203,6 +217,7 @@ export default async function CompetitionFinanceTabContent({
   }
 
   const teamOwnerPrefix = `competition-team-entry:${competition.id}:`;
+  const prepaidOwnerPrefix = `competition-club-prepaid-individual:${competition.id}:`;
   const [openEntryDisputes, openTeamDisputes] = await Promise.all([
     prisma.entryCheckoutSession.findMany({
       where: {
@@ -222,7 +237,10 @@ export default async function CompetitionFinanceTabContent({
         status: "DISPUTED",
         type: "COMPETITION_ENTRY_FEE",
         ownerType: "CLUB",
-        ownerId: { startsWith: teamOwnerPrefix },
+        OR: [
+          { ownerId: { startsWith: teamOwnerPrefix } },
+          { ownerId: { startsWith: prepaidOwnerPrefix } },
+        ],
         stripeDisputeId: { not: null },
       },
       select: {
@@ -236,7 +254,7 @@ export default async function CompetitionFinanceTabContent({
   const disputedClubIds = [
     ...new Set(
       openTeamDisputes
-        .map((p) => parseClubIdFromTeamEntryPaymentOwnerId(competition.id, p.ownerId))
+        .map((p) => parseClubIdFromClubCompetitionEntryFeeOwnerId(competition.id, p.ownerId))
         .filter((id): id is string => Boolean(id))
     ),
   ];
@@ -265,12 +283,15 @@ export default async function CompetitionFinanceTabContent({
   for (const row of openTeamDisputes) {
     const disputeId = row.stripeDisputeId;
     if (!disputeId) continue;
-    const clubId = parseClubIdFromTeamEntryPaymentOwnerId(competition.id, row.ownerId);
+    const clubId = parseClubIdFromClubCompetitionEntryFeeOwnerId(competition.id, row.ownerId);
     const clubName = clubId ? disputedClubMap.get(clubId) : undefined;
     const sum = await stripeDisputeSummary(disputeId);
+    const scopeKind = isClubPrepaidIndividualPaymentOwnerId(row.ownerId)
+      ? "クラブ個人枠請求"
+      : "チーム請求";
     disputeRows.push({
       disputeId,
-      scopeLabel: `チーム請求: ${clubName ?? "クラブ"}${clubId ? `（${clubId}）` : ""}`,
+      scopeLabel: `${scopeKind}: ${clubName ?? "クラブ"}${clubId ? `（${clubId}）` : ""}`,
       amountYen: row.amount,
       dueByLabel: sum.dueByLabel,
       stripeStatus: sum.status,

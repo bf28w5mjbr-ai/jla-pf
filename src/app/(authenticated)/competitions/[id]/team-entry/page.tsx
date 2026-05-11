@@ -9,7 +9,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, UsersRound } from "lucide-react";
 import { isClubAdminRole } from "@/lib/roleScopes";
-import { buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
+import type { ClubTeamAndPrepaidBillingPair } from "@/lib/teamEntryPayments";
+import {
+  buildClubPrepaidIndividualPaymentOwnerId,
+  buildTeamEntryPaymentOwnerId,
+} from "@/lib/teamEntryPayments";
 import CompetitionTeamEntryWorkspace from "@/components/CompetitionTeamEntryWorkspace";
 import { formatCompetitionEntryPeriodRangeJa } from "@/lib/datetimeLocal";
 import { getStripeProcessingFeeBpsFromEnv } from "@/lib/stripeProcessingFee";
@@ -172,7 +176,10 @@ export default async function LegacyCompetitionTeamEntryRedirect({
       where: {
         ownerType: "CLUB",
         ownerId: {
-          in: adminClubIds.map((id) => buildTeamEntryPaymentOwnerId(competition.id, id)),
+          in: adminClubIds.flatMap((id) => [
+            buildTeamEntryPaymentOwnerId(competition.id, id),
+            buildClubPrepaidIndividualPaymentOwnerId(competition.id, id),
+          ]),
         },
         type: "COMPETITION_ENTRY_FEE",
       },
@@ -240,10 +247,11 @@ export default async function LegacyCompetitionTeamEntryRedirect({
 
   const billingByClub = Object.fromEntries(
     adminClubIds.map((cid) => {
-      const ownerId = buildTeamEntryPaymentOwnerId(competition.id, cid);
-      const payment = teamPayments.find((item) => item.ownerId === ownerId);
-      return [
-        cid,
+      const teamOwnerId = buildTeamEntryPaymentOwnerId(competition.id, cid);
+      const prepaidOwnerId = buildClubPrepaidIndividualPaymentOwnerId(competition.id, cid);
+      const teamPay = teamPayments.find((item) => item.ownerId === teamOwnerId);
+      const prepaidPay = teamPayments.find((item) => item.ownerId === prepaidOwnerId);
+      const snap = (payment: (typeof teamPayments)[number] | undefined) =>
         payment
           ? {
               id: payment.id,
@@ -257,20 +265,13 @@ export default async function LegacyCompetitionTeamEntryRedirect({
                   ? ((payment.metadata as { finalizedAt?: string }).finalizedAt ?? null)
                   : null,
             }
-          : undefined,
-      ];
+          : undefined;
+      const team = snap(teamPay);
+      const prepaid = snap(prepaidPay);
+      if (!team && !prepaid) return [cid, undefined] as const;
+      return [cid, { team, prepaid }] as const;
     })
-  ) as Record<
-    string,
-    | {
-        id: string;
-        status: string;
-        amount: number;
-        stripeCheckoutSessionId: string | null;
-        finalizedAt: string | null;
-      }
-    | undefined
-  >;
+  ) as Record<string, ClubTeamAndPrepaidBillingPair | undefined>;
 
   const initialPrepaidIndividualUserIdsByClub = Object.fromEntries(
     adminClubIds.map((cid) => [

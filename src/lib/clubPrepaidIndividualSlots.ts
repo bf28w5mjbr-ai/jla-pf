@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { shouldApplyClubPrepaidStripeSideEffects } from "@/lib/teamEntryPayments";
 import {
   loadCompetitionForPrepaidReconcile,
   reconcileRetroactiveClubPrepaidSlotsForUsersInTx,
@@ -108,9 +109,10 @@ export async function applyClubTeamAndPrepaidStripeSideEffects(
   await prisma.$transaction(async (tx) => {
     const payment = await tx.payment.findUnique({
       where: { id: paymentId },
-      select: { id: true, status: true, metadata: true, type: true },
+      select: { id: true, status: true, metadata: true, type: true, ownerId: true },
     });
     if (!payment || payment.status !== "SUCCEEDED" || payment.type !== "COMPETITION_ENTRY_FEE") return;
+    if (!shouldApplyClubPrepaidStripeSideEffects(payment)) return;
 
     await tx.clubCompetitionPrepaidIndividualSlot.updateMany({
       where: {

@@ -65,12 +65,17 @@ function groupRowsByEventId(sortedRows: TeamEntryRow[]): TeamEntryEventGroup[] {
 }
 
 type BillingSlice = {
-  id?: string;
+  id: string;
   status: string;
   amount: number;
   finalizedAt: string | null;
-  stripeCheckoutSessionId?: string | null;
-} | undefined;
+  stripeCheckoutSessionId: string | null;
+};
+
+type ClubBillingPair = {
+  team?: BillingSlice;
+  prepaid?: BillingSlice;
+};
 
 type Props = {
   competitionId: string;
@@ -79,7 +84,7 @@ type Props = {
   clubs: ClubRow[];
   events: EventRow[];
   teamEntries: TeamEntryRow[];
-  billingByClub: Record<string, BillingSlice>;
+  billingByClub: Record<string, ClubBillingPair | undefined>;
   /** エントリー締切後は閲覧のみ（編集フォームなし） */
   viewOnly?: boolean;
 };
@@ -266,12 +271,18 @@ export default function TeamEntryHistoryPanel({
           {clubsWithEntries.map((club) => {
             const rows = sortedForClub(club.id);
             const rowGroups = groupRowsByEventId(rows);
-            const billing = billingByClub[club.id];
+            const bundle = billingByClub[club.id];
+            const teamB = bundle?.team;
+            const prepaidB = bundle?.prepaid;
             const lastUp = lastUpdatedForClub(club.id);
-            const paymentLabel = isFree ? "決済不要" : getTeamPaymentStatusLabel(billing?.status);
-            const canPdf = isFree || billing?.status === "SUCCEEDED";
-            const canStripe =
-              !isFree && billing?.status === "SUCCEEDED" && (billing.amount ?? 0) > 0;
+            const canPdfTeam = isFree || teamB?.status === "SUCCEEDED";
+            const canPdfPrepaid =
+              prepaidB && prepaidB.amount > 0 && prepaidB.status === "SUCCEEDED";
+            const canPdf = canPdfTeam || canPdfPrepaid;
+            const canStripeTeam =
+              !isFree && teamB?.status === "SUCCEEDED" && (teamB.amount ?? 0) > 0;
+            const canStripePrepaid =
+              prepaidB && prepaidB.status === "SUCCEEDED" && prepaidB.amount > 0;
 
             return (
               <div
@@ -300,23 +311,52 @@ export default function TeamEntryHistoryPanel({
                       </div>
                     </div>
                   </div>
-                  <Badge
-                    variant="outline"
-                    className={cn("shrink-0 font-normal", paymentBadgeClass(billing?.status, isFree))}
-                  >
-                    {paymentLabel}
-                  </Badge>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    {!isFree && teamB ? (
+                      <Badge
+                        variant="outline"
+                        className={cn("font-normal", paymentBadgeClass(teamB.status, false))}
+                      >
+                        チーム: {getTeamPaymentStatusLabel(teamB.status)}
+                      </Badge>
+                    ) : isFree ? (
+                      <Badge variant="outline" className={cn("font-normal", paymentBadgeClass(undefined, true))}>
+                        決済不要
+                      </Badge>
+                    ) : null}
+                    {!isFree && prepaidB && prepaidB.amount > 0 ? (
+                      <Badge
+                        variant="outline"
+                        className={cn("font-normal", paymentBadgeClass(prepaidB.status, false))}
+                      >
+                        個人枠: {getTeamPaymentStatusLabel(prepaidB.status)}
+                      </Badge>
+                    ) : null}
+                  </div>
                 </div>
 
-                {!isFree && typeof billing?.amount === "number" ? (
+                {!isFree && teamB ? (
                   <p className="border-b border-border/40 bg-muted/20 px-3 py-2 text-xs text-muted-foreground sm:px-4">
-                    請求額{" "}
+                    チーム請求額{" "}
                     <span className="font-semibold tabular-nums text-foreground">
-                      ¥{billing.amount.toLocaleString("ja-JP")}
+                      ¥{teamB.amount.toLocaleString("ja-JP")}
                     </span>
-                    {billing.finalizedAt ? (
+                    {teamB.finalizedAt ? (
                       <span className="ml-2">
-                        （請求確定: {new Date(billing.finalizedAt).toLocaleString("ja-JP")}）
+                        （請求確定: {new Date(teamB.finalizedAt).toLocaleString("ja-JP")}）
+                      </span>
+                    ) : null}
+                  </p>
+                ) : null}
+                {!isFree && prepaidB && prepaidB.amount > 0 ? (
+                  <p className="border-b border-border/40 bg-muted/20 px-3 py-2 text-xs text-muted-foreground sm:px-4">
+                    クラブ個人枠請求額{" "}
+                    <span className="font-semibold tabular-nums text-foreground">
+                      ¥{prepaidB.amount.toLocaleString("ja-JP")}
+                    </span>
+                    {prepaidB.finalizedAt ? (
+                      <span className="ml-2">
+                        （請求確定: {new Date(prepaidB.finalizedAt).toLocaleString("ja-JP")}）
                       </span>
                     ) : null}
                   </p>
@@ -376,27 +416,57 @@ export default function TeamEntryHistoryPanel({
 
                 {canPdf ? (
                   <div className="flex flex-wrap gap-2 border-t border-border/40 bg-muted/10 px-3 py-3 sm:px-4">
-                    <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs" asChild>
-                      <a
-                        href={`/api/competitions/${competitionId}/team-billing/receipt?clubId=${encodeURIComponent(club.id)}&format=pdf`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <FileText className="h-3.5 w-3.5" aria-hidden />
-                        領収書（PDF）
-                      </a>
-                    </Button>
-                    {canStripe ? (
-                      <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs" asChild>
-                        <a
-                          href={`/api/competitions/${competitionId}/team-billing/receipt?clubId=${encodeURIComponent(club.id)}&format=stripe`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-                          領収書（Stripe）
-                        </a>
-                      </Button>
+                    {canPdfTeam ? (
+                      <>
+                        <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs" asChild>
+                          <a
+                            href={`/api/competitions/${competitionId}/team-billing/receipt?clubId=${encodeURIComponent(club.id)}&billingScope=team&format=pdf`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <FileText className="h-3.5 w-3.5" aria-hidden />
+                            領収書・チーム（PDF）
+                          </a>
+                        </Button>
+                        {canStripeTeam ? (
+                          <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs" asChild>
+                            <a
+                              href={`/api/competitions/${competitionId}/team-billing/receipt?clubId=${encodeURIComponent(club.id)}&billingScope=team&format=stripe`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                              領収書・チーム（Stripe）
+                            </a>
+                          </Button>
+                        ) : null}
+                      </>
+                    ) : null}
+                    {canPdfPrepaid ? (
+                      <>
+                        <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs" asChild>
+                          <a
+                            href={`/api/competitions/${competitionId}/team-billing/receipt?clubId=${encodeURIComponent(club.id)}&billingScope=prepaid&format=pdf`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <FileText className="h-3.5 w-3.5" aria-hidden />
+                            領収書・個人枠（PDF）
+                          </a>
+                        </Button>
+                        {canStripePrepaid ? (
+                          <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs" asChild>
+                            <a
+                              href={`/api/competitions/${competitionId}/team-billing/receipt?clubId=${encodeURIComponent(club.id)}&billingScope=prepaid&format=stripe`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                              領収書・個人枠（Stripe）
+                            </a>
+                          </Button>
+                        ) : null}
+                      </>
                     ) : null}
                   </div>
                 ) : null}
