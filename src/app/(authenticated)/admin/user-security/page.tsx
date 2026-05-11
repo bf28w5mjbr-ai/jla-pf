@@ -50,7 +50,7 @@ export default async function AdminUserSecurityPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+    <div className="mx-auto max-w-5xl space-y-8 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
       <header className="space-y-2 border-b border-border/80 pb-8">
         <div className="flex items-center gap-2 text-primary">
           <Shield className="h-5 w-5" strokeWidth={1.75} aria-hidden />
@@ -60,7 +60,7 @@ export default async function AdminUserSecurityPage() {
           ログイン・セキュリティ照会
         </h1>
         <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-          ユーザー ID またはメールで検索し、User-Agent・IP の記録、パスキー登録状況、ログイン監査ログを参照します。取り扱いには十分注意してください。
+          ユーザー ID・メール・氏名（カナ可）で検索し、プロフィール・所属・資格・エントリー等と、User-Agent・IP・ログイン成功の監査ログを参照します。画面に表示される内容は機密度が高いため、取り扱いとスクリーンショットの共有に十分注意してください。
         </p>
       </header>
 

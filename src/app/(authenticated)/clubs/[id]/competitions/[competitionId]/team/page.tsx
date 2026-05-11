@@ -163,10 +163,14 @@ export default async function ClubCompetitionTeamHubPage({
       },
       events: {
         where: { type: "TEAM" },
-        orderBy: { displayOrder: "asc" },
+        orderBy: [
+          { category: "asc" },
+          { ageCategory: { displayOrder: "asc" } },
+          { displayOrder: "asc" },
+        ],
         include: {
           ageCategory: {
-            select: { id: true, underBandKeysEnabled: true },
+            select: { id: true, displayOrder: true, underBandKeysEnabled: true },
           },
         },
       },
@@ -203,7 +207,7 @@ export default async function ClubCompetitionTeamHubPage({
           teamRelayPositionCount: true,
           teamRelayPositionNames: true,
           ageCategory: {
-            select: { id: true, underBandKeysEnabled: true },
+            select: { id: true, displayOrder: true, underBandKeysEnabled: true },
           },
         },
       },
@@ -215,7 +219,14 @@ export default async function ClubCompetitionTeamHubPage({
         },
       },
     },
-    orderBy: [{ clubId: "asc" }, { eventId: "asc" }, { createdAt: "asc" }],
+    orderBy: [
+      { clubId: "asc" },
+      { event: { category: "asc" } },
+      { event: { ageCategory: { displayOrder: "asc" } } },
+      { event: { displayOrder: "asc" } },
+      { teamName: "asc" },
+      { id: "asc" },
+    ],
   });
 
   const teamEntriesForHistory = teamEntriesFull.map((e) => ({

@@ -24,6 +24,7 @@ import { getTeamPaymentStatusLabel } from "@/lib/teamEntryPayments";
 import { resolveCompetitionEventCategoryScope } from "@/lib/competitionEventCategoryScope";
 import { cn } from "@/lib/utils";
 import { stripeProcessingFeeSurchargeYenFromBps } from "@/lib/stripeProcessingFee";
+import { clubTeamNameBaseForClubId } from "@/lib/teamEntryClubBaseName";
 
 type ClubOption = {
   id: string;
@@ -130,14 +131,6 @@ function indexToLetters(index: number): string {
   return result;
 }
 
-function clubTeamNameBase(clubId: string, clubList: ClubOption[]): string {
-  const c = clubList.find((x) => x.id === clubId);
-  if (!c) return "チーム";
-  const abbr = c.abbreviation?.trim();
-  if (abbr) return abbr;
-  return c.name.trim() || "チーム";
-}
-
 /** 同一種目内で1組だけならベースのみ、2組以上なら「ベース A」「ベース B」…にそろえる */
 function normalizeTeamNamesForEvent(
   entries: DraftTeamEntry[],
@@ -164,6 +157,20 @@ function normalizeTeamNamesForEvent(
   return out;
 }
 
+/** クラブ内の全種目について、1組ならベースのみ・複数なら A/B… にそろえる（初期表示・保存直後の DB 名を補正） */
+function normalizeAllTeamNamesForClub(
+  entries: DraftTeamEntry[],
+  clubId: string,
+  clubList: ClubOption[]
+): DraftTeamEntry[] {
+  const base = clubTeamNameBaseForClubId(clubId, clubList);
+  const eventIds = [...new Set(entries.map((e) => e.eventId))];
+  return eventIds.reduce(
+    (acc, eventId) => normalizeTeamNamesForEvent(acc, eventId, base),
+    [...entries]
+  );
+}
+
 export default function CompetitionTeamEntryManager({
   competitionId,
   clubs,
@@ -188,7 +195,16 @@ export default function CompetitionTeamEntryManager({
     return clubs[0]?.id ?? "";
   });
   const [entriesByClub, setEntriesByClub] = useState<Record<string, DraftTeamEntry[]>>(() =>
-    Object.fromEntries(clubs.map((club) => [club.id, toDraftEntries(initialEntriesByClub[club.id] ?? [])]))
+    Object.fromEntries(
+      clubs.map((club) => [
+        club.id,
+        normalizeAllTeamNamesForClub(
+          toDraftEntries(initialEntriesByClub[club.id] ?? []),
+          club.id,
+          clubs
+        ),
+      ])
+    )
   );
   const [isSaving, setIsSaving] = useState(false);
   const [isStartingPayment, setIsStartingPayment] = useState(false);
@@ -284,7 +300,7 @@ export default function CompetitionTeamEntryManager({
   );
 
   const teamNamePlaceholder = useMemo(() => {
-    const base = clubTeamNameBase(selectedClubId, clubs);
+    const base = clubTeamNameBaseForClubId(selectedClubId, clubs);
     return `例: ${base}（複数組は ${base} A）`;
   }, [selectedClubId, clubs]);
 
@@ -296,7 +312,7 @@ export default function CompetitionTeamEntryManager({
         eventId,
         teamName: "",
       });
-      const base = clubTeamNameBase(selectedClubId, clubs);
+      const base = clubTeamNameBaseForClubId(selectedClubId, clubs);
       return {
         ...prev,
         [selectedClubId]: normalizeTeamNamesForEvent(list, eventId, base),
@@ -322,7 +338,7 @@ export default function CompetitionTeamEntryManager({
       if (!eventId) {
         return { ...prev, [selectedClubId]: filtered };
       }
-      const base = clubTeamNameBase(selectedClubId, clubs);
+      const base = clubTeamNameBaseForClubId(selectedClubId, clubs);
       return {
         ...prev,
         [selectedClubId]: normalizeTeamNamesForEvent(filtered, eventId, base),
@@ -402,7 +418,11 @@ export default function CompetitionTeamEntryManager({
 
       setEntriesByClub((prev) => ({
         ...prev,
-        [selectedClubId]: toDraftEntries(data.teamEntries ?? []),
+        [selectedClubId]: normalizeAllTeamNamesForClub(
+          toDraftEntries(data.teamEntries ?? []),
+          selectedClubId,
+          clubs
+        ),
       }));
       toast.success(
         isFreeTeamEntry

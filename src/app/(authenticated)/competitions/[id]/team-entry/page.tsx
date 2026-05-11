@@ -61,13 +61,21 @@ export default async function LegacyCompetitionTeamEntryRedirect({
       entryFee: true,
       events: {
         where: { type: "TEAM" },
-        orderBy: { displayOrder: "asc" },
+        orderBy: [
+          { category: "asc" },
+          { ageCategory: { displayOrder: "asc" } },
+          { displayOrder: "asc" },
+        ],
         select: {
           id: true,
           name: true,
           sex: true,
           category: true,
+          displayOrder: true,
           maxTeamEntriesPerClub: true,
+          ageCategory: {
+            select: { displayOrder: true },
+          },
         },
       },
     },
@@ -150,7 +158,14 @@ export default async function LegacyCompetitionTeamEntryRedirect({
         teamName: true,
         updatedAt: true,
       },
-      orderBy: [{ clubId: "asc" }, { eventId: "asc" }, { createdAt: "asc" }],
+      orderBy: [
+        { clubId: "asc" },
+        { event: { category: "asc" } },
+        { event: { ageCategory: { displayOrder: "asc" } } },
+        { event: { displayOrder: "asc" } },
+        { teamName: "asc" },
+        { id: "asc" },
+      ],
     }),
     prisma.payment.findMany({
       where: {
@@ -307,6 +322,8 @@ export default async function LegacyCompetitionTeamEntryRedirect({
           name: event.name,
           sex: event.sex,
           category: event.category,
+          displayOrder: event.displayOrder,
+          ageCategoryDisplayOrder: event.ageCategory?.displayOrder ?? null,
         }))}
         teamEntries={teamEntries}
         billingByClub={billingByClub}

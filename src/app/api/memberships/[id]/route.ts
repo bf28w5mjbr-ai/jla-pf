@@ -9,8 +9,63 @@ import { prisma } from "@/server/db";
 import { z } from "zod";
 import { isClubAdminRole, normalizeClubRoleForWrite } from "@/lib/roleScopes";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
+import { isPfAdminRole } from "@/lib/governancePolicy";
+import { shouldClearPrimaryClubAfterMembershipDelete } from "@/lib/membershipPrimaryClub";
 
 type RouteContext = { params: Promise<{ id: string }> };
+
+async function resolveMembershipMutationPermission(
+  sessUserId: string,
+  clubId: string,
+  deleteEndpoint: boolean
+): Promise<
+  | { ok: true; pfBypass: boolean }
+  | { ok: false; response: NextResponse }
+> {
+  const actor = await prisma.user.findUnique({
+    where: { id: sessUserId },
+    select: { role: true },
+  });
+  if (isPfAdminRole(actor?.role)) {
+    return { ok: true, pfBypass: true };
+  }
+
+  const adminMembership = await prisma.membership.findFirst({
+    where: {
+      userId: sessUserId,
+      clubId,
+      status: "APPROVED",
+    },
+  });
+
+  if (!adminMembership || !isClubAdminRole(adminMembership.role)) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        {
+          error: deleteEndpoint
+            ? "クラブ管理者のみがメンバーを削除できます"
+            : "クラブの管理者権限がありません",
+        },
+        { status: 403 }
+      ),
+    };
+  }
+  return { ok: true, pfBypass: false };
+}
+
+function membershipAuditExtra(
+  pfBypass: boolean,
+  clubId: string,
+  targetUserId: string
+): Record<string, unknown> {
+  if (!pfBypass) return {};
+  return {
+    pfAdminBypass: true,
+    clubId,
+    targetUserId,
+  };
+}
 
 // GET /api/memberships/[id] - メンバーシップ詳細取得
 export async function GET(req: NextRequest, ctx: RouteContext) {
@@ -93,21 +148,12 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       );
     }
 
-    // 権限チェック（クラブ管理者）
-    const adminMembership = await prisma.membership.findFirst({
-      where: {
-        userId: sess.userId,
-        clubId: membership.clubId,
-        status: 'APPROVED',
-      },
-    });
-
-    if (!adminMembership || !isClubAdminRole(adminMembership.role)) {
-      return NextResponse.json(
-        { error: 'クラブの管理者権限がありません' },
-        { status: 403 }
-      );
-    }
+    const perm = await resolveMembershipMutationPermission(
+      sess.userId,
+      membership.clubId,
+      false
+    );
+    if (!perm.ok) return perm.response;
 
     const body = await req.json().catch(() => ({}));
 
@@ -143,6 +189,15 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       },
     });
 
+    const auditMeta = {
+      ...data,
+      ...membershipAuditExtra(
+        perm.pfBypass,
+        membership.clubId,
+        membership.userId
+      ),
+    };
+
     // AuditLog 記録
     await prisma.auditLog.create({
       data: {
@@ -151,7 +206,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
                 data.status === 'REJECTED' ? 'MEMBERSHIP_REJECT' : 
                 'MEMBERSHIP_UPDATE',
         target: `membership:${id}`,
-        meta: data,
+        meta: auditMeta,
       },
     });
 
@@ -195,33 +250,50 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
       );
     }
 
-    const adminMembership = await prisma.membership.findFirst({
-      where: {
-        userId: sess.userId,
-        clubId: membership.clubId,
-        status: "APPROVED",
-      },
-    });
+    const perm = await resolveMembershipMutationPermission(
+      sess.userId,
+      membership.clubId,
+      true
+    );
+    if (!perm.ok) return perm.response;
 
-    if (!adminMembership || !isClubAdminRole(adminMembership.role)) {
-      return NextResponse.json(
-        { error: "クラブ管理者のみがメンバーを削除できます" },
-        { status: 403 }
-      );
-    }
+    await prisma.$transaction(async (tx) => {
+      const targetUser = await tx.user.findUnique({
+        where: { id: membership.userId },
+        select: { primaryClubId: true },
+      });
 
-    await prisma.membership.delete({
-      where: { id },
-    });
+      await tx.membership.delete({
+        where: { id },
+      });
 
-    // AuditLog 記録
-    await prisma.auditLog.create({
-      data: {
-        actorUserId: sess.userId,
-        action: 'MEMBERSHIP_DELETE',
-        target: `membership:${id}`,
-        meta: { deleted: true },
-      },
+      if (
+        shouldClearPrimaryClubAfterMembershipDelete(
+          targetUser?.primaryClubId,
+          membership.clubId
+        )
+      ) {
+        await tx.user.update({
+          where: { id: membership.userId },
+          data: { primaryClubId: null },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: sess.userId,
+          action: "MEMBERSHIP_DELETE",
+          target: `membership:${id}`,
+          meta: {
+            deleted: true,
+            ...membershipAuditExtra(
+              perm.pfBypass,
+              membership.clubId,
+              membership.userId
+            ),
+          },
+        },
+      });
     });
 
     return NextResponse.json({ success: true });

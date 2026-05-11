@@ -474,7 +474,13 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         competitionId,
         clubId,
       },
-      orderBy: [{ eventId: "asc" }, { createdAt: "asc" }],
+      orderBy: [
+        { event: { category: "asc" } },
+        { event: { ageCategory: { displayOrder: "asc" } } },
+        { event: { displayOrder: "asc" } },
+        { teamName: "asc" },
+        { id: "asc" },
+      ],
       select: {
         id: true,
         eventId: true,

@@ -27,7 +27,15 @@ const sexLabel = (sex?: string | null) => {
 };
 
 type ClubRow = { id: string; name: string };
-type EventRow = { id: string; name: string; sex: string | null; category: string };
+/** 年齢区分の表示順（大会の CompetitionAgeCategory）。未紐付けは null（一覧では末尾に寄せる） */
+type EventRow = {
+  id: string;
+  name: string;
+  sex: string | null;
+  category: string;
+  displayOrder: number;
+  ageCategoryDisplayOrder: number | null;
+};
 type TeamEntryRow = {
   id: string;
   clubId: string;
@@ -35,6 +43,22 @@ type TeamEntryRow = {
   teamName: string;
   updatedAt: Date;
 };
+
+type TeamEntryEventGroup = { eventId: string; entries: TeamEntryRow[] };
+
+/** `sortedForClub` の並びを保ったまま、同一種目を1グループにまとめる */
+function groupRowsByEventId(sortedRows: TeamEntryRow[]): TeamEntryEventGroup[] {
+  const out: TeamEntryEventGroup[] = [];
+  for (const row of sortedRows) {
+    const tail = out[out.length - 1];
+    if (tail?.eventId === row.eventId) {
+      tail.entries.push(row);
+    } else {
+      out.push({ eventId: row.eventId, entries: [row] });
+    }
+  }
+  return out;
+}
 
 type BillingSlice = {
   id?: string;
@@ -59,6 +83,29 @@ type Props = {
 function formatEventLabel(event: EventRow | undefined) {
   if (!event) return "種目不明";
   return `${event.name}（${sexLabel(event.sex)}）`;
+}
+
+/** POOL → OCEAN、同一大会内では年齢区分でまとめ、その中で種目 displayOrder */
+function compareEventsForHistory(a: EventRow | undefined, b: EventRow | undefined): number {
+  const key = (e: EventRow | undefined): [number, number, number, string, string] => {
+    if (!e) return [9, 999_999, 999_999, "\uffff", ""];
+    const poolOcean = e.category === "OCEAN" ? 1 : 0;
+    const ageOrd = e.ageCategoryDisplayOrder ?? 999_999;
+    const disp = e.displayOrder ?? 0;
+    return [poolOcean, ageOrd, disp, e.name, e.id];
+  };
+  const ka = key(a);
+  const kb = key(b);
+  for (let i = 0; i < ka.length; i++) {
+    const va = ka[i];
+    const vb = kb[i];
+    if (typeof va === "number" && typeof vb === "number") {
+      if (va !== vb) return va - vb;
+    } else if (va !== vb) {
+      return String(va).localeCompare(String(vb), "ja");
+    }
+  }
+  return 0;
 }
 
 /** `CompetitionTeamEntryManager` の請求バッジとトーンを揃える */
@@ -119,15 +166,15 @@ export default function TeamEntryHistoryPanel({
 
   const isFree = teamEntryFeePerTeam <= 0;
   const eventById = new Map(events.map((e) => [e.id, e]));
-  const eventOrder = new Map(events.map((e, i) => [e.id, i]));
 
   const sortedForClub = (clubId: string) =>
     teamEntries
       .filter((t) => t.clubId === clubId)
       .sort((a, b) => {
-        const oa = eventOrder.get(a.eventId) ?? 999;
-        const ob = eventOrder.get(b.eventId) ?? 999;
-        if (oa !== ob) return oa - ob;
+        const evA = eventById.get(a.eventId);
+        const evB = eventById.get(b.eventId);
+        const byEvent = compareEventsForHistory(evA, evB);
+        if (byEvent !== 0) return byEvent;
         return a.teamName.localeCompare(b.teamName, "ja");
       });
 
@@ -182,6 +229,7 @@ export default function TeamEntryHistoryPanel({
         <div className="space-y-4">
           {clubsWithEntries.map((club) => {
             const rows = sortedForClub(club.id);
+            const rowGroups = groupRowsByEventId(rows);
             const billing = billingByClub[club.id];
             const lastUp = lastUpdatedForClub(club.id);
             const paymentLabel = isFree ? "決済不要" : getTeamPaymentStatusLabel(billing?.status);
@@ -247,11 +295,12 @@ export default function TeamEntryHistoryPanel({
                       </tr>
                     </thead>
                     <tbody>
-                      {rows.map((row) => {
-                        const ev = eventById.get(row.eventId);
+                      {rowGroups.map((group) => {
+                        const ev = eventById.get(group.eventId);
+                        const teamNamesJoined = group.entries.map((e) => e.teamName).join("、");
                         return (
                           <tr
-                            key={row.id}
+                            key={`${club.id}-${group.eventId}`}
                             className="border-b border-border/30 transition-colors last:border-0 hover:bg-muted/30"
                           >
                             <td className="px-3 py-2.5 align-top sm:px-4">
@@ -262,8 +311,8 @@ export default function TeamEntryHistoryPanel({
                                 </span>
                               </div>
                             </td>
-                            <td className="px-3 py-2.5 pr-4 align-top font-medium text-foreground sm:px-4">
-                              {row.teamName}
+                            <td className="min-w-0 px-3 py-2.5 pr-4 align-top font-medium text-foreground sm:px-4">
+                              <span className="break-words">{teamNamesJoined}</span>
                             </td>
                           </tr>
                         );
