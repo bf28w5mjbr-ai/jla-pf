@@ -7,6 +7,7 @@ import {
   buildClubPrepaidIndividualPaymentOwnerId,
   buildTeamEntryPaymentOwnerId,
   CLUB_PREPAID_INDIVIDUAL_BILLING_SCOPE,
+  TEAM_ENTRY_PAYMENT_MUTABLE_STATUSES,
   TEAM_ENTRY_BILLING_SCOPE,
 } from "@/lib/teamEntryPayments";
 import { sumInstantPrepaidIndividualsYen } from "@/lib/clubPrepaidIndividualSlots";
@@ -225,6 +226,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
               ownerType: "CLUB",
               type: "COMPETITION_ENTRY_FEE",
               ownerId: { in: [teamOwnerId, prepaidOwnerId] },
+              status: { in: [...TEAM_ENTRY_PAYMENT_MUTABLE_STATUSES] },
             },
           });
           continue;
@@ -297,6 +299,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
               ownerType: "CLUB",
               ownerId: teamOwnerId,
               type: "COMPETITION_ENTRY_FEE",
+              status: { in: [...TEAM_ENTRY_PAYMENT_MUTABLE_STATUSES] },
             },
           });
         }
@@ -360,6 +363,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
               ownerType: "CLUB",
               ownerId: prepaidOwnerId,
               type: "COMPETITION_ENTRY_FEE",
+              status: { in: [...TEAM_ENTRY_PAYMENT_MUTABLE_STATUSES] },
             },
           });
         }

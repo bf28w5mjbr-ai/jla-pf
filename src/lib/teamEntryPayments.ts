@@ -13,6 +13,21 @@ export const CLUB_PREPAID_INDIVIDUAL_BILLING_SCOPE = "CLUB_PREPAID_INDIVIDUAL" a
 
 export type TeamBillingCheckoutScope = "team" | "prepaid";
 
+export const TEAM_ENTRY_PAYMENT_MUTABLE_STATUSES = ["PENDING", "FAILED", "EXPIRED"] as const;
+export const TEAM_ENTRY_PAYMENT_TERMINAL_STATUSES = [
+  "SUCCEEDED",
+  "REFUNDED",
+  "DISPUTED",
+] as const;
+
+export function isMutableTeamEntryPaymentStatus(status: string | null | undefined): boolean {
+  return TEAM_ENTRY_PAYMENT_MUTABLE_STATUSES.some((s) => s === status);
+}
+
+export function isTerminalTeamEntryPaymentStatus(status: string | null | undefined): boolean {
+  return TEAM_ENTRY_PAYMENT_TERMINAL_STATUSES.some((s) => s === status);
+}
+
 /** チーム請求またはクラブ個人枠請求の一覧表示用スナップショット */
 export type ClubTeamEntryFeeBillingSnapshot = {
   id: string;
