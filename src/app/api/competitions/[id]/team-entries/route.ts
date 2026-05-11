@@ -19,6 +19,7 @@ import {
   replaceClubPrepaidSlotsForSave,
   sumInstantPrepaidIndividualsYen,
 } from "@/lib/clubPrepaidIndividualSlots";
+import { clubTeamNameBaseFromClub, shouldStripLetterSuffixForSingleTeam } from "@/lib/teamEntryClubBaseName";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -190,6 +191,24 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       }
     }
 
+    const clubRow = await prisma.club.findUnique({
+      where: { id: clubId },
+      select: { abbreviation: true, name: true },
+    });
+    if (!clubRow) {
+      return NextResponse.json({ message: "クラブが見つかりません" }, { status: 404 });
+    }
+    const clubTeamBase = clubTeamNameBaseFromClub(clubRow);
+    const teamsToPersist = normalizedTeams.map((team) => {
+      if (
+        (incomingTeamCountByEvent.get(team.eventId) ?? 0) === 1 &&
+        shouldStripLetterSuffixForSingleTeam(clubRow, team.teamName)
+      ) {
+        return { ...team, teamName: clubTeamBase };
+      }
+      return team;
+    });
+
     const feeUser = await prisma.user.findUnique({
       where: { id: session.userId },
       select: { dateOfBirth: true },
@@ -310,9 +329,9 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         },
       });
 
-      if (normalizedTeams.length > 0) {
+      if (teamsToPersist.length > 0) {
         await tx.teamEntry.createMany({
-          data: normalizedTeams.map((team) => ({
+          data: teamsToPersist.map((team) => ({
             competitionId,
             clubId,
             eventId: team.eventId,
@@ -334,11 +353,11 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       });
 
       const prepaidSub = toSafeNonNegativeIntYen(prepaidSubtotalYenRaw);
-      const teamTotalYen = toSafeNonNegativeIntYen(normalizedTeams.length * teamEntryFeePerTeam);
+      const teamTotalYen = toSafeNonNegativeIntYen(teamsToPersist.length * teamEntryFeePerTeam);
       const totalAmount = toSafeNonNegativeIntYen(teamTotalYen + prepaidSub);
 
       if (
-        normalizedTeams.length === 0 &&
+        teamsToPersist.length === 0 &&
         prepaidIndividualUserIds.length > 0 &&
         clubIndividualBillingTiming === "POST_CLOSE_INVOICE"
       ) {
@@ -365,7 +384,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
           prepaidIndividualUserIds,
           billingTiming: clubIndividualBillingTiming,
         });
-      } else if (normalizedTeams.length === 0 && prepaidIndividualUserIds.length === 0) {
+      } else if (teamsToPersist.length === 0 && prepaidIndividualUserIds.length === 0) {
         await tx.payment.deleteMany({
           where: {
             ownerType: "CLUB",
@@ -407,7 +426,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
               scope: "TEAM_ENTRY",
               competitionId,
               clubId,
-              teamCount: normalizedTeams.length,
+              teamCount: teamsToPersist.length,
               unitPrice: teamEntryFeePerTeam,
               prepaidIndividualSubtotalYen: prepaidSub,
               clubIndividualBillingTiming,
@@ -428,7 +447,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
               scope: "TEAM_ENTRY",
               competitionId,
               clubId,
-              teamCount: normalizedTeams.length,
+              teamCount: teamsToPersist.length,
               unitPrice: teamEntryFeePerTeam,
               prepaidIndividualSubtotalYen: prepaidSub,
               clubIndividualBillingTiming,

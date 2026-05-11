@@ -47,7 +47,9 @@
     "delete:kanagawa28-entries:dry": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/delete-competition-entries-kanagawa28-two-users.ts --dry-run",
     "delete:kanagawa28-entries": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/delete-competition-entries-kanagawa28-two-users.ts --execute",
     "backfill:team-only-zero-fee:dry": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-team-only-intent-zero-total-fee.ts --dry-run",
-    "backfill:team-only-zero-fee": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-team-only-intent-zero-total-fee.ts --apply"
+    "backfill:team-only-zero-fee": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-team-only-intent-zero-total-fee.ts --apply",
+    "backfill:team-entry-single-suffix:dry": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-team-entry-single-suffix-names.ts --dry-run",
+    "backfill:team-entry-single-suffix": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-team-entry-single-suffix-names.ts --apply"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1024.0",
