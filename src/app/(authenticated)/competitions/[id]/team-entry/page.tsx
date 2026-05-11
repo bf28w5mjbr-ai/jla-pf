@@ -14,6 +14,7 @@ import CompetitionTeamEntryWorkspace from "@/components/CompetitionTeamEntryWork
 import { formatCompetitionEntryPeriodRangeJa } from "@/lib/datetimeLocal";
 import { getStripeProcessingFeeBpsFromEnv } from "@/lib/stripeProcessingFee";
 import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
+import { competitionEntryPaidCheckoutWhere } from "@/lib/entryCheckoutSessionPaid";
 
 export const dynamic = "force-dynamic";
 
@@ -144,7 +145,8 @@ export default async function LegacyCompetitionTeamEntryRedirect({
     .map((m) => m.club);
   const adminClubIds = adminClubs.map((c) => c.id);
 
-  const [teamEntries, teamPayments, prepaidSlotsAll, prepaidMembershipsAll] = await Promise.all([
+  const [teamEntries, teamPayments, prepaidSlotsAll, prepaidMembershipsAll, prepaidPaidIndividualCheckoutRows] =
+    await Promise.all([
     prisma.teamEntry.findMany({
       where: {
         competitionId: competition.id,
@@ -201,7 +203,27 @@ export default async function LegacyCompetitionTeamEntryRedirect({
       },
       orderBy: [{ clubId: "asc" }, { user: { familyName: "asc" } }, { user: { givenName: "asc" } }],
     }),
+    prisma.competitionEntry.findMany({
+      where: {
+        competitionId: competition.id,
+        clubId: { in: adminClubIds },
+        status: "SUBMITTED",
+        ...competitionEntryPaidCheckoutWhere,
+      },
+      select: { clubId: true, userId: true },
+    }),
   ]);
+
+  const paidIndividualUserIdSetByClub = new Map<string, Set<string>>();
+  for (const row of prepaidPaidIndividualCheckoutRows) {
+    if (row.clubId == null) continue;
+    let set = paidIndividualUserIdSetByClub.get(row.clubId);
+    if (!set) {
+      set = new Set();
+      paidIndividualUserIdSetByClub.set(row.clubId, set);
+    }
+    set.add(row.userId);
+  }
 
   const initialEntriesByClub = Object.fromEntries(
     adminClubIds.map((cid) => [
@@ -258,15 +280,18 @@ export default async function LegacyCompetitionTeamEntryRedirect({
   ) as Record<string, string[]>;
 
   const prepaidMemberOptionsByClub = Object.fromEntries(
-    adminClubIds.map((cid) => [
-      cid,
-      prepaidMembershipsAll
-        .filter((m) => m.clubId === cid)
-        .map((m) => ({
-          userId: m.user.id,
-          name: `${m.user.familyName} ${m.user.givenName}`,
-        })),
-    ])
+    adminClubIds.map((cid) => {
+      const paidSet = paidIndividualUserIdSetByClub.get(cid) ?? new Set<string>();
+      return [
+        cid,
+        prepaidMembershipsAll
+          .filter((m) => m.clubId === cid && !paidSet.has(m.user.id))
+          .map((m) => ({
+            userId: m.user.id,
+            name: `${m.user.familyName} ${m.user.givenName}`,
+          })),
+      ];
+    })
   ) as Record<string, { userId: string; name: string }[]>;
 
   const entryFee =

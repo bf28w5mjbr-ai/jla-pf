@@ -19,34 +19,44 @@ export function clubTeamNameBaseForClubId(
   return c ? clubTeamNameBaseFromClub(c) : "チーム";
 }
 
+function escapeRegexChars(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
- * `teamName` が「ベース + 半角スペース + ラテン大文字のみの接尾辞」か。
- * 例: ベース「西浜」なら「西浜 A」「西浜 AA」は true。「西浜サーフ」は false。
+ * `teamName` が「ベース + 任意の空白（0文字以上）+ ラテン大文字のみの接尾辞」か。
+ * 全クラブ共通。比較は **NFKC** で行い、全角英字・半角カナなどの表記ゆれを寄せてから判定する。
+ * 接尾辞は NFKC 後に半角 A–Z のみ（全角 Ａ は NFKC で A になる）。
  */
 export function isClubBaseWithLetterSuffixTeamName(base: string, teamName: string): boolean {
-  const b = base.trim();
-  const t = teamName.trim();
-  if (t === b) return false;
-  if (!t.startsWith(`${b} `)) return false;
-  const rest = t.slice(b.length + 1);
-  return /^[A-Z]+$/.test(rest);
+  const b = base.trim().normalize("NFKC");
+  const t = teamName.trim().normalize("NFKC");
+  if (!b || t === b) return false;
+  const m = t.match(new RegExp(`^${escapeRegexChars(b)}\\s*([A-Z]+)$`));
+  return Boolean(m?.[1]);
+}
+
+function addBaseStringVariants(raw: string | null | undefined, out: Set<string>) {
+  const v = raw?.trim();
+  if (!v) return;
+  out.add(v);
+  out.add(v.normalize("NFC"));
+  out.add(v.normalize("NFKC"));
 }
 
 /**
  * 1組だけのとき、接尾辞付きの自動命名っぽい名前をベースだけに戻してよいか。
- * 略称があると {@link clubTeamNameBaseFromClub} は略称だけになるが、DB に「正式名称 A」が残っていることがあるため、
- * 略称・正式名の両方をベース候補に含めて判定する。
+ * 略称・正式名・{@link clubTeamNameBaseFromClub} の結果に加え、それぞれの NFC / NFKC 表記をベース候補に含める
+ *（クラブ名と `teamName` の微妙な表記差に対応）。
  */
 export function shouldStripLetterSuffixForSingleTeam(
   club: { abbreviation?: string | null; name: string },
   teamName: string
 ): boolean {
   const candidates = new Set<string>();
-  const abbr = club.abbreviation?.trim();
-  const nameT = club.name.trim();
-  if (abbr) candidates.add(abbr);
-  if (nameT) candidates.add(nameT);
-  candidates.add(clubTeamNameBaseFromClub(club));
+  addBaseStringVariants(club.abbreviation, candidates);
+  addBaseStringVariants(club.name, candidates);
+  addBaseStringVariants(clubTeamNameBaseFromClub(club), candidates);
   for (const base of candidates) {
     if (base && isClubBaseWithLetterSuffixTeamName(base, teamName)) return true;
   }

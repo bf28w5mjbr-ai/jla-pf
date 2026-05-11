@@ -602,23 +602,26 @@ export default async function CompetitionDetailPage({
                     ) : null}
 
                     <div
-                      className={`grid gap-2 ${
-                        entryButtonCount >= 3
-                          ? "sm:grid-cols-3"
-                          : entryButtonCount === 2
-                            ? "sm:grid-cols-2"
-                            : ""
-                      }`}
+                      className={cn(
+                        "grid gap-2.5",
+                        entryButtonCount === 1 && "max-w-md",
+                        entryButtonCount >= 2 && "sm:grid-cols-2",
+                        entryButtonCount >= 3 && "lg:grid-cols-3"
+                      )}
                     >
                       {hasIndividualEvents || hasTeamEvents ? (
                         <Button
                           asChild
                           size="sm"
-                          className="h-10 w-full justify-center gap-1.5 font-semibold shadow-sm"
+                          className="h-auto min-h-10 w-full whitespace-normal px-3 py-2.5 font-semibold shadow-sm"
                         >
-                          <Link href={withLoginRedirect(appRoutes.competitions.entry(competition.id))}>
-                            個人でのエントリー
-                            <ChevronRight className="h-3.5 w-3.5 opacity-70" />
+                          <Link
+                            href={withLoginRedirect(appRoutes.competitions.entry(competition.id))}
+                            className="gap-2"
+                          >
+                            <Users className="h-4 w-4 shrink-0 opacity-85" aria-hidden />
+                            <span className="min-w-0 flex-1 text-balance leading-snug">個人エントリー</span>
+                            <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
                           </Link>
                         </Button>
                       ) : null}
@@ -627,7 +630,7 @@ export default async function CompetitionDetailPage({
                           asChild
                           size="sm"
                           variant="outline"
-                          className="h-10 w-full justify-center gap-1.5 border-primary/20 bg-background/80 font-medium shadow-sm hover:bg-muted/50"
+                          className="h-auto min-h-10 w-full whitespace-normal border-primary/20 bg-background/80 px-3 py-2.5 font-medium shadow-sm hover:bg-muted/50"
                         >
                           <Link
                             href={withLoginRedirect(
@@ -635,9 +638,13 @@ export default async function CompetitionDetailPage({
                                 clubId: firstAdminClubForTeamEntry.id,
                               })
                             )}
+                            className="gap-2"
                           >
-                            チームエントリー
-                            <ChevronRight className="h-3.5 w-3.5 opacity-60" />
+                            <Building2 className="h-4 w-4 shrink-0 opacity-85" aria-hidden />
+                            <span className="min-w-0 flex-1 text-balance leading-snug">
+                              クラブ管理者（チーム種目エントリー）
+                            </span>
+                            <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden />
                           </Link>
                         </Button>
                       ) : null}
@@ -646,15 +653,19 @@ export default async function CompetitionDetailPage({
                           asChild
                           size="sm"
                           variant="outline"
-                          className="h-10 w-full justify-center gap-1.5 border-primary/25 bg-background/80 font-medium shadow-sm hover:bg-muted/50"
+                          className="h-auto min-h-10 w-full whitespace-normal border-primary/25 bg-background/80 px-3 py-2.5 font-medium shadow-sm hover:bg-muted/50"
                         >
                           <Link
                             href={withLoginRedirect(
                               appRoutes.competitions.officialEntry(competition.id)
                             )}
+                            className="gap-2"
                           >
-                            オフィシャルエントリー
-                            <ChevronRight className="h-3.5 w-3.5 opacity-60" />
+                            <BadgeCheck className="h-4 w-4 shrink-0 opacity-85" aria-hidden />
+                            <span className="min-w-0 flex-1 text-balance leading-snug">
+                              オフィシャルエントリー
+                            </span>
+                            <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden />
                           </Link>
                         </Button>
                       ) : null}
@@ -662,10 +673,15 @@ export default async function CompetitionDetailPage({
 
                     {entryStart && entryEnd ? (
                       <p
-                        className={`text-[11px] leading-relaxed ${isEntryWindowOpen ? "text-emerald-800 dark:text-emerald-300/90" : "text-muted-foreground"}`}
+                        className={cn(
+                          "max-w-prose text-[11px] leading-relaxed sm:text-xs",
+                          isEntryWindowOpen
+                            ? "text-emerald-800 dark:text-emerald-300/90"
+                            : "text-muted-foreground"
+                        )}
                       >
                         {isEntryWindowOpen
-                          ? "この時間帯はエントリー手続き・決済が可能です。個人でのエントリーでは、個人種目に出場するか、チーム種目の割り当て候補として登録するかを選べます。"
+                          ? "この時間帯はエントリー手続き・決済が可能です。個人エントリーでは、個人種目に出場するか、チーム種目の割り当て候補として登録するかを選べます。"
                           : "表示の期間外でも、主催の設定により手続きできる場合があります。詳細は手続き画面でご確認ください。"}
                       </p>
                     ) : null}

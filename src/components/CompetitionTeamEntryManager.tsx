@@ -7,17 +7,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { CheckCircle2, CreditCard, Droplets, Plus, Trash2, Users, Waves } from "lucide-react";
+import { CheckCircle2, CreditCard, Droplets, Minus, Plus, Search, Users, Waves } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { ClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
 import { getTeamPaymentStatusLabel } from "@/lib/teamEntryPayments";
@@ -25,6 +18,11 @@ import { resolveCompetitionEventCategoryScope } from "@/lib/competitionEventCate
 import { cn } from "@/lib/utils";
 import { stripeProcessingFeeSurchargeYenFromBps } from "@/lib/stripeProcessingFee";
 import { clubTeamNameBaseForClubId } from "@/lib/teamEntryClubBaseName";
+import {
+  normalizeAllTeamNamesForClub,
+  syncDraftListTeamCountForEvent,
+  type TeamEntryDraftRow,
+} from "@/lib/teamEntryDraftNormalize";
 
 type ClubOption = {
   id: string;
@@ -46,13 +44,6 @@ type ExistingTeamEntry = {
   id: string;
   eventId: string;
   teamName: string;
-};
-
-type DraftTeamEntry = {
-  id: string;
-  eventId: string;
-  teamName: string;
-  persistedId?: string;
 };
 
 type Props = {
@@ -111,66 +102,13 @@ const paymentStatusBadgeClass = (status?: string | null) => {
   }
 };
 
-const toDraftEntries = (entries: ExistingTeamEntry[]): DraftTeamEntry[] =>
+const toDraftEntries = (entries: ExistingTeamEntry[]): TeamEntryDraftRow[] =>
   entries.map((entry) => ({
     id: entry.id,
     eventId: entry.eventId,
     teamName: entry.teamName,
     persistedId: entry.id,
   }));
-
-/** 1→A, 26→Z, 27→AA（列記号と同じく増分） */
-function indexToLetters(index: number): string {
-  if (index < 1) return "A";
-  let n = index;
-  let result = "";
-  while (n > 0) {
-    n -= 1;
-    result = String.fromCharCode(65 + (n % 26)) + result;
-    n = Math.floor(n / 26);
-  }
-  return result;
-}
-
-/** 同一種目内で1組だけならベースのみ、2組以上なら「ベース A」「ベース B」…にそろえる */
-function normalizeTeamNamesForEvent(
-  entries: DraftTeamEntry[],
-  eventId: string,
-  base: string
-): DraftTeamEntry[] {
-  const indices: number[] = [];
-  entries.forEach((e, i) => {
-    if (e.eventId === eventId) indices.push(i);
-  });
-  const n = indices.length;
-  if (n === 0) return entries;
-  const out = [...entries];
-  if (n === 1) {
-    out[indices[0]] = { ...out[indices[0]], teamName: base };
-    return out;
-  }
-  indices.forEach((entryIdx, k) => {
-    out[entryIdx] = {
-      ...out[entryIdx],
-      teamName: `${base} ${indexToLetters(k + 1)}`,
-    };
-  });
-  return out;
-}
-
-/** クラブ内の全種目について、1組ならベースのみ・複数なら A/B… にそろえる（初期表示・保存直後の DB 名を補正） */
-function normalizeAllTeamNamesForClub(
-  entries: DraftTeamEntry[],
-  clubId: string,
-  clubList: ClubOption[]
-): DraftTeamEntry[] {
-  const base = clubTeamNameBaseForClubId(clubId, clubList);
-  const eventIds = [...new Set(entries.map((e) => e.eventId))];
-  return eventIds.reduce(
-    (acc, eventId) => normalizeTeamNamesForEvent(acc, eventId, base),
-    [...entries]
-  );
-}
 
 export default function CompetitionTeamEntryManager({
   competitionId,
@@ -190,7 +128,7 @@ export default function CompetitionTeamEntryManager({
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [entriesByClub, setEntriesByClub] = useState<Record<string, DraftTeamEntry[]>>(() =>
+  const [entriesByClub, setEntriesByClub] = useState<Record<string, TeamEntryDraftRow[]>>(() =>
     Object.fromEntries(
       clubs.map((club) => [
         club.id,
@@ -205,33 +143,61 @@ export default function CompetitionTeamEntryManager({
   const [isSaving, setIsSaving] = useState(false);
   const [isStartingPayment, setIsStartingPayment] = useState(false);
 
-  const [prepaidEnabled, setPrepaidEnabled] = useState(() => {
-    const ids = initialPrepaidIndividualUserIdsByClub[selectedClubId] ?? [];
-    return ids.length > 0;
-  });
   const [prepaidUserIds, setPrepaidUserIds] = useState<string[]>(() => {
     const ids = initialPrepaidIndividualUserIdsByClub[selectedClubId] ?? [];
-    return ids.length > 0 ? [...ids] : [""];
+    const opts = prepaidMemberOptionsByClub[selectedClubId] ?? [];
+    const allow = new Set(opts.map((m) => m.userId));
+    return [...new Set(ids.filter((id) => allow.has(id)))];
   });
-
-  useEffect(() => {
-    const ids = initialPrepaidIndividualUserIdsByClub[selectedClubId] ?? [];
-    setPrepaidEnabled(ids.length > 0);
-    setPrepaidUserIds(ids.length > 0 ? [...ids] : [""]);
-  }, [selectedClubId, initialPrepaidIndividualUserIdsByClub]);
+  const [prepaidMemberSearch, setPrepaidMemberSearch] = useState("");
 
   const prepaidMemberOptions = useMemo(
     () => prepaidMemberOptionsByClub[selectedClubId] ?? [],
     [prepaidMemberOptionsByClub, selectedClubId]
   );
 
+  useEffect(() => {
+    const ids = initialPrepaidIndividualUserIdsByClub[selectedClubId] ?? [];
+    const allow = new Set(prepaidMemberOptions.map((m) => m.userId));
+    setPrepaidUserIds([...new Set(ids.filter((id) => allow.has(id)))]);
+    setPrepaidMemberSearch("");
+  }, [selectedClubId, initialPrepaidIndividualUserIdsByClub, prepaidMemberOptions]);
+
+  const prepaidMemberSearchNorm = useMemo(
+    () => prepaidMemberSearch.trim().normalize("NFKC").toLowerCase(),
+    [prepaidMemberSearch]
+  );
+
+  const filteredPrepaidMemberOptions = useMemo(() => {
+    if (!prepaidMemberSearchNorm) return prepaidMemberOptions;
+    return prepaidMemberOptions.filter((m) =>
+      m.name.normalize("NFKC").toLowerCase().includes(prepaidMemberSearchNorm)
+    );
+  }, [prepaidMemberOptions, prepaidMemberSearchNorm]);
+
+  const prepaidSelectedIdSet = useMemo(() => new Set(prepaidUserIds), [prepaidUserIds]);
+
   const eventCategoryScope = resolveCompetitionEventCategoryScope(competitionCategory);
+  const hasPoolTeamEvents = useMemo(
+    () => teamEvents.some((e) => e.category === "POOL"),
+    [teamEvents]
+  );
+  const hasOceanTeamEvents = useMemo(
+    () => teamEvents.some((e) => e.category === "OCEAN"),
+    [teamEvents]
+  );
+  /** プール・オーシャン両方のチーム種目があるときは区分タブで切替（従来は大会名がプール寄りだと片方だけ表示されていた） */
+  const showDualCategoryTabs = hasPoolTeamEvents && hasOceanTeamEvents;
+
   const scopedTeamEvents = useMemo(() => {
+    if (showDualCategoryTabs) {
+      return teamEvents;
+    }
     if (eventCategoryScope === "OCEAN_ONLY") {
       return teamEvents.filter((e) => e.category === "OCEAN");
     }
     return teamEvents.filter((e) => e.category === "POOL");
-  }, [teamEvents, eventCategoryScope]);
+  }, [teamEvents, eventCategoryScope, showDualCategoryTabs]);
 
   const scopedEventIdSet = useMemo(
     () => new Set(scopedTeamEvents.map((e) => e.id)),
@@ -287,65 +253,40 @@ export default function CompetitionTeamEntryManager({
     [scopedTeamEvents]
   );
 
-  const teamNamePlaceholder = useMemo(() => {
-    const base = clubTeamNameBaseForClubId(selectedClubId, clubs);
-    return `例: ${base}（複数組は ${base} A）`;
-  }, [selectedClubId, clubs]);
-
-  const addTeam = (eventId: string) => {
-    setEntriesByClub((prev) => {
-      const list = [...(prev[selectedClubId] ?? [])];
-      list.push({
-        id: `draft-${eventId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        eventId,
-        teamName: "",
-      });
-      const base = clubTeamNameBaseForClubId(selectedClubId, clubs);
-      return {
-        ...prev,
-        [selectedClubId]: normalizeTeamNamesForEvent(list, eventId, base),
-      };
-    });
-  };
-
-  const updateTeamName = (entryId: string, teamName: string) => {
-    setEntriesByClub((prev) => ({
-      ...prev,
-      [selectedClubId]: (prev[selectedClubId] ?? []).map((entry) =>
-        entry.id === entryId ? { ...entry, teamName } : entry
-      ),
-    }));
-  };
-
-  const removeTeam = (entryId: string) => {
+  /** 種目ごとの登録組数を目標値に合わせる（末尾の追加・削除＋自動命名） */
+  const setTeamCountForEvent = (eventId: string, rawTarget: number, cap: number | null) => {
     setEntriesByClub((prev) => {
       const list = prev[selectedClubId] ?? [];
-      const victim = list.find((e) => e.id === entryId);
-      const eventId = victim?.eventId;
-      const filtered = list.filter((e) => e.id !== entryId);
-      if (!eventId) {
-        return { ...prev, [selectedClubId]: filtered };
-      }
+      const current = list.filter((e) => e.eventId === eventId).length;
+      let target = Math.max(0, Math.floor(Number.isFinite(rawTarget) ? rawTarget : current));
+      if (cap != null) target = Math.min(target, cap);
+      if (target === current) return prev;
+
       const base = clubTeamNameBaseForClubId(selectedClubId, clubs);
-      return {
-        ...prev,
-        [selectedClubId]: normalizeTeamNamesForEvent(filtered, eventId, base),
-      };
+      const nextList = syncDraftListTeamCountForEvent(list, eventId, target, base);
+      return { ...prev, [selectedClubId]: nextList };
     });
   };
 
-  const setPrepaidUserAt = (index: number, userId: string) => {
+  const setPrepaidMemberChecked = (userId: string, checked: boolean) => {
     setPrepaidUserIds((prev) => {
-      const next = [...prev];
-      next[index] = userId === "__none__" ? "" : userId;
-      return next;
+      if (checked) {
+        if (prev.includes(userId)) return prev;
+        return [...prev, userId];
+      }
+      return prev.filter((id) => id !== userId);
     });
   };
 
-  const addPrepaidRow = () => setPrepaidUserIds((prev) => [...prev, ""]);
+  const selectAllFilteredPrepaidMembers = () => {
+    setPrepaidUserIds((prev) => [
+      ...new Set([...prev, ...filteredPrepaidMemberOptions.map((m) => m.userId)]),
+    ]);
+  };
 
-  const removePrepaidRow = (index: number) => {
-    setPrepaidUserIds((prev) => (prev.length <= 1 ? [""] : prev.filter((_, i) => i !== index)));
+  const deselectAllFilteredPrepaidMembers = () => {
+    const drop = new Set(filteredPrepaidMemberOptions.map((m) => m.userId));
+    setPrepaidUserIds((prev) => prev.filter((id) => !drop.has(id)));
   };
 
   const handleSave = async () => {
@@ -358,14 +299,6 @@ export default function CompetitionTeamEntryManager({
     if (invalidEntry) {
       toast.error("チーム名を入力してください");
       return;
-    }
-
-    if (prepaidEnabled) {
-      const chosen = [...new Set(prepaidUserIds.map((id) => id.trim()).filter(Boolean))];
-      if (chosen.length === 0) {
-        toast.error("クラブによる個人エントリーを利用する場合は、メンバーを1名以上選択してください");
-        return;
-      }
     }
 
     setIsSaving(true);
@@ -381,9 +314,7 @@ export default function CompetitionTeamEntryManager({
             eventId: entry.eventId,
             teamName: entry.teamName.trim(),
           })),
-          prepaidIndividualUserIds: prepaidEnabled
-            ? [...new Set(prepaidUserIds.map((id) => id.trim()).filter(Boolean))]
-            : [],
+          prepaidIndividualUserIds: [...new Set(prepaidUserIds.map((id) => id.trim()).filter(Boolean))],
         }),
       });
 
@@ -478,16 +409,12 @@ export default function CompetitionTeamEntryManager({
     </div>
   );
 
-  const renderEventSection = (
-    title: string,
-    events: TeamEvent[],
-    accent: "pool" | "ocean"
-  ) => {
+  const renderCompactCategoryEvents = (title: string, events: TeamEvent[], accent: "pool" | "ocean") => {
     if (events.length === 0) {
       return (
         <div
           className={cn(
-            "rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground",
+            "rounded-lg border border-dashed px-3 py-5 text-center text-xs text-muted-foreground",
             accent === "pool"
               ? "border-orange-200/80 bg-orange-50/40 dark:border-orange-900/50 dark:bg-orange-950/20"
               : "border-cyan-200/80 bg-cyan-50/40 dark:border-cyan-900/50 dark:bg-cyan-950/20"
@@ -499,7 +426,14 @@ export default function CompetitionTeamEntryManager({
     }
 
     return (
-      <div className="space-y-4">
+      <div
+        className={cn(
+          "divide-y rounded-lg border bg-card/80",
+          accent === "pool"
+            ? "border-orange-200/70 dark:border-orange-900/50"
+            : "border-cyan-200/70 dark:border-cyan-900/50"
+        )}
+      >
         {events.map((event) => {
           const eventEntries = entriesForScope.filter((entry) => entry.eventId === event.id);
           const cap =
@@ -507,105 +441,85 @@ export default function CompetitionTeamEntryManager({
               ? event.maxTeamEntriesPerClub
               : null;
           const atCap = cap != null && eventEntries.length >= cap;
+          const count = eventEntries.length;
+          const previewRaw = eventEntries
+            .map((e) => e.teamName.trim())
+            .filter(Boolean)
+            .join(", ");
+          const preview =
+            previewRaw.length > 72 ? `${previewRaw.slice(0, 72)}…` : previewRaw || "—（0組）";
+          const countInputId = `team-count-${event.id}`;
+
           return (
             <div
               key={event.id}
               className={cn(
-                "overflow-hidden rounded-lg border bg-card shadow-sm",
-                accent === "pool"
-                  ? "border-orange-200/70 dark:border-orange-900/50"
-                  : "border-cyan-200/70 dark:border-cyan-900/50"
+                "px-3 py-2.5 sm:px-4",
+                accent === "pool" ? "bg-orange-50/20 dark:bg-orange-950/10" : "bg-cyan-50/15 dark:bg-cyan-950/10"
               )}
             >
-              <div
-                className={cn(
-                  "flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between",
-                  accent === "pool"
-                    ? "border-orange-100 bg-orange-50/50 dark:border-orange-900/40 dark:bg-orange-950/30"
-                    : "border-cyan-100 bg-cyan-50/50 dark:border-cyan-900/40 dark:bg-cyan-950/30"
-                )}
-              >
-                <div className="min-w-0 space-y-1">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-semibold text-foreground">{event.name}</p>
+                    <span className="text-sm font-semibold text-foreground">{event.name}</span>
                     <Badge variant="secondary" className="text-[10px] font-normal">
                       {sexLabel(event.sex)}
                     </Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    登録チーム{" "}
-                    <span className="tabular-nums font-medium text-foreground">
-                      {eventEntries.length}
-                    </span>
-                    件
                     {cap != null ? (
-                      <>
-                        {" "}
-                        <span className="text-muted-foreground/80">／</span> 同一クラブ上限{" "}
-                        <span className="tabular-nums font-medium text-foreground">{cap}</span> 組
+                      <span className="text-[11px] tabular-nums text-muted-foreground">
+                        上限 <span className="font-medium text-foreground">{cap}</span> 組
                         {atCap ? (
-                          <span className="ml-1 font-medium text-amber-800 dark:text-amber-200">
-                            （上限）
-                          </span>
+                          <span className="ml-1 font-medium text-amber-800 dark:text-amber-200">（上限）</span>
                         ) : null}
-                      </>
+                      </span>
                     ) : null}
+                  </div>
+                  <p
+                    className="mt-0.5 truncate text-[11px] text-muted-foreground"
+                    title={previewRaw || undefined}
+                  >
+                    {preview}
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="shrink-0 gap-1"
-                  onClick={() => addTeam(event.id)}
-                  disabled={!entryWindowOpen || atCap}
-                >
-                  <Plus className="h-4 w-4" />
-                  チームを追加
-                </Button>
-              </div>
-
-              <div className="px-4 py-4">
-                {eventEntries.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    まだチームがありません。「チームを追加」で略称（なければ正式名称）のみが入ります。2組目を追加したときに A・B…
-                    が付きます。
-                  </p>
-                ) : (
-                  <ul className="space-y-3" aria-label={`${event.name}のチーム一覧`}>
-                    {eventEntries.map((entry, index) => (
-                      <li
-                        key={entry.id}
-                        className="flex flex-col gap-2 rounded-md border border-border/60 bg-muted/20 p-3 sm:flex-row sm:items-end sm:gap-3"
-                      >
-                        <div className="min-w-0 flex-1 space-y-1.5">
-                          <Label htmlFor={`${entry.id}-team-name`} className="text-xs text-muted-foreground">
-                            チーム名 {index + 1}
-                          </Label>
-                          <Input
-                            id={`${entry.id}-team-name`}
-                            value={entry.teamName}
-                            onChange={(e) => updateTeamName(entry.id, e.target.value)}
-                            placeholder={teamNamePlaceholder}
-                            disabled={!entryWindowOpen}
-                            className="h-10"
-                          />
-                        </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="h-10 w-10 shrink-0 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          onClick={() => removeTeam(entry.id)}
-                          disabled={!entryWindowOpen}
-                          aria-label={`チーム${index + 1}を削除`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setTeamCountForEvent(event.id, count - 1, cap)}
+                    disabled={!entryWindowOpen || count <= 0}
+                    aria-label={`${event.name}の登録組数を1減らす`}
+                  >
+                    <Minus className="h-3.5 w-3.5" />
+                  </Button>
+                  <Input
+                    id={countInputId}
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={cap ?? undefined}
+                    value={count}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      setTeamCountForEvent(event.id, Number.isNaN(v) ? 0 : v, cap);
+                    }}
+                    disabled={!entryWindowOpen}
+                    className="h-8 w-[3.25rem] px-1 text-center text-sm tabular-nums"
+                    aria-label={`${event.name}の登録組数`}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setTeamCountForEvent(event.id, count + 1, cap)}
+                    disabled={!entryWindowOpen || atCap}
+                    aria-label={`${event.name}の登録組数を1増やす`}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
             </div>
           );
@@ -632,131 +546,126 @@ export default function CompetitionTeamEntryManager({
 
   const prepaidFormBlock = (
     <div className="rounded-lg border border-border/80 bg-muted/20 px-4 py-4">
-      <div className="flex flex-wrap items-start gap-3">
-        <Checkbox
-          id="club-prepaid-individual"
-          checked={prepaidEnabled}
-          onCheckedChange={(v) => {
-            const on = Boolean(v);
-            setPrepaidEnabled(on);
-            if (!on) {
-              setPrepaidUserIds([""]);
-            } else if (
-              prepaidUserIds.length === 0 ||
-              (prepaidUserIds.length === 1 && !prepaidUserIds[0])
-            ) {
-              setPrepaidUserIds([""]);
-            }
-          }}
-          disabled={!entryWindowOpen}
-          className="mt-1"
-        />
-        <div className="min-w-0 flex-1 space-y-2">
-          <Label htmlFor="club-prepaid-individual" className="text-sm font-medium text-foreground">
-            クラブによる個人エントリー
-          </Label>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            個人種目に出る部員の参加費を
-            <strong className="font-medium text-foreground">クラブがまとめて負担</strong>
-            するときに使います。部費でまとめたい・選手本人にカード決済をさせたくない、といった場合にチェックし、下の一覧で対象者を指定してください。
-          </p>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            {clubIndividualEntryBillingTiming === "POST_CLOSE_INVOICE" ? (
-              <>
-                <strong className="font-medium text-foreground">本人</strong>
-                は大会の個人エントリーで種目を選ぶだけでよく、ここで指定したメンバーは
-                <strong className="font-medium text-foreground">カード払いしません</strong>。
-                <strong className="font-medium text-foreground">クラブ</strong>
-                は、エントリー締切後に主催者が確定した請求で、チーム参加費とあわせて個人分もまとめて支払います。
-              </>
-            ) : (
-              <>
-                <strong className="font-medium text-foreground">クラブ</strong>
-                がチーム請求を支払うとき、ここで指定した人数ぶんの個人参加費が
-                <strong className="font-medium text-foreground">チーム請求の金額に含まれます</strong>。
-                そのあと<strong className="font-medium text-foreground">本人</strong>
-                が個人エントリーで種目を選ぶと、個人分の
-                <strong className="font-medium text-foreground">追加のカード決済は不要</strong>
-                です。
-              </>
-            )}
-          </p>
+      <div className="min-w-0 space-y-2">
+        <p className="text-sm font-medium text-foreground">クラブによる個人エントリー</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          個人種目に出る部員の参加費を
+          <strong className="font-medium text-foreground">クラブがまとめて負担</strong>
+          する人を、下の一覧で選んでください。部費でまとめたい・選手本人にカード決済をさせたくない場合に使います。誰も選ばないまま保存すると、クラブによる個人枠はありません。
+        </p>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          <strong className="font-medium text-foreground">個人のカード決済が済んでいるメンバー</strong>
+          は、この一覧には表示されません。
+        </p>
+        <p className="text-xs leading-relaxed text-muted-foreground">
           {clubIndividualEntryBillingTiming === "POST_CLOSE_INVOICE" ? (
-            <Badge variant="outline" className="font-normal">
-              個人分: 締切後請求
-            </Badge>
+            <>
+              <strong className="font-medium text-foreground">本人</strong>
+              は大会の個人エントリーで種目を選ぶだけでよく、ここで指定したメンバーは
+              <strong className="font-medium text-foreground">カード払いしません</strong>。
+              <strong className="font-medium text-foreground">クラブ</strong>
+              は、エントリー締切後に主催者が確定した請求で、チーム参加費とあわせて個人分もまとめて支払います。
+            </>
           ) : (
-            <Badge variant="outline" className="font-normal">
-              個人分: 先払い（チーム決済に含む）
-            </Badge>
+            <>
+              <strong className="font-medium text-foreground">クラブ</strong>
+              がチーム請求を支払うとき、ここで指定した人数ぶんの個人参加費が
+              <strong className="font-medium text-foreground">チーム請求の金額に含まれます</strong>。
+              そのあと<strong className="font-medium text-foreground">本人</strong>
+              が個人エントリーで種目を選ぶと、個人分の
+              <strong className="font-medium text-foreground">追加のカード決済は不要</strong>
+              です。
+            </>
           )}
-        </div>
+        </p>
+        {clubIndividualEntryBillingTiming === "POST_CLOSE_INVOICE" ? (
+          <Badge variant="outline" className="font-normal">
+            個人分: 締切後請求
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="font-normal">
+            個人分: 先払い（チーム決済に含む）
+          </Badge>
+        )}
       </div>
 
-      {prepaidEnabled ? (
-        prepaidMemberOptions.length === 0 ? (
-          <p className="mt-3 text-xs text-muted-foreground">
-            承認済みクラブメンバーがいないため、ここからは指定できません。
-          </p>
-        ) : (
+      {prepaidMemberOptions.length === 0 ? (
+        <p className="mt-3 text-xs text-muted-foreground">
+          クラブ個人枠に指定できる承認済みメンバーがいません（個人のカード決済済みの方は一覧に出ません）。
+        </p>
+      ) : (
           <div className="mt-4 space-y-3">
-            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-              <Users className="h-3.5 w-3.5" aria-hidden />
-              対象メンバー（枠ごとに選択）
-            </div>
-            <ul className="space-y-2">
-              {prepaidUserIds.map((uid, idx) => (
-                <li
-                  key={`prepaid-slot-${idx}`}
-                  className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-background/80 p-2"
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <Users className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span>
+                  対象メンバー（
+                  <span className="tabular-nums text-foreground">{prepaidUserIds.length}</span> 名選択中）
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={selectAllFilteredPrepaidMembers}
+                  disabled={!entryWindowOpen || filteredPrepaidMemberOptions.length === 0}
                 >
-                  <span className="w-6 text-center text-xs tabular-nums text-muted-foreground">
-                    {idx + 1}
-                  </span>
-                  <Select
-                    value={uid ? uid : "__none__"}
-                    onValueChange={(v) => setPrepaidUserAt(idx, v)}
-                    disabled={!entryWindowOpen}
-                  >
-                    <SelectTrigger className="h-9 w-[min(100%,16rem)]">
-                      <SelectValue placeholder="メンバーを選択" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">未選択</SelectItem>
-                      {prepaidMemberOptions.map((m) => (
-                        <SelectItem key={m.userId} value={m.userId}>
-                          {m.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 text-xs text-destructive"
-                    onClick={() => removePrepaidRow(idx)}
-                    disabled={!entryWindowOpen}
-                  >
-                    削除
-                  </Button>
-                </li>
-              ))}
-            </ul>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1 text-xs"
-              onClick={addPrepaidRow}
-              disabled={!entryWindowOpen}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              枠を追加
-            </Button>
+                  表示中をすべて選択
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={deselectAllFilteredPrepaidMembers}
+                  disabled={!entryWindowOpen || filteredPrepaidMemberOptions.length === 0}
+                >
+                  表示中の選択を解除
+                </Button>
+              </div>
+            </div>
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                type="search"
+                value={prepaidMemberSearch}
+                onChange={(e) => setPrepaidMemberSearch(e.target.value)}
+                placeholder="名前で絞り込み…"
+                disabled={!entryWindowOpen}
+                className="h-9 pl-8 text-sm"
+                autoComplete="off"
+                aria-label="クラブ個人枠のメンバー名で絞り込み"
+              />
+            </div>
+            {filteredPrepaidMemberOptions.length === 0 ? (
+              <p className="text-xs text-muted-foreground">該当するメンバーがいません。</p>
+            ) : (
+              <ul
+                className="max-h-[min(24rem,55vh)] space-y-1 overflow-y-auto rounded-md border border-border/60 bg-background/80 p-2"
+                role="list"
+              >
+                {filteredPrepaidMemberOptions.map((m) => (
+                  <li key={m.userId}>
+                    <label className="flex cursor-pointer items-center gap-2.5 rounded px-2 py-1.5 text-sm hover:bg-muted/60">
+                      <Checkbox
+                        checked={prepaidSelectedIdSet.has(m.userId)}
+                        onCheckedChange={(v) => setPrepaidMemberChecked(m.userId, Boolean(v))}
+                        disabled={!entryWindowOpen}
+                        className="shrink-0"
+                      />
+                      <span className="min-w-0 flex-1 leading-snug">{m.name}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-        )
-      ) : null}
+      )}
     </div>
   );
 
@@ -852,26 +761,58 @@ export default function CompetitionTeamEntryManager({
               </p>
             ) : null}
 
-            <div className="space-y-8">
-              {eventCategoryScope !== "OCEAN_ONLY" && (
-                <section className="space-y-3">
-                  <div className="flex items-center gap-2 border-b border-orange-200/60 pb-2 dark:border-orange-900/50">
-                    <Droplets className="h-4 w-4 text-orange-600 dark:text-orange-400" aria-hidden />
-                    <h2 className="text-sm font-semibold tracking-tight text-foreground">プール競技</h2>
-                  </div>
-                  {renderEventSection("プール競技", groupedEvents.POOL, "pool")}
-                </section>
-              )}
-              {eventCategoryScope !== "POOL_ONLY" && (
-                <section className="space-y-3">
-                  <div className="flex items-center gap-2 border-b border-cyan-200/60 pb-2 dark:border-cyan-900/50">
-                    <Waves className="h-4 w-4 text-cyan-700 dark:text-cyan-400" aria-hidden />
-                    <h2 className="text-sm font-semibold tracking-tight text-foreground">オーシャン競技</h2>
-                  </div>
-                  {renderEventSection("オーシャン競技", groupedEvents.OCEAN, "ocean")}
-                </section>
-              )}
-            </div>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              種目ごとに<strong className="font-medium text-foreground">登録組数</strong>
+              を数字で指定すると、略称（なければ正式名）ベースのチーム名が自動で付きます（1組だけなら略称のみ、複数組は A・B…）。
+            </p>
+
+            {showDualCategoryTabs ? (
+              <Tabs defaultValue="pool" className="w-full">
+                <TabsList className="grid h-auto w-full max-w-md grid-cols-2 gap-1.5 rounded-lg border border-border/60 bg-muted/40 p-1">
+                  <TabsTrigger
+                    value="pool"
+                    className="gap-1.5 text-xs data-[state=active]:shadow-sm sm:text-sm"
+                  >
+                    <Droplets className="h-3.5 w-3.5 shrink-0 text-orange-600 dark:text-orange-400" aria-hidden />
+                    プール競技
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="ocean"
+                    className="gap-1.5 text-xs data-[state=active]:shadow-sm sm:text-sm"
+                  >
+                    <Waves className="h-3.5 w-3.5 shrink-0 text-cyan-700 dark:text-cyan-400" aria-hidden />
+                    オーシャン競技
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="pool" className="mt-4 outline-none focus-visible:ring-0">
+                  {renderCompactCategoryEvents("プール競技", groupedEvents.POOL, "pool")}
+                </TabsContent>
+                <TabsContent value="ocean" className="mt-4 outline-none focus-visible:ring-0">
+                  {renderCompactCategoryEvents("オーシャン競技", groupedEvents.OCEAN, "ocean")}
+                </TabsContent>
+              </Tabs>
+            ) : (
+              <div className="space-y-8">
+                {eventCategoryScope !== "OCEAN_ONLY" && (
+                  <section className="space-y-2">
+                    <div className="flex items-center gap-2 border-b border-orange-200/60 pb-2 dark:border-orange-900/50">
+                      <Droplets className="h-4 w-4 text-orange-600 dark:text-orange-400" aria-hidden />
+                      <h2 className="text-sm font-semibold tracking-tight text-foreground">プール競技</h2>
+                    </div>
+                    {renderCompactCategoryEvents("プール競技", groupedEvents.POOL, "pool")}
+                  </section>
+                )}
+                {eventCategoryScope !== "POOL_ONLY" && (
+                  <section className="space-y-2">
+                    <div className="flex items-center gap-2 border-b border-cyan-200/60 pb-2 dark:border-cyan-900/50">
+                      <Waves className="h-4 w-4 text-cyan-700 dark:text-cyan-400" aria-hidden />
+                      <h2 className="text-sm font-semibold tracking-tight text-foreground">オーシャン競技</h2>
+                    </div>
+                    {renderCompactCategoryEvents("オーシャン競技", groupedEvents.OCEAN, "ocean")}
+                  </section>
+                )}
+              </div>
+            )}
 
             {renderSaveFooter()}
           </div>
@@ -897,7 +838,7 @@ export default function CompetitionTeamEntryManager({
                   </p>
                   {totalTeamCount === 0 ? (
                     <p className="mt-3 rounded-md border border-dashed border-border bg-background/60 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
-                      種目ごとに「チームを追加」し、「チームエントリーを保存」を押すと登録が完了します。
+                      種目ごとに登録組数を決めて「チームエントリーを保存」を押すと登録が完了します。
                     </p>
                   ) : (
                     <div className="mt-3 flex gap-2.5 rounded-lg border border-emerald-200/90 bg-emerald-50/90 px-3 py-3 dark:border-emerald-900/50 dark:bg-emerald-950/35">

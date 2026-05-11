@@ -21,6 +21,7 @@ import {
 import { formatCompetitionEntryPeriodRangeJa } from "@/lib/datetimeLocal";
 import { getStripeProcessingFeeBpsFromEnv } from "@/lib/stripeProcessingFee";
 import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
+import { competitionEntryPaidCheckoutWhere } from "@/lib/entryCheckoutSessionPaid";
 import {
   prismaCompetitionToTeamAssignmentCompetitionJson,
   prismaEventToTeamAssignmentEventJson,
@@ -414,6 +415,26 @@ export default async function ClubCompetitionTeamHubPage({
     orderBy: [{ clubId: "asc" }, { user: { familyName: "asc" } }, { user: { givenName: "asc" } }],
   });
 
+  const prepaidPaidIndividualCheckoutRows = await prisma.competitionEntry.findMany({
+    where: {
+      competitionId: competition.id,
+      clubId: { in: adminClubIds },
+      status: "SUBMITTED",
+      ...competitionEntryPaidCheckoutWhere,
+    },
+    select: { clubId: true, userId: true },
+  });
+  const paidIndividualUserIdSetByClub = new Map<string, Set<string>>();
+  for (const row of prepaidPaidIndividualCheckoutRows) {
+    if (row.clubId == null) continue;
+    let set = paidIndividualUserIdSetByClub.get(row.clubId);
+    if (!set) {
+      set = new Set();
+      paidIndividualUserIdSetByClub.set(row.clubId, set);
+    }
+    set.add(row.userId);
+  }
+
   const initialPrepaidIndividualUserIdsByClub = Object.fromEntries(
     adminClubIds.map((cid) => [
       cid,
@@ -422,15 +443,18 @@ export default async function ClubCompetitionTeamHubPage({
   ) as Record<string, string[]>;
 
   const prepaidMemberOptionsByClub = Object.fromEntries(
-    adminClubIds.map((cid) => [
-      cid,
-      prepaidMembershipsAll
-        .filter((m) => m.clubId === cid)
-        .map((m) => ({
-          userId: m.user.id,
-          name: `${m.user.familyName} ${m.user.givenName}`,
-        })),
-    ])
+    adminClubIds.map((cid) => {
+      const paidSet = paidIndividualUserIdSetByClub.get(cid) ?? new Set<string>();
+      return [
+        cid,
+        prepaidMembershipsAll
+          .filter((m) => m.clubId === cid && !paidSet.has(m.user.id))
+          .map((m) => ({
+            userId: m.user.id,
+            name: `${m.user.familyName} ${m.user.givenName}`,
+          })),
+      ];
+    })
   ) as Record<string, { userId: string; name: string }[]>;
 
   const clubIndividualEntryBillingTiming = resolveClubIndividualEntryBillingTiming(
