@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { CheckCircle2, CreditCard, Droplets, Info, Plus, Trash2, Users, Waves } from "lucide-react";
+import { CheckCircle2, CreditCard, Droplets, Plus, Trash2, Users, Waves } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { ClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
 import { getTeamPaymentStatusLabel } from "@/lib/teamEntryPayments";
@@ -58,8 +58,9 @@ type DraftTeamEntry = {
 type Props = {
   competitionId: string;
   clubs: ClubOption[];
-  /** URL のクラブなど、初期表示で選ぶクラブ（管理者が複数クラブを持つ場合） */
-  initialSelectedClubId?: string;
+  selectedClubId: string;
+  /** チーム種目フォーム＋請求、またはプリペイドのみ */
+  surface: "team" | "prepaid";
   teamEvents: TeamEvent[];
   initialEntriesByClub: Record<string, ExistingTeamEntry[]>;
   teamEntryFeePerTeam: number;
@@ -174,7 +175,8 @@ function normalizeAllTeamNamesForClub(
 export default function CompetitionTeamEntryManager({
   competitionId,
   clubs,
-  initialSelectedClubId,
+  selectedClubId,
+  surface,
   teamEvents,
   initialEntriesByClub,
   teamEntryFeePerTeam,
@@ -188,12 +190,6 @@ export default function CompetitionTeamEntryManager({
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [selectedClubId, setSelectedClubId] = useState(() => {
-    if (initialSelectedClubId && clubs.some((c) => c.id === initialSelectedClubId)) {
-      return initialSelectedClubId;
-    }
-    return clubs[0]?.id ?? "";
-  });
   const [entriesByClub, setEntriesByClub] = useState<Record<string, DraftTeamEntry[]>>(() =>
     Object.fromEntries(
       clubs.map((club) => [
@@ -210,19 +206,11 @@ export default function CompetitionTeamEntryManager({
   const [isStartingPayment, setIsStartingPayment] = useState(false);
 
   const [prepaidEnabled, setPrepaidEnabled] = useState(() => {
-    const cid =
-      initialSelectedClubId && clubs.some((c) => c.id === initialSelectedClubId)
-        ? initialSelectedClubId
-        : clubs[0]?.id ?? "";
-    const ids = initialPrepaidIndividualUserIdsByClub[cid] ?? [];
+    const ids = initialPrepaidIndividualUserIdsByClub[selectedClubId] ?? [];
     return ids.length > 0;
   });
   const [prepaidUserIds, setPrepaidUserIds] = useState<string[]>(() => {
-    const cid =
-      initialSelectedClubId && clubs.some((c) => c.id === initialSelectedClubId)
-        ? initialSelectedClubId
-        : clubs[0]?.id ?? "";
-    const ids = initialPrepaidIndividualUserIdsByClub[cid] ?? [];
+    const ids = initialPrepaidIndividualUserIdsByClub[selectedClubId] ?? [];
     return ids.length > 0 ? [...ids] : [""];
   });
 
@@ -470,6 +458,26 @@ export default function CompetitionTeamEntryManager({
     }
   };
 
+  const renderSaveFooter = () => (
+    <div className="rounded-lg border-2 border-dashed border-primary/25 bg-muted/20 px-4 py-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs text-muted-foreground sm:max-w-[20rem]">
+          {isFreeTeamEntry
+            ? "無料のため決済はありません。内容を保存すると登録手続きが完了します。変更したら必ず保存してください。"
+            : "チーム名を変えたあと、必ず保存してください。保存後に請求・決済の状態が更新されることがあります。"}
+        </p>
+        <Button
+          type="button"
+          className="h-10 min-w-[12rem] shrink-0 font-semibold"
+          onClick={handleSave}
+          disabled={isSaving || !entryWindowOpen}
+        >
+          {isSaving ? "保存中…" : "チームエントリーを保存"}
+        </Button>
+      </div>
+    </div>
+  );
+
   const renderEventSection = (
     title: string,
     events: TeamEvent[],
@@ -606,7 +614,7 @@ export default function CompetitionTeamEntryManager({
     );
   };
 
-  if (scopedTeamEvents.length === 0) {
+  if (surface === "team" && scopedTeamEvents.length === 0) {
     return (
       <Card className="overflow-hidden">
         <CardHeader className="border-b border-border bg-muted/15">
@@ -617,6 +625,177 @@ export default function CompetitionTeamEntryManager({
         </CardHeader>
         <CardContent className="px-4 py-10 text-center text-sm text-muted-foreground">
           主催者に種目設定をご確認ください。
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const prepaidFormBlock = (
+    <div className="rounded-lg border border-border/80 bg-muted/20 px-4 py-4">
+      <div className="flex flex-wrap items-start gap-3">
+        <Checkbox
+          id="club-prepaid-individual"
+          checked={prepaidEnabled}
+          onCheckedChange={(v) => {
+            const on = Boolean(v);
+            setPrepaidEnabled(on);
+            if (!on) {
+              setPrepaidUserIds([""]);
+            } else if (
+              prepaidUserIds.length === 0 ||
+              (prepaidUserIds.length === 1 && !prepaidUserIds[0])
+            ) {
+              setPrepaidUserIds([""]);
+            }
+          }}
+          disabled={!entryWindowOpen}
+          className="mt-1"
+        />
+        <div className="min-w-0 flex-1 space-y-2">
+          <Label htmlFor="club-prepaid-individual" className="text-sm font-medium text-foreground">
+            クラブによる個人エントリー
+          </Label>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            個人種目に出る部員の参加費を
+            <strong className="font-medium text-foreground">クラブがまとめて負担</strong>
+            するときに使います。部費でまとめたい・選手本人にカード決済をさせたくない、といった場合にチェックし、下の一覧で対象者を指定してください。
+          </p>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {clubIndividualEntryBillingTiming === "POST_CLOSE_INVOICE" ? (
+              <>
+                <strong className="font-medium text-foreground">本人</strong>
+                は大会の個人エントリーで種目を選ぶだけでよく、ここで指定したメンバーは
+                <strong className="font-medium text-foreground">カード払いしません</strong>。
+                <strong className="font-medium text-foreground">クラブ</strong>
+                は、エントリー締切後に主催者が確定した請求で、チーム参加費とあわせて個人分もまとめて支払います。
+              </>
+            ) : (
+              <>
+                <strong className="font-medium text-foreground">クラブ</strong>
+                がチーム請求を支払うとき、ここで指定した人数ぶんの個人参加費が
+                <strong className="font-medium text-foreground">チーム請求の金額に含まれます</strong>。
+                そのあと<strong className="font-medium text-foreground">本人</strong>
+                が個人エントリーで種目を選ぶと、個人分の
+                <strong className="font-medium text-foreground">追加のカード決済は不要</strong>
+                です。
+              </>
+            )}
+          </p>
+          {clubIndividualEntryBillingTiming === "POST_CLOSE_INVOICE" ? (
+            <Badge variant="outline" className="font-normal">
+              個人分: 締切後請求
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="font-normal">
+              個人分: 先払い（チーム決済に含む）
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      {prepaidEnabled ? (
+        prepaidMemberOptions.length === 0 ? (
+          <p className="mt-3 text-xs text-muted-foreground">
+            承認済みクラブメンバーがいないため、ここからは指定できません。
+          </p>
+        ) : (
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <Users className="h-3.5 w-3.5" aria-hidden />
+              対象メンバー（枠ごとに選択）
+            </div>
+            <ul className="space-y-2">
+              {prepaidUserIds.map((uid, idx) => (
+                <li
+                  key={`prepaid-slot-${idx}`}
+                  className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-background/80 p-2"
+                >
+                  <span className="w-6 text-center text-xs tabular-nums text-muted-foreground">
+                    {idx + 1}
+                  </span>
+                  <Select
+                    value={uid ? uid : "__none__"}
+                    onValueChange={(v) => setPrepaidUserAt(idx, v)}
+                    disabled={!entryWindowOpen}
+                  >
+                    <SelectTrigger className="h-9 w-[min(100%,16rem)]">
+                      <SelectValue placeholder="メンバーを選択" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">未選択</SelectItem>
+                      {prepaidMemberOptions.map((m) => (
+                        <SelectItem key={m.userId} value={m.userId}>
+                          {m.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs text-destructive"
+                    onClick={() => removePrepaidRow(idx)}
+                    disabled={!entryWindowOpen}
+                  >
+                    削除
+                  </Button>
+                </li>
+              ))}
+            </ul>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1 text-xs"
+              onClick={addPrepaidRow}
+              disabled={!entryWindowOpen}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              枠を追加
+            </Button>
+          </div>
+        )
+      ) : null}
+    </div>
+  );
+
+  if (surface === "prepaid") {
+    return (
+      <Card className="overflow-hidden">
+        <CardHeader className="space-y-1 border-b border-border bg-muted/15">
+          <CardTitle className="text-base font-semibold">クラブによる個人エントリー</CardTitle>
+          <CardDescription className="text-xs text-muted-foreground">
+            チーム種目タブと同じ「チームエントリーを保存」でまとめて送信されます。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6 px-4 py-5 sm:px-6">
+          {!entryWindowOpen && (
+            <div
+              role="status"
+              className="rounded-lg border border-amber-200/90 bg-amber-50 px-3 py-3 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/35 dark:text-amber-100"
+            >
+              現在はエントリー受付期間外のため、設定の変更・保存はできません。
+            </div>
+          )}
+          {paymentQuery === "success" ? (
+            <p
+              role="status"
+              className="rounded-md border border-emerald-200/90 bg-emerald-50/90 px-3 py-2 text-sm font-medium text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/35 dark:text-emerald-100"
+            >
+              決済を受け付けました。反映まで少し時間がかかる場合があります。
+            </p>
+          ) : null}
+          {paymentQuery === "cancel" ? (
+            <p
+              role="status"
+              className="rounded-md border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-sm font-medium text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/35 dark:text-amber-100"
+            >
+              決済はキャンセルされました。必要なら再度お試しください。
+            </p>
+          ) : null}
+          {prepaidFormBlock}
+          {renderSaveFooter()}
         </CardContent>
       </Card>
     );
@@ -636,23 +815,6 @@ export default function CompetitionTeamEntryManager({
             </Badge>
           ) : null}
         </div>
-        {hasSavedForSelectedClub ? (
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            登録済みの一覧は上の「エントリー履歴」で確認できます。
-          </p>
-        ) : null}
-        <CardDescription className="text-xs leading-relaxed">
-          クラブを選び、種目ごとにチーム名を登録して保存してください。1組だけのときは
-          <strong className="font-medium text-foreground">略称（なければ正式名称）のみ</strong>
-          、2組以上は
-          <strong className="font-medium text-foreground">ベース＋半角スペース＋A・B…</strong>
-          になるよう「チームを追加・削除」で自動調整されます。
-          {isFreeTeamEntry
-            ? "チーム種目が無料の大会では、右の案内に従い保存すれば手続き完了です。"
-            : "決済は右のサマリーから行います。"}
-          {eventCategoryScope === "OCEAN_ONLY" ? "（オーシャン競技の大会のため、プール種目は表示しません）" : null}
-          {eventCategoryScope === "POOL_ONLY" ? "（プール競技の大会のため、オーシャン種目は表示しません）" : null}
-        </CardDescription>
         {hiddenCategoryTeamCount > 0 ? (
           <p className="rounded-md border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs leading-relaxed text-amber-950 dark:border-amber-800 dark:bg-amber-950/35 dark:text-amber-50">
             表示していない区分の登録チームが{" "}
@@ -662,209 +824,8 @@ export default function CompetitionTeamEntryManager({
         ) : null}
       </CardHeader>
       <CardContent className="space-y-6 px-4 py-5 sm:px-6">
-        <div className="flex gap-3 rounded-lg border border-primary/20 bg-primary/[0.04] px-3 py-3 text-sm text-foreground dark:bg-primary/[0.07]">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
-          <div className="min-w-0 space-y-2 leading-snug text-muted-foreground">
-            <p>
-              <span className="font-medium text-foreground">料金の数え方：</span>
-              {isFreeTeamEntry ? (
-                <>
-                  この大会のチーム種目は<strong className="font-medium text-foreground">無料</strong>
-                  です。登録チーム数に応じた請求は発生しません。
-                </>
-              ) : (
-                <>
-                  チーム種目ごとに、登録した<strong className="font-medium text-foreground">出場チーム1組につき1回分</strong>
-                  の料金です。同じ種目に2組出す場合は、その種目は2組分の料金になります。
-                </>
-              )}
-            </p>
-            <p>
-              <span className="font-medium text-foreground">お支払いの流れ：</span>
-              {isFreeTeamEntry ? (
-                <>
-                  カード決済は不要です。内容を<strong className="font-medium text-foreground">保存</strong>
-                  できれば、この画面での手続きは完了です。あとから変更する場合は、編集のうえ再度保存してください。
-                </>
-              ) : (
-                <>
-                  エントリー締切後、主催の団体管理者が大会の
-                  <strong className="font-medium text-foreground">「エントリー状況」</strong>
-                  画面の<strong className="font-medium text-foreground">「チーム請求」</strong>
-                  で請求を確定すると、決済ボタンが使えるようになります。確定後は右の「チーム請求を支払う」から Stripe の決済ページへ進みます。
-                </>
-              )}
-            </p>
-            <p>
-              <span className="font-medium text-foreground">チーム名：</span>
-              種目ごとに、1組のときはベース（略称または正式名称）だけ。2組目を追加したタイミングでその種目の全組に
-              A・B…（27組目以降は AA, AB…）を付け直します。1組に戻すとベースのみに戻ります。
-            </p>
-            {paymentQuery === "success" && (
-              <p className="font-medium text-emerald-700 dark:text-emerald-300">
-                決済を受け付けました。反映まで少し時間がかかる場合があります。
-              </p>
-            )}
-            {paymentQuery === "cancel" && (
-              <p className="font-medium text-amber-800 dark:text-amber-200">
-                決済はキャンセルされました。必要なら再度お試しください。
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-border/80 bg-muted/20 px-4 py-4">
-          <div className="flex flex-wrap items-start gap-3">
-            <Checkbox
-              id="club-prepaid-individual"
-              checked={prepaidEnabled}
-              onCheckedChange={(v) => {
-                const on = Boolean(v);
-                setPrepaidEnabled(on);
-                if (!on) {
-                  setPrepaidUserIds([""]);
-                } else if (prepaidUserIds.length === 0 || (prepaidUserIds.length === 1 && !prepaidUserIds[0])) {
-                  setPrepaidUserIds([""]);
-                }
-              }}
-              disabled={!entryWindowOpen}
-              className="mt-1"
-            />
-            <div className="min-w-0 flex-1 space-y-2">
-              <Label htmlFor="club-prepaid-individual" className="text-sm font-medium text-foreground">
-                クラブによる個人エントリー
-              </Label>
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                個人種目に出る部員の参加費を<strong className="font-medium text-foreground">クラブがまとめて負担</strong>
-                するときに使います。部費でまとめたい・選手本人にカード決済をさせたくない、といった場合にチェックし、下の一覧で対象者を指定してください。
-              </p>
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                {clubIndividualEntryBillingTiming === "POST_CLOSE_INVOICE" ? (
-                  <>
-                    <strong className="font-medium text-foreground">本人</strong>
-                    は大会の個人エントリーで種目を選ぶだけでよく、ここで指定したメンバーは
-                    <strong className="font-medium text-foreground">カード払いしません</strong>。
-                    <strong className="font-medium text-foreground">クラブ</strong>
-                    は、エントリー締切後に主催者が確定した請求で、チーム参加費とあわせて個人分もまとめて支払います。
-                  </>
-                ) : (
-                  <>
-                    <strong className="font-medium text-foreground">クラブ</strong>
-                    がチーム請求を支払うとき、ここで指定した人数ぶんの個人参加費が
-                    <strong className="font-medium text-foreground">チーム請求の金額に含まれます</strong>。
-                    そのあと<strong className="font-medium text-foreground">本人</strong>
-                    が個人エントリーで種目を選ぶと、個人分の<strong className="font-medium text-foreground">追加のカード決済は不要</strong>
-                    です。
-                  </>
-                )}
-              </p>
-              {clubIndividualEntryBillingTiming === "POST_CLOSE_INVOICE" ? (
-                <Badge variant="outline" className="font-normal">
-                  個人分: 締切後請求
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="font-normal">
-                  個人分: 先払い（チーム決済に含む）
-                </Badge>
-              )}
-            </div>
-          </div>
-
-          {prepaidEnabled ? (
-            prepaidMemberOptions.length === 0 ? (
-              <p className="mt-3 text-xs text-muted-foreground">
-                承認済みクラブメンバーがいないため、ここからは指定できません。
-              </p>
-            ) : (
-              <div className="mt-4 space-y-3">
-                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                  <Users className="h-3.5 w-3.5" aria-hidden />
-                  対象メンバー（枠ごとに選択）
-                </div>
-                <ul className="space-y-2">
-                  {prepaidUserIds.map((uid, idx) => (
-                    <li
-                      key={`prepaid-slot-${idx}`}
-                      className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-background/80 p-2"
-                    >
-                      <span className="w-6 text-center text-xs tabular-nums text-muted-foreground">
-                        {idx + 1}
-                      </span>
-                      <Select
-                        value={uid ? uid : "__none__"}
-                        onValueChange={(v) => setPrepaidUserAt(idx, v)}
-                        disabled={!entryWindowOpen}
-                      >
-                        <SelectTrigger className="h-9 w-[min(100%,16rem)]">
-                          <SelectValue placeholder="メンバーを選択" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">未選択</SelectItem>
-                          {prepaidMemberOptions.map((m) => (
-                            <SelectItem key={m.userId} value={m.userId}>
-                              {m.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 text-xs text-destructive"
-                        onClick={() => removePrepaidRow(idx)}
-                        disabled={!entryWindowOpen}
-                      >
-                        削除
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1 text-xs"
-                  onClick={addPrepaidRow}
-                  disabled={!entryWindowOpen}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  枠を追加
-                </Button>
-              </div>
-            )
-          ) : null}
-        </div>
-
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_min(100%,340px)] lg:items-start">
           <div className="min-w-0 space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="club-select" className="text-sm font-medium">
-                対象クラブ
-              </Label>
-              {clubs.length > 1 ? (
-                <Select value={selectedClubId} onValueChange={setSelectedClubId}>
-                  <SelectTrigger id="club-select" className="h-11 w-full max-w-md">
-                    <SelectValue placeholder="クラブを選択" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {clubs.map((club) => (
-                      <SelectItem key={club.id} value={club.id}>
-                        {club.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <p
-                  id="club-select"
-                  className="flex h-11 w-full max-w-md items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-foreground"
-                >
-                  {selectedClubName || "—"}
-                </p>
-              )}
-            </div>
-
             {!entryWindowOpen && (
               <div
                 role="status"
@@ -873,6 +834,23 @@ export default function CompetitionTeamEntryManager({
                 現在はエントリー受付期間外のため、チーム名の追加・削除・保存はできません。
               </div>
             )}
+
+            {paymentQuery === "success" ? (
+              <p
+                role="status"
+                className="rounded-md border border-emerald-200/90 bg-emerald-50/90 px-3 py-2 text-sm font-medium text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/35 dark:text-emerald-100"
+              >
+                決済を受け付けました。反映まで少し時間がかかる場合があります。
+              </p>
+            ) : null}
+            {paymentQuery === "cancel" ? (
+              <p
+                role="status"
+                className="rounded-md border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-sm font-medium text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/35 dark:text-amber-100"
+              >
+                決済はキャンセルされました。必要なら再度お試しください。
+              </p>
+            ) : null}
 
             <div className="space-y-8">
               {eventCategoryScope !== "OCEAN_ONLY" && (
@@ -895,23 +873,7 @@ export default function CompetitionTeamEntryManager({
               )}
             </div>
 
-            <div className="rounded-lg border-2 border-dashed border-primary/25 bg-muted/20 px-4 py-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-xs text-muted-foreground sm:max-w-[20rem]">
-                  {isFreeTeamEntry
-                    ? "無料のため決済はありません。内容を保存すると登録手続きが完了します。変更したら必ず保存してください。"
-                    : "チーム名を変えたあと、必ず保存してください。保存後に請求・決済の状態が更新されることがあります。"}
-                </p>
-                <Button
-                  type="button"
-                  className="h-10 min-w-[12rem] shrink-0 font-semibold"
-                  onClick={handleSave}
-                  disabled={isSaving || !entryWindowOpen}
-                >
-                  {isSaving ? "保存中…" : "チームエントリーを保存"}
-                </Button>
-              </div>
-            </div>
+            {renderSaveFooter()}
           </div>
 
           <aside className="lg:sticky lg:top-20 space-y-4">
@@ -935,7 +897,7 @@ export default function CompetitionTeamEntryManager({
                   </p>
                   {totalTeamCount === 0 ? (
                     <p className="mt-3 rounded-md border border-dashed border-border bg-background/60 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
-                      種目ごとに「チームを追加」し、左の「チームエントリーを保存」を押すと登録が完了します。
+                      種目ごとに「チームを追加」し、「チームエントリーを保存」を押すと登録が完了します。
                     </p>
                   ) : (
                     <div className="mt-3 flex gap-2.5 rounded-lg border border-emerald-200/90 bg-emerald-50/90 px-3 py-3 dark:border-emerald-900/50 dark:bg-emerald-950/35">
@@ -948,7 +910,7 @@ export default function CompetitionTeamEntryManager({
                           手続きの終わり方（無料）
                         </p>
                         <ol className="list-decimal space-y-1 pl-4 marker:font-medium">
-                          <li>左の「チームエントリーを保存」を押して内容を確定する</li>
+                          <li>「チームエントリーを保存」を押して内容を確定する（どちらのタブからでも可）</li>
                           <li>保存に成功したら、この画面での手続きは完了です</li>
                         </ol>
                         <p className="text-[11px] text-emerald-900/90 dark:text-emerald-200/90">

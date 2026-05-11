@@ -10,8 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, UsersRound } from "lucide-react";
 import { isClubAdminRole } from "@/lib/roleScopes";
 import { buildTeamEntryPaymentOwnerId } from "@/lib/teamEntryPayments";
-import TeamEntryHistoryPanel from "@/components/TeamEntryHistoryPanel";
-import CompetitionTeamEntryManager from "@/components/CompetitionTeamEntryManager";
+import CompetitionTeamEntryWorkspace from "@/components/CompetitionTeamEntryWorkspace";
 import { formatCompetitionEntryPeriodRangeJa } from "@/lib/datetimeLocal";
 import { getStripeProcessingFeeBpsFromEnv } from "@/lib/stripeProcessingFee";
 import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
@@ -293,31 +292,25 @@ export default async function LegacyCompetitionTeamEntryRedirect({
         </Button>
       </div>
 
-      <div className="space-y-4 border-b border-border/60 pb-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            チームエントリー
+      <div className="rounded-xl border border-border/60 bg-muted/15 px-4 py-4 shadow-sm sm:px-5 sm:py-5">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">チームエントリー</p>
+        <h1 className="mt-1.5 text-balance text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+          {competition.name}
+        </h1>
+        {entryStart && entryEnd ? (
+          <p className="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground/80">エントリー期間</span>
+            <span className="tabular-nums">{formatCompetitionEntryPeriodRangeJa(entryStart, entryEnd)}</span>
           </p>
-          <h1 className="mt-1 text-balance text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            {competition.name}
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            申込と請求確認は大会配下で行います。メンバー割り当てはクラブ詳細配下の「割り当て」ページから操作してください。
-          </p>
-          {entryStart && entryEnd ? (
-            <p className="mt-1 text-xs text-muted-foreground">
-              エントリー期間: {formatCompetitionEntryPeriodRangeJa(entryStart, entryEnd)}
-            </p>
-          ) : null}
-        </div>
+        ) : null}
       </div>
 
-      <TeamEntryHistoryPanel
+      <CompetitionTeamEntryWorkspace
         competitionId={competition.id}
         competitionName={competition.name}
-        teamEntryFeePerTeam={teamEntryFeePerTeam}
+        preferredClubId={preferredClubId}
         clubs={adminClubs}
-        events={competition.events.map((event) => ({
+        eventsForHistory={competition.events.map((event) => ({
           id: event.id,
           name: event.name,
           sex: event.sex,
@@ -325,43 +318,24 @@ export default async function LegacyCompetitionTeamEntryRedirect({
           displayOrder: event.displayOrder,
           ageCategoryDisplayOrder: event.ageCategory?.displayOrder ?? null,
         }))}
+        teamEvents={competition.events.map((event) => ({
+          id: event.id,
+          name: event.name,
+          sex: event.sex,
+          category: event.category,
+          maxTeamEntriesPerClub: event.maxTeamEntriesPerClub ?? null,
+        }))}
         teamEntries={teamEntries}
+        initialEntriesByClub={initialEntriesByClub}
+        teamEntryFeePerTeam={teamEntryFeePerTeam}
+        entryWindowOpen={entryWindowOpen}
         billingByClub={billingByClub}
-        viewOnly={!entryWindowOpen}
+        competitionCategory={competition.category}
+        cardProcessingFeeBps={getStripeProcessingFeeBpsFromEnv()}
+        clubIndividualEntryBillingTiming={clubIndividualEntryBillingTiming}
+        prepaidMemberOptionsByClub={prepaidMemberOptionsByClub}
+        initialPrepaidIndividualUserIdsByClub={initialPrepaidIndividualUserIdsByClub}
       />
-
-      {entryWindowOpen ? (
-        <CompetitionTeamEntryManager
-          competitionId={competition.id}
-          clubs={adminClubs}
-          initialSelectedClubId={preferredClubId}
-          teamEvents={competition.events.map((event) => ({
-            id: event.id,
-            name: event.name,
-            sex: event.sex,
-            category: event.category,
-            maxTeamEntriesPerClub: event.maxTeamEntriesPerClub ?? null,
-          }))}
-          initialEntriesByClub={initialEntriesByClub}
-          teamEntryFeePerTeam={teamEntryFeePerTeam}
-          entryWindowOpen={entryWindowOpen}
-          billingByClub={billingByClub}
-          competitionCategory={competition.category}
-          cardProcessingFeeBps={getStripeProcessingFeeBpsFromEnv()}
-          clubIndividualEntryBillingTiming={clubIndividualEntryBillingTiming}
-          prepaidMemberOptionsByClub={prepaidMemberOptionsByClub}
-          initialPrepaidIndividualUserIdsByClub={initialPrepaidIndividualUserIdsByClub}
-        />
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">エントリー受付は終了しています</CardTitle>
-            <CardDescription className="text-xs">
-              登録済み内容は上部の履歴で確認できます。メンバー割り当てはクラブ詳細配下で続行してください。
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      )}
     </div>
   );
 }

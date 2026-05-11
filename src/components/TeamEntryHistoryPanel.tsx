@@ -1,24 +1,28 @@
+"use client";
+
 import Link from "next/link";
-import { appRoutes } from "@/lib/appRoutes";
 import {
-  ArrowLeft,
   Building2,
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
   Droplets,
   ExternalLink,
   FileText,
   History,
   ListOrdered,
+  UserCog,
   UsersRound,
   Waves,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { appRoutes } from "@/lib/appRoutes";
 import { cn } from "@/lib/utils";
 import { getTeamPaymentStatusLabel } from "@/lib/teamEntryPayments";
+import { formatTeamNamesCompactByClubPrefix } from "@/lib/teamEntryHistoryDisplay";
 
 const sexLabel = (sex?: string | null) => {
   if (sex === "MALE") return "男子";
@@ -203,11 +207,11 @@ export default function TeamEntryHistoryPanel({
                 </p>
               </div>
               <p className="text-base font-semibold leading-snug text-foreground">{competitionName}</p>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                {viewOnly
-                  ? "エントリー受付終了後の登録内容です。変更はできません。"
-                  : "保存済みのチーム登録です。変更は下の「登録内容の編集」から行えます。"}
-              </p>
+              {viewOnly ? (
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  エントリー受付終了後の登録内容です。変更はできません。
+                </p>
+              ) : null}
               <p className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-xs text-muted-foreground">
                 <span className="inline-flex items-center gap-1.5">
                   <UsersRound className="h-3.5 w-3.5 opacity-70" aria-hidden />
@@ -216,11 +220,43 @@ export default function TeamEntryHistoryPanel({
               </p>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2 self-start rounded-xl border border-border/70 bg-background/90 px-3 py-2.5 text-sm shadow-sm ring-1 ring-border/40 sm:max-w-[14rem]">
-            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <span className="font-semibold leading-tight text-foreground">
-              {isFree ? "登録済み（無料）" : "登録済み"}
-            </span>
+          <div className="flex w-full min-w-0 shrink-0 flex-col gap-2.5 self-start sm:w-auto sm:items-end">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+              {clubsWithEntries.map((club) => (
+                <Button
+                  key={club.id}
+                  variant="outline"
+                  size="sm"
+                  className="h-auto min-h-9 w-full justify-start gap-2 px-3 py-2 text-xs sm:w-auto sm:justify-center"
+                  asChild
+                >
+                  <Link
+                    href={appRoutes.clubs.competition.team(club.id, competitionId, {
+                      tab: "assignment",
+                    })}
+                    title={`${club.name} のメンバー割当`}
+                    aria-label={`${club.name} のメンバー割当ページへ`}
+                    className="inline-flex min-w-0 items-start gap-2 text-left sm:items-center"
+                  >
+                    <UserCog className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground sm:mt-0" aria-hidden />
+                    <span className="inline-flex min-w-0 flex-col items-start gap-0.5 leading-tight">
+                      <span className="font-medium">メンバー割当</span>
+                      {clubsWithEntries.length > 1 ? (
+                        <span className="max-w-[14rem] truncate font-normal text-muted-foreground">
+                          {club.name}
+                        </span>
+                      ) : null}
+                    </span>
+                  </Link>
+                </Button>
+              ))}
+              <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-background/90 px-3 py-2 text-sm shadow-sm ring-1 ring-border/40 sm:shrink-0">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                <span className="font-semibold leading-tight text-foreground">
+                  {isFree ? "登録済み（無料）" : "登録済み"}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -286,40 +322,57 @@ export default function TeamEntryHistoryPanel({
                   </p>
                 ) : null}
 
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[280px] text-sm">
-                    <thead>
-                      <tr className="border-b border-border/40 bg-muted/25 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                        <th className="px-3 py-2 sm:px-4">種目</th>
-                        <th className="px-3 py-2 pr-4 sm:px-4">チーム名</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rowGroups.map((group) => {
-                        const ev = eventById.get(group.eventId);
-                        const teamNamesJoined = group.entries.map((e) => e.teamName).join("、");
-                        return (
-                          <tr
-                            key={`${club.id}-${group.eventId}`}
-                            className="border-b border-border/30 transition-colors last:border-0 hover:bg-muted/30"
-                          >
-                            <td className="px-3 py-2.5 align-top sm:px-4">
-                              <div className="flex gap-2.5">
-                                <CategoryGlyph category={ev?.category ?? "POOL"} />
-                                <span className="min-w-0 leading-snug text-foreground">
-                                  {formatEventLabel(ev)}
+                <details className="group border-t border-border/40 bg-muted/10">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2.5 text-xs font-medium text-foreground marker:content-none [&::-webkit-details-marker]:hidden hover:bg-muted/40 sm:px-4">
+                    <span className="flex min-w-0 flex-wrap items-center gap-2">
+                      <ClipboardList className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                      <span>種目・チーム一覧</span>
+                      <span className="tabular-nums text-muted-foreground">{rows.length} 組</span>
+                    </span>
+                    <ChevronDown
+                      className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+                      aria-hidden
+                    />
+                  </summary>
+                  <div className="overflow-x-auto border-t border-border/40 bg-background/40">
+                    <table className="w-full min-w-[240px] text-xs leading-tight">
+                      <thead>
+                        <tr className="sr-only">
+                          <th scope="col">種目</th>
+                          <th scope="col">チーム名</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rowGroups.map((group) => {
+                          const ev = eventById.get(group.eventId);
+                          const teamNames = group.entries.map((e) => e.teamName);
+                          const { display: teamDisplay, title: teamTitle } =
+                            formatTeamNamesCompactByClubPrefix(club.name, teamNames);
+                          return (
+                            <tr
+                              key={`${club.id}-${group.eventId}`}
+                              className="border-b border-border/30 transition-colors last:border-0 hover:bg-muted/30"
+                            >
+                              <td className="px-2 py-1.5 align-top sm:px-3 sm:py-2">
+                                <div className="flex gap-2">
+                                  <CategoryGlyph category={ev?.category ?? "POOL"} />
+                                  <span className="min-w-0 leading-snug text-foreground">
+                                    {formatEventLabel(ev)}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="min-w-0 px-2 py-1.5 pr-2 align-top font-medium text-foreground sm:px-3 sm:py-2 sm:pr-3">
+                                <span className="break-words" title={teamTitle}>
+                                  {teamDisplay}
                                 </span>
-                              </div>
-                            </td>
-                            <td className="min-w-0 px-3 py-2.5 pr-4 align-top font-medium text-foreground sm:px-4">
-                              <span className="break-words">{teamNamesJoined}</span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
 
                 {canPdf ? (
                   <div className="flex flex-wrap gap-2 border-t border-border/40 bg-muted/10 px-3 py-3 sm:px-4">
@@ -351,30 +404,6 @@ export default function TeamEntryHistoryPanel({
             );
           })}
         </div>
-
-        <div className="flex flex-col gap-2 border-t border-border/50 pt-5 sm:flex-row sm:flex-wrap sm:items-center">
-          <Button variant="default" className="h-10 w-full gap-2 text-sm sm:h-9 sm:w-auto" asChild>
-            <Link href={appRoutes.competitions.root(competitionId)}>
-              <ArrowLeft className="h-4 w-4" />
-              大会ページへ戻る
-            </Link>
-          </Button>
-          <Button variant="outline" className="h-10 w-full text-sm sm:h-9 sm:w-auto" asChild>
-            <Link href={appRoutes.me.entries()}>個人エントリー履歴</Link>
-          </Button>
-        </div>
-
-        <p className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
-          {viewOnly ? (
-            <>
-              個人種目の申込状況は「個人エントリー履歴」で確認できます。無料または決済完了後に、上の領収書（PDF）を発行できます。
-            </>
-          ) : (
-            <>
-              個人種目の申込状況は「個人エントリー履歴」で確認できます。チーム種目の編集はこのページ下部のフォームから行ってください。
-            </>
-          )}
-        </p>
       </CardContent>
     </Card>
   );
