@@ -91,10 +91,12 @@ export default function CompetitionTeamEntryWorkspace({
   billingByClub,
   competitionCategory,
   cardProcessingFeeBps,
+  // 親が解決結果を渡す互換用（常に即時。子の Manager では未使用だが page からの参照用に受け取る）
   clubIndividualEntryBillingTiming,
   prepaidMemberOptionsByClub,
   initialPrepaidIndividualUserIdsByClub,
 }: Props) {
+  void clubIndividualEntryBillingTiming;
   const [selectedClubId, setSelectedClubId] = useState(() => preferredClubId);
   const [tab, setTab] = useState<"team" | "prepaid">("team");
 
@@ -123,7 +125,6 @@ export default function CompetitionTeamEntryWorkspace({
     billingByClub,
     competitionCategory,
     cardProcessingFeeBps,
-    clubIndividualEntryBillingTiming,
     prepaidMemberOptionsByClub,
     initialPrepaidIndividualUserIdsByClub,
   } as const;

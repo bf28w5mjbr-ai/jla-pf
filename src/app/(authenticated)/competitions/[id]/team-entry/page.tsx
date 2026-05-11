@@ -1,7 +1,7 @@
 import { Metadata } from "next";
 import Link from "next/link";
 
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { appRoutes } from "@/lib/appRoutes";
 import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { prisma } from "@/server/db";
@@ -299,7 +299,6 @@ export default async function LegacyCompetitionTeamEntryRedirect({
       ? (competition.entryFee as { teamEntryFeePerTeam?: number })
       : null;
   const teamEntryFeePerTeam = entryFee?.teamEntryFeePerTeam ?? 0;
-  const clubIndividualEntryBillingTiming = resolveClubIndividualEntryBillingTiming(competition.entryFee);
 
   const now = new Date();
   const entryStart = competition.entryStartDate ? new Date(competition.entryStartDate) : null;
@@ -357,7 +356,7 @@ export default async function LegacyCompetitionTeamEntryRedirect({
         billingByClub={billingByClub}
         competitionCategory={competition.category}
         cardProcessingFeeBps={getStripeProcessingFeeBpsFromEnv()}
-        clubIndividualEntryBillingTiming={clubIndividualEntryBillingTiming}
+        clubIndividualEntryBillingTiming={resolveClubIndividualEntryBillingTiming(competition.entryFee)}
         prepaidMemberOptionsByClub={prepaidMemberOptionsByClub}
         initialPrepaidIndividualUserIdsByClub={initialPrepaidIndividualUserIdsByClub}
       />

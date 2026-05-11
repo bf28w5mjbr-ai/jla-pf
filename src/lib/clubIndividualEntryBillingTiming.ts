@@ -1,29 +1,17 @@
 /**
- * クラブが「個人エントリー分」をまとめて払う場合の請求タイミング。
+ * クラブが「個人エントリー分」をまとめて払う場合の請求タイミング（解決結果の型）。
  *
- * - INSTANT_PREPAID: 割当メンバーごとの単価が（生年月日が分かれば）受付中に確定でき、先払い枠と相殺しやすい。
- * - POST_CLOSE_INVOICE: 締切まで総額が確定しない／人数分の単価が事前に立てられないため、締切後のクラブ請求とする。
+ * 運用は **常に即時（INSTANT_PREPAID）** に統一する。個人分はチーム請求に含め、クラブが決済したあと
+ * 本人の個人エントリーでカード決済を省略する（枠・相殺は clubPrepaidIndividualSlots 等を参照）。
+ *
+ * `POST_CLOSE_INVOICE` は型および分岐の後方互換のため残すが、{@link resolveClubIndividualEntryBillingTiming} は返さない。
  */
 
 export type ClubIndividualEntryBillingTiming = "INSTANT_PREPAID" | "POST_CLOSE_INVOICE";
 
+/** 参加費 JSON の形に関わらず、クラブによる個人分は即時（チーム決済に含む）扱いとする。 */
 export function resolveClubIndividualEntryBillingTiming(
-  entryFee: unknown
+  _entryFee: unknown
 ): ClubIndividualEntryBillingTiming {
-  if (entryFee === null || entryFee === undefined) {
-    return "INSTANT_PREPAID";
-  }
-
-  if (typeof entryFee === "number") {
-    return "POST_CLOSE_INVOICE";
-  }
-
-  if (typeof entryFee === "object" && !Array.isArray(entryFee)) {
-    const o = entryFee as Record<string, unknown>;
-    if (o.clubIndividualBilling === "post_close") return "POST_CLOSE_INVOICE";
-    if (o.clubIndividualBilling === "instant") return "INSTANT_PREPAID";
-    if (o.individualEntryFeePerEvent === true) return "POST_CLOSE_INVOICE";
-  }
-
   return "INSTANT_PREPAID";
 }

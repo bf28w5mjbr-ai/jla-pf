@@ -12,7 +12,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { CheckCircle2, CreditCard, Droplets, Minus, Plus, Search, Users, Waves } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
-import type { ClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
 import { getTeamPaymentStatusLabel } from "@/lib/teamEntryPayments";
 import { resolveCompetitionEventCategoryScope } from "@/lib/competitionEventCategoryScope";
 import { cn } from "@/lib/utils";
@@ -69,8 +68,6 @@ type Props = {
   competitionCategory?: string | null;
   /** カード決済の上乗せ率（basis points）。STRIPE_PROCESSING_FEE_BPS と一致 */
   cardProcessingFeeBps?: number;
-  /** 個人分のクラブ請求タイミング（参加費 JSON から算出） */
-  clubIndividualEntryBillingTiming?: ClubIndividualEntryBillingTiming;
   /** クラブ別: クラブによる個人エントリーで指定可能なメンバー */
   prepaidMemberOptionsByClub?: Record<string, { userId: string; name: string }[]>;
   /** クラブ別: 保存済みのクラブによる個人エントリー対象ユーザー */
@@ -122,7 +119,6 @@ export default function CompetitionTeamEntryManager({
   billingByClub = {},
   competitionCategory = null,
   cardProcessingFeeBps = 360,
-  clubIndividualEntryBillingTiming = "INSTANT_PREPAID",
   prepaidMemberOptionsByClub = {},
   initialPrepaidIndividualUserIdsByClub = {},
 }: Props) {
@@ -558,35 +554,17 @@ export default function CompetitionTeamEntryManager({
           は、この一覧には表示されません。
         </p>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          {clubIndividualEntryBillingTiming === "POST_CLOSE_INVOICE" ? (
-            <>
-              <strong className="font-medium text-foreground">本人</strong>
-              は大会の個人エントリーで種目を選ぶだけでよく、ここで指定したメンバーは
-              <strong className="font-medium text-foreground">カード払いしません</strong>。
-              <strong className="font-medium text-foreground">クラブ</strong>
-              は、エントリー締切後に主催者が確定した請求で、チーム参加費とあわせて個人分もまとめて支払います。
-            </>
-          ) : (
-            <>
-              <strong className="font-medium text-foreground">クラブ</strong>
-              がチーム請求を支払うとき、ここで指定した人数ぶんの個人参加費が
-              <strong className="font-medium text-foreground">チーム請求の金額に含まれます</strong>。
-              そのあと<strong className="font-medium text-foreground">本人</strong>
-              が個人エントリーで種目を選ぶと、個人分の
-              <strong className="font-medium text-foreground">追加のカード決済は不要</strong>
-              です。
-            </>
-          )}
+          <strong className="font-medium text-foreground">クラブ</strong>
+          がチーム請求を支払うとき、ここで指定した人数ぶんの個人参加費が
+          <strong className="font-medium text-foreground">チーム請求の金額に含まれます</strong>。
+          そのあと<strong className="font-medium text-foreground">本人</strong>
+          が個人エントリーで種目を選ぶと、個人分の
+          <strong className="font-medium text-foreground">追加のカード決済は不要</strong>
+          です。
         </p>
-        {clubIndividualEntryBillingTiming === "POST_CLOSE_INVOICE" ? (
-          <Badge variant="outline" className="font-normal">
-            個人分: 締切後請求
-          </Badge>
-        ) : (
-          <Badge variant="outline" className="font-normal">
-            個人分: 先払い（チーム決済に含む）
-          </Badge>
-        )}
+        <Badge variant="outline" className="font-normal">
+          個人分: 先払い（チーム決済に含む）
+        </Badge>
       </div>
 
       {prepaidMemberOptions.length === 0 ? (

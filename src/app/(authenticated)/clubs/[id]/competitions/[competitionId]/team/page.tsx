@@ -20,7 +20,6 @@ import {
 } from "@/lib/teamMemberAssignmentWindow";
 import { formatCompetitionEntryPeriodRangeJa } from "@/lib/datetimeLocal";
 import { getStripeProcessingFeeBpsFromEnv } from "@/lib/stripeProcessingFee";
-import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
 import { competitionEntryPaidCheckoutWhere } from "@/lib/entryCheckoutSessionPaid";
 import {
   prismaCompetitionToTeamAssignmentCompetitionJson,
@@ -456,10 +455,6 @@ export default async function ClubCompetitionTeamHubPage({
       ];
     })
   ) as Record<string, { userId: string; name: string }[]>;
-
-  const clubIndividualEntryBillingTiming = resolveClubIndividualEntryBillingTiming(
-    competition.entryFee
-  );
 
   const teamAssignmentWindow = await getTeamMemberAssignmentWindowState(
     prisma,
