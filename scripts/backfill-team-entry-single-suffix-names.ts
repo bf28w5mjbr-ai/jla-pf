@@ -1,3 +1,5 @@
+import "./loadScriptEnv";
+
 /**
  * 同一大会・同一クラブ・同一種目にチームが1組だけなのに、
  * チーム名が「略称（なければ正式名）+ 半角スペース + ラテン大文字」のとき、DB 上の teamName を略称のみに直す。
@@ -5,6 +7,8 @@
  * Usage:
  *   pnpm backfill:team-entry-single-suffix:dry
  *   pnpm backfill:team-entry-single-suffix
+ *
+ * 環境変数はプロジェクト直下の `.env` および存在すれば `.env.local` から読み込む（`--env-file` は使わない）。
  *
  * Options:
  *   --dry-run または --apply が無いとき: 更新しない（件数とサンプルのみ表示）
