@@ -1,4 +1,5 @@
 import type { ComponentProps } from "react";
+import { Suspense } from "react";
 import type { Prisma } from "@prisma/client";
 import { Metadata } from "next";
 import Link from "next/link";
@@ -25,12 +26,10 @@ import CompetitionAnnouncementsManager from "@/components/CompetitionAnnouncemen
 import CompetitionAttachmentsManager from "@/components/CompetitionAttachmentsManager";
 import CompetitionGalleryManager from "@/components/CompetitionGalleryManager";
 import CompetitionEntrySettingsEditor from "@/components/CompetitionEntrySettingsEditor";
-import { OfficialSettingsEditor } from "@/components/OfficialSettingsEditor";
 import CompetitionEntriesTabContent from "@/components/admin/CompetitionEntriesTabContent";
 import CompetitionFinanceTabContent from "@/components/admin/CompetitionFinanceTabContent";
-import TechnicalOfficialShortagePanel from "@/components/TechnicalOfficialShortagePanel";
-import TechnicalOfficialSettingsEditor from "@/components/TechnicalOfficialSettingsEditor";
-import OfficialAttendanceSection from "@/components/OfficialAttendanceSection";
+import CompetitionOfficialTabHeavy from "@/components/admin/CompetitionOfficialTabHeavy";
+import CompetitionOfficialSubTabsClient from "@/components/admin/CompetitionOfficialSubTabsClient";
 import CompetitionStatusToggleButton from "@/components/CompetitionStatusToggleButton";
 import CompetitionBasicInfoEditor from "@/components/CompetitionBasicInfoEditor";
 import CompetitionNameInlineEditor from "@/components/CompetitionNameInlineEditor";
@@ -44,83 +43,19 @@ import {
 } from "@/lib/datetimeLocal";
 import { relationLogosWithDisplaySrc } from "@/lib/relationLogos";
 import {
-  parseCompetitionManagementTab,
+  parseOfficialSubTab,
+  resolveCompetitionManagementActiveTab,
+  type CompetitionManagementPageSearchParams,
   type CompetitionManagementTabValue,
 } from "@/lib/competitionManagementTab";
 import { getCompetitionManagementAccess } from "@/lib/competitionManagementAccess";
 import CopyAbsoluteUrlButton from "@/components/public/CopyAbsoluteUrlButton";
-import {
-  listTechnicalOfficialShortagesForCompetition,
-  type TechnicalOfficialShortageRow,
-} from "@/lib/technicalOfficialQueries";
 import CompetitionManagementTabsClient from "@/components/admin/CompetitionManagementTabsClient";
-import { OfficialRecruitmentToggleButton } from "@/components/OfficialRecruitmentToggleButton";
-import { TechnicalOfficialRecruitmentToggleButton } from "@/components/TechnicalOfficialRecruitmentToggleButton";
-import OfficialApplicationsCsvExportButton, {
-  type OfficialApplicationsCsvRow,
-} from "@/components/OfficialApplicationsCsvExportButton";
-import OfficialAttendancesCsvExportButton, {
-  type OfficialAttendancesCsvRow,
-} from "@/components/OfficialAttendancesCsvExportButton";
-import CompetitionDayOpsPassphraseEditor from "@/components/CompetitionDayOpsPassphraseEditor";
 
 type EntrySettingsEditorProps = ComponentProps<typeof CompetitionEntrySettingsEditor>;
 
-type OfficialApplicationForCsv = {
-  createdAt: Date;
-  status: string;
-  positionName: string;
-  message: string | null;
-  user: {
-    familyName: string;
-    givenName: string;
-    email: string | null;
-    phoneNumber: string | null;
-  };
-};
-
-type OfficialAttendanceForCsv = {
-  attendanceDate: Date;
-  method: string;
-  user: OfficialApplicationForCsv["user"];
-};
-
-function buildCompetitionManagementInclude(
-  userId: string,
-  activeTab: CompetitionManagementTabValue
-): Prisma.CompetitionInclude {
-  const officialTab: Prisma.CompetitionInclude =
-    activeTab === "official"
-      ? {
-          officialApplications: {
-            orderBy: { createdAt: "desc" },
-            include: {
-              user: {
-                select: {
-                  familyName: true,
-                  givenName: true,
-                  email: true,
-                  phoneNumber: true,
-                },
-              },
-            },
-          },
-          officialAttendances: {
-            orderBy: [{ attendanceDate: "desc" }, { createdAt: "desc" }],
-            include: {
-              user: {
-                select: {
-                  familyName: true,
-                  givenName: true,
-                  email: true,
-                  phoneNumber: true,
-                },
-              },
-            },
-          },
-        }
-      : {};
-
+/** 大会設定タブ用（お知らせ・添付・ギャラリー・種目・年齢区分など一式） */
+function buildCompetitionManagementIncludeForPageTab(userId: string): Prisma.CompetitionInclude {
   return {
     organization: {
       include: {
@@ -147,7 +82,22 @@ function buildCompetitionManagementInclude(
     ageCategories: {
       orderBy: { displayOrder: "asc" },
     },
-    ...officialTab,
+  };
+}
+
+/** オフィシャル / エントリー / 収支タブ用（ヘッダーと権限用の organization のみ + 種目件数） */
+function buildCompetitionManagementIncludeForLightTab(userId: string): Prisma.CompetitionInclude {
+  return {
+    organization: {
+      include: {
+        admins: {
+          where: { userId },
+        },
+      },
+    },
+    _count: {
+      select: { events: true },
+    },
   };
 }
 
@@ -186,21 +136,25 @@ export default async function CompetitionDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string; competitionId: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<CompetitionManagementPageSearchParams>;
 }) {
   const { id: organizationId, competitionId } = await params;
-  const { tab: tabParam } = await searchParams;
-  const activeTab = parseCompetitionManagementTab(tabParam);
+  const resolvedSearchParams = await searchParams;
+  const activeTab = resolveCompetitionManagementActiveTab(resolvedSearchParams);
+  const officialSub = parseOfficialSubTab(resolvedSearchParams.officialSub);
   const userId = await getRequiredAuthenticatedUserId();
-
-  const loadOfficialTab = activeTab === "official";
 
   const [access, competition, entryMutationState] = await Promise.all([
     getCompetitionManagementAccess(organizationId, competitionId, userId),
-    prisma.competition.findUnique({
-      where: { id: competitionId },
-      include: buildCompetitionManagementInclude(userId, activeTab),
-    }),
+    activeTab === "page"
+      ? prisma.competition.findUnique({
+          where: { id: competitionId },
+          include: buildCompetitionManagementIncludeForPageTab(userId),
+        })
+      : prisma.competition.findUnique({
+          where: { id: competitionId },
+          include: buildCompetitionManagementIncludeForLightTab(userId),
+        }),
     loadCompetitionMutationState(competitionId),
   ]);
 
@@ -214,24 +168,13 @@ export default async function CompetitionDetailPage({
     redirect(`/organizations/${organizationId}`);
   }
 
-  const officialApplications: OfficialApplicationForCsv[] = loadOfficialTab
-    ? (competition as unknown as { officialApplications: OfficialApplicationForCsv[] })
-        .officialApplications
-    : [];
-  const officialAttendances: OfficialAttendanceForCsv[] = loadOfficialTab
-    ? (competition as unknown as { officialAttendances: OfficialAttendanceForCsv[] })
-        .officialAttendances
-    : [];
-
-  const [qualificationTemplates, shortageRows] = await Promise.all([
-    prisma.qualificationTemplate.findMany({
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, kind: true },
-    }),
-    loadOfficialTab
-      ? listTechnicalOfficialShortagesForCompetition(prisma, competitionId)
-      : Promise.resolve([] as TechnicalOfficialShortageRow[]),
-  ]);
+  const qualificationTemplates =
+    activeTab === "page" || activeTab === "official"
+      ? await prisma.qualificationTemplate.findMany({
+          orderBy: { name: "asc" },
+          select: { id: true, name: true, kind: true },
+        })
+      : [];
 
   const canEdit = true;
 
@@ -279,14 +222,20 @@ export default async function CompetitionDetailPage({
       : null;
 
   const [entryRowCount, teamEntryRowCount, siblingCompetitionsForCopy] = await Promise.all([
-    prisma.competitionEntry.count({ where: { competitionId } }),
-    prisma.teamEntry.count({ where: { competitionId } }),
-    prisma.competition.findMany({
-      where: { organizationId, id: { not: competitionId } },
-      orderBy: { startDate: "desc" },
-      take: 40,
-      select: { id: true, name: true, startDate: true },
-    }),
+    activeTab === "page"
+      ? prisma.competitionEntry.count({ where: { competitionId } })
+      : Promise.resolve(0),
+    activeTab === "page"
+      ? prisma.teamEntry.count({ where: { competitionId } })
+      : Promise.resolve(0),
+    activeTab === "page"
+      ? prisma.competition.findMany({
+          where: { organizationId, id: { not: competitionId } },
+          orderBy: { startDate: "desc" },
+          take: 40,
+          select: { id: true, name: true, startDate: true },
+        })
+      : Promise.resolve([] as { id: string; name: string; startDate: Date }[]),
   ]);
 
   const copyEntrySettingsAllowed = entryRowCount === 0 && teamEntryRowCount === 0;
@@ -294,67 +243,13 @@ export default async function CompetitionDetailPage({
     ? null
     : "エントリーが1件でもある大会では、種目・参加費のコピーはできません。";
 
-  const eventCount = competition.events.length;
+  const eventCount =
+    activeTab === "page"
+      ? (competition as { events: { length: number } }).events.length
+      : (competition as { _count: { events: number } })._count.events;
   const showOfficialRecruitment = competition.officialRecruitmentEnabled ?? true;
   const showTechnicalOfficialRecruitment =
     showOfficialRecruitment && (competition.technicalOfficialRecruitmentEnabled ?? true);
-  const officialStatusLabel = {
-    PENDING: "審査中",
-    APPROVED: "受付済",
-    REJECTED: "却下",
-  } as const;
-  const officialApplicationsCsvRows: OfficialApplicationsCsvRow[] = officialApplications.map(
-    (application) => ({
-      応募日時: application.createdAt.toLocaleString("ja-JP", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      応募状態:
-        officialStatusLabel[application.status as keyof typeof officialStatusLabel] ??
-        application.status,
-      氏名: `${application.user.familyName} ${application.user.givenName}`,
-      メールアドレス: application.user.email ?? "",
-      電話番号: application.user.phoneNumber ?? "",
-      希望ポジション: application.positionName,
-      応募メッセージ: application.message?.trim() || "",
-    })
-  );
-  const competitionTypeLabel =
-    competition.competitionType === "A"
-      ? "A級"
-      : competition.competitionType === "B"
-        ? "B級"
-        : "未設定";
-  const attendanceCountAdditionLabel =
-    competition.competitionType === "A"
-      ? "1.0"
-      : competition.competitionType === "B"
-        ? "0.5"
-        : "0.0";
-  const officialAttendancesCsvRows: OfficialAttendancesCsvRow[] = officialAttendances.map(
-    (attendance) => ({
-      出席日: attendance.attendanceDate.toLocaleDateString("ja-JP"),
-      氏名: `${attendance.user.familyName} ${attendance.user.givenName}`,
-      メールアドレス: attendance.user.email ?? "",
-      電話番号: attendance.user.phoneNumber ?? "",
-      出席方法: attendance.method === "NFC" ? "NFC" : "手動",
-      大会種別: competitionTypeLabel,
-      カウント追加分: attendanceCountAdditionLabel,
-    })
-  );
-  const officialPendingCount = officialApplications.filter(
-    (application) => application.status === "PENDING"
-  ).length;
-  const officialApprovedCount = officialApplications.filter(
-    (application) => application.status === "APPROVED"
-  ).length;
-  const officialRejectedCount = officialApplications.filter(
-    (application) => application.status === "REJECTED"
-  ).length;
-  const officialAttendanceCount = officialAttendances.length;
 
   return (
     <div className="app-page mx-auto w-full min-w-0 max-w-6xl space-y-5 px-4 py-6 sm:space-y-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
@@ -425,7 +320,13 @@ export default async function CompetitionDetailPage({
           </div>
 
           <p className="text-sm tabular-nums text-muted-foreground">
-            種目 {eventCount}件 · 個人エントリー {entryRowCount}件 · チーム {teamEntryRowCount}件
+            種目 {eventCount}件
+            {activeTab === "page" ? (
+              <>
+                {" "}
+                · 個人エントリー {entryRowCount}件 · チーム {teamEntryRowCount}件
+              </>
+            ) : null}
           </p>
 
           {canEdit ? (
@@ -499,6 +400,8 @@ export default async function CompetitionDetailPage({
 
         {/* 大会設定タブ */}
         <TabsContent value="page" className="min-w-0 space-y-5 pt-4">
+          {activeTab === "page" ? (
+            <>
           <CompetitionBasicInfoEditor
             competitionId={competition.id}
             canEdit={canEdit}
@@ -641,193 +544,96 @@ export default async function CompetitionDetailPage({
               createdAt: p.createdAt.toISOString(),
             }))}
           />
+            </>
+          ) : null}
         </TabsContent>
 
         {/* オフィシャル設定タブ */}
         <TabsContent value="official" className="min-w-0 space-y-4 pt-4">
-          <Card className="overflow-hidden border-border/80">
-            <CardHeader className="space-y-2 border-b border-border/70 bg-muted/20 px-4 py-3 sm:px-5">
-              <CardTitle className="text-base">オフィシャル管理</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                募集設定、テクニカルオフィシャル要件、当日出席の記録、当日運用アクセス暗号をこのタブで行います。
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-3 p-3 sm:p-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-lg border border-border/70 bg-background px-3 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">オフィシャル募集</p>
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        大会ページからのオフィシャル応募を許可します。
-                      </p>
-                    </div>
-                    <OfficialRecruitmentToggleButton
-                      organizationId={organizationId}
-                      competitionId={competitionId}
-                      initialEnabled={showOfficialRecruitment}
-                    />
-                  </div>
-                </div>
-                <div className="rounded-lg border border-border/70 bg-background px-3 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">TO募集</p>
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        テクニカルオフィシャル募集と必要人数計算を有効化します。
-                      </p>
-                    </div>
-                    <TechnicalOfficialRecruitmentToggleButton
-                      organizationId={organizationId}
-                      competitionId={competitionId}
-                      initialEnabled={competition.technicalOfficialRecruitmentEnabled ?? true}
-                      disabled={!showOfficialRecruitment}
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant={showOfficialRecruitment ? "default" : "secondary"}>
-                  オフィシャル募集: {showOfficialRecruitment ? "ON" : "OFF"}
-                </Badge>
-                <Badge variant={showTechnicalOfficialRecruitment ? "default" : "secondary"}>
-                  TO募集: {showTechnicalOfficialRecruitment ? "ON" : "OFF"}
-                </Badge>
-                {officialPendingCount > 0 ? (
-                  <Badge variant="outline">応募(審査中・旧): {officialPendingCount}件</Badge>
-                ) : null}
-                <Badge variant="outline">応募(受付済): {officialApprovedCount}件</Badge>
-                <Badge variant="outline">応募(却下): {officialRejectedCount}件</Badge>
-                <Badge variant="outline">出席実績: {officialAttendanceCount}件</Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          {showOfficialRecruitment ? (
-            <section className="space-y-4">
-              <CompetitionDayOpsPassphraseEditor
-                organizationId={organizationId}
-                competitionId={competitionId}
-                canEdit={canEdit}
-                initiallyConfigured={dayOpsUnlockConfigured}
-              />
-
-              <section className="space-y-3 rounded-xl border border-border/70 bg-background p-3 sm:p-4">
-                <div className="space-y-1">
-                  <h2 className="text-sm font-semibold text-foreground">
-                    1. オフィシャル資格要件・TO設定
-                  </h2>
+          <CompetitionOfficialSubTabsClient officialSub={officialSub}>
+            <>
+              <Card className="overflow-hidden border-border/80">
+                <CardHeader className="space-y-2 border-b border-border/70 bg-muted/20 px-4 py-3 sm:px-5">
+                  <CardTitle className="text-base">オフィシャル管理</CardTitle>
                   <p className="text-xs text-muted-foreground">
-                    応募資格フィルタ、資格テンプレート、クラブごとのTO必要人数を設定します。
+                    「管理」で募集の ON/OFF と資格・TO 人数、「当日運用」で暗号・応募・不足・出席をまとめます。上のサブタブは
+                    URL に同期されます。
                   </p>
-                </div>
-                <OfficialSettingsEditor
-                  competitionId={competitionId}
-                  organizationId={organizationId}
-                  initialEnabled={competition.officialQualificationFilterEnabled ?? false}
-                  templates={qualificationTemplates ?? []}
-                />
-
-                {showTechnicalOfficialRecruitment ? (
-                  <div className="space-y-3 rounded-lg border border-border/70 bg-muted/20 p-3">
-                    <div className="rounded-lg border border-border/70 bg-background p-3">
-                      <h3 className="text-sm font-semibold text-foreground">TO必要人数設定</h3>
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        個人エントリー件数の閾値ごとに必要人数を定義します。
-                      </p>
-                      <div className="mt-3">
-                        <TechnicalOfficialSettingsEditor
-                          organizationId={organizationId}
-                          competitionId={competitionId}
-                          canEdit={canEdit}
-                          requireClubMembership={competition.requireClubMembership ?? false}
-                          initialTiers={competition.technicalOfficialTiers}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 rounded-lg border border-border/70 bg-background p-3">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <h3 className="text-sm font-semibold text-foreground">不足クラブの確認</h3>
-                          <p className="text-[11px] text-muted-foreground">
-                            現在のエントリー状況に基づく不足人数を表示します。
-                          </p>
-                        </div>
-                        <OfficialApplicationsCsvExportButton
-                          rows={officialApplicationsCsvRows}
-                          fileNameBase={`${competition.name}_オフィシャル応募一覧`}
-                        />
-                      </div>
-                      <TechnicalOfficialShortagePanel rows={shortageRows} />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-dashed border-border/80 bg-muted/10 px-3 py-4 text-xs text-muted-foreground">
-                    TO募集がOFFのため、TO必要人数設定と不足クラブ確認は表示されません。
-                  </div>
-                )}
-              </section>
-
-              <section className="space-y-2 rounded-xl border border-border/70 bg-background p-3 sm:p-4">
-                <div>
-                  <h2 className="text-sm font-semibold text-foreground">2. 当日出席確認</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    当日の出席記録を登録・更新し、出席人数の集計・CSV 出力に利用します（当日運用の操作権限とは連動しません）。
-                  </p>
-                </div>
-                <OfficialAttendanceSection
-                  organizationId={organizationId}
-                  competitionId={competitionId}
-                  canEdit={canEdit}
-                  compact
-                />
-              </section>
-
-              <section className="space-y-2 rounded-xl border border-border/70 bg-background p-3 sm:p-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h2 className="text-sm font-semibold text-foreground">3. 出席実績CSV出力</h2>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      提出・集計用途向けに出席実績をCSVで出力できます。
+                </CardHeader>
+                <CardContent className="space-y-3 p-3 sm:p-4">
+                  {activeTab === "official" ? (
+                    <p className="text-xs text-muted-foreground" aria-live="polite">
+                      詳細ブロックは「管理」「当日運用」の下に表示されます（初回は数秒かかることがあります）。
                     </p>
-                  </div>
-                  <OfficialAttendancesCsvExportButton
-                    rows={officialAttendancesCsvRows}
-                    fileNameBase={`${competition.name}_当日出席オフィシャル一覧`}
-                  />
-                </div>
-                <p className="text-[11px] text-muted-foreground">
-                  現在の大会種別: {competitionTypeLabel} / 1出席あたりの加算: {attendanceCountAdditionLabel}
-                </p>
-              </section>
-            </section>
-          ) : null}
+                  ) : null}
+                  <Suspense
+                    fallback={
+                      <div
+                        className="flex min-h-[8rem] flex-col justify-center gap-2 rounded-lg border border-border/60 bg-muted/25 px-4 py-3"
+                        role="status"
+                        aria-live="polite"
+                      >
+                        <div
+                          className="h-8 max-w-[12rem] animate-pulse rounded-md bg-muted-foreground/15"
+                          aria-hidden
+                        />
+                        <p className="text-sm text-muted-foreground">
+                          オフィシャル設定の詳細を読み込んでいます…
+                        </p>
+                      </div>
+                    }
+                  >
+                    <CompetitionOfficialTabHeavy
+                      enabled={activeTab === "official"}
+                      officialSub={officialSub}
+                      organizationId={organizationId}
+                      competitionId={competitionId}
+                      competitionName={competition.name}
+                      showOfficialRecruitment={showOfficialRecruitment}
+                      showTechnicalOfficialRecruitment={showTechnicalOfficialRecruitment}
+                      canEdit={canEdit}
+                      dayOpsUnlockConfigured={dayOpsUnlockConfigured}
+                      officialQualificationFilterEnabled={
+                        competition.officialQualificationFilterEnabled ?? false
+                      }
+                      requireClubMembership={competition.requireClubMembership ?? false}
+                      initialTiers={competition.technicalOfficialTiers}
+                      competitionType={competition.competitionType}
+                      qualificationTemplates={qualificationTemplates}
+                    />
+                  </Suspense>
+                </CardContent>
+              </Card>
 
-          {!showOfficialRecruitment ? (
-            <Card className="border-dashed border-border/80 bg-muted/15">
-              <CardContent className="space-y-1 px-4 py-8 text-center text-sm text-muted-foreground">
-                <p>現在はオフィシャル募集がOFFです。</p>
-              </CardContent>
-            </Card>
-          ) : null}
-
+              {!showOfficialRecruitment ? (
+                <Card className="border-dashed border-border/80 bg-muted/15">
+                  <CardContent className="space-y-1 px-4 py-8 text-center text-sm text-muted-foreground">
+                    <p>現在はオフィシャル募集がOFFです。</p>
+                  </CardContent>
+                </Card>
+              ) : null}
+            </>
+          </CompetitionOfficialSubTabsClient>
         </TabsContent>
 
         <TabsContent value="entries" className="min-w-0 space-y-5 pt-4">
-          <CompetitionEntriesTabContent
-            organizationId={organizationId}
-            competitionId={competitionId}
-            canEdit={canEdit}
-          />
+          {activeTab === "entries" ? (
+            <CompetitionEntriesTabContent
+              organizationId={organizationId}
+              competitionId={competitionId}
+              canEdit={canEdit}
+            />
+          ) : null}
         </TabsContent>
 
         <TabsContent value="finance" className="min-w-0 space-y-5 pt-4">
-          <CompetitionFinanceTabContent
-            organizationId={organizationId}
-            competitionId={competitionId}
-            canEdit={canEdit}
-          />
+          {activeTab === "finance" ? (
+            <CompetitionFinanceTabContent
+              organizationId={organizationId}
+              competitionId={competitionId}
+              canEdit={canEdit}
+            />
+          ) : null}
         </TabsContent>
 
       </CompetitionManagementTabsClient>

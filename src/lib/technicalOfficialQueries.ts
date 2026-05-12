@@ -330,29 +330,54 @@ export async function listTechnicalOfficialShortagesForCompetition(
     select: { id: true, name: true },
   });
 
+  const requireQualificationFilter = Boolean(competition.officialQualificationFilterEnabled);
   const rows: TechnicalOfficialShortageRow[] = [];
-  for (const club of clubs) {
-    const entryCount = await countClubIndividualEntryRows(prisma, competitionId, club.id);
-    const required = requiredTechnicalOfficialCount(entryCount, tiers);
-    if (required <= 0) continue;
+  /** クラブ数が多い大会で DB 同時接続を抑えつつ、チャンク内は並列で壁時間を短縮する */
+  const chunkSize = 12;
 
-    const assigned = await countValidTechnicalOfficialAssignments(
-      prisma,
-      competitionId,
-      club.id,
-      Boolean(competition.officialQualificationFilterEnabled)
+  for (let i = 0; i < clubs.length; i += chunkSize) {
+    const chunk = clubs.slice(i, i + chunkSize);
+    const entryCounts = await Promise.all(
+      chunk.map((club) => countClubIndividualEntryRows(prisma, competitionId, club.id))
     );
-    const shortage = Math.max(0, required - assigned);
-    if (shortage <= 0) continue;
 
-    rows.push({
-      clubId: club.id,
-      clubName: club.name,
-      entryCount,
-      required,
-      assigned,
-      shortage,
-    });
+    const withRequired = chunk
+      .map((club, idx) => {
+        const entryCount = entryCounts[idx];
+        const required = requiredTechnicalOfficialCount(entryCount, tiers);
+        return { club, entryCount, required };
+      })
+      .filter((x) => x.required > 0);
+
+    if (withRequired.length === 0) {
+      continue;
+    }
+
+    const assignedCounts = await Promise.all(
+      withRequired.map((x) =>
+        countValidTechnicalOfficialAssignments(
+          prisma,
+          competitionId,
+          x.club.id,
+          requireQualificationFilter
+        )
+      )
+    );
+
+    for (let j = 0; j < withRequired.length; j++) {
+      const { club, entryCount, required } = withRequired[j];
+      const assigned = assignedCounts[j];
+      const shortage = Math.max(0, required - assigned);
+      if (shortage <= 0) continue;
+      rows.push({
+        clubId: club.id,
+        clubName: club.name,
+        entryCount,
+        required,
+        assigned,
+        shortage,
+      });
+    }
   }
 
   return rows.sort((a, b) => a.clubName.localeCompare(b.clubName, "ja"));

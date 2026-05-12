@@ -4,6 +4,7 @@ import {
   countValidTechnicalOfficialAssignmentsDetailed,
   countClubIndividualEntryRows,
   getTechnicalOfficialStatusForClub,
+  listTechnicalOfficialShortagesForCompetition,
 } from "@/lib/technicalOfficialQueries";
 
 describe("countClubIndividualEntryRows", () => {
@@ -174,5 +175,28 @@ describe("countValidTechnicalOfficialAssignments", () => {
       { userId: "u1", familyName: "山田", givenName: "一郎" },
       { userId: "u2", familyName: "佐藤", givenName: "二郎" },
     ]);
+  });
+});
+
+describe("listTechnicalOfficialShortagesForCompetition", () => {
+  it("returns [] when official recruitment is disabled", async () => {
+    const findUnique = vi.fn().mockResolvedValue({
+      officialRecruitmentEnabled: false,
+      technicalOfficialRecruitmentEnabled: true,
+      officialQualificationFilterEnabled: false,
+      technicalOfficialTiers: [{ minEntries: 1, requiredCount: 1 }],
+    });
+    const prisma = { competition: { findUnique } } as never;
+    const rows = await listTechnicalOfficialShortagesForCompetition(prisma, "comp-1");
+    expect(rows).toEqual([]);
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { id: "comp-1" },
+      select: {
+        officialRecruitmentEnabled: true,
+        technicalOfficialRecruitmentEnabled: true,
+        officialQualificationFilterEnabled: true,
+        technicalOfficialTiers: true,
+      },
+    });
   });
 });
