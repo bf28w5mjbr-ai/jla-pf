@@ -10,7 +10,7 @@ import {
   type HeatSetting,
 } from "@/lib/startListSettings";
 import { defaultResultRoundLabelJa } from "@/lib/resultRoundLabels";
-import { secondaryClubLabelForTeamRow } from "@/lib/startListTeamDisplay";
+import { secondaryClubLabelForTeamRow, secondaryClubLineForIndividual } from "@/lib/startListTeamDisplay";
 import {
   buildStartListAgeCategoryTabs,
   filterEventsByStartListAgeCategory,
@@ -27,6 +27,7 @@ type EventInfo = {
 
 type IndividualEntry = {
   name: string;
+  clubName?: string | null;
 };
 
 type TeamEntry = {
@@ -582,11 +583,19 @@ export default function StartListConfigurator({
                             ヒート {heatIndex + 1}（{heatItems.length}件）
                           </p>
                           <ul className="mt-2 space-y-1">
-                            {heatItems.map((item, itemIndex) => (
+                            {heatItems.map((item, itemIndex) => {
+                              const club = secondaryClubLineForIndividual(item.clubName);
+                              return (
                               <li key={`${event.id}-${heatIndex}-${itemIndex}`}>
-                                <span>{item.name}</span>
+                                <span className="font-medium">{item.name}</span>
+                                {club ? (
+                                  <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+                                    （{club}）
+                                  </span>
+                                ) : null}
                               </li>
-                            ))}
+                            );
+                            })}
                           </ul>
                         </div>
                       ))}

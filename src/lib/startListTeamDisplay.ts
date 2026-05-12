@@ -16,3 +16,9 @@ export function secondaryClubLabelForTeamRow(
   if (normalizeTeamListLabel(c) === normalizeTeamListLabel(teamName)) return null;
   return c;
 }
+
+/** 個人種目のスタートリスト行で、氏名の横に括弧付きで出す所属クラブ（未設定なら null） */
+export function secondaryClubLineForIndividual(clubName: string | null | undefined): string | null {
+  const c = (clubName ?? "").trim();
+  return c || null;
+}

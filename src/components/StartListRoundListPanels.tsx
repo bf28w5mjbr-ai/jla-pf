@@ -56,7 +56,10 @@ import {
   patchHeatOperationDraftResultPayloadFireAndForget,
   type HeatResultDraftServerEntry,
 } from "@/lib/dayOpsHeatOperationDraftSync";
-import { secondaryClubLabelForTeamRow } from "@/lib/startListTeamDisplay";
+import {
+  secondaryClubLabelForTeamRow,
+  secondaryClubLineForIndividual,
+} from "@/lib/startListTeamDisplay";
 import { cn } from "@/lib/utils";
 
 function foldTeamMarshalStatuses(rows: HeatMarshalParticipant[]): string {
@@ -403,6 +406,7 @@ export type SnapshotParticipant =
       kind: "INDIVIDUAL";
       name: string;
       entryId?: string;
+      clubName?: string | null;
     }
   | {
       kind: "TEAM";
@@ -473,9 +477,13 @@ export function SnapshotRoundContent({
                     </LaneRow>
                   );
                 }
+                const indClub = secondaryClubLineForIndividual(participant.clubName);
                 return (
                   <LaneRow key={`ind-${heat.heatIndex}-${index}`} laneNumber={lane}>
-                    {participant.name}
+                    <span className="font-medium">{participant.name}</span>
+                    {indClub ? (
+                      <span className="ml-2 text-xs text-muted-foreground">（{indClub}）</span>
+                    ) : null}
                   </LaneRow>
                 );
               })}
@@ -487,8 +495,18 @@ export function SnapshotRoundContent({
   );
 }
 
-type IndividualItem = { entryId: string; name: string };
+type IndividualItem = { entryId: string; name: string; clubName?: string | null };
 type TeamItem = { teamEntryId: string; teamName: string; clubName?: string | null; members: string[] };
+
+function individualLiveRowLabel(name: string, clubName?: string | null) {
+  const club = secondaryClubLineForIndividual(clubName);
+  return (
+    <>
+      <span className="font-medium">{name}</span>
+      {club ? <span className="ml-2 text-xs text-muted-foreground">（{club}）</span> : null}
+    </>
+  );
+}
 
 function orderIndividualItemsByConfirmedResultRank(
   items: IndividualItem[],
@@ -2445,7 +2463,7 @@ export function LiveRoundContent({
                         displayHeatNumber,
                         snapLane,
                         laneIndex0,
-                        item.name,
+                        individualLiveRowLabel(item.name, item.clubName),
                         `${eventId}-ind-${heatIndex}-${item.entryId}-${laneIndex0}`,
                         statusByKey?.[`I:${item.entryId}`],
                         `I:${item.entryId}`
@@ -2463,7 +2481,7 @@ export function LiveRoundContent({
                         displayHeatNumber,
                         index + 1,
                         index,
-                        item.name,
+                        individualLiveRowLabel(item.name, item.clubName),
                         `${eventId}-ind-${heatIndex}-${item.entryId}`,
                         statusByKey?.[`I:${item.entryId}`]
                       )
@@ -2496,7 +2514,7 @@ export function LiveRoundContent({
                         contentTitle={laneTitle}
                       >
                         <StartListParticipantRowBody status={displayStatus}>
-                          {item.name}
+                          {individualLiveRowLabel(item.name, item.clubName)}
                         </StartListParticipantRowBody>
                       </LaneRow>
                     );

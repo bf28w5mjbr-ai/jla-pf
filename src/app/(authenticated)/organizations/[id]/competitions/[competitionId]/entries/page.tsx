@@ -237,13 +237,16 @@ export default async function CompetitionEntriesPage({
     return entry.checkoutSessions.some((s) => s.status === "DISPUTED");
   }).length;
 
-  const individualByEvent = new Map<string, { name: string }[]>();
+  const individualByEvent = new Map<string, { name: string; clubName: string | null }[]>();
   entries.forEach((entry) => {
     entry.items.forEach((item) => {
       const eventId = item.eventId;
       if (hasIndividualWithdrawalForEvent(entry.participantStatuses, eventId)) return;
       const list = individualByEvent.get(eventId) ?? [];
-      list.push({ name: `${entry.user.familyName} ${entry.user.givenName}` });
+      list.push({
+        name: `${entry.user.familyName} ${entry.user.givenName}`,
+        clubName: entry.club?.name ?? null,
+      });
       individualByEvent.set(eventId, list);
     });
   });
