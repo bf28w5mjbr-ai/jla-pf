@@ -15,6 +15,7 @@ import CompetitionDayOpsPassphraseEditor from "@/components/CompetitionDayOpsPas
 import { listTechnicalOfficialShortagesForCompetition } from "@/lib/technicalOfficialQueries";
 import { TabsContent } from "@/components/ui/tabs";
 import type { OfficialSubTabValue } from "@/lib/competitionManagementTab";
+import { qualificationJapaneseLabel } from "@/lib/qualificationLabels";
 import { OfficialRecruitmentToggleButton } from "@/components/OfficialRecruitmentToggleButton";
 import { TechnicalOfficialRecruitmentToggleButton } from "@/components/TechnicalOfficialRecruitmentToggleButton";
 
@@ -35,6 +36,23 @@ const officialStatusLabel = {
   APPROVED: "受付済",
   REJECTED: "却下",
 } as const;
+
+function formatOfficialApplicationContact(
+  email: string | null | undefined,
+  phone: string | null | undefined
+): string {
+  const e = email?.trim() || "";
+  const p = phone?.trim() || "";
+  if (e && p) return `${e} / ${p}`;
+  return e || p || "";
+}
+
+function refereeQualificationsDisplay(quals: { kind: string }[]): string {
+  return quals
+    .filter((q) => q.kind.startsWith("Referee"))
+    .map((q) => qualificationJapaneseLabel(q.kind))
+    .join("、");
+}
 
 export default async function CompetitionOfficialTabHeavy({
   /** URL のタブが official のときだけ true。false なら DB に触れずプレースホルダのみ（他タブ表示時の無駄取得を防ぐ） */
@@ -88,8 +106,14 @@ export default async function CompetitionOfficialTabHeavy({
     user: {
       familyName: string;
       givenName: string;
-      email: string | null;
-      phoneNumber: string | null;
+      familyNameKana: string;
+      givenNameKana: string;
+      email: string;
+      phoneNumber: string;
+      jlaMemberNumber: string | null;
+      legacyJlaMemberNumber: string | null;
+      primaryClub: { name: string } | null;
+      qualifications: { kind: string }[];
     };
   }> = [];
 
@@ -124,8 +148,18 @@ export default async function CompetitionOfficialTabHeavy({
             select: {
               familyName: true,
               givenName: true,
+              familyNameKana: true,
+              givenNameKana: true,
               email: true,
               phoneNumber: true,
+              jlaMemberNumber: true,
+              legacyJlaMemberNumber: true,
+              primaryClub: { select: { name: true } },
+              qualifications: {
+                where: { status: "APPROVED" },
+                select: { kind: true },
+                orderBy: { kind: "asc" },
+              },
             },
           },
         },
@@ -173,22 +207,20 @@ export default async function CompetitionOfficialTabHeavy({
   }
 
   const officialApplicationsCsvRows: OfficialApplicationsCsvRow[] = officialApplications.map(
-    (application) => ({
-      応募日時: application.createdAt.toLocaleString("ja-JP", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      応募状態:
-        officialStatusLabel[application.status as keyof typeof officialStatusLabel] ??
-        application.status,
+    (application, index) => ({
+      通し番号: String(index + 1),
+      JLA番号:
+        application.user.jlaMemberNumber ??
+        application.user.legacyJlaMemberNumber ??
+        "",
       氏名: `${application.user.familyName} ${application.user.givenName}`,
-      メールアドレス: application.user.email ?? "",
-      電話番号: application.user.phoneNumber ?? "",
-      希望ポジション: application.positionName,
-      応募メッセージ: application.message?.trim() || "",
+      フリガナ: `${application.user.familyNameKana} ${application.user.givenNameKana}`.trim(),
+      所属クラブ: application.user.primaryClub?.name ?? "",
+      審判員資格: refereeQualificationsDisplay(application.user.qualifications),
+      連絡先: formatOfficialApplicationContact(
+        application.user.email,
+        application.user.phoneNumber
+      ),
     })
   );
 

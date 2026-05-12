@@ -4,13 +4,13 @@ import { FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export type OfficialApplicationsCsvRow = {
-  応募日時: string;
-  応募状態: string;
+  通し番号: string;
+  JLA番号: string;
   氏名: string;
-  メールアドレス: string;
-  電話番号: string;
-  希望ポジション: string;
-  応募メッセージ: string;
+  フリガナ: string;
+  所属クラブ: string;
+  審判員資格: string;
+  連絡先: string;
 };
 
 function escapeCsvCell(cell: string): string {
@@ -27,13 +27,13 @@ function sanitizeFileName(name: string): string {
 
 function buildCsv(rows: OfficialApplicationsCsvRow[]): string {
   const headers: (keyof OfficialApplicationsCsvRow)[] = [
-    "応募日時",
-    "応募状態",
+    "通し番号",
+    "JLA番号",
     "氏名",
-    "メールアドレス",
-    "電話番号",
-    "希望ポジション",
-    "応募メッセージ",
+    "フリガナ",
+    "所属クラブ",
+    "審判員資格",
+    "連絡先",
   ];
   const lines = [
     headers.join(","),
