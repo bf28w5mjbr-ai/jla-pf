@@ -205,6 +205,32 @@ export function normalizeRoundTabs(setting: HeatSetting): StartListRoundTab[] {
   ]);
 }
 
+/**
+ * スタートリスト編集 UI 用: 各タブを count モードに揃える（size は entryCount から heatCount を解決）。
+ * {@link StartListRoundTab.useAutoHeatFromMaxLanes} が false のタブはそのまま残す。
+ */
+export function coerceRoundTabsToHeatOnly(
+  tabs: StartListRoundTab[],
+  entryCount: number
+): StartListRoundTab[] {
+  return tabs.map((t) => {
+    if (t.mode !== "size") {
+      return { ...t, mode: "count", heatSize: "" };
+    }
+    const n = Math.max(0, entryCount);
+    const hc =
+      n > 0
+        ? resolveHeatCount(n, { mode: "size", heatSize: t.heatSize || "1" })
+        : Math.max(1, parseInt(t.heatCount || "1", 10) || 1);
+    return {
+      ...t,
+      mode: "count",
+      heatCount: String(Math.max(1, hc)),
+      heatSize: "",
+    };
+  });
+}
+
 function newStartListRoundTabId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();

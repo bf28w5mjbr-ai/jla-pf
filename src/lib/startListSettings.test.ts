@@ -3,6 +3,7 @@ import {
   applyAutoFirstRoundTabFromMaxLanes,
   applyDefaultRoundTabLabels,
   buildRoundTabsForRoundCount,
+  coerceRoundTabsToHeatOnly,
   defaultProgressionRoundLabels,
   defaultStartListRoundTabLabels,
   normalizeRoundTabs,
@@ -131,6 +132,37 @@ describe("applyAutoFirstRoundTabFromMaxLanes", () => {
       },
     ];
     expect(applyAutoFirstRoundTabFromMaxLanes(tabs, 8)).toEqual(tabs);
+  });
+});
+
+describe("coerceRoundTabsToHeatOnly", () => {
+  it("count タブでも useAutoHeatFromMaxLanes:false を落とさない", () => {
+    const tabs = [
+      {
+        id: "a",
+        label: "r1",
+        mode: "count" as const,
+        heatCount: "3",
+        heatSize: "",
+        useAutoHeatFromMaxLanes: false as const,
+      },
+      {
+        id: "b",
+        label: "r2",
+        mode: "count" as const,
+        heatCount: "2",
+        heatSize: "",
+      },
+    ];
+    const out = coerceRoundTabsToHeatOnly(tabs, 24);
+    expect(out[0]).toMatchObject({
+      id: "a",
+      mode: "count",
+      heatCount: "3",
+      heatSize: "",
+      useAutoHeatFromMaxLanes: false,
+    });
+    expect(out[1]).toMatchObject({ id: "b", mode: "count", heatCount: "2", heatSize: "" });
   });
 });
 

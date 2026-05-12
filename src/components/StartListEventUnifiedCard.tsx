@@ -40,11 +40,12 @@ import {
   type StartListIndividualInput,
   type StartListTeamInput,
 } from "@/lib/startListEventTabDisplay";
-import { resolveHeatCount, type StartListRoundData } from "@/lib/startListRounds";
+import type { StartListRoundData } from "@/lib/startListRounds";
 import {
   applyDefaultRoundTabLabels,
   buildRoundTabsForRoundCount,
   buildStartListSettingsPayload,
+  coerceRoundTabsToHeatOnly,
   defaultStartListRoundTabLabels,
   normalizeRoundTabs,
   parseStartListSettings,
@@ -132,30 +133,6 @@ function pickSetting(
   return { mode: "count", heatCount: "1", heatSize: "" };
 }
 
-function coerceTabsToHeatOnly(
-  tabs: StartListRoundTab[],
-  entryCount: number
-): StartListRoundTab[] {
-  return tabs.map((t) => {
-    if (t.mode !== "size") {
-      const { useAutoHeatFromMaxLanes: _u, ...rest } = t;
-      void _u;
-      return { ...rest, mode: "count", heatSize: "" };
-    }
-    const n = Math.max(0, entryCount);
-    const hc =
-      n > 0
-        ? resolveHeatCount(n, { mode: "size", heatSize: t.heatSize || "1" })
-        : Math.max(1, parseInt(t.heatCount || "1", 10) || 1);
-    return {
-      ...t,
-      mode: "count",
-      heatCount: String(Math.max(1, hc)),
-      heatSize: "",
-    };
-  });
-}
-
 function deriveRoundTabsForEditor(
   eventSettings: Record<string, HeatSetting>,
   eventId: string,
@@ -174,7 +151,7 @@ function deriveRoundTabsForEditor(
   if (rc !== null && tabs.length !== rc) {
     tabs = buildRoundTabsForRoundCount(rc, tabs);
   }
-  return coerceTabsToHeatOnly(tabs, entryCount);
+  return coerceRoundTabsToHeatOnly(tabs, entryCount);
 }
 
 function clampStartListRoundCountInput(n: number): number {
@@ -868,6 +845,33 @@ export default function StartListEventUnifiedCard({
       if (!response.ok) {
         throw new Error(data.message || "保存に失敗しました");
       }
+
+      try {
+        const capRes = await fetch(
+          `/api/competitions/${competitionId}/start-list-snapshot/capture`,
+          { method: "POST" }
+        );
+        const capJson = (await capRes.json().catch(() => ({}))) as {
+          error?: string;
+          message?: string;
+        };
+        if (!capRes.ok) {
+          toast.error(
+            capJson.error ||
+              capJson.message ||
+              "スタートリスト記録の更新に失敗しました（ヒート設定は保存済みです）。もう一度保存してください。"
+          );
+          router.refresh();
+          return false;
+        }
+      } catch {
+        toast.error(
+          "スタートリスト記録の更新に失敗しました（ヒート設定は保存済みです）。通信を確認のうえ、もう一度保存してください。"
+        );
+        router.refresh();
+        return false;
+      }
+
       if (successToast) {
         toast.success(successToast);
       }
@@ -1349,7 +1353,11 @@ export default function StartListEventUnifiedCard({
               })}
             </ul>
             {canEditStep1Heats ? (
-              <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+              <div className="space-y-2 border-t border-border/60 pt-3">
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  保存すると、大会のスタートリスト記録（監査・マーシャル参照用）が、いまのヒート分割に合わせて上書きされます。未保存のときは記録だけが古い場合があります。
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
                 {heatPlanConfirmed ? (
                   <Button
                     type="button"
@@ -1381,6 +1389,7 @@ export default function StartListEventUnifiedCard({
                       ? "ヒート設定を保存"
                       : "ステップ1を確定"}
                 </Button>
+                </div>
               </div>
             ) : null}
           </div>
