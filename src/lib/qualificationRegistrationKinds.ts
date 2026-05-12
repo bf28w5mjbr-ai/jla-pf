@@ -46,6 +46,11 @@ function isStandaloneBlsKind(normalized: string): boolean {
   return normalized === "bls";
 }
 
+/** 選手登録系テンプレートの kind のみ（BLS・ライフセーバー等は含めない） */
+export function isPlayerRegistrationQualificationKind(value: string | null | undefined): boolean {
+  return matchesKeywords(value, playerRegistrationKeywords);
+}
+
 /** プロフィールの紐づけ区分（テンプレート分類）に使う */
 export function isRegistrationQualificationKind(value: string | null | undefined): boolean {
   const n = normalizeQualificationKind(value);

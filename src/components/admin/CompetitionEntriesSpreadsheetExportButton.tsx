@@ -3,50 +3,17 @@
 import { Button } from "@/components/ui/button";
 import { FileSpreadsheet } from "lucide-react";
 
-export type EntryExportRow = {
-  statusLabel: string;
-  name: string;
-  nameKana: string;
-  sex: string;
-  birth: string;
-  phone: string;
-  email: string;
-  eventInfo: string;
-};
-
-const CSV_HEADERS = [
-  "エントリー状況",
-  "氏名",
-  "氏名カナ",
-  "性別",
-  "生年月日",
-  "電話番号",
-  "メールアドレス",
-  "種目情報",
-] as const;
-
-function escapeCsvCell(cell: string): string {
+export function escapeCsvCell(cell: string): string {
   if (/[",\r\n]/.test(cell)) {
     return `"${cell.replace(/"/g, '""')}"`;
   }
   return cell;
 }
 
-function buildEntryCsv(rows: EntryExportRow[]): string {
+export function buildSpreadsheetCsv(headers: readonly string[], rows: readonly (readonly string[])[]): string {
   const lines = [
-    CSV_HEADERS.join(","),
-    ...rows.map((r) =>
-      [
-        escapeCsvCell(r.statusLabel),
-        escapeCsvCell(r.name),
-        escapeCsvCell(r.nameKana),
-        escapeCsvCell(r.sex),
-        escapeCsvCell(r.birth),
-        escapeCsvCell(r.phone),
-        escapeCsvCell(r.email),
-        escapeCsvCell(r.eventInfo),
-      ].join(",")
-    ),
+    headers.map(escapeCsvCell).join(","),
+    ...rows.map((cells) => cells.map(escapeCsvCell).join(",")),
   ];
   return lines.join("\r\n");
 }
@@ -57,7 +24,8 @@ function sanitizeDownloadFileNameBase(name: string): string {
 }
 
 type Props = {
-  rows: EntryExportRow[];
+  csvHeaders: readonly string[];
+  csvRows: readonly (readonly string[])[];
   /** 拡張子なし。例: `大会名_個人` */
   fileNameBase: string;
   /** ボタン表示ラベル */
@@ -65,13 +33,14 @@ type Props = {
 };
 
 export function CompetitionEntriesSpreadsheetExportButton({
-  rows,
+  csvHeaders,
+  csvRows,
   fileNameBase,
   label = "CSVダウンロード",
 }: Props) {
   const handleClick = () => {
-    if (rows.length === 0) return;
-    const csv = buildEntryCsv(rows);
+    if (csvRows.length === 0 || csvHeaders.length === 0) return;
+    const csv = buildSpreadsheetCsv(csvHeaders, csvRows);
     const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -91,7 +60,7 @@ export function CompetitionEntriesSpreadsheetExportButton({
       size="sm"
       className="gap-2"
       onClick={handleClick}
-      disabled={rows.length === 0}
+      disabled={csvRows.length === 0 || csvHeaders.length === 0}
     >
       <FileSpreadsheet className="h-4 w-4 shrink-0" aria-hidden />
       {label}

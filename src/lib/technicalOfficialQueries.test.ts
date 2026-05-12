@@ -74,6 +74,8 @@ describe("countValidTechnicalOfficialAssignments", () => {
         userId: "u1",
         positionName: "テクニカルオフィシャル（西浜）",
         user: {
+          familyName: "山田",
+          givenName: "一郎",
           qualifications: [
             { kind: "BLS", status: "APPROVED", expiryDate: null },
             { kind: "RefereeC", status: "APPROVED", expiryDate: null },
@@ -112,19 +114,31 @@ describe("countValidTechnicalOfficialAssignments", () => {
     const assignmentFindMany = vi.fn().mockResolvedValue([
       {
         userId: "u1",
-        user: { qualifications: [{ kind: "BLS", status: "APPROVED", expiryDate: null }] },
+        user: {
+          familyName: "山田",
+          givenName: "一郎",
+          qualifications: [{ kind: "BLS", status: "APPROVED", expiryDate: null }],
+        },
       },
     ]);
     const appFindMany = vi.fn().mockResolvedValue([
       {
         userId: "u1",
         positionName: "テクニカルオフィシャル（西浜）",
-        user: { qualifications: [{ kind: "BLS", status: "APPROVED", expiryDate: null }] },
+        user: {
+          familyName: "山田",
+          givenName: "一郎",
+          qualifications: [{ kind: "BLS", status: "APPROVED", expiryDate: null }],
+        },
       },
       {
         userId: "u2",
         positionName: "テクニカルオフィシャル（西浜）",
-        user: { qualifications: [{ kind: "BLS", status: "APPROVED", expiryDate: null }] },
+        user: {
+          familyName: "佐藤",
+          givenName: "二郎",
+          qualifications: [{ kind: "BLS", status: "APPROVED", expiryDate: null }],
+        },
       },
     ]);
     const competitionFindUnique = vi.fn().mockResolvedValue({
@@ -156,5 +170,9 @@ describe("countValidTechnicalOfficialAssignments", () => {
     expect(detail.diagnostics.assignmentCount).toBe(1);
     expect(detail.diagnostics.fallbackApprovedCount).toBe(1);
     expect(detail.diagnostics.duplicateUserSkippedCount).toBe(1);
+    expect(detail.fulfillers).toEqual([
+      { userId: "u1", familyName: "山田", givenName: "一郎" },
+      { userId: "u2", familyName: "佐藤", givenName: "二郎" },
+    ]);
   });
 });

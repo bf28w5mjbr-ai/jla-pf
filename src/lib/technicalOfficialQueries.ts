@@ -58,6 +58,13 @@ export type TechnicalOfficialAssignmentDiagnostics = {
   duplicateUserSkippedCount: number;
 };
 
+/** 充足人数に含まれるテクニカルオフィシャル（任命またはフォールバック応募） */
+export type TechnicalOfficialFulfiller = {
+  userId: string;
+  familyName: string;
+  givenName: string;
+};
+
 export async function countValidTechnicalOfficialAssignmentsDetailed(
   prisma: PrismaClient,
   competitionId: string,
@@ -66,12 +73,19 @@ export async function countValidTechnicalOfficialAssignmentsDetailed(
   options?: {
     clubNameHint?: string;
   }
-): Promise<{ assigned: number; diagnostics: TechnicalOfficialAssignmentDiagnostics }> {
+): Promise<{
+  assigned: number;
+  diagnostics: TechnicalOfficialAssignmentDiagnostics;
+  fulfillers: TechnicalOfficialFulfiller[];
+}> {
   const assignments = await prisma.competitionTechnicalOfficialAssignment.findMany({
     where: { competitionId, clubId },
     include: {
       user: {
         select: {
+          id: true,
+          familyName: true,
+          givenName: true,
           qualifications: {
             select: { kind: true, status: true, expiryDate: true },
           },
@@ -88,6 +102,7 @@ export async function countValidTechnicalOfficialAssignmentsDetailed(
   let qualificationFilteredOutCount = 0;
   let duplicateUserSkippedCount = 0;
   const countedUserIds = new Set<string>();
+  const fulfillers: TechnicalOfficialFulfiller[] = [];
   for (const a of assignments) {
     if (countedUserIds.has(a.userId)) {
       duplicateUserSkippedCount += 1;
@@ -105,6 +120,11 @@ export async function countValidTechnicalOfficialAssignmentsDetailed(
     if (ok) {
       assignmentCount += 1;
       countedUserIds.add(a.userId);
+      fulfillers.push({
+        userId: a.userId,
+        familyName: a.user.familyName,
+        givenName: a.user.givenName,
+      });
     } else {
       qualificationFilteredOutCount += 1;
     }
@@ -119,6 +139,7 @@ export async function countValidTechnicalOfficialAssignmentsDetailed(
   if (!competitionForResolve?.technicalOfficialRecruitmentEnabled) {
     return {
       assigned: assignmentCount,
+      fulfillers,
       diagnostics: {
         assignmentCount,
         fallbackApprovedCount,
@@ -144,6 +165,8 @@ export async function countValidTechnicalOfficialAssignmentsDetailed(
       positionName: true,
       user: {
         select: {
+          familyName: true,
+          givenName: true,
           qualifications: {
             select: { kind: true, status: true, expiryDate: true },
           },
@@ -221,9 +244,15 @@ export async function countValidTechnicalOfficialAssignmentsDetailed(
     }
     fallbackApprovedCount += 1;
     countedUserIds.add(app.userId);
+    fulfillers.push({
+      userId: app.userId,
+      familyName: app.user.familyName,
+      givenName: app.user.givenName,
+    });
   }
   return {
     assigned: assignmentCount + fallbackApprovedCount,
+    fulfillers,
     diagnostics: {
       assignmentCount,
       fallbackApprovedCount,
@@ -342,6 +371,7 @@ export async function getTechnicalOfficialStatusForClub(
   shortage: number;
   tiers: ReturnType<typeof parseTechnicalOfficialTiers>;
   diagnostics: TechnicalOfficialAssignmentDiagnostics;
+  fulfillers: TechnicalOfficialFulfiller[];
 } | null> {
   const [competition, club] = await Promise.all([
     prisma.competition.findUnique({
@@ -387,6 +417,7 @@ export async function getTechnicalOfficialStatusForClub(
     shortage: Math.max(0, required - assigned),
     tiers,
     diagnostics: assignment.diagnostics,
+    fulfillers: assignment.fulfillers,
   };
 }
 

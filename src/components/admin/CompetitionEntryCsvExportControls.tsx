@@ -5,16 +5,14 @@ import { Send } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  CompetitionEntriesSpreadsheetExportButton,
-  type EntryExportRow,
-} from "@/components/admin/CompetitionEntriesSpreadsheetExportButton";
+import { CompetitionEntriesSpreadsheetExportButton } from "@/components/admin/CompetitionEntriesSpreadsheetExportButton";
 import { CSV_EXPORT_SCOPE } from "@/lib/competitionEntryCsvExport";
 
 type Props = {
   competitionId: string;
   scope: typeof CSV_EXPORT_SCOPE.INDIVIDUAL | typeof CSV_EXPORT_SCOPE.TEAM;
-  rows: EntryExportRow[];
+  csvHeaders: readonly string[];
+  csvRows: readonly (readonly string[])[];
   fileNameBase: string;
   hasPending: boolean;
   hasActiveApproval: boolean;
@@ -23,7 +21,8 @@ type Props = {
 export default function CompetitionEntryCsvExportControls({
   competitionId,
   scope,
-  rows,
+  csvHeaders,
+  csvRows,
   fileNameBase,
   hasPending,
   hasActiveApproval,
@@ -31,7 +30,7 @@ export default function CompetitionEntryCsvExportControls({
   const [loading, setLoading] = useState(false);
 
   const request = async () => {
-    if (rows.length === 0) return;
+    if (csvRows.length === 0) return;
     setLoading(true);
     try {
       const res = await fetch(`/api/competitions/${competitionId}/entry-csv-export-requests`, {
@@ -55,7 +54,8 @@ export default function CompetitionEntryCsvExportControls({
   if (hasActiveApproval) {
     return (
       <CompetitionEntriesSpreadsheetExportButton
-        rows={rows}
+        csvHeaders={csvHeaders}
+        csvRows={csvRows}
         fileNameBase={fileNameBase}
         label="CSVダウンロード"
       />
@@ -82,7 +82,7 @@ export default function CompetitionEntryCsvExportControls({
       size="sm"
       className="gap-2"
       onClick={() => void request()}
-      disabled={loading || rows.length === 0}
+      disabled={loading || csvRows.length === 0}
     >
       <Send className="h-4 w-4 shrink-0" aria-hidden />
       {loading ? "送信中…" : "CSV出力を依頼"}

@@ -1217,8 +1217,7 @@ export default async function ClubDetailPage({
                           {showTo ? (
                             <ClubParticipationSection
                               sectionId={`comp-to-${row.id}`}
-                              title="テクニカルオフィシャル依頼"
-                              description="主催のオフィシャル資格要件設定に連動して、クラブからのTO依頼を行います。"
+                              title="テクニカルオフィシャル"
                               icon={UserCog}
                             >
                               <ClubTechnicalOfficialRow

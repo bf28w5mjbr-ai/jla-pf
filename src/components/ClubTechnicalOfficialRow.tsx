@@ -2,12 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import Link from "next/link";
-import { CheckCircle2, TriangleAlert, Users } from "lucide-react";
-import { appRoutes } from "@/lib/appRoutes";
+import { Loader2, TriangleAlert, User, Users } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -27,6 +24,7 @@ type InvitationsPayload = {
     assigned: number;
     shortage: number;
     tiers: { minEntries: number; requiredCount: number }[];
+    fulfillers?: { userId: string; familyName: string; givenName: string }[];
     diagnostics?: {
       assignmentCount: number;
       fallbackApprovedCount: number;
@@ -97,23 +95,29 @@ export default function ClubTechnicalOfficialRow({
 
   if (loading) {
     return (
-      <p className="text-xs text-muted-foreground">
-        「{competitionName}」のテクニカルオフィシャル情報を読み込み中…
-      </p>
+      <div className="flex min-h-[4.5rem] items-center gap-2.5 rounded-lg border border-dashed border-border/70 bg-muted/10 px-3 py-3 text-xs text-muted-foreground">
+        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" aria-hidden />
+        <span>「{competitionName}」の情報を読み込み中…</span>
+      </div>
     );
   }
 
   if (loadError) {
     return (
-      <p className="text-xs text-destructive" role="alert">
-        「{competitionName}」: {loadError}
-      </p>
+      <div
+        className="rounded-lg border border-destructive/35 bg-destructive/[0.06] px-3 py-2.5 text-xs text-destructive"
+        role="alert"
+        aria-live="polite"
+      >
+        <span className="font-medium">「{competitionName}」</span>
+        <span className="text-destructive/90"> — {loadError}</span>
+      </div>
     );
   }
 
   if (!data?.status) {
     return (
-      <p className="text-xs text-muted-foreground">
+      <p className="rounded-lg border border-border/60 bg-muted/15 px-3 py-2.5 text-xs text-muted-foreground">
         「{competitionName}」のTO設定情報を表示できません。
       </p>
     );
@@ -121,21 +125,18 @@ export default function ClubTechnicalOfficialRow({
 
   if (!data.configured) {
     return (
-      <Card className="border-dashed border-border/80 bg-muted/15">
-        <CardContent className="space-y-1 px-4 py-4">
-          <p className="text-sm font-medium text-foreground">主催者のTO人数設定待ち</p>
-          <p className="text-xs text-muted-foreground">
-            TO募集はONですが、必要人数の段階設定が未保存です。主催者が設定を保存すると、このカードに不足人数と依頼操作が表示されます。
-          </p>
-        </CardContent>
-      </Card>
+      <div className="rounded-xl border border-dashed border-amber-500/35 bg-amber-500/[0.06] px-3.5 py-3.5 dark:border-amber-900/50 dark:bg-amber-950/25">
+        <p className="text-sm font-medium text-foreground">主催者のTO人数設定待ち</p>
+        <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+          TO募集はONですが、必要人数の段階設定が未保存です。主催者が設定を保存すると、ここに不足人数と依頼操作が表示されます。
+        </p>
+      </div>
     );
   }
 
   const st = data.status;
   const pendingInvites = (data.invitations ?? []).filter((i) => i.status === "PENDING");
-  const fulfilledRate =
-    st.required > 0 ? Math.min(100, Math.round((st.assigned / st.required) * 100)) : 100;
+  const fulfillers = st.fulfillers ?? [];
 
   const onInviteMember = async () => {
     if (!memberId) {
@@ -209,154 +210,150 @@ export default function ClubTechnicalOfficialRow({
     }
   };
 
-  return (
-    <Card className="border-border/80">
-      <CardHeader className="space-y-1 pb-2">
-        <CardTitle className="text-base font-semibold">TO依頼状況</CardTitle>
-        <CardDescription className="text-xs leading-relaxed text-muted-foreground">
-          まず不足人数を確認し、必要なときだけ依頼を追加してください。
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3.5 text-sm">
-        <div className="flex flex-wrap gap-1.5">
-          <Badge variant={st.shortage > 0 ? "outline" : "secondary"}>
-            {st.shortage > 0 ? `不足 ${st.shortage}人` : "充足済み"}
-          </Badge>
-          <Badge variant="outline">必要 {st.required}人</Badge>
-          <Badge variant="outline">充足 {st.assigned}人</Badge>
-          <Badge variant="outline">充足率 {fulfilledRate}%</Badge>
-        </div>
+  const shortage = st.shortage > 0;
+  const shortageTone = shortage
+    ? "border-rose-500/40 bg-rose-500/[0.06] ring-rose-500/15 dark:border-rose-500/35 dark:bg-rose-950/25 dark:ring-rose-900/30"
+    : "border-emerald-500/35 bg-emerald-500/[0.08] ring-emerald-500/15 dark:border-emerald-800/45 dark:bg-emerald-950/30 dark:ring-emerald-900/25";
 
-        <div className="rounded-lg border border-border/70 bg-muted/15 px-3 py-2 text-xs text-muted-foreground">
-          <p>
-            資格要件:{" "}
-            <span className="font-medium text-foreground">
-              {st.qualificationFilterEnabled ? "オフィシャル資格要件設定を適用" : "制限なし"}
-            </span>
+  return (
+    <div
+      className={cn(
+        "space-y-4 rounded-xl border p-3.5 text-sm shadow-sm ring-1 ring-inset sm:p-4",
+        shortageTone
+      )}
+      role="region"
+      aria-label={
+        shortage
+          ? `テクニカルオフィシャル不足（必要${st.required}人、充足${st.assigned}人）`
+          : `テクニカルオフィシャル充足（必要${st.required}人、充足${st.assigned}人）`
+      }
+    >
+      <div className="grid max-w-md grid-cols-2 gap-2.5">
+        <div className="rounded-lg border border-border/50 bg-background/55 px-3 py-2.5 shadow-sm dark:bg-background/40">
+          <p className="text-[11px] font-medium text-muted-foreground">必要</p>
+          <p className="mt-0.5 text-xl font-semibold tabular-nums tracking-tight text-foreground">
+            {st.required}
+            <span className="ml-0.5 text-sm font-normal text-muted-foreground">人</span>
           </p>
-          <p className="mt-0.5">
-            個人エントリー合計 {st.entryCount} 件 → 必要 {st.required} 人 / 充足 {st.assigned} 人
+        </div>
+        <div className="rounded-lg border border-border/50 bg-background/55 px-3 py-2.5 shadow-sm dark:bg-background/40">
+          <p className="text-[11px] font-medium text-muted-foreground">充足</p>
+          <p className="mt-0.5 text-xl font-semibold tabular-nums tracking-tight text-foreground">
+            {st.assigned}
+            <span className="ml-0.5 text-sm font-normal text-muted-foreground">人</span>
           </p>
-          {isClubAdmin && st.diagnostics ? (
-            <p className="mt-1 text-[11px]">
-              内訳: 任命 {st.diagnostics.assignmentCount} / 承認応募補完 {st.diagnostics.fallbackApprovedCount}
-              {" "}（未解決応募 {st.diagnostics.unresolvedApprovedCount}）
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">登録されているTO</p>
+        {fulfillers.length > 0 ? (
+          <ul className="divide-y divide-border/40 overflow-hidden rounded-lg border border-border/50 bg-background/40 dark:divide-border/30 dark:bg-background/30">
+            {fulfillers.map((f) => (
+              <li key={f.userId}>
+                <div className="flex items-center gap-2.5 px-3 py-2 text-sm text-foreground">
+                  <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  <span>
+                    {f.familyName} {f.givenName}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="rounded-lg border border-dashed border-border/60 bg-muted/20 py-3 text-center text-xs text-muted-foreground">
+            まだいません
+          </p>
+        )}
+      </div>
+
+      {isClubAdmin && st.shortage > 0 ? (
+        <div className="space-y-3 rounded-lg border border-border/50 bg-background/45 p-3 shadow-sm dark:bg-background/35">
+          <p className="flex items-center gap-2 text-xs font-semibold text-foreground">
+            <Users className="h-3.5 w-3.5 text-primary" aria-hidden />
+            依頼
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="min-w-0 flex-1 space-y-1">
+              <Label className="text-xs">資格のあるメンバーへ</Label>
+              <Select value={memberId || undefined} onValueChange={setMemberId}>
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="メンバーを選択" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(data.eligibleMembers ?? []).map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button type="button" size="sm" disabled={busy} onClick={onInviteMember}>
+              依頼を送る
+            </Button>
+          </div>
+          {(data.eligibleMembers ?? []).length === 0 ? (
+            <p className="inline-flex items-center gap-1.5 text-xs text-amber-900 dark:text-amber-100">
+              <TriangleAlert className="h-3.5 w-3.5" aria-hidden />
+              条件を満たすクラブメンバーがいません。SMS招待を利用してください。
             </p>
           ) : null}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="min-w-0 flex-1 space-y-1">
+              <Label className="text-xs">SMS（携帯番号）</Label>
+              <Input
+                className="h-10"
+                placeholder="09012345678"
+                value={smsPhone}
+                onChange={(e) => setSmsPhone(e.target.value)}
+                inputMode="tel"
+              />
+            </div>
+            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={onSms}>
+              SMSを送る
+            </Button>
+          </div>
         </div>
+      ) : null}
 
-        {st.tiers.length > 0 ? (
-          <details className="rounded-lg border border-border/70 bg-background px-3 py-2 text-xs text-muted-foreground">
-            <summary className="cursor-pointer select-none font-medium text-foreground">人数段階の詳細を表示</summary>
-            <ul className="mt-2">
-              {st.tiers.map((t, i) => (
-                <li key={i} className={i > 0 ? "mt-1" : undefined}>
-                  個人エントリー合計 {t.minEntries} 件以上 → {t.requiredCount} 人
-                </li>
-              ))}
-            </ul>
-          </details>
-        ) : null}
-
-        {isClubAdmin && st.shortage > 0 ? (
-          <div className="space-y-3 border-t border-border/60 pt-2.5">
-            <p className="flex items-center gap-1.5 text-xs font-medium text-foreground">
-              <Users className="h-3.5 w-3.5" aria-hidden />
-              依頼
-            </p>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-              <div className="min-w-0 flex-1 space-y-1">
-                <Label className="text-xs">資格のあるメンバーへ</Label>
-                <Select value={memberId || undefined} onValueChange={setMemberId}>
-                  <SelectTrigger className="h-10">
-                    <SelectValue placeholder="メンバーを選択" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(data.eligibleMembers ?? []).map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button type="button" size="sm" disabled={busy} onClick={onInviteMember}>
-                依頼を送る
-              </Button>
-            </div>
-            {(data.eligibleMembers ?? []).length === 0 ? (
-              <p className="inline-flex items-center gap-1.5 text-xs text-amber-900 dark:text-amber-100">
-                <TriangleAlert className="h-3.5 w-3.5" aria-hidden />
-                条件を満たすクラブメンバーがいません。SMS招待を利用してください。
-              </p>
-            ) : null}
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-              <div className="min-w-0 flex-1 space-y-1">
-                <Label className="text-xs">SMS（携帯番号）</Label>
-                <Input
-                  className="h-10"
-                  placeholder="09012345678"
-                  value={smsPhone}
-                  onChange={(e) => setSmsPhone(e.target.value)}
-                  inputMode="tel"
-                />
-              </div>
-              <Button type="button" size="sm" variant="outline" disabled={busy} onClick={onSms}>
-                SMSを送る
-              </Button>
-            </div>
-          </div>
-        ) : null}
-
-        {pendingInvites.length > 0 ? (
-          <div className="space-y-2 border-t border-border/60 pt-2.5">
-            <p className="text-xs font-medium text-muted-foreground">
-              保留中の招待（{pendingInvites.length}件）
-            </p>
-            <ul className="space-y-2 text-xs">
-              {pendingInvites.map((i) => (
-                  <li
-                    key={i.id}
-                    className="flex flex-col gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-2 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <span>
-                      {i.invitedUser
-                        ? `${i.invitedUser.familyName} ${i.invitedUser.givenName}`
-                        : i.invitePhoneE164
-                          ? `SMS: ${i.invitePhoneE164}`
-                          : i.smsInvite
-                            ? "SMS招待"
-                            : "招待"}
-                    </span>
-                    {isClubAdmin ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 text-destructive"
-                        disabled={busy}
-                        onClick={() => onCancelInvite(i.id)}
-                      >
-                        取り消し
-                      </Button>
-                    ) : null}
-                  </li>
-                ))}
-            </ul>
-          </div>
-        ) : null}
-
-        {st.shortage <= 0 ? (
-          <p className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200/70 bg-emerald-50 px-2.5 py-1 text-xs text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/40 dark:text-emerald-200">
-            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-            現在の必要人数を満たしています。
+      {pendingInvites.length > 0 ? (
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold text-muted-foreground">
+            保留中の招待（{pendingInvites.length}件）
           </p>
-        ) : null}
-
-        <Button variant="outline" size="sm" className="h-8 w-fit text-xs" asChild>
-          <Link href={appRoutes.competitions.root(competitionId)}>大会ページを開く</Link>
-        </Button>
-      </CardContent>
-    </Card>
+          <ul className="space-y-2 text-xs">
+            {pendingInvites.map((i) => (
+              <li
+                key={i.id}
+                className="flex flex-col gap-2 rounded-lg border border-border/60 bg-background/50 px-3 py-2.5 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:bg-background/40"
+              >
+                <span>
+                  {i.invitedUser
+                    ? `${i.invitedUser.familyName} ${i.invitedUser.givenName}`
+                    : i.invitePhoneE164
+                      ? `SMS: ${i.invitePhoneE164}`
+                      : i.smsInvite
+                        ? "SMS招待"
+                        : "招待"}
+                </span>
+                {isClubAdmin ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-destructive"
+                    disabled={busy}
+                    onClick={() => onCancelInvite(i.id)}
+                  >
+                    取り消し
+                  </Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
   );
 }
