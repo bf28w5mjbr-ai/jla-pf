@@ -21,7 +21,6 @@ import { buildParticipantMarshalDisplayByKeyForRound } from "@/lib/competitionPa
 import { effectiveDayOpsStatusForMarshalDisplay } from "@/lib/dayOpsParticipantStatusDisplay";
 import { buildMarshalRoundLabelBySnapshotKey, getLiveTabsAligned } from "@/lib/startListEventTabDisplay";
 import { parseStartListSettings } from "@/lib/startListSettings";
-import { repairStartListSnapshotEmptyHeadHeatsWhenEntriesExist } from "@/lib/startListSnapshot";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
 import {
   heatIndicesBlockingMarshalReopen,
@@ -50,15 +49,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const { id: competitionId } = await context.params;
     const getCtx = await assertDayOpsRecorderWriteAccess(competitionId, request);
     const operatorUserId = getCtx.operatorUserId;
-
-    try {
-      await repairStartListSnapshotEmptyHeadHeatsWhenEntriesExist({
-        competitionId,
-        createdByUserId: operatorUserId ?? undefined,
-      });
-    } catch (e) {
-      console.error("repairStartListSnapshotEmptyHeadHeatsWhenEntriesExist:", e);
-    }
 
     const sp = new URL(request.url).searchParams;
     const eventId = sp.get("eventId");

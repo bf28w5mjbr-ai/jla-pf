@@ -25,7 +25,6 @@ import { refreshOrganizationStripeConnectFlags } from "@/lib/organizerStripeConn
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
 import { ENTRY_CHECKOUT_PAID_STATUSES } from "@/lib/entryCheckoutSessionPaid";
 import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
-import { refreshStartListSnapshotAfterEligibleEntryChange } from "@/lib/startListSnapshot";
 import { clearIndividualWithdrawalParticipantStatusesForEvents } from "@/lib/entryWithdrawalReinstatement";
 import { hasOrgAdminAccess, isClubAdminRole } from "@/lib/roleScopes";
 import {
@@ -1097,12 +1096,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
         : [],
       clubIndividualFeePaidAt: result.entry.clubIndividualFeePaidAt,
     });
-
-    if (userStatus.businessEstablished) {
-      void refreshStartListSnapshotAfterEligibleEntryChange(competitionId).catch((e) =>
-        console.error("refreshStartListSnapshotAfterEligibleEntryChange", competitionId, e)
-      );
-    }
 
     return NextResponse.json({
       message: result.wasUpdate

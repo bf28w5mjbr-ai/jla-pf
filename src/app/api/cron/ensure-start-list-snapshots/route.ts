@@ -19,7 +19,7 @@ function authorizeCron(request: NextRequest): boolean {
 }
 
 /**
- * エントリー締切後かつ未スナップショットの大会に、先頭ラウンド（HEAT）のスタートリストを自動確定する。
+ * 互換のため残す。初回 HEAT の自動作成は廃止したため、認証済みでは常に no-op（JSON に `disabledReason` を付与）。
  */
 export async function GET(request: NextRequest) {
   if (!authorizeCron(request)) {
@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
   const result = await runScheduledStartListSnapshotPass();
   return NextResponse.json({
     ok: true,
+    disabledReason: "initial_heat_snapshot_requires_manual_capture",
     ...result,
   });
 }

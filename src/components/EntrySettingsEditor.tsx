@@ -32,20 +32,10 @@ import {
   PUBLISHED_ENTRY_PERIOD_SHORTEN_FORBIDDEN_MESSAGE,
 } from "@/lib/autoEntryChangeAnnouncement";
 import {
-  applyEntryQualificationToggleWithCertifiedMacro,
-  buildQualificationRelaxAnnouncementFromConfigs,
-  CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP,
-  deriveEntryQualificationOptionsFromTemplates,
-  ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
-  getCertifiedLifesaverUpperQualifications,
-  normalizeEntryRequiredQualifications,
   parseAgeCategoryFeeTiers,
   parseAgeFeeTiers,
-  parseAgeQualificationTiers,
   parseUnderFeeTiers,
-  parseUnderQualificationTiers,
   type AgeFeeTier,
-  type AgeQualificationTier,
 } from "@/lib/competitionEntryAgeTiered";
 import { expectedUnderFeeTierKeys, partitionUnderAgeBands } from "@/lib/competitionUnderAgeSystem";
 import { parseStoredUnderBandKeys } from "@/lib/underBandAllowList";
@@ -54,6 +44,15 @@ import {
   wrapMarkdownBoldAroundSelection,
 } from "@/lib/entryPledge";
 import SimpleMarkdown from "@/components/SimpleMarkdown";
+import CompetitionEntryQualificationsEditor from "@/components/CompetitionEntryQualificationsEditor";
+import {
+  buildRoundTabsForRoundCount,
+  buildStartListSettingsPayload,
+  defaultStartListRoundTabLabels,
+  normalizeRoundTabs,
+  parseStartListSettings,
+  type HeatSetting,
+} from "@/lib/startListSettings";
 
 // デフォルト種目リスト
 const DEFAULT_EVENTS = {
@@ -140,6 +139,100 @@ type Event = {
   /** null: タブの帯設定を継承。配列: 種目単位で上書き */
   underBandKeysOverride?: string[] | null;
 };
+
+function clampStartListRoundCount(n: number): number {
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return 1;
+  return Math.min(32, Math.max(1, n));
+}
+
+function buildRoundHeatStringsFromSetting(
+  setting: HeatSetting | undefined,
+  roundCount: number
+): string[] {
+  const tabs = normalizeRoundTabs(setting ?? {});
+  const rc = clampStartListRoundCount(roundCount);
+  const out: string[] = [];
+  for (let i = 0; i < rc; i += 1) {
+    const t = tabs[i];
+    if (!t) {
+      out.push("1");
+      continue;
+    }
+    out.push((t.heatCount ?? "1").trim() || "1");
+  }
+  return out;
+}
+
+function buildHeatSettingForEntryTablePersist(params: {
+  existing: HeatSetting | undefined;
+  roundCount: number;
+  heatCountStrings: string[];
+}): HeatSetting {
+  const { existing, roundCount, heatCountStrings } = params;
+  const prevTabs = normalizeRoundTabs(existing ?? {});
+  const rc = clampStartListRoundCount(roundCount);
+  const baseTabs = prevTabs.map((t) => {
+    const { useAutoHeatFromMaxLanes: _drop, ...rest } = t;
+    void _drop;
+    return { ...rest, mode: "count" as const, heatSize: "" };
+  });
+  const mergedTabs = buildRoundTabsForRoundCount(
+    rc,
+    baseTabs.map((t, i) => ({
+      ...t,
+      heatCount: (heatCountStrings[i] ?? t.heatCount ?? "1").trim() || "1",
+    }))
+  ).map(({ useAutoHeatFromMaxLanes: _u, ...t }) => {
+    void _u;
+    return t;
+  });
+  const {
+    roundTabs: _rt,
+    mode: _m,
+    heatCount: _hc,
+    heatSize: _hs,
+    ...kept
+  } = existing ?? {};
+  void _rt;
+  void _m;
+  void _hc;
+  void _hs;
+  const first = mergedTabs[0];
+  return {
+    ...kept,
+    roundTabs: mergedTabs,
+    mode: "count",
+    heatCount: first?.heatCount ?? "1",
+    heatSize: "",
+  };
+}
+
+function mergeEventRoundHeatDraftsFromSync(
+  prev: Record<string, string[]>,
+  updatedEvents: Event[],
+  settingsJson: unknown
+): Record<string, string[]> {
+  const parsed = parseStartListSettings(settingsJson);
+  const next: Record<string, string[]> = {};
+  for (const e of updatedEvents) {
+    const rc = clampStartListRoundCount(
+      typeof e.startListRoundCount === "number" ? e.startListRoundCount : 1
+    );
+    const prevRow = prev[e.id];
+    if (prevRow && prevRow.length === rc) {
+      next[e.id] = prevRow;
+      continue;
+    }
+    if (prevRow && prevRow.length !== rc) {
+      const resized = prevRow.slice(0, rc);
+      while (resized.length < rc) resized.push("1");
+      next[e.id] = resized;
+      continue;
+    }
+    next[e.id] = buildRoundHeatStringsFromSetting(parsed.eventSettings[e.id], rc);
+  }
+  return next;
+}
 
 export type CompetitionAgeCategoryDraft = {
   id: string;
@@ -234,6 +327,8 @@ type EntrySettingsEditorProps = {
   /** 公開済みかつエントリー成立済みのとき、延長・緩和・種目追加等で告知が必要 */
   requiresParticipantNotice?: boolean;
   isPublished?: boolean;
+  /** 大会のスタートリスト JSON（種目別 roundTabs 等）。種目表保存時に PUT へ反映 */
+  initialStartListSettings?: unknown;
   initialData: {
     entryStartDate: Date | null;
     entryEndDate: Date | null;
@@ -328,12 +423,17 @@ export default function EntrySettingsEditor({
   initialData,
   initialEvents = [],
   initialAgeCategories = [],
+  initialStartListSettings = null,
   qualificationTemplates = [],
   canEdit,
   onSuccessfulSectionSave,
   onEventsChange,
 }: EntrySettingsEditorProps) {
   const router = useRouter();
+  const startListSettingsJsonRef = useRef(initialStartListSettings ?? null);
+  useEffect(() => {
+    startListSettingsJsonRef.current = initialStartListSettings ?? null;
+  }, [initialStartListSettings]);
   const notifySectionSaved = () => {
     onSuccessfulSectionSave?.();
   };
@@ -436,32 +536,6 @@ export default function EntrySettingsEditor({
     initialData.participantEligibilityText ?? ""
   );
 
-  // 出場に必要な資格（テンプレート由来 + 認定LSマクロ）
-  const allowedQualificationOptions = useMemo(
-    () => deriveEntryQualificationOptionsFromTemplates(qualificationTemplates),
-    [qualificationTemplates]
-  );
-  const allowedQualificationSet = useMemo(
-    () => new Set(allowedQualificationOptions),
-    [allowedQualificationOptions]
-  );
-  const certifiedLifesaverUpperQualifications = useMemo(
-    () => getCertifiedLifesaverUpperQualifications(allowedQualificationOptions),
-    [allowedQualificationOptions]
-  );
-  const [requiredQualifications, setRequiredQualifications] = useState<string[]>(
-    normalizeEntryRequiredQualifications(
-      Array.isArray(initialData.requiredQualifications)
-        ? (initialData.requiredQualifications as unknown[])
-        : [],
-      {
-        allowedQualifications: allowedQualificationSet,
-        expandCertifiedLifesaverMacro: true,
-      }
-    )
-  );
-  const [isUpdatingQualifications, setIsUpdatingQualifications] = useState(false);
-  
   // エントリー費用設定
   const [individualEntryFee, setIndividualEntryFee] = useState(
     (
@@ -537,63 +611,6 @@ export default function EntrySettingsEditor({
         individual: String(row?.individualEntryFee ?? 0),
         team: String(row?.teamEntryFeePerTeam ?? 0),
       };
-    }
-    return m;
-  });
-
-  const initialParsedQualTiers = parseAgeQualificationTiers(
-    initialData.requiredQualifications,
-    allowedQualificationSet
-  );
-  const initialParsedUnderQualTiers = parseUnderQualificationTiers(
-    initialData.requiredQualifications,
-    allowedQualificationSet
-  );
-  const [qualPricingMode, setQualPricingMode] = useState<"flat" | "byAge" | "byUnder">(() => {
-    if (initialParsedUnderQualTiers?.length) return "byUnder";
-    if (initialParsedQualTiers?.length) return "byAge";
-    return "flat";
-  });
-  const [ageQualFormRows, setAgeQualFormRows] = useState<
-    { id: string; minAge: string; maxAge: string; qualifications: string[] }[]
-  >(() => {
-    if (initialParsedQualTiers?.length) {
-      return initialParsedQualTiers.map((t) => ({
-        id: mkTierRowId(),
-        minAge: String(t.minAge),
-        maxAge: t.maxAge === null ? "" : String(t.maxAge),
-        qualifications: [...t.requiredQualifications],
-      }));
-    }
-    return [
-      {
-        id: mkTierRowId(),
-        minAge: "0",
-        maxAge: "",
-        qualifications: normalizeEntryRequiredQualifications(
-          Array.isArray(initialData.requiredQualifications)
-            ? (initialData.requiredQualifications as unknown[])
-            : [],
-          {
-            allowedQualifications: allowedQualificationSet,
-            expandCertifiedLifesaverMacro: true,
-          }
-        ),
-      },
-    ];
-  });
-
-  const [underQualDraft, setUnderQualDraft] = useState<Record<string, string[]>>(() => {
-    if (!initialData.underAgeSystemEnabled) return {};
-    const part = partitionUnderAgeBands(
-      initialData.underAgeUThresholds ?? [],
-      initialData.underAgeOpenEnabled ?? true
-    );
-    const keys = expectedUnderFeeTierKeys(part);
-    const parsed = initialParsedUnderQualTiers;
-    const m: Record<string, string[]> = {};
-    for (const k of keys) {
-      m[k] = [...(parsed?.find((t) => t.tierKey === k)?.requiredQualifications ?? [])];
     }
     return m;
   });
@@ -825,6 +842,9 @@ export default function EntrySettingsEditor({
   const [eventStartListRoundCounts, setEventStartListRoundCounts] = useState<
     Record<string, string>
   >(() => buildStartListRoundCountsMap(initialEvents));
+  const [eventRoundHeatDrafts, setEventRoundHeatDrafts] = useState<Record<string, string[]>>(() =>
+    mergeEventRoundHeatDraftsFromSync({}, initialEvents, initialStartListSettings ?? null)
+  );
   const [eventTeamRelayPositions, setEventTeamRelayPositions] = useState<
     Record<
       string,
@@ -853,6 +873,9 @@ export default function EntrySettingsEditor({
       setEventBirthDateRanges(updatedMap);
       setEventPreliminaryLanes(buildPreliminaryLanesMap(updatedEvents));
       setEventStartListRoundCounts(buildStartListRoundCountsMap(updatedEvents));
+      setEventRoundHeatDrafts(
+        mergeEventRoundHeatDraftsFromSync({}, updatedEvents, startListSettingsJsonRef.current)
+      );
       setEventTeamRelayPositions(buildTeamRelayPositionsMap(updatedEvents));
       onEventsChange?.(updatedEvents);
       return;
@@ -861,6 +884,9 @@ export default function EntrySettingsEditor({
     setEventBirthDateRanges((prev) => mergeEventBirthDateRangesFromSync(prev, updatedEvents));
     setEventPreliminaryLanes((prev) => mergePreliminaryLanesFromSync(prev, updatedEvents));
     setEventStartListRoundCounts((prev) => mergeStartListRoundCountsFromSync(prev, updatedEvents));
+    setEventRoundHeatDrafts((prev) =>
+      mergeEventRoundHeatDraftsFromSync(prev, updatedEvents, startListSettingsJsonRef.current)
+    );
     setEventTeamRelayPositions((prev) => mergeTeamRelayPositionsFromSync(prev, updatedEvents));
     onEventsChange?.(updatedEvents);
   };
@@ -1852,169 +1878,6 @@ export default function EntrySettingsEditor({
     }
   };
 
-  const toggleQualification = (value: string) => {
-    setRequiredQualifications((current) =>
-      applyEntryQualificationToggleWithCertifiedMacro(current, value, allowedQualificationOptions)
-    );
-  };
-
-  const toggleQualInTier = (rowId: string, option: string) => {
-    setAgeQualFormRows((rows) =>
-      rows.map((r) => {
-        if (r.id !== rowId) return r;
-        return {
-          ...r,
-          qualifications: applyEntryQualificationToggleWithCertifiedMacro(
-            r.qualifications,
-            option,
-            allowedQualificationOptions
-          ),
-        };
-      })
-    );
-  };
-
-  const toggleQualInUnderTier = (tierKey: string, option: string) => {
-    setUnderQualDraft((prev) => {
-      const cur = prev[tierKey] ?? [];
-      return {
-        ...prev,
-        [tierKey]: applyEntryQualificationToggleWithCertifiedMacro(
-          cur,
-          option,
-          allowedQualificationOptions
-        ),
-      };
-    });
-  };
-
-  const handleUpdateQualifications = async () => {
-    if (qualPricingMode === "byAge") {
-      for (const row of ageQualFormRows) {
-        const minAge = parseInt(row.minAge, 10);
-        const maxRaw = row.maxAge.trim();
-        const maxAge = maxRaw === "" ? null : parseInt(maxRaw, 10);
-        if (!Number.isFinite(minAge) || minAge < 0) {
-          toast.error("各年齢帯の下限年齢を正しく入力してください");
-          return;
-        }
-        if (maxAge !== null && (!Number.isFinite(maxAge) || maxAge < minAge)) {
-          toast.error("上限年齢は下限以上にするか、上限なしの場合は空欄にしてください");
-          return;
-        }
-      }
-    }
-
-    if (qualPricingMode === "byUnder") {
-      if (!initialData.underAgeSystemEnabled || !underPartitionForEditors) {
-        toast.error("アンダー制を有効にしてから、アンダー区分別の資格を設定してください");
-        return;
-      }
-    }
-
-    const nextStored: unknown =
-      qualPricingMode === "byAge"
-        ? {
-            ageQualificationTiers: ageQualFormRows.map((row) => {
-              const minAge = parseInt(row.minAge, 10);
-              const maxRaw = row.maxAge.trim();
-              const maxAge = maxRaw === "" ? null : parseInt(maxRaw, 10);
-              return {
-                minAge,
-                maxAge,
-                requiredQualifications: normalizeEntryRequiredQualifications(row.qualifications, {
-                  allowedQualifications: allowedQualificationSet,
-                  expandCertifiedLifesaverMacro: true,
-                }),
-              };
-            }),
-          }
-        : qualPricingMode === "byUnder" && underPartitionForEditors
-          ? {
-              underQualificationTiers: expectedUnderFeeTierKeys(underPartitionForEditors).map(
-                (k) => ({
-                  tierKey: k,
-                  requiredQualifications: normalizeEntryRequiredQualifications(
-                    underQualDraft[k] ?? [],
-                    {
-                      allowedQualifications: allowedQualificationSet,
-                      expandCertifiedLifesaverMacro: true,
-                    }
-                  ),
-                })
-              ),
-            }
-          : normalizeEntryRequiredQualifications(requiredQualifications, {
-              allowedQualifications: allowedQualificationSet,
-              expandCertifiedLifesaverMacro: true,
-            });
-
-    setIsUpdatingQualifications(true);
-
-    try {
-      const announce = buildQualificationRelaxAnnouncementFromConfigs(
-        initialData.requiredQualifications,
-        nextStored,
-        requiresParticipantNotice,
-        underPartitionForEditors ?? null
-      );
-      const basePayload =
-        qualPricingMode === "byAge"
-          ? {
-              ageQualificationTiers: (nextStored as { ageQualificationTiers: AgeQualificationTier[] })
-                .ageQualificationTiers,
-            }
-          : qualPricingMode === "byUnder"
-            ? {
-                underQualificationTiers: (
-                  nextStored as { underQualificationTiers: { tierKey: string; requiredQualifications: string[] }[] }
-                ).underQualificationTiers,
-              }
-            : {
-                requiredQualifications: normalizeEntryRequiredQualifications(requiredQualifications, {
-                  allowedQualifications: allowedQualificationSet,
-                  expandCertifiedLifesaverMacro: true,
-                }),
-              };
-      const response = await fetch(
-        `/api/competitions/${competitionId}/entry-qualifications`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(withOptionalAnnounce(announce, basePayload)),
-        }
-      );
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "必要資格の更新に失敗しました");
-      }
-
-      const data = await response.json();
-      if (Array.isArray(data.requiredQualifications)) {
-        setRequiredQualifications(
-          normalizeEntryRequiredQualifications(data.requiredQualifications, {
-            allowedQualifications: allowedQualificationSet,
-            expandCertifiedLifesaverMacro: true,
-          })
-        );
-      }
-
-      toast.success("出場に必要な資格を更新しました");
-      router.refresh();
-      notifySectionSaved();
-    } catch (error) {
-      console.error("必要資格の更新エラー:", error);
-      toast.error(
-        error instanceof Error ? error.message : "必要資格の更新に失敗しました"
-      );
-    } finally {
-      setIsUpdatingQualifications(false);
-    }
-  };
-
   const handleAddPoolIndividual = async () => {
     if (!poolIndividualName.trim()) {
       setPoolIndividualError("種目名を入力してください");
@@ -2307,6 +2170,32 @@ export default function EntrySettingsEditor({
       }
     }
 
+    for (const event of rowTargets) {
+      const rc = clampStartListRoundCount(Number((eventStartListRoundCounts[event.id] ?? "1").trim()) || 1);
+      const heats =
+        eventRoundHeatDrafts[event.id] ??
+        buildRoundHeatStringsFromSetting(
+          parseStartListSettings(startListSettingsJsonRef.current).eventSettings[event.id],
+          rc
+        );
+      if (heats.length !== rc) {
+        return {
+          ok: false,
+          message: `「${event.name}」のラウンド別ヒート数の入力数がラウンド数（${rc}）と一致しません`,
+        };
+      }
+      for (let i = 0; i < rc; i += 1) {
+        const raw = (heats[i] ?? "").trim();
+        const hc = Number(raw);
+        if (!Number.isInteger(hc) || hc < 1 || hc > 64) {
+          return {
+            ok: false,
+            message: `「${event.name}」のラウンド${i + 1}のヒート数は1〜64の整数にしてください`,
+          };
+        }
+      }
+    }
+
     if (type === "TEAM") {
       for (const event of ageTargets) {
         const k = teamRelayStateKey(category, event.name, event.ageCategoryId);
@@ -2454,6 +2343,57 @@ export default function EntrySettingsEditor({
         })
       );
       errorCount += teamOk.filter((ok) => !ok).length;
+    }
+
+    if (errorCount === 0 && roundRes.ok && canEdit) {
+      const prevParsed = parseStartListSettings(startListSettingsJsonRef.current);
+      const merged: Record<string, HeatSetting> = {};
+      for (const e of events) {
+        const existing = prevParsed.eventSettings[e.id];
+        const isTarget = rowTargets.some((x) => x.id === e.id);
+        const rc = clampStartListRoundCount(
+          Number((eventStartListRoundCounts[e.id] ?? "1").trim()) || 1
+        );
+        if (isTarget) {
+          const heats =
+            eventRoundHeatDrafts[e.id] ?? buildRoundHeatStringsFromSetting(existing, rc);
+          merged[e.id] = buildHeatSettingForEntryTablePersist({
+            existing,
+            roundCount: rc,
+            heatCountStrings: heats,
+          });
+        } else if (existing) {
+          merged[e.id] = existing;
+        } else {
+          merged[e.id] = buildHeatSettingForEntryTablePersist({
+            existing: undefined,
+            roundCount: rc,
+            heatCountStrings: Array.from({ length: rc }, () => "1"),
+          });
+        }
+      }
+      const payload = buildStartListSettingsPayload({
+        eventSettings: merged,
+        teamAssignmentDeadline: prevParsed.teamAssignmentDeadline,
+      });
+      const slRes = await fetch(`/api/competitions/${competitionId}/start-list-settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startListSettings: payload }),
+      });
+      if (!slRes.ok) {
+        let message = "スタートリスト設定の保存に失敗しました";
+        try {
+          const body = (await slRes.json()) as { message?: string };
+          if (typeof body.message === "string") message = body.message;
+        } catch {
+          /* ignore */
+        }
+        toast.error(message);
+        errorCount += 1;
+      } else {
+        startListSettingsJsonRef.current = payload;
+      }
     }
 
     return errorCount;
@@ -3113,16 +3053,75 @@ export default function EntrySettingsEditor({
                         title="1〜32（全ラウンドのタブ数）"
                         value={eventStartListRoundCounts[row.id] ?? "1"}
                         onChange={(e) => {
+                          const v = e.target.value;
                           setEventStartListRoundCounts((prev) => ({
                             ...prev,
-                            [row.id]: e.target.value,
+                            [row.id]: v,
                           }));
+                          const rc = clampStartListRoundCount(Number(v.trim()) || 1);
+                          setEventRoundHeatDrafts((draftPrev) => {
+                            const cur = draftPrev[row.id] ?? Array.from({ length: rc }, () => "1");
+                            const resized = cur.slice(0, rc);
+                            while (resized.length < rc) resized.push("1");
+                            return { ...draftPrev, [row.id]: resized };
+                          });
                         }}
                         disabled={!canEdit || deleteDrafted || bulkSavingAllEventTables}
                         className="h-8 w-11 px-1 text-center text-xs tabular-nums"
                       />
                     </label>
                   ))}
+                </div>
+              </div>
+              <div>
+                <p className="mb-1 text-[10px] text-muted-foreground">
+                  ラウンド別ヒート数（男女別・上から第1ラウンド順。各1〜64。下の保存でスタートリスト設定に反映）
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  {siblings.map((row) => {
+                    const rc = clampStartListRoundCount(
+                      Number((eventStartListRoundCounts[row.id] ?? "1").trim()) || 1
+                    );
+                    const tabLabels = defaultStartListRoundTabLabels(rc);
+                    const heats =
+                      eventRoundHeatDrafts[row.id] ?? Array.from({ length: rc }, () => "1");
+                    return (
+                      <div key={`rh-${row.id}`} className="min-w-[8rem] space-y-1">
+                        <span className="block text-center text-[10px] font-medium text-muted-foreground">
+                          {row.sex === "MALE" ? "男" : row.sex === "FEMALE" ? "女" : "他"}
+                        </span>
+                        <div className="space-y-1">
+                          {Array.from({ length: rc }, (_, i) => (
+                            <label key={i} className="flex items-center gap-1.5 text-[10px]">
+                              <span
+                                className="w-14 shrink-0 truncate text-muted-foreground"
+                                title={tabLabels[i]}
+                              >
+                                {tabLabels[i]}
+                              </span>
+                              <Input
+                                numericInput="integer"
+                                min={1}
+                                max={64}
+                                className="h-7 w-10 px-1 text-center text-xs tabular-nums"
+                                value={heats[i] ?? "1"}
+                                disabled={!canEdit || deleteDrafted || bulkSavingAllEventTables}
+                                onChange={(ev) => {
+                                  const nextVal = ev.target.value;
+                                  setEventRoundHeatDrafts((prev) => {
+                                    const base = prev[row.id] ?? Array.from({ length: rc }, () => "1");
+                                    const next = [...base];
+                                    next[i] = nextVal;
+                                    return { ...prev, [row.id]: next };
+                                  });
+                                }}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
               {type === "TEAM" ? (
@@ -3450,237 +3449,19 @@ export default function EntrySettingsEditor({
       )}
 
       {isSection("qualifications") && (
-      <Card className="overflow-hidden">
-        <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
-          <CardTitle className="text-base font-semibold">出場に必要な資格</CardTitle>
-          <CardDescription className="space-y-1 text-xs">
-            <span className="block">未選択の場合は資格不要です。</span>
-            <span className="block text-muted-foreground">
-              資格候補は資格テンプレートから自動反映されます。
-            </span>
-            <span className="block text-muted-foreground">{CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP}</span>
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3 px-4 py-3">
-          {allowedQualificationOptions.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border/80 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-              資格テンプレートが未登録のため、参加資格を設定できません。
-            </div>
-          ) : null}
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-3 text-xs">
-              <label className="flex cursor-pointer items-center gap-2">
-                <input
-                  type="radio"
-                  className="h-3.5 w-3.5"
-                  checked={qualPricingMode === "flat"}
-                  onChange={() => setQualPricingMode("flat")}
-                  disabled={!canEdit}
-                />
-                全員同一
-              </label>
-              <label className="flex cursor-pointer items-center gap-2">
-                <input
-                  type="radio"
-                  className="h-3.5 w-3.5"
-                  checked={qualPricingMode === "byAge"}
-                  onChange={() => setQualPricingMode("byAge")}
-                  disabled={!canEdit}
-                />
-                年齢帯別
-              </label>
-              <label className="flex cursor-pointer items-center gap-2">
-                <input
-                  type="radio"
-                  className="h-3.5 w-3.5"
-                  checked={qualPricingMode === "byUnder"}
-                  onChange={() => setQualPricingMode("byUnder")}
-                  disabled={!canEdit || !initialData.underAgeSystemEnabled}
-                />
-                アンダー区分別
-              </label>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {qualPricingMode === "byUnder"
-                ? "大会でアンダー制を有効にし、U/OPEN を保存してから設定してください。区分キーは料金（アンダー区分別）と一致します。"
-                : "年齢は大会の「年齢・所属クラブ」で設定した範囲（開催日時点の満年齢）に合わせて帯を分けてください。帯が重なると保存できません。"}
-            </p>
-            {certifiedLifesaverUpperQualifications.length > 0 ? (
-              <p className="text-[11px] text-muted-foreground">
-                「{ENTRY_REQUIRED_CERTIFIED_LIFESAVER}」を選択すると、上位資格（
-                {certifiedLifesaverUpperQualifications.join(" / ")}）が一括で選択されます。
-              </p>
-            ) : null}
-
-            {qualPricingMode === "flat" ? (
-              <div className="space-y-2">
-                {requiredQualifications.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {requiredQualifications.map((item) => (
-                      <span
-                        key={item}
-                        className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                      >
-                        {item}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {allowedQualificationOptions.map((option) => (
-                    <label
-                      key={option}
-                      className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 transition hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={requiredQualifications.includes(option)}
-                        onChange={() => toggleQualification(option)}
-                        disabled={!canEdit}
-                      />
-                      <span>{option}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            ) : qualPricingMode === "byUnder" && underPartitionForEditors ? (
-              <div className="space-y-3">
-                {expectedUnderFeeTierKeys(underPartitionForEditors).map((k) => (
-                  <div
-                    key={k}
-                    className="space-y-2 rounded-lg border border-border/80 bg-muted/15 p-3"
-                  >
-                    <p className="text-sm font-medium leading-tight">{k}</p>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {allowedQualificationOptions.map((option) => (
-                        <label
-                          key={`${k}-${option}`}
-                          className="flex items-center gap-2 rounded-md border border-gray-200 bg-background px-2 py-1.5 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={(underQualDraft[k] ?? []).includes(option)}
-                            onChange={() => toggleQualInUnderTier(k, option)}
-                            disabled={!canEdit}
-                          />
-                          <span>{option}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {ageQualFormRows.map((row) => (
-                  <div
-                    key={row.id}
-                    className="space-y-2 rounded-lg border border-border/80 bg-muted/15 p-3"
-                  >
-                    <div className="flex flex-wrap items-end gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-[10px]">下限（歳）</Label>
-                        <Input
-                          numericInput="integer"
-                          min={0}
-                          className="h-8 w-20 text-xs"
-                          value={row.minAge}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setAgeQualFormRows((prev) =>
-                              prev.map((r) => (r.id === row.id ? { ...r, minAge: v } : r))
-                            );
-                          }}
-                          disabled={!canEdit}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-[10px]">上限（空=なし）</Label>
-                        <Input
-                          numericInput="integer"
-                          min={0}
-                          className="h-8 w-20 text-xs"
-                          value={row.maxAge}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setAgeQualFormRows((prev) =>
-                              prev.map((r) => (r.id === row.id ? { ...r, maxAge: v } : r))
-                            );
-                          }}
-                          disabled={!canEdit}
-                        />
-                      </div>
-                      {canEdit && ageQualFormRows.length > 1 ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 text-xs text-destructive"
-                          onClick={() =>
-                            setAgeQualFormRows((prev) => prev.filter((r) => r.id !== row.id))
-                          }
-                        >
-                          削除
-                        </Button>
-                      ) : null}
-                    </div>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {allowedQualificationOptions.map((option) => (
-                        <label
-                          key={`${row.id}-${option}`}
-                          className="flex items-center gap-2 rounded-md border border-gray-200 bg-background px-2 py-1.5 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={row.qualifications.includes(option)}
-                            onChange={() => toggleQualInTier(row.id, option)}
-                            disabled={!canEdit}
-                          />
-                          <span>{option}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                {canEdit ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs"
-                    onClick={() =>
-                      setAgeQualFormRows((prev) => [
-                        ...prev,
-                        {
-                          id: mkTierRowId(),
-                          minAge: "0",
-                          maxAge: "",
-                          qualifications: [],
-                        },
-                      ])
-                    }
-                  >
-                    年齢帯を追加
-                  </Button>
-                ) : null}
-              </div>
-            )}
-          </div>
-
-          {canEdit && (
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                onClick={handleUpdateQualifications}
-                disabled={isUpdatingQualifications}
-                className="w-full md:w-auto"
-              >
-                {isUpdatingQualifications ? "更新中..." : "必要資格を更新"}
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        <CompetitionEntryQualificationsEditor
+          competitionId={competitionId}
+          canEdit={canEdit}
+          requiresParticipantNotice={requiresParticipantNotice}
+          qualificationTemplates={qualificationTemplates}
+          initialRequiredQualifications={initialData.requiredQualifications}
+          underAge={{
+            underAgeSystemEnabled: initialData.underAgeSystemEnabled,
+            underAgeUThresholds: initialData.underAgeUThresholds,
+            underAgeOpenEnabled: initialData.underAgeOpenEnabled,
+          }}
+          onSuccessfulSave={notifySectionSaved}
+        />
       )}
 
       {isSection("multiEvent") && (

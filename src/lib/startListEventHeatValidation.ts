@@ -3,10 +3,10 @@ import {
   normalizeRoundTabs,
   START_LIST_ROUND_LABEL_MAX_LEN,
 } from "@/lib/startListSettings";
-import { computeHeatCountFromMaxLanes, resolveHeatCount } from "@/lib/startListRounds";
+import { resolveHeatCount } from "@/lib/startListRounds";
 
 /**
- * ラウンドタブ順の「実効ヒート数」（先頭の最大レーン自動・size モードは entryCount から解決）。
+ * ラウンドタブ順の「実効ヒート数」（size モードは entryCount から解決）。
  * スタートリスト UI / API の単調性チェックで共通利用。
  */
 export function effectiveHeatCountsForRoundTabs(
@@ -14,18 +14,8 @@ export function effectiveHeatCountsForRoundTabs(
   entryCount: number,
   maxLanesPerHeat: number | null | undefined
 ): number[] {
-  const L =
-    typeof maxLanesPerHeat === "number" &&
-    Number.isFinite(maxLanesPerHeat) &&
-    maxLanesPerHeat >= 1
-      ? Math.min(64, Math.max(1, Math.floor(maxLanesPerHeat)))
-      : null;
-
-  return tabs.map((t, index) => {
-    if (index === 0 && t.useAutoHeatFromMaxLanes !== false && L !== null) {
-      if (entryCount <= 0) return 0;
-      return computeHeatCountFromMaxLanes(entryCount, L) ?? 1;
-    }
+  void maxLanesPerHeat;
+  return tabs.map((t) => {
     if (t.mode === "size") {
       if (entryCount > 0) {
         return resolveHeatCount(entryCount, { mode: "size", heatSize: t.heatSize });

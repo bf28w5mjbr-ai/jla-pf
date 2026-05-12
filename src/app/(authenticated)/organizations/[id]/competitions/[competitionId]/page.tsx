@@ -26,6 +26,7 @@ import CompetitionAnnouncementsManager from "@/components/CompetitionAnnouncemen
 import CompetitionAttachmentsManager from "@/components/CompetitionAttachmentsManager";
 import CompetitionGalleryManager from "@/components/CompetitionGalleryManager";
 import CompetitionEntrySettingsEditor from "@/components/CompetitionEntrySettingsEditor";
+import CompetitionParticipationConditionsEditor from "@/components/CompetitionParticipationConditionsEditor";
 import CompetitionEntriesTabContent from "@/components/admin/CompetitionEntriesTabContent";
 import CompetitionFinanceTabContent from "@/components/admin/CompetitionFinanceTabContent";
 import CompetitionOfficialTabHeavy from "@/components/admin/CompetitionOfficialTabHeavy";
@@ -424,6 +425,63 @@ export default async function CompetitionDetailPage({
             }}
           />
 
+          <CompetitionParticipationConditionsEditor
+            competitionId={competitionId}
+            canEdit={canEdit}
+            isPublished={competition.isPublished}
+            requiresParticipantNotice={
+              entryMutationState.isPublished && entryMutationState.hasEstablishedEntry
+            }
+            settingsVersion={competition.updatedAt.toISOString()}
+            initialData={{
+              entryStartDate: competition.entryStartDate,
+              entryEndDate: competition.entryEndDate,
+              entryFee: competition.entryFee as unknown as NonNullable<
+                EntrySettingsEditorProps["initialData"]
+              >["entryFee"],
+              requiredQualifications: competition.requiredQualifications as unknown,
+              participantEligibilityText: competition.participantEligibilityText,
+              allowMultipleEventEntries,
+              maxEventEntriesPerPerson,
+              requireClubMembership: competition.requireClubMembership ?? false,
+              minAge: competition.minAge,
+              maxAge: competition.maxAge,
+              competitionCategory: competition.category,
+              entryPledgeEnabled: competition.entryPledgeEnabled ?? false,
+              entryPledgeText: competition.entryPledgeText,
+              entryPledgeLockNoOffer: competition.entryPledgeLockNoOffer ?? false,
+              underAgeSystemEnabled: competition.underAgeSystemEnabled ?? false,
+              underAgeUThresholds: competition.underAgeUThresholds ?? [],
+              underAgeOpenEnabled: competition.underAgeOpenEnabled ?? true,
+            }}
+            initialEvents={
+              competition.events.map((e) => ({
+                ...e,
+                sex: e.sex as "MALE" | "FEMALE",
+                minAge: e.minAge,
+                maxAge: e.maxAge,
+                ageCategoryId: e.ageCategoryId ?? null,
+                underAgeEligibilityEnabled: e.underAgeEligibilityEnabled ?? true,
+                underBandKeysOverride: e.underBandKeysOverride as string[] | null | undefined,
+                createdAt: e.createdAt.toISOString(),
+                updatedAt: e.updatedAt.toISOString(),
+              })) as unknown as NonNullable<EntrySettingsEditorProps["initialEvents"]>
+            }
+            initialAgeCategories={competition.ageCategories.map((c) => ({
+              id: c.id,
+              name: c.name,
+              displayOrder: c.displayOrder,
+              eligibleBirthDateFrom: c.eligibleBirthDateFrom,
+              eligibleBirthDateTo: c.eligibleBirthDateTo,
+              underBandKeysEnabled: c.underBandKeysEnabled as string[] | null | undefined,
+            }))}
+            qualificationTemplates={qualificationTemplates.map((template) => ({
+              id: template.id,
+              name: template.name,
+              kind: template.kind,
+            }))}
+          />
+
           <CompetitionEntrySettingsEditor
             competitionId={competitionId}
             canEdit={canEdit}
@@ -439,6 +497,7 @@ export default async function CompetitionDetailPage({
             }))}
             copyEntrySettingsAllowed={copyEntrySettingsAllowed}
             copyEntrySettingsBlockedReason={copyEntrySettingsBlockedReason}
+            initialStartListSettings={competition.startListSettings}
             initialData={{
               entryStartDate: competition.entryStartDate,
               entryEndDate: competition.entryEndDate,

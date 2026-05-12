@@ -30,8 +30,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { computeHeatCountFromMaxLanes, resolveHeatCount } from "@/lib/startListRounds";
 import {
   computeLiveFirstRoundAdvanceQuotas,
   formatStartListTabLabelWithHeatCount,
@@ -40,9 +40,8 @@ import {
   type StartListIndividualInput,
   type StartListTeamInput,
 } from "@/lib/startListEventTabDisplay";
-import type { StartListRoundData } from "@/lib/startListRounds";
+import { resolveHeatCount, type StartListRoundData } from "@/lib/startListRounds";
 import {
-  applyAutoFirstRoundTabFromMaxLanes,
   applyDefaultRoundTabLabels,
   buildRoundTabsForRoundCount,
   buildStartListSettingsPayload,
@@ -109,6 +108,8 @@ type Props = {
   showResultOps?: boolean;
   /** false のときステップ1ヒート設定を編集不可（レコーダー等） */
   canEditHeatConfiguration?: boolean;
+  /** true のときのみ最大レーン数を Event に PATCH 可能（主催団体管理者） */
+  canEditPreliminaryLanes?: boolean;
   /** 種目の当日運用ステータス（ヒート表に終了系バッジ。マーシャル API なしでも表示） */
   participantStatusByKey?: Record<string, string>;
   /** marshalRound 別の当日運用行（SSR）。ポーリングで上書き */
@@ -135,12 +136,11 @@ function coerceTabsToHeatOnly(
   tabs: StartListRoundTab[],
   entryCount: number
 ): StartListRoundTab[] {
-  return tabs.map((t, i) => {
+  return tabs.map((t) => {
     if (t.mode !== "size") {
-      return { ...t, mode: "count", heatSize: "" };
-    }
-    if (i === 0 && t.useAutoHeatFromMaxLanes !== false) {
-      return { ...t, mode: "count", heatCount: "1", heatSize: "" };
+      const { useAutoHeatFromMaxLanes: _u, ...rest } = t;
+      void _u;
+      return { ...rest, mode: "count", heatSize: "" };
     }
     const n = Math.max(0, entryCount);
     const hc =
@@ -159,7 +159,6 @@ function coerceTabsToHeatOnly(
 function deriveRoundTabsForEditor(
   eventSettings: Record<string, HeatSetting>,
   eventId: string,
-  defaultMaxLanesPerRace: number | null | undefined,
   configuredStartListRoundCount: number | null | undefined,
   entryCount: number
 ): StartListRoundTab[] {
@@ -175,8 +174,27 @@ function deriveRoundTabsForEditor(
   if (rc !== null && tabs.length !== rc) {
     tabs = buildRoundTabsForRoundCount(rc, tabs);
   }
-  tabs = applyAutoFirstRoundTabFromMaxLanes(tabs, defaultMaxLanesPerRace);
   return coerceTabsToHeatOnly(tabs, entryCount);
+}
+
+function clampStartListRoundCountInput(n: number): number {
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return 1;
+  return Math.min(32, Math.max(1, n));
+}
+
+function parseMaxLanesDraft(
+  raw: string
+): { ok: true; value: number | null } | { ok: false; message: string } {
+  const t = raw.trim();
+  if (t === "") return { ok: true, value: null };
+  const n = parseInt(t, 10);
+  if (!Number.isInteger(n) || n < 1 || n > 32) {
+    return {
+      ok: false,
+      message: "最大レーン数は1〜32の整数、または空欄（未設定）にしてください",
+    };
+  }
+  return { ok: true, value: n };
 }
 
 function heatSettingFromTabs(tabs: StartListRoundTab[]): HeatSetting {
@@ -215,6 +233,7 @@ export default function StartListEventUnifiedCard({
   showMarshalOps: showMarshalOpsProp,
   showResultOps: showResultOpsProp,
   canEditHeatConfiguration = true,
+  canEditPreliminaryLanes = false,
   participantStatusByKey,
   initialParticipantStatusRows,
 }: Props) {
@@ -228,11 +247,24 @@ export default function StartListEventUnifiedCard({
     deriveRoundTabsForEditor(
       parsed.eventSettings,
       event.id,
-      defaultMaxLanesPerRace,
       configuredStartListRoundCount,
       entryCount
     )
   );
+  const [maxLanesDraft, setMaxLanesDraft] = useState(() =>
+    typeof preliminaryHeatLaneCount === "number" && preliminaryHeatLaneCount >= 1
+      ? String(Math.min(32, preliminaryHeatLaneCount))
+      : ""
+  );
+  const [roundCountDraft, setRoundCountDraft] = useState(() => {
+    const nt = deriveRoundTabsForEditor(
+      parsed.eventSettings,
+      event.id,
+      configuredStartListRoundCount,
+      entryCount
+    );
+    return String(clampStartListRoundCountInput(nt.length));
+  });
   const [step1Saving, setStep1Saving] = useState(false);
   /** ステップ1確定後は既定で畳み、「編集」でフォームを開く */
   const [step1EditorOpen, setStep1EditorOpen] = useState(() => !heatPlanConfirmedAtIso);
@@ -255,22 +287,26 @@ export default function StartListEventUnifiedCard({
   >({});
 
   useEffect(() => {
-    setTabs(
-      deriveRoundTabsForEditor(
-        parsed.eventSettings,
-        event.id,
-        defaultMaxLanesPerRace,
-        configuredStartListRoundCount,
-        entryCount
-      )
+    const nextTabs = deriveRoundTabsForEditor(
+      parsed.eventSettings,
+      event.id,
+      configuredStartListRoundCount,
+      entryCount
+    );
+    setTabs(nextTabs);
+    setRoundCountDraft(String(clampStartListRoundCountInput(nextTabs.length)));
+    setMaxLanesDraft(
+      typeof preliminaryHeatLaneCount === "number" && preliminaryHeatLaneCount >= 1
+        ? String(Math.min(32, preliminaryHeatLaneCount))
+        : ""
     );
   }, [
     event.id,
     initialSettings,
     parsed.eventSettings,
-    defaultMaxLanesPerRace,
     configuredStartListRoundCount,
     entryCount,
+    preliminaryHeatLaneCount,
   ]);
 
   useEffect(() => {
@@ -433,6 +469,19 @@ export default function StartListEventUnifiedCard({
   const showStep1FullForm =
     canEditHeatConfiguration && (!heatPlanConfirmed || (step1EditorOpen && canEditStep1Heats));
 
+  const effectivePreliminaryLanesForPreview = useMemo(() => {
+    if (canEditPreliminaryLanes) {
+      const p = parseMaxLanesDraft(maxLanesDraft);
+      if (p.ok) return p.value;
+    }
+    return preliminaryHeatLaneCount ?? defaultMaxLanesPerRace ?? null;
+  }, [
+    canEditPreliminaryLanes,
+    maxLanesDraft,
+    preliminaryHeatLaneCount,
+    defaultMaxLanesPerRace,
+  ]);
+
   const liveHeatsByTab = useMemo(() => {
     const eventHeatSetting = pickSetting(parsed.eventSettings, event.id);
     return getLiveHeatsByTab({
@@ -440,7 +489,7 @@ export default function StartListEventUnifiedCard({
       individuals,
       teams,
       isTeam,
-      preliminaryHeatLaneCount,
+      preliminaryHeatLaneCount: effectivePreliminaryLanesForPreview,
       officialRanksByRound,
       placementSeed,
       frozenSnapshotRounds,
@@ -452,7 +501,7 @@ export default function StartListEventUnifiedCard({
     individuals,
     teams,
     isTeam,
-    preliminaryHeatLaneCount,
+    effectivePreliminaryLanesForPreview,
     officialRanksByRound,
     placementSeed,
     frozenSnapshotRounds,
@@ -461,41 +510,16 @@ export default function StartListEventUnifiedCard({
     event.id,
   ]);
 
-  const firstRoundHeatAuto =
-    defaultMaxLanesPerRace != null &&
-    Number.isFinite(defaultMaxLanesPerRace) &&
-    defaultMaxLanesPerRace >= 1;
-  const clampedMaxLanes =
-    firstRoundHeatAuto && defaultMaxLanesPerRace != null
-      ? Math.min(64, Math.max(1, Math.floor(defaultMaxLanesPerRace)))
-      : null;
-  const autoHeatCount =
-    firstRoundHeatAuto && entryCount > 0 && clampedMaxLanes != null
-      ? computeHeatCountFromMaxLanes(entryCount, clampedMaxLanes)
-      : null;
-
   const step1CompactSummary = useMemo(() => {
     if (tabs.length === 0) return "";
     return tabs
       .map((t, index) => {
         const label = roundTabDisplayLabels[index]?.trim() || `ラウンド${index + 1}`;
-        let heatLabel: string;
-        if (index === 0 && firstRoundHeatAuto && t.useAutoHeatFromMaxLanes !== false) {
-          if (entryCount === 0) {
-            heatLabel = "0ヒート";
-          } else if (autoHeatCount != null && autoHeatCount > 0) {
-            heatLabel = `${autoHeatCount}ヒート`;
-          } else {
-            heatLabel = "自動";
-          }
-        } else {
-          const n = Math.max(1, parseInt(String(t.heatCount || "1"), 10) || 1);
-          heatLabel = `${n}ヒート`;
-        }
-        return `${label} ${heatLabel}`;
+        const n = Math.max(1, parseInt(String(t.heatCount || "1"), 10) || 1);
+        return `${label} ${n}ヒート`;
       })
       .join(" · ");
-  }, [tabs, roundTabDisplayLabels, firstRoundHeatAuto, autoHeatCount, entryCount]);
+  }, [tabs, roundTabDisplayLabels]);
 
   const tabCount = tabs.length;
 
@@ -718,29 +742,61 @@ export default function StartListEventUnifiedCard({
   }, [listMarshalHeats]);
 
   const resetStep1TabsFromServer = () => {
-    setTabs(
-      deriveRoundTabsForEditor(
-        parsed.eventSettings,
-        event.id,
-        defaultMaxLanesPerRace,
-        configuredStartListRoundCount,
-        entryCount
-      )
+    const nextTabs = deriveRoundTabsForEditor(
+      parsed.eventSettings,
+      event.id,
+      configuredStartListRoundCount,
+      entryCount
+    );
+    setTabs(nextTabs);
+    setRoundCountDraft(String(clampStartListRoundCountInput(nextTabs.length)));
+    setMaxLanesDraft(
+      typeof preliminaryHeatLaneCount === "number" && preliminaryHeatLaneCount >= 1
+        ? String(Math.min(32, preliminaryHeatLaneCount))
+        : ""
     );
   };
 
   const persistTabs = async (successToast: string | null) => {
-    const normalized = applyDefaultRoundTabLabels(
-      applyAutoFirstRoundTabFromMaxLanes(tabs, defaultMaxLanesPerRace)
-    ).map((row) => ({
+    if (heatLockedByMarshal) {
+      toast.error("マーシャル開始後はヒート分割を変更できません");
+      return false;
+    }
+
+    const lanesParsed = parseMaxLanesDraft(maxLanesDraft);
+    if (!lanesParsed.ok) {
+      toast.error(lanesParsed.message);
+      return false;
+    }
+
+    const rcTrim = roundCountDraft.trim();
+    const rcNum = parseInt(rcTrim, 10);
+    if (!Number.isInteger(rcNum) || rcNum < 1 || rcNum > 32) {
+      toast.error("ラウンド数は1〜32の整数にしてください");
+      return false;
+    }
+
+    let workingTabs = tabs;
+    if (workingTabs.length !== rcNum) {
+      workingTabs = buildRoundTabsForRoundCount(rcNum, workingTabs);
+      setTabs(workingTabs);
+      setRoundCountDraft(String(clampStartListRoundCountInput(rcNum)));
+    }
+
+    const normalized = applyDefaultRoundTabLabels(workingTabs).map((row) => ({
       ...row,
       mode: "count" as const,
       heatSize: "",
     }));
+
+    const maxLanesForClamp = canEditPreliminaryLanes
+      ? lanesParsed.value
+      : preliminaryHeatLaneCount ?? defaultMaxLanesPerRace ?? null;
+
     const clamped = clampRoundTabsToNonIncreasingHeatCounts(
       normalized,
       entryCount,
-      defaultMaxLanesPerRace
+      maxLanesForClamp
     );
     let heatAdjusted = false;
     for (let i = 0; i < normalized.length; i += 1) {
@@ -760,14 +816,37 @@ export default function StartListEventUnifiedCard({
             heatCount: c.heatCount,
             mode: c.mode,
             heatSize: c.heatSize,
-            ...(c.useAutoHeatFromMaxLanes === false
-              ? { useAutoHeatFromMaxLanes: false as const }
-              : {}),
           };
         })
       );
       toast.info("後続ラウンドのヒート数を、前ラウンドのヒート数以下に調整しました");
     }
+
+    if (canEditPreliminaryLanes) {
+      const nextLanes = lanesParsed.value;
+      const prevLanes = preliminaryHeatLaneCount ?? null;
+      const lanesChanged = (nextLanes ?? null) !== (prevLanes ?? null);
+      if (lanesChanged) {
+        try {
+          const laneRes = await fetch(
+            `/api/competitions/${competitionId}/events/${event.id}`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ preliminaryHeatLaneCount: nextLanes }),
+            }
+          );
+          const laneData = (await laneRes.json().catch(() => ({}))) as { message?: string };
+          if (!laneRes.ok) {
+            throw new Error(laneData.message || "最大レーン数の保存に失敗しました");
+          }
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "最大レーン数の保存に失敗しました");
+          return false;
+        }
+      }
+    }
+
     const payloadSetting = heatSettingFromTabs(clamped);
     const nextEvents: Record<string, HeatSetting> = {};
     for (const id of allEventIds) {
@@ -962,8 +1041,8 @@ export default function StartListEventUnifiedCard({
       index === 0 &&
       activeTabIndex === index &&
       tabCount >= 2 &&
-      typeof preliminaryHeatLaneCount === "number" &&
-      preliminaryHeatLaneCount >= 1 &&
+      typeof effectivePreliminaryLanesForPreview === "number" &&
+      effectivePreliminaryLanesForPreview >= 1 &&
       heatPlanConfirmed &&
       !marshalRoundMismatch &&
       listMarshalHeats &&
@@ -981,7 +1060,7 @@ export default function StartListEventUnifiedCard({
           heatSizes: calledSizes,
           totalParticipants: totalCalled,
           liveTabs: tabs,
-          preliminaryHeatLaneCount,
+          preliminaryHeatLaneCount: effectivePreliminaryLanesForPreview,
           eventHeatSetting: pickSetting(parsed.eventSettings, event.id),
         });
       }
@@ -1167,6 +1246,53 @@ export default function StartListEventUnifiedCard({
                 <span className="text-[11px] text-muted-foreground">後続 ≤ 前</span>
               ) : null}
             </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="start-list-max-lanes" className="text-xs text-muted-foreground">
+                  最大レーン数（1レースあたり）
+                </Label>
+                <Input
+                  id="start-list-max-lanes"
+                  numericInput="integer"
+                  min={1}
+                  max={32}
+                  className="h-9 w-full max-w-[10rem] px-2 text-sm tabular-nums sm:max-w-none"
+                  disabled={heatLockedByMarshal || !canEditPreliminaryLanes}
+                  value={maxLanesDraft}
+                  onChange={(e) => setMaxLanesDraft(e.target.value)}
+                  aria-describedby={
+                    !canEditPreliminaryLanes ? "start-list-max-lanes-hint" : undefined
+                  }
+                />
+                {!canEditPreliminaryLanes ? (
+                  <p id="start-list-max-lanes-hint" className="text-[11px] text-muted-foreground">
+                    主催団体の管理者のみ変更できます（当日運用アンロックのみでは変更不可）。
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="start-list-round-count" className="text-xs text-muted-foreground">
+                  ラウンド数
+                </Label>
+                <Input
+                  id="start-list-round-count"
+                  numericInput="integer"
+                  min={1}
+                  max={32}
+                  className="h-9 w-full max-w-[10rem] px-2 text-sm tabular-nums sm:max-w-none"
+                  disabled={heatLockedByMarshal}
+                  value={roundCountDraft}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setRoundCountDraft(value);
+                    const n = parseInt(value.trim(), 10);
+                    if (Number.isInteger(n) && n >= 1 && n <= 32) {
+                      setTabs((prev) => buildRoundTabsForRoundCount(n, prev));
+                    }
+                  }}
+                />
+              </div>
+            </div>
             <ul className="space-y-2">
               {tabs.map((t, index) => {
                 const roundTitle =
@@ -1182,86 +1308,42 @@ export default function StartListEventUnifiedCard({
                       </Badge>
                       <p className="text-xs font-semibold text-foreground sm:text-sm">{roundTitle}</p>
                     </div>
-                    {index === 0 && firstRoundHeatAuto ? (
-                      <label className="flex cursor-pointer items-start gap-2 text-xs text-muted-foreground">
-                        <input
-                          type="checkbox"
-                          className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border border-input"
-                          disabled={heatLockedByMarshal}
-                          checked={t.useAutoHeatFromMaxLanes !== false}
-                          onChange={(e) => {
-                            const on = e.target.checked;
-                            setTabs((prev) =>
-                              prev.map((row) => {
-                                if (row.id !== t.id) return row;
-                                if (on) {
-                                  const next = { ...row, mode: "count" as const, heatCount: "1", heatSize: "" };
-                                  delete next.useAutoHeatFromMaxLanes;
-                                  return next;
-                                }
-                                return {
-                                  ...row,
-                                  useAutoHeatFromMaxLanes: false,
-                                  mode: "count",
-                                  heatCount:
-                                    autoHeatCount != null && autoHeatCount > 0
-                                      ? String(autoHeatCount)
-                                      : row.heatCount?.trim() || "1",
-                                  heatSize: "",
-                                };
-                              })
-                            );
-                          }}
-                          aria-label="先頭ラウンドを最大レーン数で自動分割"
-                        />
-                        <span>最大レーンで自動分割（推奨）</span>
-                      </label>
-                    ) : null}
-                    {index === 0 && firstRoundHeatAuto && t.useAutoHeatFromMaxLanes !== false ? (
-                      <p className="pl-0.5 text-[11px] tabular-nums text-muted-foreground">
-                        最大 {clampedMaxLanes ?? "—"} レーン
-                        {autoHeatCount != null && autoHeatCount > 0
-                          ? ` → ${entryCount}名 / ${autoHeatCount}ヒート`
-                          : entryCount === 0
-                            ? " · エントリー0のときヒートなし"
-                            : null}
+                    {index === 0 ? (
+                      <p className="text-[11px] leading-relaxed text-muted-foreground">
+                        「大会設定 → 種目・参加費」でも同じ項目を変えられます。当日はここからまとめて保存できます。
                       </p>
-                    ) : (
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <span className="text-xs text-muted-foreground">ヒート数</span>
-                        <Input
-                          numericInput="integer"
-                          min={1}
-                          className="h-9 w-14 px-2 text-center text-sm tabular-nums"
-                          disabled={heatLockedByMarshal}
-                          value={t.heatCount}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setTabs((prev) => {
-                              const patched = prev.map((row) =>
-                                row.id === t.id
-                                  ? {
-                                      ...row,
-                                      heatCount: value,
-                                      mode: "count" as const,
-                                      heatSize: "",
-                                      ...(index === 0 && firstRoundHeatAuto
-                                        ? { useAutoHeatFromMaxLanes: false as const }
-                                        : {}),
-                                    }
-                                  : row
-                              );
-                              return clampRoundTabsToNonIncreasingHeatCounts(
-                                patched,
-                                entryCount,
-                                defaultMaxLanesPerRace
-                              );
-                            });
-                          }}
-                          aria-label={`${roundTitle} のヒート数`}
-                        />
-                      </div>
-                    )}
+                    ) : null}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="text-xs text-muted-foreground">ヒート数</span>
+                      <Input
+                        numericInput="integer"
+                        min={1}
+                        className="h-9 w-14 px-2 text-center text-sm tabular-nums"
+                        disabled={heatLockedByMarshal}
+                        value={t.heatCount}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setTabs((prev) => {
+                            const patched = prev.map((row) =>
+                              row.id === t.id
+                                ? {
+                                    ...row,
+                                    heatCount: value,
+                                    mode: "count" as const,
+                                    heatSize: "",
+                                  }
+                                : row
+                            );
+                            return clampRoundTabsToNonIncreasingHeatCounts(
+                              patched,
+                              entryCount,
+                              effectivePreliminaryLanesForPreview
+                            );
+                          });
+                        }}
+                        aria-label={`${roundTitle} のヒート数`}
+                      />
+                    </div>
                   </li>
                 );
               })}

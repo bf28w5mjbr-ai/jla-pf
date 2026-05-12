@@ -22,7 +22,6 @@ import {
   getIndividualEventIdsFromEntry,
   hasIndividualWithdrawalForEvent,
 } from "@/lib/entryWithdrawalAdminLabel";
-import { ensureStartListSnapshotIfEligible } from "@/lib/startListSnapshot";
 import SimpleMarkdown from "@/components/SimpleMarkdown";
 
 export const dynamic = "force-dynamic";
@@ -90,10 +89,6 @@ export default async function CompetitionEntriesPage({
     redirect(`/organizations/${organizationId}`);
   }
 
-  const ensureSnapshot = ensureStartListSnapshotIfEligible(competitionId).catch((e) => {
-    console.error("ensureStartListSnapshotIfEligible:", e);
-  });
-
   const competitionPromise = prisma.competition.findUnique({
     where: { id: competitionId },
     select: {
@@ -121,7 +116,7 @@ export default async function CompetitionEntriesPage({
     },
   });
 
-  const [, competition] = await Promise.all([ensureSnapshot, competitionPromise]);
+  const competition = await competitionPromise;
 
   if (!competition || competition.organizationId !== organizationId) {
     notFound();

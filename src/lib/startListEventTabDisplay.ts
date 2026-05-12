@@ -10,7 +10,6 @@ import {
 import { normalizeSnapshotRoundKey } from "@/lib/heatMarshalFromSnapshot";
 import {
   computeAdvanceCountsByLaneSlotsPerHeat,
-  effectiveHeatSettingForFirstStartListRound,
   enforceMinHeatCountForMaxLanes,
   reorderRounds,
   resolveHeatCount,
@@ -502,13 +501,7 @@ export function getLiveHeatsByTab(params: {
       Number.isFinite(preliminaryHeatLaneCount) &&
       preliminaryHeatLaneCount >= 1;
 
-    const useAutoFirstRoundLanes =
-      tabIndex === 0 &&
-      tab.useAutoHeatFromMaxLanes !== false &&
-      lanesOk;
-    const heatSetting = useAutoFirstRoundLanes
-      ? effectiveHeatSettingForFirstStartListRound(tab, preliminaryHeatLaneCount)
-      : roundTabToHeatSetting(tab);
+    const heatSetting = roundTabToHeatSetting(tab);
 
     /** 後続タブは進行定員で人数を絞り、最大レーン L をヒート分割に反映（未設定時は従来どおり全員） */
     const nForRound =

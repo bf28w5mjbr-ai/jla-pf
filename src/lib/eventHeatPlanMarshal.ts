@@ -14,7 +14,7 @@ export function heatPlanSplitFingerprint(setting: HeatSetting | undefined): stri
       mode: t.mode,
       heatCount: String(t.heatCount ?? "").trim(),
       heatSize: String(t.heatSize ?? "").trim(),
-      auto: t.useAutoHeatFromMaxLanes !== false,
+      auto: false,
     }))
   );
 }

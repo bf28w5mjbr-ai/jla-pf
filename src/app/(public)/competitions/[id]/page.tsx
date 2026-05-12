@@ -42,7 +42,6 @@ import {
   isUnassignedParticipationAgeBlock,
 } from "@/lib/competitionPublicParticipationEvents";
 import { relationLogosWithDisplaySrc } from "@/lib/relationLogos";
-import { ensureStartListSnapshotIfEligible } from "@/lib/startListSnapshot";
 import { parseTechnicalOfficialTiers } from "@/lib/technicalOfficialRules";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
 import DayOpsUnlockBanner from "@/components/DayOpsUnlockBanner";
@@ -447,14 +446,6 @@ export default async function CompetitionDetailPage({
 
   const withLoginRedirect = (path: string) =>
     sessionUserId ? path : `/login?redirect=${encodeURIComponent(path)}`;
-
-  if (activeTab === "start-list") {
-    try {
-      await ensureStartListSnapshotIfEligible(id);
-    } catch (e) {
-      console.error("ensureStartListSnapshotIfEligible:", e);
-    }
-  }
 
   const signInRedirectPath = `/login?redirect=${encodeURIComponent(appRoutes.competitions.root(id))}`;
 

@@ -7,7 +7,7 @@ import {
 import type { HeatSetting, StartListRoundTab } from "./startListSettings";
 
 describe("effectiveHeatCountsForRoundTabs", () => {
-  it("先頭自動＋後続手動で実効ヒート数を返す", () => {
+  it("先頭タブも heatCount をそのまま使う（最大レーン自動は廃止）", () => {
     const tabs: StartListRoundTab[] = [
       {
         id: "a",
@@ -25,7 +25,7 @@ describe("effectiveHeatCountsForRoundTabs", () => {
       },
     ];
     const eff = effectiveHeatCountsForRoundTabs(tabs, 32, 8);
-    expect(eff[0]).toBe(4);
+    expect(eff[0]).toBe(1);
     expect(eff[1]).toBe(4);
   });
 });

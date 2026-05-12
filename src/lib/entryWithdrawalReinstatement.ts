@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 
 /**
  * エントリー更新で種目を再度選んだとき、本人棄権（DNS + 理由に「棄権」）を出場待ちに戻す。
- * スタートリスト再生成（{@link refreshStartListSnapshotAfterEligibleEntryChange}）で一覧に戻る。
+ * 主催がスタートリスト capture を実行したときに一覧へ反映される。
  */
 export async function clearIndividualWithdrawalParticipantStatusesForEvents(
   tx: Prisma.TransactionClient,

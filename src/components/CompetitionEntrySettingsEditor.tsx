@@ -16,10 +16,7 @@ import { User, UsersRound } from "lucide-react";
 import {
   parseAgeCategoryFeeTiers,
   parseAgeFeeTiers,
-  parseAgeQualificationTiers,
   parseUnderFeeTiers,
-  parseUnderQualificationTiers,
-  unionRequiredQualifications,
 } from "@/lib/competitionEntryAgeTiered";
 
 type EntrySettingsEditorProps = ComponentProps<typeof EntrySettingsEditor>;
@@ -37,6 +34,8 @@ type Props = {
   initialEvents: NonNullable<EntrySettingsEditorProps["initialEvents"]>;
   initialAgeCategories?: EntrySettingsEditorProps["initialAgeCategories"];
   qualificationTemplates?: EntrySettingsEditorProps["qualificationTemplates"];
+  /** 大会のスタートリスト JSON（種目別ヒート）。種目表保存と同期 */
+  initialStartListSettings?: unknown;
   /** 種目・参加費コピー用（同一団体内の他大会） */
   siblingCompetitionsForCopy?: SiblingCompetitionOption[];
   /** エントリー0件のときのみコピー可 */
@@ -71,6 +70,7 @@ function CompetitionEntrySettingsEditorInner({
   siblingCompetitionsForCopy = [],
   copyEntrySettingsAllowed,
   copyEntrySettingsBlockedReason = null,
+  initialStartListSettings = null,
 }: Props) {
   const router = useRouter();
   const [editingSection, setEditingSection] = useState<EntrySettingsFocusSection | null>(null);
@@ -200,86 +200,6 @@ function CompetitionEntrySettingsEditorInner({
     );
   };
 
-  const renderRequiredQualifications = (requiredQualifications: unknown) => {
-    const underQ = parseUnderQualificationTiers(requiredQualifications);
-    if (underQ?.length) {
-      return (
-        <div className="space-y-1.5 text-sm">
-          <p className="text-[10px] font-medium text-muted-foreground">アンダー区分別</p>
-          {underQ.map((t, i) => (
-            <p key={i} className="text-xs leading-snug">
-              <span className="font-medium">{t.tierKey}</span>
-              {t.requiredQualifications.length > 0
-                ? ` · ${t.requiredQualifications.join("、")}`
-                : " · 資格不要"}
-            </p>
-          ))}
-        </div>
-      );
-    }
-    const tiered = parseAgeQualificationTiers(requiredQualifications);
-    if (tiered?.length) {
-      return (
-        <div className="space-y-1.5 text-sm">
-          <p className="text-[10px] font-medium text-muted-foreground">年齢帯別</p>
-          {tiered.map((t, i) => (
-            <p key={i} className="text-xs leading-snug">
-              <span className="font-medium">
-                {t.minAge}〜{t.maxAge == null ? "上限なし" : `${t.maxAge}歳`}
-              </span>
-              {t.requiredQualifications.length > 0
-                ? ` · ${t.requiredQualifications.join("、")}`
-                : " · 資格不要"}
-            </p>
-          ))}
-        </div>
-      );
-    }
-    const flat = unionRequiredQualifications(requiredQualifications);
-    if (flat.length === 0) {
-      return <p className="font-medium">資格不要</p>;
-    }
-    return (
-      <div className="flex flex-wrap gap-2">
-        {flat.map((item) => (
-          <span
-            key={item}
-            className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-foreground"
-          >
-            {item}
-          </span>
-        ))}
-      </div>
-    );
-  };
-
-  const renderParticipantEligibility = (value: string | null | undefined) => {
-    if (!value || value.trim().length === 0) {
-      return <p className="text-sm font-medium">制限なし</p>;
-    }
-    return <p className="whitespace-pre-wrap text-sm font-medium">{value}</p>;
-  };
-
-  const renderAgeClubSummary = () => {
-    const min = initialData.minAge;
-    const max = initialData.maxAge;
-    const ageLabel =
-      min != null && max != null
-        ? `${min}歳以上（含）〜${max}歳以下（含）`
-        : min != null
-          ? `${min}歳以上（その歳を含む）`
-          : max != null
-            ? `${max}歳以下（その歳を含む）`
-            : "年齢制限なし";
-    return (
-      <p className="text-sm font-medium leading-snug">
-        {initialData.requireClubMembership ? "所属クラブ必須" : "所属クラブ任意"}
-        <span className="mx-1.5 text-muted-foreground">·</span>
-        {ageLabel}
-      </p>
-    );
-  };
-
   const renderEventChips = () => {
     if (!overviewEvents || overviewEvents.length === 0) {
       return <p className="text-sm text-muted-foreground">未登録</p>;
@@ -362,6 +282,7 @@ function CompetitionEntrySettingsEditorInner({
           initialData={initialData}
           initialEvents={overviewEvents}
           initialAgeCategories={initialAgeCategories}
+          initialStartListSettings={initialStartListSettings}
           qualificationTemplates={qualificationTemplates}
           canEdit={canEdit}
           onSuccessfulSectionSave={() => setEditingSection(null)}
@@ -389,7 +310,7 @@ function CompetitionEntrySettingsEditorInner({
       <CardHeader className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
         <CardTitle className="text-base font-semibold">エントリー設定</CardTitle>
         <CardDescription className="text-sm">
-          まず期間と種目・参加費を整え、そのあと資格や誓約を設定するのがおすすめです。
+          エントリー期間・種目・参加費を整えたあと、種目数や誓約を設定するのがおすすめです。出場条件は「大会出場条件」で設定します。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5 px-4 py-4 sm:px-5">
@@ -456,9 +377,6 @@ function CompetitionEntrySettingsEditorInner({
               </div>
             </div>
           )}
-          {row("qualifications", renderRequiredQualifications(initialData.requiredQualifications))}
-          {row("eligibility", renderParticipantEligibility(initialData.participantEligibilityText))}
-          {row("ageClub", renderAgeClubSummary())}
           {row(
             "multiEvent",
             <p className="text-sm font-medium">

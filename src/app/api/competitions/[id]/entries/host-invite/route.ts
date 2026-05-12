@@ -4,7 +4,6 @@ import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { logAuditAction, getRequestContext } from "@/lib/auditLog";
-import { refreshStartListSnapshotAfterEligibleEntryChange } from "@/lib/startListSnapshot";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -210,10 +209,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
       return entry.id;
     });
-
-    void refreshStartListSnapshotAfterEligibleEntryChange(competitionId).catch((e) =>
-      console.error("refreshStartListSnapshotAfterEligibleEntryChange", competitionId, e)
-    );
 
     await logAuditAction({
       action: "COMPETITION_HOST_INVITE_ENTRY",

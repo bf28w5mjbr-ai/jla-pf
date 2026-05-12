@@ -18,7 +18,6 @@ import {
   parseStartListSnapshotLooseForRoundRead,
 } from "@/lib/heatMarshalFromSnapshot";
 import {
-  computeHeatCountFromMaxLanes,
   enforceMinHeatCountForMaxLanes,
   reorderRounds,
   resolveHeatCount,
@@ -223,19 +222,14 @@ export async function buildStartListSnapshotPayload(
         ? teamByEvent.get(event.id) ?? []
         : individualByEvent.get(event.id) ?? [];
     const n = participants.length;
-    const fromLanes = computeHeatCountFromMaxLanes(n, event.preliminaryHeatLaneCount);
     const roundTabs = normalizeRoundTabs(eventSettings[event.id] ?? {});
     const firstTab = roundTabs[0];
-    const preferAutoLanes =
-      fromLanes !== null && (firstTab?.useAutoHeatFromMaxLanes !== false);
-    const heatCountRaw = preferAutoLanes
-      ? fromLanes!
-      : resolveHeatCount(
-          n,
-          firstTab
-            ? roundTabToHeatSetting(firstTab)
-            : primaryHeatSettingFromEventConfig(eventSettings[event.id])
-        );
+    const heatCountRaw = resolveHeatCount(
+      n,
+      firstTab
+        ? roundTabToHeatSetting(firstTab)
+        : primaryHeatSettingFromEventConfig(eventSettings[event.id])
+    );
     const heatCount = enforceMinHeatCountForMaxLanes(
       n,
       heatCountRaw,
@@ -426,47 +420,18 @@ export async function repairStartListSnapshotEmptyHeadHeatsWhenEntriesExist(para
 }
 
 /**
- * エントリー受付終了後に、成立エントリーが増減したときにスナップショットを現在の状態へ合わせる。
- * - 締切前は何もしない（初回スナップショットは締切後まで作らない運用を維持）
- * - 締切後かつスナップショット行がある → 先頭 HEAT だけ再生成し、次ラ以降は {@link mergeSnapshotPreservingTailRounds} で保持
- * - 締切後かつ行がまだない → {@link createStartListSnapshotIfNeeded}（例: 締切直後は未作成で、初めての遅延エントリーで初回作成）
+ * 互換のため残すが、初回 HEAT は主催の明示 capture のみのため何もしない。
+ * @deprecated スタートリストは {@link replaceCompetitionStartListSnapshot}（capture API）で更新する。
  */
 export async function refreshStartListSnapshotAfterEligibleEntryChange(
-  competitionId: string
+  _competitionId: string
 ): Promise<void> {
-  const competition = await prisma.competition.findUnique({
-    where: { id: competitionId },
-    select: { entryEndDate: true },
-  });
-  if (!competition) return;
-
-  const now = new Date();
-  const afterEntryWindow =
-    competition.entryEndDate == null || now >= new Date(competition.entryEndDate);
-
-  if (!afterEntryWindow) {
-    return;
-  }
-
-  const existing = await prisma.competitionStartListSnapshot.findUnique({
-    where: { competitionId },
-    select: { id: true },
-  });
-
-  if (existing) {
-    await replaceCompetitionStartListSnapshot({ competitionId });
-    return;
-  }
-
-  await createStartListSnapshotIfNeeded({
-    competitionId,
-    firstRoundGeneratedBy: "ENTRY_CLOSE",
-  });
+  return;
 }
 
 /**
  * 初回のみスナップショット行を作成（次ラウンド生成 API などが既存 JSON を更新する前提）。
- * 呼び出し: Cron（`runScheduledStartListSnapshotPass`）、主催・関係者が大会エントリー／スタートリスト関連画面を開いたときの補完。
+ * 呼び出し: 次ラウンド生成 API など。初回 HEAT の自動 Cron／ページ補完は行わない。
  */
 export async function createStartListSnapshotIfNeeded(params: {
   competitionId: string;
@@ -550,32 +515,12 @@ export async function createStartListSnapshotIfNeeded(params: {
   return { captured: true, snapshotId: snapshot.id };
 }
 
-/** エントリー締切済みで未スナップショットの大会に、先頭ラウンド（HEAT）の固定データを作成する */
-export async function ensureStartListSnapshotIfEligible(competitionId: string): Promise<boolean> {
-  const row = await prisma.competition.findUnique({
-    where: { id: competitionId },
-    select: {
-      id: true,
-      entryEndDate: true,
-      startListSnapshot: { select: { id: true } },
-    },
-  });
-  if (!row) return false;
-  if (row.startListSnapshot) return false;
-
-  const now = new Date();
-  if (row.entryEndDate && now < new Date(row.entryEndDate)) {
-    return false;
-  }
-
-  const r = await createStartListSnapshotIfNeeded({
-    competitionId,
-    firstRoundGeneratedBy: "ENTRY_CLOSE",
-    skipEntryDeadlineGate: true,
-    assumeSnapshotAbsent: true,
-    entryEndDateForGate: row.entryEndDate,
-  });
-  return r.captured === true;
+/**
+ * 互換のため残すが、初回 HEAT は capture のみ作成するため常に false。
+ * @deprecated {@link replaceCompetitionStartListSnapshot} を主催操作で呼ぶ。
+ */
+export async function ensureStartListSnapshotIfEligible(_competitionId: string): Promise<boolean> {
+  return false;
 }
 
 export const ensureStartListSnapshotAfterDeadline = ensureStartListSnapshotIfEligible;
@@ -588,39 +533,13 @@ export type ScheduledStartListSnapshotPassResult = {
 };
 
 /**
- * Cron 用: `entryEndDate` を過ぎておりスナップショットがない大会だけ処理する。
+ * Cron 用の互換エントリ。初回 HEAT は主催 capture のみのため DB を走査しない。
  */
 export async function runScheduledStartListSnapshotPass(): Promise<ScheduledStartListSnapshotPassResult> {
-  const now = new Date();
-  const pending = await prisma.competition.findMany({
-    where: {
-      entryEndDate: { not: null, lte: now },
-      startListSnapshot: { is: null },
-    },
-    select: { id: true },
-  });
-
-  let captured = 0;
-  let skipped = 0;
-  let errors = 0;
-  for (const row of pending) {
-    try {
-      const r = await createStartListSnapshotIfNeeded({
-        competitionId: row.id,
-        firstRoundGeneratedBy: "ENTRY_CLOSE",
-      });
-      if (r.captured) captured += 1;
-      else skipped += 1;
-    } catch (e) {
-      errors += 1;
-      console.error("runScheduledStartListSnapshotPass failed for", row.id, e);
-    }
-  }
-
   return {
-    examined: pending.length,
-    captured,
-    skipped,
-    errors,
+    examined: 0,
+    captured: 0,
+    skipped: 0,
+    errors: 0,
   };
 }

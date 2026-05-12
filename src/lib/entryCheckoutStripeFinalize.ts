@@ -1,7 +1,6 @@
 import type Stripe from "stripe";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { refreshStartListSnapshotAfterEligibleEntryChange } from "@/lib/startListSnapshot";
 import { stripe } from "@/lib/stripe";
 import { fetchStripeReceiptUrlForCheckoutSessionId } from "@/lib/stripeEntryReceiptUrl";
 import { safeServerErrorLog } from "@/lib/safeServerLog";
@@ -96,13 +95,6 @@ export async function finalizeEntryCheckoutSessionsFromStripeSession(
       ...(paymentIntentId ? { stripePaymentIntentId: paymentIntentId } : {}),
     },
   });
-
-  const competitionIds = [...new Set(targets.map((t) => t.competitionId))];
-  for (const cid of competitionIds) {
-    void refreshStartListSnapshotAfterEligibleEntryChange(cid).catch((e) =>
-      console.error("refreshStartListSnapshotAfterEligibleEntryChange", cid, e)
-    );
-  }
 
   return targets;
 }

@@ -19,10 +19,6 @@ import {
   buildParticipantDayOpsStatusByKey,
   shouldHideFromStartListLineupParticipantRow,
 } from "@/lib/dayOpsParticipantStatusDisplay";
-import {
-  ensureStartListSnapshotIfEligible,
-  repairStartListSnapshotEmptyHeadHeatsWhenEntriesExist,
-} from "@/lib/startListSnapshot";
 import { ChevronLeft } from "lucide-react";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
 import DayOpsUnlockBanner from "@/components/DayOpsUnlockBanner";
@@ -92,18 +88,6 @@ export default async function CompetitionEventStartListPage({
   const token = cookieStore.get("session")?.value;
   const session = await verifySessionCached(token);
   const sessionUserId = session?.userId ?? null;
-
-  void (async () => {
-    try {
-      await ensureStartListSnapshotIfEligible(competitionId);
-      await repairStartListSnapshotEmptyHeadHeatsWhenEntriesExist({
-        competitionId,
-        createdByUserId: sessionUserId ?? undefined,
-      });
-    } catch (e) {
-      console.error("ensureStartListSnapshotIfEligible / repair snapshot:", e);
-    }
-  })();
 
   const [competition, event] = await Promise.all([
     prisma.competition.findUnique({
@@ -376,6 +360,7 @@ export default async function CompetitionEventStartListPage({
           heatPlanConfirmedAtIso={event.startListHeatPlanConfirmedAt?.toISOString() ?? null}
           marshalStartedAtIso={event.marshalStartedAt?.toISOString() ?? null}
           canEditHeatConfiguration={canEditStartListSplit}
+          canEditPreliminaryLanes={isOrgAdmin}
           showMarshalOps={showVenueOps}
           showResultOps={showVenueOps}
           participantStatusByKey={participantStatusByKey}
