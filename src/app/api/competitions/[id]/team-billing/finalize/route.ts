@@ -7,6 +7,8 @@ import {
   buildClubPrepaidIndividualPaymentOwnerId,
   buildTeamEntryPaymentOwnerId,
   CLUB_PREPAID_INDIVIDUAL_BILLING_SCOPE,
+  isSettledTeamEntryPaymentStatus,
+  MUTABLE_TEAM_ENTRY_PAYMENT_STATUSES,
   TEAM_ENTRY_BILLING_SCOPE,
 } from "@/lib/teamEntryPayments";
 import { sumInstantPrepaidIndividualsYen } from "@/lib/clubPrepaidIndividualSlots";
@@ -225,141 +227,137 @@ export async function POST(request: NextRequest, context: RouteContext) {
               ownerType: "CLUB",
               type: "COMPETITION_ENTRY_FEE",
               ownerId: { in: [teamOwnerId, prepaidOwnerId] },
+              status: { in: [...MUTABLE_TEAM_ENTRY_PAYMENT_STATUSES] },
             },
           });
           continue;
         }
 
-        const teamNextStatus =
-          existingTeamPayment?.status === "SUCCEEDED" ||
-          existingTeamPayment?.status === "REFUNDED" ||
-          existingTeamPayment?.status === "DISPUTED"
-            ? existingTeamPayment.status
-            : "PENDING";
-
-        const prepaidNextStatus =
-          existingPrepaidPayment?.status === "SUCCEEDED" ||
-          existingPrepaidPayment?.status === "REFUNDED" ||
-          existingPrepaidPayment?.status === "DISPUTED"
-            ? existingPrepaidPayment.status
-            : "PENDING";
+        const settledTeamPayment = isSettledTeamEntryPaymentStatus(existingTeamPayment?.status);
+        const settledPrepaidPayment = isSettledTeamEntryPaymentStatus(existingPrepaidPayment?.status);
 
         if (teamPart > 0) {
-          await tx.payment.upsert({
-            where: {
-              ownerType_ownerId_type: {
+          if (!settledTeamPayment) {
+            await tx.payment.upsert({
+              where: {
+                ownerType_ownerId_type: {
+                  ownerType: "CLUB",
+                  ownerId: teamOwnerId,
+                  type: "COMPETITION_ENTRY_FEE",
+                },
+              },
+              create: {
                 ownerType: "CLUB",
                 ownerId: teamOwnerId,
                 type: "COMPETITION_ENTRY_FEE",
+                userId: session.userId,
+                status: "PENDING",
+                amount: teamPart,
+                metadata: {
+                  scope: TEAM_ENTRY_BILLING_SCOPE,
+                  competitionId,
+                  clubId: targetClubId,
+                  teamCount,
+                  unitPrice: teamEntryFeePerTeam,
+                  deferredIndividualSubtotalYen,
+                  prepaidIndividualSubtotalYen: 0,
+                  clubIndividualBillingTiming,
+                  finalizedAt,
+                  finalizedByUserId: session.userId,
+                },
               },
-            },
-            create: {
-              ownerType: "CLUB",
-              ownerId: teamOwnerId,
-              type: "COMPETITION_ENTRY_FEE",
-              userId: session.userId,
-              status: teamNextStatus,
-              amount: teamPart,
-              metadata: {
-                scope: TEAM_ENTRY_BILLING_SCOPE,
-                competitionId,
-                clubId: targetClubId,
-                teamCount,
-                unitPrice: teamEntryFeePerTeam,
-                deferredIndividualSubtotalYen,
-                prepaidIndividualSubtotalYen: 0,
-                clubIndividualBillingTiming,
-                finalizedAt,
-                finalizedByUserId: session.userId,
+              update: {
+                userId: session.userId,
+                status: "PENDING",
+                amount: teamPart,
+                metadata: {
+                  scope: TEAM_ENTRY_BILLING_SCOPE,
+                  competitionId,
+                  clubId: targetClubId,
+                  teamCount,
+                  unitPrice: teamEntryFeePerTeam,
+                  deferredIndividualSubtotalYen,
+                  prepaidIndividualSubtotalYen: 0,
+                  clubIndividualBillingTiming,
+                  finalizedAt,
+                  finalizedByUserId: session.userId,
+                },
               },
-            },
-            update: {
-              userId: session.userId,
-              status: teamNextStatus,
-              amount: teamPart,
-              metadata: {
-                scope: TEAM_ENTRY_BILLING_SCOPE,
-                competitionId,
-                clubId: targetClubId,
-                teamCount,
-                unitPrice: teamEntryFeePerTeam,
-                deferredIndividualSubtotalYen,
-                prepaidIndividualSubtotalYen: 0,
-                clubIndividualBillingTiming,
-                finalizedAt,
-                finalizedByUserId: session.userId,
-              },
-            },
-          });
+            });
+          }
         } else {
           await tx.payment.deleteMany({
             where: {
               ownerType: "CLUB",
               ownerId: teamOwnerId,
               type: "COMPETITION_ENTRY_FEE",
+              status: { in: [...MUTABLE_TEAM_ENTRY_PAYMENT_STATUSES] },
             },
           });
         }
 
         if (prepaidPart > 0) {
-          await tx.payment.upsert({
-            where: {
-              ownerType_ownerId_type: {
+          if (!settledPrepaidPayment) {
+            await tx.payment.upsert({
+              where: {
+                ownerType_ownerId_type: {
+                  ownerType: "CLUB",
+                  ownerId: prepaidOwnerId,
+                  type: "COMPETITION_ENTRY_FEE",
+                },
+              },
+              create: {
                 ownerType: "CLUB",
                 ownerId: prepaidOwnerId,
                 type: "COMPETITION_ENTRY_FEE",
+                userId: session.userId,
+                status: "PENDING",
+                amount: prepaidPart,
+                metadata: {
+                  scope: CLUB_PREPAID_INDIVIDUAL_BILLING_SCOPE,
+                  competitionId,
+                  clubId: targetClubId,
+                  teamCount,
+                  unitPrice: teamEntryFeePerTeam,
+                  prepaidIndividualSubtotalYen: prepaidPart,
+                  deferredIndividualSubtotalYen:
+                    clubIndividualBillingTiming === "POST_CLOSE_INVOICE"
+                      ? deferredIndividualSubtotalYen
+                      : 0,
+                  clubIndividualBillingTiming,
+                  finalizedAt,
+                  finalizedByUserId: session.userId,
+                },
               },
-            },
-            create: {
-              ownerType: "CLUB",
-              ownerId: prepaidOwnerId,
-              type: "COMPETITION_ENTRY_FEE",
-              userId: session.userId,
-              status: prepaidNextStatus,
-              amount: prepaidPart,
-              metadata: {
-                scope: CLUB_PREPAID_INDIVIDUAL_BILLING_SCOPE,
-                competitionId,
-                clubId: targetClubId,
-                teamCount,
-                unitPrice: teamEntryFeePerTeam,
-                prepaidIndividualSubtotalYen: prepaidPart,
-                deferredIndividualSubtotalYen:
-                  clubIndividualBillingTiming === "POST_CLOSE_INVOICE"
-                    ? deferredIndividualSubtotalYen
-                    : 0,
-                clubIndividualBillingTiming,
-                finalizedAt,
-                finalizedByUserId: session.userId,
+              update: {
+                userId: session.userId,
+                status: "PENDING",
+                amount: prepaidPart,
+                metadata: {
+                  scope: CLUB_PREPAID_INDIVIDUAL_BILLING_SCOPE,
+                  competitionId,
+                  clubId: targetClubId,
+                  teamCount,
+                  unitPrice: teamEntryFeePerTeam,
+                  prepaidIndividualSubtotalYen: prepaidPart,
+                  deferredIndividualSubtotalYen:
+                    clubIndividualBillingTiming === "POST_CLOSE_INVOICE"
+                      ? deferredIndividualSubtotalYen
+                      : 0,
+                  clubIndividualBillingTiming,
+                  finalizedAt,
+                  finalizedByUserId: session.userId,
+                },
               },
-            },
-            update: {
-              userId: session.userId,
-              status: prepaidNextStatus,
-              amount: prepaidPart,
-              metadata: {
-                scope: CLUB_PREPAID_INDIVIDUAL_BILLING_SCOPE,
-                competitionId,
-                clubId: targetClubId,
-                teamCount,
-                unitPrice: teamEntryFeePerTeam,
-                prepaidIndividualSubtotalYen: prepaidPart,
-                deferredIndividualSubtotalYen:
-                  clubIndividualBillingTiming === "POST_CLOSE_INVOICE"
-                    ? deferredIndividualSubtotalYen
-                    : 0,
-                clubIndividualBillingTiming,
-                finalizedAt,
-                finalizedByUserId: session.userId,
-              },
-            },
-          });
+            });
+          }
         } else {
           await tx.payment.deleteMany({
             where: {
               ownerType: "CLUB",
               ownerId: prepaidOwnerId,
               type: "COMPETITION_ENTRY_FEE",
+              status: { in: [...MUTABLE_TEAM_ENTRY_PAYMENT_STATUSES] },
             },
           });
         }

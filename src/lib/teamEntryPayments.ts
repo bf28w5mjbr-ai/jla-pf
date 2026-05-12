@@ -11,7 +11,21 @@ export function buildClubPrepaidIndividualPaymentOwnerId(competitionId: string, 
 export const TEAM_ENTRY_BILLING_SCOPE = "TEAM_ENTRY" as const;
 export const CLUB_PREPAID_INDIVIDUAL_BILLING_SCOPE = "CLUB_PREPAID_INDIVIDUAL" as const;
 
+export const MUTABLE_TEAM_ENTRY_PAYMENT_STATUSES = ["PENDING", "FAILED", "EXPIRED"] as const;
+export const SETTLED_TEAM_ENTRY_PAYMENT_STATUSES = [
+  "SUCCEEDED",
+  "REFUNDED",
+  "DISPUTED",
+] as const;
+
 export type TeamBillingCheckoutScope = "team" | "prepaid";
+export type SettledTeamEntryPaymentStatus = (typeof SETTLED_TEAM_ENTRY_PAYMENT_STATUSES)[number];
+
+export function isSettledTeamEntryPaymentStatus(
+  status?: string | null
+): status is SettledTeamEntryPaymentStatus {
+  return SETTLED_TEAM_ENTRY_PAYMENT_STATUSES.some((s) => s === status);
+}
 
 /** チーム請求またはクラブ個人枠請求の一覧表示用スナップショット */
 export type ClubTeamEntryFeeBillingSnapshot = {
