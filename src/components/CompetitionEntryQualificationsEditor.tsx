@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { ChevronDown } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -34,44 +35,84 @@ function withOptionalAnnounce(
 
 function QualificationOptionGroups({
   primaryOptions,
+  foundationOptions,
   otherOptions,
   showCertifiedBulkHelp,
-  certifiedUpperLabels,
+  isOptionSelected,
   renderOption,
 }: {
   primaryOptions: readonly string[];
+  foundationOptions: readonly string[];
   otherOptions: readonly string[];
   showCertifiedBulkHelp: boolean;
-  certifiedUpperLabels: readonly string[];
+  isOptionSelected?: (option: string) => boolean;
   renderOption: (option: string) => ReactNode;
 }) {
+  const otherSelectedCount = useMemo(
+    () =>
+      isOptionSelected ? otherOptions.filter((o) => isOptionSelected(o)).length : 0,
+    [otherOptions, isOptionSelected]
+  );
+  const [isOtherOpen, setIsOtherOpen] = useState<boolean>(() => otherSelectedCount > 0);
+
   return (
     <div className="space-y-3">
-      {primaryOptions.length > 0 ? (
-        <div className="space-y-2 rounded-lg border border-border/80 bg-muted/15 p-3">
-          <p className="text-[11px] font-semibold text-foreground">選手登録・認定ライフセーバー</p>
-          {showCertifiedBulkHelp ? (
-            <p className="text-[11px] text-muted-foreground">
-              「{ENTRY_REQUIRED_CERTIFIED_LIFESAVER}」を選択すると、上位資格（
-              {certifiedUpperLabels.join(" / ")}）が一括で選択されます。
-            </p>
+      {primaryOptions.length > 0 || foundationOptions.length > 0 ? (
+        <div className="space-y-3 rounded-lg border border-border/80 bg-muted/15 p-3">
+          {primaryOptions.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold text-foreground">選手登録・認定ライフセーバー</p>
+              {showCertifiedBulkHelp ? (
+                <p className="text-[11px] text-muted-foreground">
+                  「{ENTRY_REQUIRED_CERTIFIED_LIFESAVER}」を選択すると、選手登録・BLS・WaterSafety・審判（RefereeC〜S）を除くすべての資格が一括で選択されます。
+                </p>
+              ) : null}
+              <div className="grid gap-2 sm:grid-cols-2">
+                {primaryOptions.map((option) => (
+                  <Fragment key={option}>{renderOption(option)}</Fragment>
+                ))}
+              </div>
+            </div>
           ) : null}
-          <div className="grid gap-2 sm:grid-cols-2">
-            {primaryOptions.map((option) => (
-              <Fragment key={option}>{renderOption(option)}</Fragment>
-            ))}
-          </div>
+          {foundationOptions.length > 0 ? (
+            <div
+              className={
+                primaryOptions.length > 0
+                  ? "space-y-2 border-t border-border/60 pt-3"
+                  : "space-y-2"
+              }
+            >
+              <div className="grid gap-2 sm:grid-cols-2">
+                {foundationOptions.map((option) => (
+                  <Fragment key={option}>{renderOption(option)}</Fragment>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
       {otherOptions.length > 0 ? (
-        <div className="space-y-2">
-          <p className="text-[11px] font-medium text-muted-foreground">その他の資格</p>
-          <div className="grid gap-2 sm:grid-cols-2">
+        <details
+          className="group space-y-2"
+          open={isOtherOpen}
+          onToggle={(e) => setIsOtherOpen((e.currentTarget as HTMLDetailsElement).open)}
+        >
+          <summary className="flex cursor-pointer list-none items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+            <ChevronDown
+              className="size-3.5 shrink-0 opacity-70 transition-transform group-open:rotate-180"
+              aria-hidden
+            />
+            <span>
+              その他の資格
+              {otherSelectedCount > 0 ? `（${otherSelectedCount}件選択中）` : ""}
+            </span>
+          </summary>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
             {otherOptions.map((option) => (
               <Fragment key={option}>{renderOption(option)}</Fragment>
             ))}
           </div>
-        </div>
+        </details>
       ) : null}
     </div>
   );
@@ -137,7 +178,11 @@ export default function CompetitionEntryQualificationsEditor({
     [allowedQualificationOptions]
   );
 
-  const { primary: primaryQualOptions, other: otherQualOptions } = useMemo(
+  const {
+    primary: primaryQualOptions,
+    foundation: foundationQualOptions,
+    other: otherQualOptions,
+  } = useMemo(
     () => splitQualificationOptionsForAdminUi(allowedQualificationOptions),
     [allowedQualificationOptions]
   );
@@ -162,9 +207,10 @@ export default function CompetitionEntryQualificationsEditor({
     const selected = new Set(requiredQualifications);
     return [
       ...primaryQualOptions.filter((o) => selected.has(o)),
+      ...foundationQualOptions.filter((o) => selected.has(o)),
       ...otherQualOptions.filter((o) => selected.has(o)),
     ];
-  }, [requiredQualifications, primaryQualOptions, otherQualOptions]);
+  }, [requiredQualifications, primaryQualOptions, foundationQualOptions, otherQualOptions]);
 
   const [isUpdatingQualifications, setIsUpdatingQualifications] = useState(false);
 
@@ -573,9 +619,10 @@ export default function CompetitionEntryQualificationsEditor({
             )}
             <QualificationOptionGroups
               primaryOptions={primaryQualOptions}
+              foundationOptions={foundationQualOptions}
               otherOptions={otherQualOptions}
               showCertifiedBulkHelp={showCertifiedBulkHelp}
-              certifiedUpperLabels={certifiedLifesaverUpperQualifications}
+              isOptionSelected={(option) => requiredQualifications.includes(option)}
               renderOption={(option) => (
                 <label
                   className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 transition hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
@@ -598,9 +645,10 @@ export default function CompetitionEntryQualificationsEditor({
                 <p className="text-sm font-medium leading-tight">{k}</p>
                 <QualificationOptionGroups
                   primaryOptions={primaryQualOptions}
+                  foundationOptions={foundationQualOptions}
                   otherOptions={otherQualOptions}
                   showCertifiedBulkHelp={showCertifiedBulkHelp}
-                  certifiedUpperLabels={certifiedLifesaverUpperQualifications}
+                  isOptionSelected={(option) => (underQualDraft[k] ?? []).includes(option)}
                   renderOption={(option) => (
                     <label
                       className="flex items-center gap-2 rounded-md border border-gray-200 bg-background px-2 py-1.5 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
@@ -674,9 +722,10 @@ export default function CompetitionEntryQualificationsEditor({
                 </div>
                 <QualificationOptionGroups
                   primaryOptions={primaryQualOptions}
+                  foundationOptions={foundationQualOptions}
                   otherOptions={otherQualOptions}
                   showCertifiedBulkHelp={showCertifiedBulkHelp}
-                  certifiedUpperLabels={certifiedLifesaverUpperQualifications}
+                  isOptionSelected={(option) => row.qualifications.includes(option)}
                   renderOption={(option) => (
                     <label
                       className="flex items-center gap-2 rounded-md border border-gray-200 bg-background px-2 py-1.5 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"

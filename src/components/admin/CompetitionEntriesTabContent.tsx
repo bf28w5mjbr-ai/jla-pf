@@ -14,6 +14,11 @@ import {
   getPendingCsvExportRequest,
 } from "@/lib/competitionEntryCsvExport";
 import { getCompetitionEligibilityAgeYears, getJapanCalendarDateParts } from "@/lib/competitionEligibilityAge";
+import { getMergedEventIdsFromEntry } from "@/lib/competitionEntryMergedEventIds";
+import {
+  orderedLabelsForMergedEventIds,
+  sortEventsForEntryExport,
+} from "@/lib/competitionEntryExportOrdering";
 import { isPlayerRegistrationQualificationKind } from "@/lib/qualificationRegistrationKinds";
 
 type Props = {
@@ -38,27 +43,6 @@ const pad2 = (n: number) => String(n).padStart(2, "0");
 function formatBirthYmdJp(d: Date): string {
   const { year, month, day } = getJapanCalendarDateParts(d);
   return `${year}-${pad2(month)}-${pad2(day)}`;
-}
-
-function getMergedEventIdsForCsv(entry: {
-  items: { eventId: string }[];
-  snapshot: { data: unknown } | null | undefined;
-}): Set<string> {
-  const snapshot = entry.snapshot?.data as
-    | {
-        items?: { eventId?: string }[];
-        teamEntries?: { eventId?: string }[];
-      }
-    | undefined;
-  const individualItems = Array.isArray(snapshot?.items)
-    ? snapshot.items
-    : entry.items.map((item) => ({ eventId: item.eventId }));
-  const teamItems = Array.isArray(snapshot?.teamEntries) ? snapshot.teamEntries : [];
-  const ids = [
-    ...individualItems.map((item) => item.eventId),
-    ...teamItems.map((item) => item.eventId),
-  ].filter((id): id is string => typeof id === "string" && id.length > 0);
-  return new Set(ids);
 }
 
 function hasApprovedActivePlayerRegistration(
@@ -94,12 +78,13 @@ const INDIVIDUAL_CSV_FIXED_HEADERS = [
   "選手登録有無",
 ] as const;
 
-/** チームエントリー一覧（No. / 状況 / 種目・概要）用 */
-type EntryMinimalRow = {
+/** チームエントリー一覧（クラブ・種目ごとのチーム数）用 */
+type TeamEntryGroupListRow = {
   key: string;
   rowIndex: number;
-  statusLabel: string;
-  eventInfo: string;
+  clubName: string;
+  eventLabel: string;
+  teamCount: number;
 };
 
 type IndividualEntryListRow = {
@@ -117,7 +102,7 @@ function EntriesEmpty({ message }: { message: string }) {
   );
 }
 
-function EntriesMinimalTableDesktop({ rows }: { rows: EntryMinimalRow[] }) {
+function TeamEntryGroupsTableDesktop({ rows }: { rows: TeamEntryGroupListRow[] }) {
   return (
     <div className="hidden overflow-x-auto rounded-xl border border-border shadow-sm md:block">
       <table className="w-full min-w-[520px] border-collapse text-left text-sm">
@@ -126,11 +111,14 @@ function EntriesMinimalTableDesktop({ rows }: { rows: EntryMinimalRow[] }) {
             <th className="whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               No.
             </th>
-            <th className="whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              状況
+            <th className="min-w-[10rem] px-3 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              クラブ名
             </th>
-            <th className="min-w-[240px] px-3 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              種目・概要
+            <th className="min-w-[14rem] px-3 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              エントリー種目
+            </th>
+            <th className="whitespace-nowrap px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              チーム数
             </th>
           </tr>
         </thead>
@@ -143,10 +131,13 @@ function EntriesMinimalTableDesktop({ rows }: { rows: EntryMinimalRow[] }) {
               <td className="whitespace-nowrap px-3 py-2.5 align-top tabular-nums text-muted-foreground">
                 {row.rowIndex}
               </td>
-              <td className="max-w-[16rem] whitespace-normal px-3 py-2.5 align-top text-xs leading-snug">
-                {row.statusLabel}
+              <td className="max-w-[16rem] whitespace-normal px-3 py-2.5 align-top text-xs leading-snug text-foreground">
+                {row.clubName}
               </td>
-              <td className="px-3 py-2.5 align-top text-xs leading-relaxed">{row.eventInfo}</td>
+              <td className="px-3 py-2.5 align-top text-xs leading-relaxed text-foreground">{row.eventLabel}</td>
+              <td className="whitespace-nowrap px-3 py-2.5 align-top text-right tabular-nums text-foreground">
+                {row.teamCount}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -155,29 +146,33 @@ function EntriesMinimalTableDesktop({ rows }: { rows: EntryMinimalRow[] }) {
   );
 }
 
-function EntriesMinimalCardsMobile({ rows }: { rows: EntryMinimalRow[] }) {
+function TeamEntryGroupsCardsMobile({ rows }: { rows: TeamEntryGroupListRow[] }) {
   return (
     <div className="grid gap-3 md:hidden">
       {rows.map((row) => (
         <div key={row.key} className="rounded-xl border border-border bg-card p-4 shadow-sm">
           <div className="flex items-start justify-between gap-2 border-b border-border pb-2">
             <span className="text-xs font-medium text-muted-foreground">No. {row.rowIndex}</span>
-            <span className="max-w-[70%] shrink-0 rounded-md bg-muted px-2 py-1 text-right text-[10px] font-medium leading-tight text-muted-foreground">
-              {row.statusLabel}
+            <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-xs font-semibold tabular-nums text-foreground">
+              チーム {row.teamCount}
             </span>
           </div>
-          <p className="mt-3 text-xs leading-relaxed text-foreground">{row.eventInfo}</p>
+          <p className="mt-3 text-sm font-medium text-foreground">{row.clubName}</p>
+          <p className="mt-2 text-xs leading-relaxed text-foreground">
+            <span className="mb-1 block font-medium text-muted-foreground">エントリー種目</span>
+            {row.eventLabel}
+          </p>
         </div>
       ))}
     </div>
   );
 }
 
-function EntriesMinimalResponsive({
+function TeamEntryGroupsResponsive({
   rows,
   emptyMessage,
 }: {
-  rows: EntryMinimalRow[];
+  rows: TeamEntryGroupListRow[];
   emptyMessage: string;
 }) {
   if (rows.length === 0) {
@@ -185,8 +180,8 @@ function EntriesMinimalResponsive({
   }
   return (
     <>
-      <EntriesMinimalCardsMobile rows={rows} />
-      <EntriesMinimalTableDesktop rows={rows} />
+      <TeamEntryGroupsCardsMobile rows={rows} />
+      <TeamEntryGroupsTableDesktop rows={rows} />
     </>
   );
 }
@@ -289,6 +284,14 @@ export default async function CompetitionEntriesTabContent({
       name: true,
       organizationId: true,
       startDate: true,
+      ageCategories: {
+        select: {
+          id: true,
+          name: true,
+          displayOrder: true,
+        },
+        orderBy: { displayOrder: "asc" },
+      },
       events: {
         select: {
           id: true,
@@ -296,6 +299,8 @@ export default async function CompetitionEntriesTabContent({
           sex: true,
           type: true,
           requiresEntryTime: true,
+          displayOrder: true,
+          ageCategoryId: true,
         },
         orderBy: { displayOrder: "asc" },
       },
@@ -387,28 +392,23 @@ export default async function CompetitionEntriesTabContent({
     return `${event.name}（${sexLabel(event.sex)}）`;
   };
 
+  const programOrderedEvents = sortEventsForEntryExport(
+    competition.events,
+    competition.ageCategories
+  );
+
   const buildIndividualEventInfo = (entry: (typeof entries)[number]) => {
-    const snapshot = entry.snapshot?.data as
-      | {
-          items?: { eventId?: string }[];
-          teamEntries?: { eventId?: string }[];
-        }
-      | undefined;
-    const individualItems = Array.isArray(snapshot?.items)
-      ? snapshot.items
-      : entry.items.map((item) => ({ eventId: item.eventId }));
-    const teamItems = Array.isArray(snapshot?.teamEntries) ? snapshot.teamEntries : [];
-    const labels = [
-      ...individualItems.map((item) => formatEventLabel(item.eventId)),
-      ...teamItems.map((item) => formatEventLabel(item.eventId)),
-    ];
+    const merged = getMergedEventIdsFromEntry(entry);
+    const labels = orderedLabelsForMergedEventIds(programOrderedEvents, merged, (id) =>
+      formatEventLabel(id)
+    );
     return labels.length > 0 ? labels.join(" / ") : "—";
   };
 
   const individualListRows: IndividualEntryListRow[] = [];
   const individualCsvRows: string[][] = [];
 
-  const individualCsvEvents = competition.events.filter((e) => e.type === "INDIVIDUAL");
+  const individualCsvEvents = programOrderedEvents.filter((e) => e.type === "INDIVIDUAL");
   const individualCsvHeaders = [
     ...INDIVIDUAL_CSV_FIXED_HEADERS,
     ...individualCsvEvents.map((e) => formatEventLabel(e.id)),
@@ -425,7 +425,7 @@ export default async function CompetitionEntriesTabContent({
       eventsLabel,
     });
 
-    const mergedEventIds = getMergedEventIdsForCsv(entry);
+    const mergedEventIds = getMergedEventIdsFromEntry(entry);
     const ageYears = getCompetitionEligibilityAgeYears(u.dateOfBirth, competition.startDate);
     const playerRegLabel = hasApprovedActivePlayerRegistration(u.qualifications) ? "有" : "無";
     const kanaParts = [u.familyNameKana, u.givenNameKana].filter(Boolean);
@@ -489,7 +489,44 @@ export default async function CompetitionEntriesTabContent({
     return `クラブ請求: ${parts.join(" / ")}`;
   };
 
-  const teamRowsMinimal: EntryMinimalRow[] = [];
+  const teamEventOrderIndex = new Map(
+    programOrderedEvents.filter((e) => e.type === "TEAM").map((e, i) => [e.id, i] as const)
+  );
+
+  type TeamGroupAgg = { clubId: string; clubName: string; eventId: string; count: number };
+  const teamGroupMap = new Map<string, TeamGroupAgg>();
+  for (const te of teamEntries) {
+    const gk = `${te.clubId}:${te.eventId}`;
+    const cur = teamGroupMap.get(gk);
+    if (cur) {
+      cur.count += 1;
+    } else {
+      teamGroupMap.set(gk, {
+        clubId: te.clubId,
+        clubName: te.club.name,
+        eventId: te.eventId,
+        count: 1,
+      });
+    }
+  }
+
+  const teamGroupListRows: TeamEntryGroupListRow[] = [...teamGroupMap.values()]
+    .sort((a, b) => {
+      const nameCmp = a.clubName.localeCompare(b.clubName, "ja");
+      if (nameCmp !== 0) return nameCmp;
+      const ia = teamEventOrderIndex.get(a.eventId) ?? 9999;
+      const ib = teamEventOrderIndex.get(b.eventId) ?? 9999;
+      if (ia !== ib) return ia - ib;
+      return a.eventId.localeCompare(b.eventId);
+    })
+    .map((g, i) => ({
+      key: `${g.clubId}:${g.eventId}`,
+      rowIndex: i + 1,
+      clubName: g.clubName,
+      eventLabel: formatEventLabel(g.eventId),
+      teamCount: g.count,
+    }));
+
   const teamRowsForExport: {
     statusLabel: string;
     name: string;
@@ -501,16 +538,9 @@ export default async function CompetitionEntriesTabContent({
     eventInfo: string;
   }[] = [];
 
-  teamEntries.forEach((te, ti) => {
+  teamEntries.forEach((te) => {
     const eventInfoBase = `${formatEventLabel(te.eventId, te.event)} / チーム: ${te.teamName}（${te.club.name}）`;
     const statusLabel = clubPaymentLabel(te.clubId);
-
-    teamRowsMinimal.push({
-      key: te.id,
-      rowIndex: ti + 1,
-      statusLabel,
-      eventInfo: eventInfoBase,
-    });
 
     if (te.members.length === 0) {
       teamRowsForExport.push({
@@ -579,6 +609,9 @@ export default async function CompetitionEntriesTabContent({
               <CardTitle className="text-lg">個人エントリー</CardTitle>
               <CardDescription className="text-sm">
                 氏名・所属クラブ・出場種目を一覧表示します。メンバーIDや決済状況などの詳細は、PF管理者承認後にダウンロードできるCSVで確認できます。
+                出場種目の並び（一覧・CSVの種目列）は、
+                <span className="font-medium text-foreground/90"> 年齢カテゴリの表示順 </span>
+                でまとまり、同一カテゴリ内は種目の表示順です（カテゴリの並びが同順のときはカテゴリ名の順）。種目は正しい年齢カテゴリに紐づけてください。
               </CardDescription>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:justify-end">
@@ -615,7 +648,7 @@ export default async function CompetitionEntriesTabContent({
             <div className="min-w-0 space-y-1">
               <CardTitle className="text-lg">チームエントリー</CardTitle>
               <CardDescription className="text-sm">
-                画面上はチーム単位の概要のみです。メンバー氏名・連絡先はCSVに含まれます（承認後にダウンロード）。
+                画面上はクラブ・種目ごとのチーム数です。メンバー氏名・連絡先・決済状況などの詳細はCSVに含まれます（承認後にダウンロード）。
               </CardDescription>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:justify-end">
@@ -639,8 +672,8 @@ export default async function CompetitionEntriesTabContent({
           </div>
         </CardHeader>
         <CardContent className="space-y-4 pt-5">
-          <EntriesMinimalResponsive
-            rows={teamRowsMinimal}
+          <TeamEntryGroupsResponsive
+            rows={teamGroupListRows}
             emptyMessage="チームエントリーはまだありません。"
           />
         </CardContent>

@@ -23,6 +23,11 @@ import {
   hasIndividualWithdrawalForEvent,
 } from "@/lib/entryWithdrawalAdminLabel";
 import SimpleMarkdown from "@/components/SimpleMarkdown";
+import { getMergedEventIdsFromEntry } from "@/lib/competitionEntryMergedEventIds";
+import {
+  orderedLabelsForMergedEventIds,
+  sortEventsForEntryExport,
+} from "@/lib/competitionEntryExportOrdering";
 
 export const dynamic = "force-dynamic";
 
@@ -99,12 +104,17 @@ export default async function CompetitionEntriesPage({
       entryPledgeEnabled: true,
       entryEndDate: true,
       entryFee: true,
+      ageCategories: {
+        select: { id: true, name: true, displayOrder: true },
+        orderBy: { displayOrder: "asc" },
+      },
       events: {
         select: {
           id: true,
           name: true,
           sex: true,
           type: true,
+          displayOrder: true,
           ageCategoryId: true,
           ageCategory: {
             select: { id: true, name: true },
@@ -121,6 +131,11 @@ export default async function CompetitionEntriesPage({
   if (!competition || competition.organizationId !== organizationId) {
     notFound();
   }
+
+  const programOrderedEvents = sortEventsForEntryExport(
+    competition.events,
+    competition.ageCategories
+  );
 
   const [entries, teamEntries] = await Promise.all([
     prisma.competitionEntry.findMany({
@@ -475,28 +490,12 @@ export default async function CompetitionEntriesPage({
                           <div className="text-sm text-gray-500">
                             <p>エントリー種目:</p>
                             {(() => {
-                              const snapshot = entry.snapshot?.data as
-                                | {
-                                    items?: { eventId?: string }[];
-                                    teamEntries?: { eventId?: string }[];
-                                  }
-                                | undefined;
-                              const individualItems = Array.isArray(snapshot?.items)
-                                ? snapshot?.items
-                                : entry.items.map((item) => ({ eventId: item.eventId }));
-                              const teamItems = Array.isArray(snapshot?.teamEntries)
-                                ? snapshot?.teamEntries
-                                : [];
-                              const labels = [
-                                ...individualItems.map((item) => {
-                                  const event = item.eventId ? eventMap.get(item.eventId) : undefined;
-                                  return formatEventLabel(event);
-                                }),
-                                ...teamItems.map((item) => {
-                                  const event = item.eventId ? eventMap.get(item.eventId) : undefined;
-                                  return formatEventLabel(event);
-                                }),
-                              ];
+                              const merged = getMergedEventIdsFromEntry(entry);
+                              const labels = orderedLabelsForMergedEventIds(
+                                programOrderedEvents,
+                                merged,
+                                (id) => formatEventLabel(eventMap.get(id))
+                              );
 
                               if (labels.length === 0) {
                                 return <p className="text-sm text-gray-500">未登録</p>;
@@ -563,7 +562,7 @@ export default async function CompetitionEntriesPage({
         <CardContent>
           <StartListConfigurator
             competitionId={competition.id}
-            events={competition.events}
+            events={programOrderedEvents}
             individualByEvent={individualByEventObject}
             teamByEvent={teamByEventObject}
             initialSettings={competition.startListSettings ?? undefined}

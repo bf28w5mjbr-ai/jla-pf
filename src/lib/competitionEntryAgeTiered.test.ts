@@ -256,6 +256,64 @@ describe("competitionEntryAgeTiered", () => {
     expect(removed).toEqual([]);
   });
 
+  it("認定LSマクロは 選手登録・BLS・WaterSafety・Referee系 を除外する", () => {
+    const options = [
+      ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
+      "選手登録",
+      "BLS",
+      "WaterSafety",
+      "RefereeC",
+      "RefereeB",
+      "RefereeA",
+      "RefereeS",
+      "BasicSurfLifesaver",
+      "Instructor",
+      "PWRCInstructor",
+    ];
+    const selected = applyEntryQualificationToggleWithCertifiedMacro(
+      [],
+      ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
+      options
+    );
+    expect(selected).toEqual([
+      ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
+      "BasicSurfLifesaver",
+      "Instructor",
+      "PWRCInstructor",
+    ]);
+    expect(selected).not.toContain("選手登録");
+    expect(selected).not.toContain("BLS");
+    expect(selected).not.toContain("WaterSafety");
+    expect(selected).not.toContain("RefereeC");
+    expect(selected).not.toContain("RefereeB");
+    expect(selected).not.toContain("RefereeA");
+    expect(selected).not.toContain("RefereeS");
+  });
+
+  it("認定LSマクロ展開で Instructor 系も対象になる", () => {
+    const options = [
+      ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
+      "BLS",
+      "WaterSafety",
+      "Instructor",
+      "BLSInstructor",
+      "WaterSafetyInstructor",
+    ];
+    const expanded = normalizeEntryRequiredQualifications([ENTRY_REQUIRED_CERTIFIED_LIFESAVER], {
+      allowedQualifications: new Set(options),
+      expandCertifiedLifesaverMacro: true,
+    });
+    expect(expanded).toContain(ENTRY_REQUIRED_CERTIFIED_LIFESAVER);
+    expect(expanded).toContain("Instructor");
+    expect(expanded).toContain("BLSInstructor");
+    expect(expanded).toContain("WaterSafetyInstructor");
+    expect(expanded).not.toContain("BLS");
+    expect(expanded).not.toContain("WaterSafety");
+    expect(compactCertifiedLifesaverExpandedQualifications(expanded)).toEqual([
+      ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
+    ]);
+  });
+
   it("テンプレート外資格は正規化で除外できる", () => {
     const normalized = normalizeEntryRequiredQualifications(
       ["認定ライフセーバー", "IRBクルー", "未知の資格"],

@@ -24,18 +24,30 @@ export type EntryQualificationTemplateOption = {
   kind?: string | null;
 };
 
-const CERTIFIED_LIFESAVER_UPPER_KEYWORDS = [
-  "ベーシックサーフライフセーバー",
-  "basicsurflifesaver",
-  "poollifeguard",
-  "プールライフガード",
-  "irbcrew",
-  "irbdriver",
-  "irbクルー",
-  "irbドライバー",
-  "リーダー",
-  "leader",
+/**
+ * 「認定ライフセーバー」一括選択マクロから除外する資格（kind/name のいずれかが一致したらマクロ対象外）。
+ * 選手登録・BLS・WaterSafety・Referee系（C/B/A/S）は単独で取り扱うため、マクロでは選択しない。
+ */
+const CERTIFIED_LIFESAVER_MACRO_EXCLUDED_KINDS = [
+  "選手登録",
+  "BLS",
+  "WaterSafety",
+  "ウォーターセーフティ",
+  "RefereeC",
+  "RefereeB",
+  "RefereeA",
+  "RefereeS",
+  "審判C",
+  "審判B",
+  "審判A",
+  "審判S",
 ];
+
+const CERTIFIED_LIFESAVER_MACRO_EXCLUDED_NORMALIZED = new Set(
+  CERTIFIED_LIFESAVER_MACRO_EXCLUDED_KINDS.map((item) => normalizeQualificationKind(item)).filter(
+    (item) => item.length > 0
+  )
+);
 
 function toAllowedSet(
   allowedQualifications?: ReadonlySet<string> | readonly string[] | null
@@ -56,9 +68,9 @@ function toAllowedSet(
 export function isCertifiedLifesaverUpperQualification(value: string): boolean {
   const normalized = normalizeQualificationKind(value);
   if (!normalized) return false;
-  return CERTIFIED_LIFESAVER_UPPER_KEYWORDS.some((keyword) =>
-    normalized.includes(normalizeQualificationKind(keyword))
-  );
+  if (normalized === normalizeQualificationKind(ENTRY_REQUIRED_CERTIFIED_LIFESAVER)) return false;
+  if (CERTIFIED_LIFESAVER_MACRO_EXCLUDED_NORMALIZED.has(normalized)) return false;
+  return true;
 }
 
 export function getCertifiedLifesaverUpperQualifications(options: readonly string[]): string[] {
@@ -818,7 +830,7 @@ export function entryFeeReadinessOk(
 
 /** 参加資格で「認定ライフセーバー」を選んだときの共通注釈（管理画面・マイページ・公開ページ） */
 export const CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP =
-  "「認定ライフセーバー」を選択すると、上位資格（例: ベーシック・サーフライフセーバー / プールライフガード / IRBクルー・ドライバー / リーダー資格）を一括で設定できます。判定時は、これら上位資格のいずれかを保有していれば要件を満たします。";
+  "「認定ライフセーバー」を選択すると、選手登録・BLS・WaterSafety・審判（RefereeC〜S）を除くすべての資格を一括で設定できます。判定時は、対象資格のいずれかを保有していれば要件を満たします。";
 
 export function requiredQualificationsMentionCertifiedLifesaver(raw: unknown): boolean {
   const tiered = parseAgeQualificationTiers(raw);

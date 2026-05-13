@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Search, UserPlus } from "lucide-react";
+import { Loader2, Search, UserPlus, X } from "lucide-react";
 import { userFacingApiErrorMessage } from "@/lib/userFacingApiError";
 
 export type HostInviteEventOption = {
@@ -43,6 +43,7 @@ export default function CompetitionHostInviteEntryPanel({
   const [entryTimes, setEntryTimes] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [eventQuery, setEventQuery] = useState("");
 
   useEffect(() => {
     const term = q.trim();
@@ -86,14 +87,35 @@ export default function CompetitionHostInviteEntryPanel({
     };
   }, [q, competitionId]);
 
-  const toggleEvent = (id: string) => {
+  const addEvent = (id: string) => {
+    setSelectedEventIds((prev) => new Set(prev).add(id));
+  };
+
+  const removeEvent = (id: string) => {
     setSelectedEventIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      next.delete(id);
       return next;
     });
+    setEntryTimes((prev) => {
+      const { [id]: _removed, ...rest } = prev;
+      return rest;
+    });
   };
+
+  const eventSearchTrimmed = eventQuery.trim();
+  const filteredEventPickList = useMemo(() => {
+    if (eventSearchTrimmed.length === 0) return [];
+    return individualEvents.filter((ev) => {
+      const sex = sexLabel(ev.sex);
+      const full = `${ev.name}（${sex}）`;
+      return (
+        ev.name.includes(eventSearchTrimmed) ||
+        sex.includes(eventSearchTrimmed) ||
+        full.includes(eventSearchTrimmed)
+      );
+    });
+  }, [individualEvents, eventSearchTrimmed]);
 
   const selectedEvents = useMemo(
     () => individualEvents.filter((e) => selectedEventIds.has(e.id)),
@@ -134,6 +156,7 @@ export default function CompetitionHostInviteEntryPanel({
       setNotes("");
       setQ("");
       setResults([]);
+      setEventQuery("");
       router.refresh();
     } finally {
       setSubmitting(false);
@@ -225,44 +248,105 @@ export default function CompetitionHostInviteEntryPanel({
         ) : null}
 
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">個人種目（複数可）</p>
-          <ul className="space-y-2">
-            {individualEvents.map((ev) => {
-              const checked = selectedEventIds.has(ev.id);
-              return (
-                <li
-                  key={ev.id}
-                  className="rounded-lg border border-border bg-muted/20 px-3 py-2.5 transition hover:bg-muted/35"
-                >
-                  <label className="flex cursor-pointer items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleEvent(ev.id)}
-                      className="mt-1 h-4 w-4 shrink-0 rounded border-border"
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="text-sm font-medium text-foreground">{ev.name}</span>
-                      <span className="ml-2 text-xs text-muted-foreground">（{sexLabel(ev.sex)}）</span>
-                      {ev.requiresEntryTime ? (
-                        <div className="mt-2" onClick={(e) => e.stopPropagation()}>
-                          <Input
-                            value={entryTimes[ev.id] ?? ""}
-                            onChange={(e) =>
-                              setEntryTimes((prev) => ({ ...prev, [ev.id]: e.target.value }))
-                            }
-                            placeholder="エントリータイム（必須）"
-                            className="h-9 max-w-xs text-sm"
-                            disabled={!checked}
-                          />
-                        </div>
-                      ) : null}
-                    </span>
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">個人種目（複数可）</p>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+              種目名の一部で検索し、リストから選んで追加します。一覧には出しません。
+            </p>
+          </div>
+          <label className="sr-only" htmlFor="host-invite-event-search">
+            種目を検索
+          </label>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              id="host-invite-event-search"
+              value={eventQuery}
+              onChange={(e) => setEventQuery(e.target.value)}
+              placeholder="種目名の一部で検索"
+              className="h-10 pl-9"
+              autoComplete="off"
+            />
+          </div>
+          {eventSearchTrimmed.length > 0 && filteredEventPickList.length > 0 ? (
+            <ul className="max-h-48 overflow-auto rounded-lg border border-border bg-background text-sm shadow-sm">
+              {filteredEventPickList.map((ev) => {
+                const already = selectedEventIds.has(ev.id);
+                return (
+                  <li key={ev.id} className="border-b border-border last:border-0">
+                    <button
+                      type="button"
+                      disabled={already}
+                      className="flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left transition hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => {
+                        if (!already) addEvent(ev.id);
+                      }}
+                    >
+                      <span className="font-medium text-foreground">
+                        {ev.name}
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                          （{sexLabel(ev.sex)}）
+                        </span>
+                        {already ? (
+                          <span className="ml-2 text-xs font-normal text-muted-foreground">・追加済み</span>
+                        ) : null}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+          {eventSearchTrimmed.length > 0 && filteredEventPickList.length === 0 ? (
+            <p className="text-xs text-muted-foreground">該当する種目がありません。</p>
+          ) : null}
+
+          <div className="space-y-2 pt-1">
+            <p className="text-xs font-medium text-muted-foreground">選択した種目</p>
+            {selectedEvents.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border bg-muted/15 px-3 py-2.5 text-xs text-muted-foreground">
+                まだありません。上の検索から追加してください。
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {selectedEvents.map((ev) => (
+                  <li
+                    key={ev.id}
+                    className="rounded-lg border border-border bg-muted/20 px-3 py-2.5"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-sm font-medium text-foreground">{ev.name}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">（{sexLabel(ev.sex)}）</span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 shrink-0 px-2 text-muted-foreground hover:text-foreground"
+                        onClick={() => removeEvent(ev.id)}
+                        aria-label={`${ev.name}を外す`}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {ev.requiresEntryTime ? (
+                      <div className="mt-2">
+                        <Input
+                          value={entryTimes[ev.id] ?? ""}
+                          onChange={(e) =>
+                            setEntryTimes((prev) => ({ ...prev, [ev.id]: e.target.value }))
+                          }
+                          placeholder="エントリータイム（必須）"
+                          className="h-9 max-w-xs text-sm"
+                        />
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
 
         <div className="space-y-2">
