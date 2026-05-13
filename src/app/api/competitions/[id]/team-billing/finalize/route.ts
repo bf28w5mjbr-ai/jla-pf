@@ -12,7 +12,6 @@ import {
 import { sumInstantPrepaidIndividualsYen } from "@/lib/clubPrepaidIndividualSlots";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import { resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
-import { partitionUnderBandsForCompetition } from "@/lib/competitionUnderAgeSettings";
 import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
 import { sumDeferredUnpaidIndividualEntryFeesYen } from "@/lib/clubPrepaidIndividualSlots";
 
@@ -135,11 +134,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
           )
         : null;
       const userDob = feeUser?.dateOfBirth ? new Date(feeUser.dateOfBirth) : null;
-      const underPartition = partitionUnderBandsForCompetition(competition);
       const defaultTeamUnit = resolveEntryFeeUnits(competition.entryFee, userAge, {
         userDateOfBirth: userDob,
         competitionAgeCategories: competition.ageCategories,
-        underFeePartition: underPartition ?? null,
       }).teamUnit;
 
       for (const targetClubId of targetClubIds) {
@@ -203,11 +200,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
             ? await sumInstantPrepaidIndividualsYen(tx, {
                 startDate: new Date(competition.startDate),
                 entryFee: competition.entryFee,
-                underAge: {
-                  underAgeSystemEnabled: competition.underAgeSystemEnabled,
-                  underAgeUThresholds: competition.underAgeUThresholds,
-                  underAgeOpenEnabled: competition.underAgeOpenEnabled,
-                },
                 ageCategories: competition.ageCategories,
                 coveredUserIds,
               })

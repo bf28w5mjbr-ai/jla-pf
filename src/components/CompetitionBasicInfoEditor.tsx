@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { MapPin } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Calendar, Clock, MapPin, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
   buildEntryPeriodExtensionAnnouncement,
@@ -28,6 +29,7 @@ type Props = {
     entryStartDate: string;
     entryEndDate: string;
     venue: string;
+    requireClubMembership: boolean;
   };
 };
 
@@ -47,6 +49,9 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
   const [entryStartDate, setEntryStartDate] = useState(initialData.entryStartDate);
   const [entryEndDate, setEntryEndDate] = useState(initialData.entryEndDate);
   const [venue, setVenue] = useState(initialData.venue);
+  const [requireClubMembership, setRequireClubMembership] = useState(
+    initialData.requireClubMembership ?? false
+  );
   const [lastSaved, setLastSaved] = useState({
     category: initialData.category ?? "",
     startDate: initialData.startDate,
@@ -54,6 +59,7 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
     entryStartDate: initialData.entryStartDate,
     entryEndDate: initialData.entryEndDate,
     venue: initialData.venue,
+    requireClubMembership: initialData.requireClubMembership ?? false,
   });
   const [statusText, setStatusText] = useState<string>("");
   const [statusTone, setStatusTone] = useState<"muted" | "success" | "error">("muted");
@@ -68,6 +74,7 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
     setEntryStartDate(initialData.entryStartDate);
     setEntryEndDate(initialData.entryEndDate);
     setVenue(initialData.venue);
+    setRequireClubMembership(initialData.requireClubMembership ?? false);
     setLastSaved({
       category: initialData.category ?? "",
       startDate: initialData.startDate,
@@ -75,6 +82,7 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
       entryStartDate: initialData.entryStartDate,
       entryEndDate: initialData.entryEndDate,
       venue: initialData.venue,
+      requireClubMembership: initialData.requireClubMembership ?? false,
     });
     setStatusText("");
     setStatusTone("muted");
@@ -85,6 +93,7 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
     initialData.entryStartDate,
     initialData.entryEndDate,
     initialData.venue,
+    initialData.requireClubMembership,
   ]);
 
   useEffect(() => {
@@ -284,24 +293,67 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
     }
   };
 
+  const saveRequireClubMembership = async () => {
+    if (isSaving) return;
+    if (requireClubMembership === lastSaved.requireClubMembership) return;
+    try {
+      setIsSaving(true);
+      setStatusText("保存中…");
+      setStatusTone("muted");
+      const response = await fetch(`/api/competitions/${competitionId}/entry-settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requireClubMembership }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({} as { message?: string }));
+        throw new Error(data.message || "所属クラブ設定の更新に失敗しました");
+      }
+      setLastSaved((prev) => ({ ...prev, requireClubMembership }));
+      setStatusText("保存しました");
+      setStatusTone("success");
+      toast.success("所属クラブの要否を更新しました");
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "所属クラブ設定の更新に失敗しました");
+      setStatusText("保存に失敗しました");
+      setStatusTone("error");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const readonlyTileClass =
+    "rounded-lg border border-border bg-card px-3 py-2.5 sm:px-4 sm:py-3";
+
   if (!canEdit) {
     return (
-      <Card className="overflow-hidden">
-        <CardContent className="space-y-2 px-4 py-3">
-          <div className="rounded-md border border-border bg-muted/20 px-2.5 py-2">
-            <p className="text-[11px] text-muted-foreground">大会カテゴリ</p>
-            <p className="text-sm font-medium">{category || "未設定"}</p>
+      <Card padding="none" className="overflow-hidden border-border shadow-sm">
+        <CardHeader className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
+          <CardTitle className="text-base font-semibold">大会基本情報</CardTitle>
+          <CardDescription className="text-sm">開催日・場所・エントリー期間などの現在の値です。</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 px-4 py-4 sm:grid-cols-2 sm:px-5">
+          <div className={readonlyTileClass}>
+            <p className="text-xs font-medium text-muted-foreground">大会カテゴリ</p>
+            <p className="mt-1 text-sm font-medium text-foreground">{category || "未設定"}</p>
           </div>
-          <div className="rounded-md border border-border bg-muted/20 px-2.5 py-2">
-            <p className="text-[11px] text-muted-foreground">開催日</p>
-            <p className="text-sm font-medium">
+          <div className={readonlyTileClass}>
+            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Calendar className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+              開催日
+            </div>
+            <p className="mt-1 text-sm font-medium text-foreground">
               {new Date(startDate).toLocaleDateString("ja-JP")} 〜{" "}
               {new Date(endDate).toLocaleDateString("ja-JP")}
             </p>
           </div>
-          <div className="rounded-md border border-border bg-muted/20 px-2.5 py-2">
-            <p className="text-[11px] text-muted-foreground">エントリー期間</p>
-            <p className="text-sm font-medium">
+          <div className={cn(readonlyTileClass, "sm:col-span-2")}>
+            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Clock className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+              エントリー期間
+            </div>
+            <p className="mt-1 text-sm font-medium text-foreground">
               {(() => {
                 const sIso = entryStartDate.trim()
                   ? datetimeLocalInputValueToUtcIsoString(entryStartDate, ENTRY_DATETIME_LOCAL_OPTS)
@@ -317,35 +369,55 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
             </p>
           </div>
 
-          <div className="rounded-md border border-border bg-muted/20 px-2.5 py-2">
-            <div className="flex items-start gap-2">
-              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              <div>
-                <p className="text-[11px] text-muted-foreground">開催場所</p>
-                <p className="text-sm font-medium">{venue || "未設定"}</p>
-              </div>
+          <div className={cn(readonlyTileClass, "sm:col-span-2")}>
+            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <MapPin className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+              開催場所
             </div>
+            <p className="mt-1 text-sm font-medium text-foreground">{venue || "未設定"}</p>
+          </div>
+
+          <div className={cn(readonlyTileClass, "sm:col-span-2")}>
+            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Users className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+              所属クラブ
+            </div>
+            <p className="mt-1 text-sm font-medium text-foreground">
+              {requireClubMembership ? "エントリー時に所属クラブ必須" : "所属クラブ不要"}
+            </p>
           </div>
         </CardContent>
       </Card>
     );
   }
 
+  const sectionClass =
+    "space-y-3 rounded-lg border border-border bg-card px-3 py-3 sm:px-4 sm:py-3.5";
+
   return (
-    <Card className="overflow-hidden">
-      <CardContent className="px-4 py-3">
-        <div className="space-y-3">
-          <p
-            className={`text-[11px] ${
-              statusTone === "success"
-                ? "text-emerald-700 dark:text-emerald-300"
-                : statusTone === "error"
-                  ? "text-destructive"
-                  : "text-muted-foreground"
-            }`}
-          >
-            {statusText || "変更後にフォーカスを外すと自動で更新されます。"}
-          </p>
+    <Card padding="none" className="overflow-hidden border-border shadow-sm">
+      <CardHeader className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
+        <CardTitle className="text-base font-semibold">大会基本情報</CardTitle>
+        <CardDescription className="text-sm">
+          各欄を編集し、フォーカスを外すと自動で保存されます。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 px-4 py-4 sm:px-5">
+        <p
+          className={cn(
+            "text-[11px]",
+            statusTone === "success"
+              ? "text-emerald-700 dark:text-emerald-300"
+              : statusTone === "error"
+                ? "text-destructive"
+                : "text-muted-foreground"
+          )}
+        >
+          {statusText || "変更後にフォーカスを外すと自動で更新されます。"}
+        </p>
+
+        <div className={sectionClass}>
+          <p className="text-xs font-medium text-muted-foreground">大会概要</p>
           <div>
             <Label htmlFor="category" className="text-xs">
               大会カテゴリ <span className="text-red-500">*</span>
@@ -355,7 +427,11 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
               value={category}
               onChange={(e) => setCategory(e.target.value)}
               onBlur={() => void saveCurrent()}
-              className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background"
+              className={cn(
+                "mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm",
+                "ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2",
+                "disabled:cursor-not-allowed disabled:opacity-50"
+              )}
               disabled={isSaving}
             >
               {hasCustomCategory && (
@@ -370,92 +446,136 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-muted-foreground">
-              種目設定のカテゴリは、ここで選んだ内容に自動で固定されます。
-            </p>
           </div>
 
           <div
-            className="space-y-1"
+            className="space-y-2"
             onBlur={(e) => {
               if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
                 void saveCurrent();
               }
             }}
           >
-            <Label className="text-xs">
-              開催日 <span className="text-red-500">*</span>
-            </Label>
-            <div className="flex items-center gap-2 rounded-md border border-input bg-background px-2.5 py-1.5">
+            <div className="flex items-center gap-1.5">
+              <Calendar className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-80" aria-hidden />
+              <Label className="text-xs font-normal">
+                開催日 <span className="text-red-500">*</span>
+              </Label>
+            </div>
+            <div className="flex min-h-9 items-center gap-2 rounded-md border border-input bg-background px-2.5 py-1.5">
               <Input
                 id="startDate"
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 required
-                className="h-8 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"
+                className="h-8 min-w-0 flex-1 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"
                 disabled={isSaving}
               />
-              <span className="text-xs text-muted-foreground">〜</span>
+              <span className="shrink-0 text-xs text-muted-foreground">〜</span>
               <Input
                 id="endDate"
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 required
-                className="h-8 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"
+                className="h-8 min-w-0 flex-1 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"
                 disabled={isSaving}
               />
             </div>
           </div>
+        </div>
 
-          <div
-            className="space-y-1"
-            onBlur={(e) => {
-              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                void saveEntryPeriod();
-              }
-            }}
-          >
-            <Label className="text-xs">エントリー期間（日本時間）</Label>
-            <div className="flex flex-col gap-2 rounded-md border border-input bg-background px-2.5 py-2 sm:flex-row sm:items-center">
-              <Input
-                id="entryStartDate"
-                type="datetime-local"
-                value={entryStartDate}
-                onChange={(e) => setEntryStartDate(e.target.value)}
-                className="h-9 min-w-0 flex-1 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"
-                disabled={isSaving}
-              />
-              <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">〜</span>
-              <Input
-                id="entryEndDate"
-                type="datetime-local"
-                value={entryEndDate}
-                onChange={(e) => setEntryEndDate(e.target.value)}
-                className="h-9 min-w-0 flex-1 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"
-                disabled={isSaving}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              日時は日本時間（Asia/Tokyo）の壁時計で入力され、エントリー設定タブのエントリー期間と同じ基準で保存されます。両方未入力にするとエントリー期間は未設定になります。
-            </p>
+        <div
+          className={sectionClass}
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+              void saveEntryPeriod();
+            }
+          }}
+        >
+          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <Clock className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+            エントリー期間（日本時間）
           </div>
-
-          <div>
-            <Label htmlFor="venue" className="text-xs">
-              開催場所 <span className="text-red-500">*</span>
-            </Label>
+          <div className="flex flex-col gap-2 rounded-md border border-input bg-background px-2.5 py-2 sm:flex-row sm:items-center">
             <Input
-              id="venue"
-              value={venue}
-              onChange={(e) => setVenue(e.target.value)}
-              onBlur={() => void saveCurrent()}
-              placeholder="例: 東京辰巳国際水泳場"
-              required
-              className="mt-1 h-9 text-sm"
+              id="entryStartDate"
+              type="datetime-local"
+              value={entryStartDate}
+              onChange={(e) => setEntryStartDate(e.target.value)}
+              className="h-9 min-w-0 flex-1 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"
               disabled={isSaving}
             />
+            <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">〜</span>
+            <Input
+              id="entryEndDate"
+              type="datetime-local"
+              value={entryEndDate}
+              onChange={(e) => setEntryEndDate(e.target.value)}
+              className="h-9 min-w-0 flex-1 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"
+              disabled={isSaving}
+            />
+          </div>
+        </div>
+
+        <div className={sectionClass}>
+          <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <MapPin className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+            <Label htmlFor="venue" className="font-medium text-muted-foreground">
+              開催場所 <span className="text-red-500">*</span>
+            </Label>
+          </div>
+          <Input
+            id="venue"
+            value={venue}
+            onChange={(e) => setVenue(e.target.value)}
+            onBlur={() => void saveCurrent()}
+            placeholder="例: 東京辰巳国際水泳場"
+            required
+            className="h-9 text-sm"
+            disabled={isSaving}
+          />
+        </div>
+
+        <div
+          className={cn(sectionClass, "bg-muted/20")}
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+              void saveRequireClubMembership();
+            }
+          }}
+        >
+          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <Users className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+            所属クラブ
+          </div>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            エントリー時に登録クラブの選択を必須にするかどうかです。
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex cursor-pointer items-center gap-2.5 rounded-md border border-border bg-background px-3 py-2.5 text-sm shadow-sm transition-colors hover:bg-muted/40 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/60">
+              <input
+                type="radio"
+                name="basic-info-require-club"
+                checked={requireClubMembership}
+                onChange={() => setRequireClubMembership(true)}
+                disabled={isSaving}
+                className="h-4 w-4 shrink-0 accent-primary"
+              />
+              <span>所属クラブ必須</span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-2.5 rounded-md border border-border bg-background px-3 py-2.5 text-sm shadow-sm transition-colors hover:bg-muted/40 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/60">
+              <input
+                type="radio"
+                name="basic-info-require-club"
+                checked={!requireClubMembership}
+                onChange={() => setRequireClubMembership(false)}
+                disabled={isSaving}
+                className="h-4 w-4 shrink-0 accent-primary"
+              />
+              <span>所属クラブ不要</span>
+            </label>
           </div>
         </div>
       </CardContent>

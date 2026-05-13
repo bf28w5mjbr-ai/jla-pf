@@ -66,6 +66,43 @@ describe("getLiveHeatsByTab", () => {
     expect(second.reduce((a, h) => a + h.length, 0)).toBe(Math.min(2 * L, 40));
   });
 
+  it("2本目タブだけ最大レーンを狭めると、進出上限はそのタブの L×ヒート数になる", () => {
+    const liveTabs = [
+      { id: "a", label: "h", mode: "count" as const, heatCount: "5", heatSize: "" },
+      {
+        id: "b",
+        label: "f",
+        mode: "count" as const,
+        heatCount: "2",
+        heatSize: "",
+        maxLanesPerHeat: 8,
+      },
+    ];
+    const individuals = Array.from({ length: 40 }, (_, i) => ({
+      entryId: `e${i}`,
+      userId: `u${i}`,
+      name: `P${i}`,
+      clubId: null as string | null,
+      clubName: null as string | null,
+    }));
+    const rows = getLiveHeatsByTab({
+      liveTabs,
+      individuals,
+      teams: [],
+      isTeam: false,
+      preliminaryHeatLaneCount: 16,
+      officialRanksByRound: null,
+      placementSeed: 1,
+      frozenSnapshotRounds: null,
+      heatPlanStep1Confirmed: false,
+      eventHeatSetting: { roundTabs: liveTabs, mode: "count", heatCount: "5", heatSize: "" },
+    });
+    const second = rows[1]!.individualHeats;
+    expect(second.length).toBe(2);
+    expect(second.every((h) => h.length <= 8)).toBe(true);
+    expect(second.reduce((a, h) => a + h.length, 0)).toBe(16);
+  });
+
   it("凍結スナップショットでヒート配列が heatIndex 順でなくても、表示行と marshalDisplayHeatIndices が一致する", () => {
     const liveTabs = [
       { id: "a", label: "予選", mode: "count" as const, heatCount: "2", heatSize: "" },

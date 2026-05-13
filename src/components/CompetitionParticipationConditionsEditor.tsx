@@ -9,9 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import EntrySettingsEditor from "@/components/EntrySettingsEditor";
+import CompetitionAgeCategoriesEditor from "@/components/CompetitionAgeCategoriesEditor";
 import CompetitionEntryQualificationsEditor from "@/components/CompetitionEntryQualificationsEditor";
 import {
-  renderAgeClubSummaryFromFields,
+  renderCompetitionAgeRangeSummary,
   renderParticipantEligibilitySummary,
   renderRequiredQualificationsSummary,
 } from "@/lib/competitionParticipationSummaries";
@@ -58,17 +59,13 @@ function CompetitionParticipationConditionsEditorInner({
     (initialData.participantEligibilityText ?? "").trim()
   );
 
-  const [requireClubMembership, setRequireClubMembership] = useState(
-    initialData.requireClubMembership ?? false
-  );
   const [competitionMinAge, setCompetitionMinAge] = useState(
     typeof initialData.minAge === "number" ? String(initialData.minAge) : ""
   );
   const [competitionMaxAge, setCompetitionMaxAge] = useState(
     typeof initialData.maxAge === "number" ? String(initialData.maxAge) : ""
   );
-  const [lastSavedAgeClub, setLastSavedAgeClub] = useState({
-    requireClubMembership: initialData.requireClubMembership ?? false,
+  const [lastSavedCompetitionAges, setLastSavedCompetitionAges] = useState({
     minAge: typeof initialData.minAge === "number" ? String(initialData.minAge) : "",
     maxAge: typeof initialData.maxAge === "number" ? String(initialData.maxAge) : "",
   });
@@ -76,11 +73,9 @@ function CompetitionParticipationConditionsEditorInner({
   useEffect(() => {
     setParticipantEligibilityText(initialData.participantEligibilityText ?? "");
     setLastSavedEligibility((initialData.participantEligibilityText ?? "").trim());
-    setRequireClubMembership(initialData.requireClubMembership ?? false);
     setCompetitionMinAge(typeof initialData.minAge === "number" ? String(initialData.minAge) : "");
     setCompetitionMaxAge(typeof initialData.maxAge === "number" ? String(initialData.maxAge) : "");
-    setLastSavedAgeClub({
-      requireClubMembership: initialData.requireClubMembership ?? false,
+    setLastSavedCompetitionAges({
       minAge: typeof initialData.minAge === "number" ? String(initialData.minAge) : "",
       maxAge: typeof initialData.maxAge === "number" ? String(initialData.maxAge) : "",
     });
@@ -89,7 +84,6 @@ function CompetitionParticipationConditionsEditorInner({
   }, [
     settingsVersion,
     initialData.participantEligibilityText,
-    initialData.requireClubMembership,
     initialData.minAge,
     initialData.maxAge,
   ]);
@@ -134,7 +128,7 @@ function CompetitionParticipationConditionsEditorInner({
     }
   };
 
-  const saveAgeClub = async () => {
+  const saveCompetitionAges = async () => {
     const minAgeValue = competitionMinAge.trim() === "" ? null : Number(competitionMinAge);
     const maxAgeValue = competitionMaxAge.trim() === "" ? null : Number(competitionMaxAge);
     if (minAgeValue !== null && (Number.isNaN(minAgeValue) || minAgeValue < 0)) {
@@ -156,9 +150,8 @@ function CompetitionParticipationConditionsEditorInner({
       return;
     }
     const same =
-      requireClubMembership === lastSavedAgeClub.requireClubMembership &&
-      competitionMinAge.trim() === lastSavedAgeClub.minAge.trim() &&
-      competitionMaxAge.trim() === lastSavedAgeClub.maxAge.trim();
+      competitionMinAge.trim() === lastSavedCompetitionAges.minAge.trim() &&
+      competitionMaxAge.trim() === lastSavedCompetitionAges.maxAge.trim();
     if (same) return;
     if (isSaving) return;
     try {
@@ -169,31 +162,34 @@ function CompetitionParticipationConditionsEditorInner({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          requireClubMembership,
           minAge: minAgeValue,
           maxAge: maxAgeValue,
         }),
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.message || "年齢・所属クラブ設定の更新に失敗しました");
+        throw new Error(err.message || "大会全体の年齢の更新に失敗しました");
       }
-      setLastSavedAgeClub({
-        requireClubMembership,
+      setLastSavedCompetitionAges({
         minAge: competitionMinAge.trim(),
         maxAge: competitionMaxAge.trim(),
       });
       setStatusText("保存しました");
       setStatusTone("success");
-      toast.success("年齢・所属クラブを更新しました");
+      toast.success("大会全体の年齢を更新しました");
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "年齢・所属クラブ設定の更新に失敗しました");
+      toast.error(e instanceof Error ? e.message : "大会全体の年齢の更新に失敗しました");
       setStatusText("保存に失敗しました");
       setStatusTone("error");
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const flushParticipantSection = async () => {
+    await saveEligibility();
+    await saveCompetitionAges();
   };
 
   if (!canEdit) {
@@ -202,25 +198,34 @@ function CompetitionParticipationConditionsEditorInner({
         <CardHeader className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
           <CardTitle className="text-base font-semibold">大会出場条件</CardTitle>
           <CardDescription className="text-sm">
-            誰がエントリーできるか（参加対象者・必要な資格・年齢とクラブ所属）の現在の設定です。
+            誰がエントリーできるか（参加対象者・必要な資格・年齢）の現在の設定です。所属クラブの要否は、このページ上部の大会情報で確認できます。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 px-4 py-4 sm:px-5">
-          <div className="space-y-1 rounded-lg border border-border bg-card px-3 py-3 sm:px-4">
+          <div className="space-y-2 rounded-lg border border-border bg-card px-3 py-3 sm:px-4">
             <p className="text-xs font-medium text-muted-foreground">参加対象者</p>
             {renderParticipantEligibilitySummary(initialData.participantEligibilityText)}
+            <p className="text-xs font-medium text-muted-foreground">大会全体の年齢</p>
+            {renderCompetitionAgeRangeSummary({
+              minAge: initialData.minAge,
+              maxAge: initialData.maxAge,
+            })}
+          </div>
+          <div className="space-y-2 rounded-lg border border-border bg-card px-3 py-3 sm:px-4">
+            <p className="text-xs font-medium text-muted-foreground">AGEカテゴリ</p>
+            <CompetitionAgeCategoriesEditor
+              key={`${settingsVersion}-age-cats-readonly`}
+              competitionId={competitionId}
+              canEdit={false}
+              initialAgeCategories={_initialAgeCategories ?? []}
+            />
           </div>
           <div className="space-y-1 rounded-lg border border-border bg-card px-3 py-3 sm:px-4">
             <p className="text-xs font-medium text-muted-foreground">参加資格</p>
-            {renderRequiredQualificationsSummary(initialData.requiredQualifications)}
-          </div>
-          <div className="space-y-1 rounded-lg border border-border bg-card px-3 py-3 sm:px-4">
-            <p className="text-xs font-medium text-muted-foreground">年齢・所属クラブ</p>
-            {renderAgeClubSummaryFromFields({
-              minAge: initialData.minAge,
-              maxAge: initialData.maxAge,
-              requireClubMembership: initialData.requireClubMembership,
-            })}
+            {renderRequiredQualificationsSummary(
+              initialData.requiredQualifications,
+              _initialAgeCategories ?? null
+            )}
           </div>
         </CardContent>
       </Card>
@@ -232,7 +237,7 @@ function CompetitionParticipationConditionsEditorInner({
       <CardHeader className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
         <CardTitle className="text-base font-semibold">大会出場条件</CardTitle>
         <CardDescription className="text-sm">
-          下の欄にそのまま入力できます。参加対象者と年齢・所属は、入力欄の外をクリックすると変更が保存されます。参加資格は変更後、枠の外をクリックすると保存されます。
+          下の欄にそのまま入力できます。参加対象者（自由記述と大会全体の年齢）は、枠の外をクリックすると保存されます。所属クラブの要否は、このページ上部の大会情報の最下部で設定します。参加資格は変更後、枠の外をクリックすると保存されます。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 px-4 py-4 sm:px-5">
@@ -252,7 +257,7 @@ function CompetitionParticipationConditionsEditorInner({
           className="space-y-2 rounded-lg border border-border bg-card px-3 py-3 sm:px-4"
           onBlur={(e) => {
             if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-              void saveEligibility();
+              void flushParticipantSection();
             }
           }}
         >
@@ -271,39 +276,9 @@ function CompetitionParticipationConditionsEditorInner({
             <p className="text-sm text-muted-foreground">未入力の場合は「制限なし」として表示されます。</p>
             <p className="text-xs text-muted-foreground">{participantEligibilityText.length} 文字</p>
           </div>
-        </div>
-
-        <div className="space-y-2 rounded-lg border border-border bg-card px-3 py-3 sm:px-4">
-          <p className="text-xs font-medium text-muted-foreground">参加資格</p>
-          <p className="text-[11px] text-muted-foreground">{CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP}</p>
-          <CompetitionEntryQualificationsEditor
-            key={`${settingsVersion}-qual`}
-            competitionId={competitionId}
-            canEdit={canEdit && !isSaving}
-            requiresParticipantNotice={requiresParticipantNotice}
-            qualificationTemplates={qualificationTemplates}
-            initialRequiredQualifications={initialData.requiredQualifications}
-            underAge={{
-              underAgeSystemEnabled: initialData.underAgeSystemEnabled,
-              underAgeUThresholds: initialData.underAgeUThresholds,
-              underAgeOpenEnabled: initialData.underAgeOpenEnabled,
-            }}
-            autoSaveOnBlur
-            wrapInCard={false}
-          />
-        </div>
-
-        <div
-          className="space-y-3 rounded-lg border border-border bg-card px-3 py-3 sm:px-4"
-          onBlur={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-              void saveAgeClub();
-            }
-          }}
-        >
-          <p className="text-xs font-medium text-muted-foreground">年齢・所属クラブ</p>
+          <p className="text-xs font-medium text-muted-foreground">大会全体の年齢</p>
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            大会全体の年齢範囲と、エントリー時のクラブ所属の要否です。数値は「その歳以上」「その歳以下」で境界の年齢を含みます。
+            エントリーできる年齢の下限・上限です。数値は「その歳以上」「その歳以下」で境界の年齢を含みます。
           </p>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
@@ -337,31 +312,36 @@ function CompetitionParticipationConditionsEditorInner({
               />
             </div>
           </div>
-          <div className="rounded-md border border-border bg-muted/25 px-3 py-2 text-xs text-muted-foreground">
-            <p className="text-xs font-medium text-foreground">所属クラブ</p>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              <label className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm">
-                <input
-                  type="radio"
-                  name="participation-require-club"
-                  checked={requireClubMembership}
-                  onChange={() => setRequireClubMembership(true)}
-                  disabled={isSaving}
-                />
-                <span>所属クラブ必須</span>
-              </label>
-              <label className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm">
-                <input
-                  type="radio"
-                  name="participation-require-club"
-                  checked={!requireClubMembership}
-                  onChange={() => setRequireClubMembership(false)}
-                  disabled={isSaving}
-                />
-                <span>所属クラブ不要</span>
-              </label>
-            </div>
-          </div>
+        </div>
+
+        <div className="space-y-2 rounded-lg border border-border bg-card px-3 py-3 sm:px-4">
+          <p className="text-xs font-medium text-muted-foreground">AGEカテゴリ</p>
+          <CompetitionAgeCategoriesEditor
+            key={`${settingsVersion}-age-cats`}
+            competitionId={competitionId}
+            canEdit={canEdit && !isSaving}
+            initialAgeCategories={_initialAgeCategories ?? []}
+          />
+        </div>
+
+        <div className="space-y-2 rounded-lg border border-border bg-card px-3 py-3 sm:px-4">
+          <p className="text-xs font-medium text-muted-foreground">参加資格</p>
+          <p className="text-[11px] text-muted-foreground">{CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP}</p>
+          <CompetitionEntryQualificationsEditor
+            key={`${settingsVersion}-qual`}
+            competitionId={competitionId}
+            canEdit={canEdit && !isSaving}
+            requiresParticipantNotice={requiresParticipantNotice}
+            qualificationTemplates={qualificationTemplates}
+            initialRequiredQualifications={initialData.requiredQualifications}
+            ageCategories={(_initialAgeCategories ?? []).map((c) => ({
+              id: c.id,
+              name: c.name,
+              displayOrder: c.displayOrder,
+            }))}
+            autoSaveOnBlur
+            wrapInCard={false}
+          />
         </div>
       </CardContent>
     </Card>

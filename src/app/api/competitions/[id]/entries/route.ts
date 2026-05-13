@@ -33,20 +33,16 @@ import {
   type CompetitionEntryFeeConfig,
 } from "@/lib/entryFee";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
-import {
-  competitionUsesUnderAgeSystem,
-  partitionUnderBandsForCompetition,
-} from "@/lib/competitionUnderAgeSettings";
-import { meetsCompetitionEventAgeEligibility } from "@/lib/underAgeEventEligibility";
-import { resolveEffectiveUnderBandAllowListForEvent } from "@/lib/underBandAllowList";
+import { meetsCompetitionEventAgeEligibility } from "@/lib/competitionEventAgeEligibility";
 import {
   isTieredEntryFee,
   isTieredRequiredQualifications,
   maxIndividualEntryFeeUnitAcrossTiers,
   parseAgeCategoryFeeTiers,
-  parseUnderFeeTiers,
+  parseAgeCategoryQualificationTiers,
   resolveEntryFeeUnits,
   resolveRequiredQualificationsForAge,
+  resolveRequiredQualificationsForAgeCategory,
 } from "@/lib/competitionEntryAgeTiered";
 import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
 import {
@@ -191,7 +187,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           orderBy: { displayOrder: "asc" },
           include: {
             ageCategory: {
-              select: { id: true, underBandKeysEnabled: true },
+              select: { id: true },
             },
           },
         },
@@ -202,7 +198,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
             displayOrder: true,
             eligibleBirthDateFrom: true,
             eligibleBirthDateTo: true,
-            underBandKeysEnabled: true,
           },
         },
         organization: {
@@ -325,15 +320,26 @@ export async function POST(request: NextRequest, context: RouteContext) {
           new Date(competition.startDate)
         )
       : null;
-    const underPartition = partitionUnderBandsForCompetition(competition);
     const userSex = user?.sex ?? "OTHER";
     const userQualifications = user?.qualifications?.map((q) => q.kind) ?? [];
+    const userDobForCat = user?.dateOfBirth ? new Date(user.dateOfBirth) : null;
 
-    const rq = resolveRequiredQualificationsForAge(
-      competition.requiredQualifications,
-      userAge,
-      { underPartition: underPartition ?? null }
-    );
+    const hasAgeCategoryQual =
+      parseAgeCategoryQualificationTiers(competition.requiredQualifications) !== null;
+    const userAgeCategoryId = userDobForCat
+      ? (competition.ageCategories.find((c) =>
+          c.eligibleBirthDateFrom !== null && c.eligibleBirthDateTo !== null
+            ? userDobForCat.getTime() >= c.eligibleBirthDateFrom.getTime() &&
+              userDobForCat.getTime() <= c.eligibleBirthDateTo.getTime()
+            : false
+        )?.id ?? null)
+      : null;
+    const rq = hasAgeCategoryQual
+      ? resolveRequiredQualificationsForAgeCategory(
+          competition.requiredQualifications,
+          userAgeCategoryId
+        )
+      : resolveRequiredQualificationsForAge(competition.requiredQualifications, userAge);
     if (rq.tierMissing && isTieredRequiredQualifications(competition.requiredQualifications)) {
       return NextResponse.json(
         {
@@ -456,14 +462,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
       if (
         !meetsCompetitionEventAgeEligibility({
-          competitionUnderAgeEnabled: competitionUsesUnderAgeSystem(competition),
-          underPartition,
-          eventUnderAgeEligibilityEnabled: event.underAgeEligibilityEnabled ?? true,
-          effectiveUnderBandAllowList: resolveEffectiveUnderBandAllowListForEvent({
-            underBandKeysOverride: event.underBandKeysOverride,
-            ageCategoryId: event.ageCategoryId,
-            categoryUnderBandKeysEnabled: event.ageCategory?.underBandKeysEnabled ?? null,
-          }),
           event,
           userDateOfBirth: user?.dateOfBirth ? new Date(user.dateOfBirth) : null,
           seasonalAgeYears: userAge,
@@ -570,7 +568,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const feeUnits = resolveEntryFeeUnits(competition.entryFee, userAge, {
       userDateOfBirth: userDob,
       competitionAgeCategories: competition.ageCategories,
-      underFeePartition: underPartition ?? null,
     });
     const clubAdminTeamOnlyFeeBypass =
       hasTeamEntriesField &&
@@ -586,20 +583,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
       !clubAdminTeamOnlyFeeBypass
     ) {
       const isCat = parseAgeCategoryFeeTiers(competition.entryFee) !== null;
-      const isUnder = parseUnderFeeTiers(competition.entryFee) !== null;
       return NextResponse.json(
         {
           message: isCat
             ? user?.dateOfBirth
               ? "参加費の年齢カテゴリに、あなたの生年月日が該当する区分がありません。主催者へお問い合わせください。"
               : "この大会は年齢カテゴリ別の参加費です。プロフィールに生年月日を登録してください。"
-            : isUnder
-              ? user?.dateOfBirth
-                ? "参加費のアンダー区分に、あなたの年度年齢が該当する区分がありません。主催者へお問い合わせください。"
-                : "この大会はアンダー区分別の参加費です。プロフィールに生年月日を登録してください。"
-              : user?.dateOfBirth
-                ? "参加費の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
-                : "この大会は年齢帯別の参加費です。プロフィールに生年月日を登録してください。",
+            : user?.dateOfBirth
+              ? "参加費の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
+              : "この大会は年齢帯別の参加費です。プロフィールに生年月日を登録してください。",
         },
         { status: 400 }
       );
@@ -626,7 +618,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
           userAgeYearsAtCompetitionStart: userAge,
           userDateOfBirth: userDob,
           competitionAgeCategories: competition.ageCategories,
-          underFeePartition: underPartition ?? null,
         }
       );
     }

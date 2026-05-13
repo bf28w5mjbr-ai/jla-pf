@@ -2,10 +2,6 @@ import type { PrismaClient } from "@prisma/client";
 import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import { resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
-import {
-  partitionUnderBandsForCompetition,
-  type CompetitionUnderAgeDbFields,
-} from "@/lib/competitionUnderAgeSettings";
 import { ENTRY_CHECKOUT_PAID_STATUSES } from "@/lib/entryCheckoutSessionPaid";
 import {
   billingCountsForPersonalEntryPost,
@@ -26,9 +22,6 @@ type CompetitionForPrepaidReconcile = {
   id: string;
   startDate: Date;
   entryFee: unknown;
-  underAgeSystemEnabled: boolean;
-  underAgeUThresholds: unknown;
-  underAgeOpenEnabled: boolean;
   ageCategories: {
     id: string;
     displayOrder: number;
@@ -76,14 +69,6 @@ async function expirePendingCheckoutSessions(tx: Tx, entryId: string, now: Date)
   return res.count;
 }
 
-function underFieldsFromCompetition(c: CompetitionForPrepaidReconcile): CompetitionUnderAgeDbFields {
-  return {
-    underAgeSystemEnabled: c.underAgeSystemEnabled,
-    underAgeUThresholds: c.underAgeUThresholds as CompetitionUnderAgeDbFields["underAgeUThresholds"],
-    underAgeOpenEnabled: c.underAgeOpenEnabled,
-  };
-}
-
 /**
  * 選手が先にエントリー済みでも、クラブが後から個人枠を追加／先払い成立後に料金・Checkout を POST と整合させる。
  * - 締切後枠: 未完了の個人 Checkout を EXPIRED にし、クラブ一括請求フローへ誘導
@@ -102,7 +87,6 @@ export async function reconcileRetroactiveClubPrepaidSlotsForUsersInTx(
   if (coveredUserIds.length === 0) return;
 
   const clubIndividualBillingTiming = resolveClubIndividualEntryBillingTiming(competition.entryFee);
-  const underPartition = partitionUnderBandsForCompetition(underFieldsFromCompetition(competition));
   const now = new Date();
 
   for (const userId of coveredUserIds) {
@@ -163,7 +147,6 @@ export async function reconcileRetroactiveClubPrepaidSlotsForUsersInTx(
     const feeUnits = resolveEntryFeeUnits(competition.entryFee, userAge, {
       userDateOfBirth: userDob,
       competitionAgeCategories: competition.ageCategories,
-      underFeePartition: underPartition ?? null,
     });
 
     const { individualCount: feeIndividualCount, teamCount: feeTeamCount } =
@@ -183,7 +166,6 @@ export async function reconcileRetroactiveClubPrepaidSlotsForUsersInTx(
         userAgeYearsAtCompetitionStart: userAge,
         userDateOfBirth: userDob,
         competitionAgeCategories: competition.ageCategories,
-        underFeePartition: underPartition ?? null,
       }
     );
 
@@ -271,9 +253,6 @@ export async function loadCompetitionForPrepaidReconcile(
       id: true,
       startDate: true,
       entryFee: true,
-      underAgeSystemEnabled: true,
-      underAgeUThresholds: true,
-      underAgeOpenEnabled: true,
       ageCategories: {
         orderBy: { displayOrder: "asc" },
         select: {

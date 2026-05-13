@@ -154,7 +154,6 @@ export default async function ClubCompetitionTeamHubPage({
           displayOrder: true,
           eligibleBirthDateFrom: true,
           eligibleBirthDateTo: true,
-          underBandKeysEnabled: true,
         },
       },
       events: {
@@ -166,7 +165,7 @@ export default async function ClubCompetitionTeamHubPage({
         ],
         include: {
           ageCategory: {
-            select: { id: true, displayOrder: true, underBandKeysEnabled: true },
+            select: { id: true, displayOrder: true },
           },
         },
       },
@@ -198,12 +197,10 @@ export default async function ClubCompetitionTeamHubPage({
           eligibleBirthDateFrom: true,
           eligibleBirthDateTo: true,
           ageCategoryId: true,
-          underBandKeysOverride: true,
-          underAgeEligibilityEnabled: true,
           teamRelayPositionCount: true,
           teamRelayPositionNames: true,
           ageCategory: {
-            select: { id: true, displayOrder: true, underBandKeysEnabled: true },
+            select: { id: true, displayOrder: true },
           },
         },
       },
@@ -403,9 +400,6 @@ export default async function ClubCompetitionTeamHubPage({
 
   const teamAssignmentCompetition = prismaCompetitionToTeamAssignmentCompetitionJson({
     startDate: competition.startDate,
-    underAgeSystemEnabled: competition.underAgeSystemEnabled ?? false,
-    underAgeUThresholds: competition.underAgeUThresholds,
-    underAgeOpenEnabled: competition.underAgeOpenEnabled,
     ageCategories: competition.ageCategories,
   });
 
@@ -419,9 +413,6 @@ export default async function ClubCompetitionTeamHubPage({
         eligibleBirthDateFrom: e.eligibleBirthDateFrom,
         eligibleBirthDateTo: e.eligibleBirthDateTo,
         ageCategoryId: e.ageCategoryId,
-        underBandKeysOverride: e.underBandKeysOverride,
-        underAgeEligibilityEnabled: e.underAgeEligibilityEnabled,
-        ageCategory: e.ageCategory,
       }),
     ])
   );

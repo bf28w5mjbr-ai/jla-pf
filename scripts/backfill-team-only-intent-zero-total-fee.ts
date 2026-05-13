@@ -75,9 +75,6 @@ async function main() {
           name: true,
           startDate: true,
           entryFee: true,
-          underAgeSystemEnabled: true,
-          underAgeUThresholds: true,
-          underAgeOpenEnabled: true,
           ageCategories: {
             orderBy: { displayOrder: "asc" },
             select: {
@@ -121,11 +118,6 @@ async function main() {
         eligibleBirthDateFrom: c.eligibleBirthDateFrom,
         eligibleBirthDateTo: c.eligibleBirthDateTo,
       })),
-      underAgeDbFields: {
-        underAgeSystemEnabled: row.competition.underAgeSystemEnabled,
-        underAgeUThresholds: row.competition.underAgeUThresholds,
-        underAgeOpenEnabled: row.competition.underAgeOpenEnabled,
-      },
       userDateOfBirth: userDob,
     });
 

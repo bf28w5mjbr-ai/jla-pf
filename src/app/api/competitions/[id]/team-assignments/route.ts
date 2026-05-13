@@ -64,9 +64,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         entryEndDate: true,
         startDate: true,
         startListSettings: true,
-        underAgeSystemEnabled: true,
-        underAgeUThresholds: true,
-        underAgeOpenEnabled: true,
         ageCategories: {
           orderBy: { displayOrder: "asc" },
           select: {
@@ -74,7 +71,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
             displayOrder: true,
             eligibleBirthDateFrom: true,
             eligibleBirthDateTo: true,
-            underBandKeysEnabled: true,
           },
         },
       },
@@ -159,11 +155,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
             eligibleBirthDateFrom: true,
             eligibleBirthDateTo: true,
             ageCategoryId: true,
-            underBandKeysOverride: true,
-            underAgeEligibilityEnabled: true,
-            ageCategory: {
-              select: { id: true, underBandKeysEnabled: true },
-            },
           },
         },
       },
@@ -243,9 +234,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     const competitionJson = prismaCompetitionToTeamAssignmentCompetitionJson({
       startDate: competition.startDate,
-      underAgeSystemEnabled: competition.underAgeSystemEnabled ?? false,
-      underAgeUThresholds: competition.underAgeUThresholds,
-      underAgeOpenEnabled: competition.underAgeOpenEnabled,
       ageCategories: competition.ageCategories,
     });
 

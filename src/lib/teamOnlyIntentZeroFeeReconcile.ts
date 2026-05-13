@@ -1,9 +1,5 @@
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import type { CompetitionAgeCategoryForEntryFee } from "@/lib/competitionEntryAgeTiered";
-import {
-  type CompetitionUnderAgeDbFields,
-  partitionUnderBandsForCompetition,
-} from "@/lib/competitionUnderAgeSettings";
 import { ENTRY_CHECKOUT_PAID_STATUSES } from "@/lib/entryCheckoutSessionPaid";
 import {
   billingCountsForPersonalEntryPost,
@@ -64,7 +60,6 @@ export type TeamOnlyIntentFeeComputationInput = {
   competitionStartDate: Date;
   entryFee: CompetitionEntryFeeConfig | number | null;
   ageCategories: ReadonlyArray<CompetitionAgeCategoryForEntryFee>;
-  underAgeDbFields: CompetitionUnderAgeDbFields;
   userDateOfBirth: Date | null;
 };
 
@@ -75,7 +70,6 @@ export function computeTeamOnlyIntentPersonalEntryFee(
   const userAge = userDob
     ? getCompetitionEligibilityAgeYears(userDob, new Date(input.competitionStartDate))
     : null;
-  const underPartition = partitionUnderBandsForCompetition(input.underAgeDbFields);
   const { individualCount, teamCount } = billingCountsForPersonalEntryPost({
     teamOnlyIntentWithoutItemSelection: true,
     entryItemsCount: 0,
@@ -88,7 +82,6 @@ export function computeTeamOnlyIntentPersonalEntryFee(
       userAgeYearsAtCompetitionStart: userAge,
       userDateOfBirth: userDob,
       competitionAgeCategories: input.ageCategories,
-      underFeePartition: underPartition ?? null,
     }
   );
 }
@@ -124,9 +117,6 @@ export async function reconcileTeamOnlyIntentZeroTotalFeeEntry(entryId: string):
         select: {
           startDate: true,
           entryFee: true,
-          underAgeSystemEnabled: true,
-          underAgeUThresholds: true,
-          underAgeOpenEnabled: true,
           ageCategories: {
             orderBy: { displayOrder: "asc" },
             select: {
@@ -161,11 +151,6 @@ export async function reconcileTeamOnlyIntentZeroTotalFeeEntry(entryId: string):
       eligibleBirthDateFrom: c.eligibleBirthDateFrom,
       eligibleBirthDateTo: c.eligibleBirthDateTo,
     })),
-    underAgeDbFields: {
-      underAgeSystemEnabled: row.competition.underAgeSystemEnabled,
-      underAgeUThresholds: row.competition.underAgeUThresholds,
-      underAgeOpenEnabled: row.competition.underAgeOpenEnabled,
-    },
     userDateOfBirth: userDob,
   });
 

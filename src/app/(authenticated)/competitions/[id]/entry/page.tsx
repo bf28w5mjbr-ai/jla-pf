@@ -34,18 +34,13 @@ import {
   isTieredEntryFee,
   isTieredRequiredQualifications,
   parseAgeCategoryFeeTiers,
+  parseAgeCategoryQualificationTiers,
   parseAgeFeeTiers,
-  parseUnderFeeTiers,
-  parseUnderQualificationTiers,
   resolveEntryFeeUnits,
   resolveRequiredQualificationsForAge,
+  resolveRequiredQualificationsForAgeCategory,
 } from "@/lib/competitionEntryAgeTiered";
-import {
-  competitionUsesUnderAgeSystem,
-  partitionUnderBandsForCompetition,
-} from "@/lib/competitionUnderAgeSettings";
-import { meetsCompetitionEventAgeEligibility } from "@/lib/underAgeEventEligibility";
-import { resolveEffectiveUnderBandAllowListForEvent } from "@/lib/underBandAllowList";
+import { meetsCompetitionEventAgeEligibility } from "@/lib/competitionEventAgeEligibility";
 import { getStripeProcessingFeeBpsFromEnv } from "@/lib/stripeProcessingFee";
 import { reconcileTeamOnlyIntentZeroTotalFeeEntry } from "@/lib/teamOnlyIntentZeroFeeReconcile";
 
@@ -150,14 +145,13 @@ export default async function CompetitionEntryPage({
           displayOrder: true,
           eligibleBirthDateFrom: true,
           eligibleBirthDateTo: true,
-          underBandKeysEnabled: true,
         },
       },
       events: {
         orderBy: { displayOrder: "asc" },
         include: {
           ageCategory: {
-            select: { id: true, underBandKeysEnabled: true },
+            select: { id: true },
           },
         },
       },
@@ -262,34 +256,6 @@ export default async function CompetitionEntryPage({
           {catTiers.map((t, i) => (
             <p key={i} className="text-xs font-medium leading-snug">
               {nameById.get(t.ageCategoryId) ?? "区分"}
-              {hasIndividualEvents ? (
-                <>
-                  {" "}
-                  · 個人 ¥{formatCurrency(t.individualEntryFee)}
-                </>
-              ) : null}
-              {hasTeamEvents ? (
-                <>
-                  {" "}
-                  · チーム（1）¥{formatCurrency(t.teamEntryFeePerTeam)}
-                </>
-              ) : null}
-            </p>
-          ))}
-        </div>
-      );
-    }
-
-    const underTiers = parseUnderFeeTiers(entryFee);
-    if (underTiers?.length) {
-      return (
-        <div className="space-y-1">
-          <p className="text-[10px] font-medium text-muted-foreground">
-            アンダー区分別（年度年齢・U/OPEN）
-          </p>
-          {underTiers.map((t, i) => (
-            <p key={i} className="text-xs font-medium leading-snug">
-              {t.tierKey}
               {hasIndividualEvents ? (
                 <>
                   {" "}
@@ -466,15 +432,26 @@ export default async function CompetitionEntryPage({
         new Date(competition.startDate)
       )
     : null;
-  const underPartition = partitionUnderBandsForCompetition(competition);
   const userSex = user?.sex ?? "OTHER";
   const userQualifications = user?.qualifications?.map((q) => q.kind) ?? [];
+  const userDob = user?.dateOfBirth ? new Date(user.dateOfBirth) : null;
 
-  const rq = resolveRequiredQualificationsForAge(
-    competition.requiredQualifications,
-    userAge,
-    { underPartition: underPartition ?? null }
-  );
+  // AGEカテゴリ別資格があるときは ageCategoryId 経由で、なければ年齢ベースで解決
+  const hasAgeCategoryQual =
+    parseAgeCategoryQualificationTiers(competition.requiredQualifications) !== null;
+  const rq = hasAgeCategoryQual
+    ? resolveRequiredQualificationsForAgeCategory(
+        competition.requiredQualifications,
+        userDob
+          ? (competition.ageCategories.find((c) =>
+              c.eligibleBirthDateFrom !== null && c.eligibleBirthDateTo !== null
+                ? userDob.getTime() >= c.eligibleBirthDateFrom.getTime() &&
+                  userDob.getTime() <= c.eligibleBirthDateTo.getTime()
+                : false
+            )?.id ?? null)
+          : null
+      )
+    : resolveRequiredQualificationsForAge(competition.requiredQualifications, userAge);
   const meetsQualification =
     !rq.tierMissing &&
     (rq.list.length === 0
@@ -483,11 +460,9 @@ export default async function CompetitionEntryPage({
           userQualifications.some((q) => matchesQualification(q, req))
         ));
 
-  const userDob = user?.dateOfBirth ? new Date(user.dateOfBirth) : null;
   const feeResolution = resolveEntryFeeUnits(competition.entryFee, userAge, {
     userDateOfBirth: userDob,
     competitionAgeCategories: competition.ageCategories,
-    underFeePartition: underPartition ?? null,
   });
   const meetsFeeAgeTier =
     !isTieredEntryFee(competition.entryFee) || !feeResolution.ageTierMissing;
@@ -517,14 +492,6 @@ export default async function CompetitionEntryPage({
 
     if (
       !meetsCompetitionEventAgeEligibility({
-        competitionUnderAgeEnabled: competitionUsesUnderAgeSystem(competition),
-        underPartition,
-        eventUnderAgeEligibilityEnabled: event.underAgeEligibilityEnabled ?? true,
-        effectiveUnderBandAllowList: resolveEffectiveUnderBandAllowListForEvent({
-          underBandKeysOverride: event.underBandKeysOverride,
-          ageCategoryId: event.ageCategoryId,
-          categoryUnderBandKeysEnabled: event.ageCategory?.underBandKeysEnabled ?? null,
-        }),
         event,
         userDateOfBirth: user?.dateOfBirth ? new Date(user.dateOfBirth) : null,
         seasonalAgeYears: userAge,
@@ -549,14 +516,13 @@ export default async function CompetitionEntryPage({
   const eligibilityMessages: string[] = [];
   if (!meetsQualification) {
     if (rq.tierMissing && isTieredRequiredQualifications(competition.requiredQualifications)) {
-      const isUnderQual = parseUnderQualificationTiers(competition.requiredQualifications) !== null;
       eligibilityMessages.push(
         userAge === null
-          ? isUnderQual
-            ? "この大会はアンダー区分ごとの出場資格が設定されています。プロフィールに生年月日を登録してください。"
+          ? hasAgeCategoryQual
+            ? "この大会は AGEカテゴリごとの出場資格が設定されています。プロフィールに生年月日を登録してください。"
             : "この大会は年齢帯ごとの出場資格が設定されています。プロフィールに生年月日を登録してください。"
-          : isUnderQual
-            ? "出場資格のアンダー区分に、あなたの年度年齢が該当する区分がありません。主催者へお問い合わせください。"
+          : hasAgeCategoryQual
+            ? "出場資格の AGEカテゴリに、あなたの生年月日が該当するものがありません。主催者へお問い合わせください。"
             : "出場資格の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
       );
     } else if (missingQualificationLabels.length > 0) {
@@ -568,14 +534,14 @@ export default async function CompetitionEntryPage({
     }
   }
   if (!meetsFeeAgeTier) {
-    const isUnderFee = parseUnderFeeTiers(competition.entryFee) !== null;
+    const isCatFee = parseAgeCategoryFeeTiers(competition.entryFee) !== null;
     eligibilityMessages.push(
       userAge === null
-        ? isUnderFee
-          ? "この大会はアンダー区分別の参加費です。プロフィールに生年月日を登録してください。"
+        ? isCatFee
+          ? "この大会は AGEカテゴリ別の参加費です。プロフィールに生年月日を登録してください。"
           : "この大会は年齢帯別の参加費です。プロフィールに生年月日を登録してください。"
-        : isUnderFee
-          ? "参加費のアンダー区分に、あなたの年度年齢が該当する区分がありません。主催者へお問い合わせください。"
+        : isCatFee
+          ? "参加費の AGEカテゴリに、あなたの生年月日が該当するものがありません。主催者へお問い合わせください。"
           : "参加費の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
     );
   }
@@ -1084,14 +1050,6 @@ export default async function CompetitionEntryPage({
         entryPledge={
           entryPledgeActive
             ? { markdown: pledgeMarkdown, initialAccepted: initialPledgeAccepted }
-            : null
-        }
-        underAgeFeeBands={
-          competition.underAgeSystemEnabled
-            ? {
-                uThresholds: [...(competition.underAgeUThresholds ?? [])],
-                openEnabled: competition.underAgeOpenEnabled ?? true,
-              }
             : null
         }
         cardProcessingFeeBps={getStripeProcessingFeeBpsFromEnv()}

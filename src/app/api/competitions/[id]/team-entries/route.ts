@@ -18,7 +18,6 @@ import {
   maxTeamEntryFeeUnitAcrossTiers,
   resolveEntryFeeUnits,
 } from "@/lib/competitionEntryAgeTiered";
-import { partitionUnderBandsForCompetition } from "@/lib/competitionUnderAgeSettings";
 import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
 import {
   replaceClubPrepaidSlotsForSave,
@@ -112,9 +111,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         entryEndDate: true,
         startDate: true,
         entryFee: true,
-        underAgeSystemEnabled: true,
-        underAgeUThresholds: true,
-        underAgeOpenEnabled: true,
         ageCategories: {
           orderBy: { displayOrder: "asc" },
           select: {
@@ -224,12 +220,10 @@ export async function PUT(request: NextRequest, context: RouteContext) {
           new Date(competition.startDate)
         )
       : null;
-    const underPartition = partitionUnderBandsForCompetition(competition);
     const userDob = feeUser?.dateOfBirth ? new Date(feeUser.dateOfBirth) : null;
     const feeUnits = resolveEntryFeeUnits(competition.entryFee, userAge, {
       userDateOfBirth: userDob,
       competitionAgeCategories: competition.ageCategories,
-      underFeePartition: underPartition ?? null,
     });
     let teamEntryFeePerTeam = feeUnits.teamUnit;
     if (
@@ -363,11 +357,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       const prepaidSubtotalYenRaw = await sumInstantPrepaidIndividualsYen(tx, {
         startDate: new Date(competition.startDate),
         entryFee: competition.entryFee,
-        underAge: {
-          underAgeSystemEnabled: competition.underAgeSystemEnabled,
-          underAgeUThresholds: competition.underAgeUThresholds,
-          underAgeOpenEnabled: competition.underAgeOpenEnabled,
-        },
         ageCategories: competition.ageCategories,
         coveredUserIds: prepaidIndividualUserIds,
       });

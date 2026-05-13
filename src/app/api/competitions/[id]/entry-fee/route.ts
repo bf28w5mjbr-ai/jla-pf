@@ -10,13 +10,10 @@ import {
 } from "@/lib/competitionPublishedEditRules";
 import {
   normalizeAgeCategoryFeeTiersInput,
-  parseUnderFeeTiers,
   validateAgeFeeTiersCoverCompetitionRange,
   validateAgeTiersNoOverlap,
-  validateUnderFeeTiersAgainstPartition,
   type AgeFeeTier,
 } from "@/lib/competitionEntryAgeTiered";
-import { partitionUnderBandsForCompetition } from "@/lib/competitionUnderAgeSettings";
 import { eventUsesBirthDateRange } from "@/lib/eventBirthDateEligibility";
 import { isOrgAdminRole } from "@/lib/roleScopes";
 
@@ -116,7 +113,6 @@ export async function PUT(
       teamEntryFeePerTeam?: unknown;
       ageFeeTiers?: unknown;
       ageCategoryFeeTiers?: unknown;
-      underFeeTiers?: unknown;
     };
 
     let entryFeeData: Prisma.InputJsonValue;
@@ -144,7 +140,7 @@ export async function PUT(
         return NextResponse.json(
           {
             message:
-              "年齢カテゴリがまだありません。種目設定の「カテゴリ管理」でカテゴリと生年月日の範囲を作成してから、カテゴリ別の参加費を設定してください。",
+              "AGEカテゴリがまだありません。大会出場条件カードの「AGEカテゴリ」で名前と生年月日の範囲を作成してから、AGEカテゴリ別の参加費を設定してください。",
           },
           { status: 400 }
         );
@@ -155,7 +151,7 @@ export async function PUT(
         return NextResponse.json(
           {
             message:
-              "カテゴリ別の参加費を使うには、すべての年齢カテゴリに生年月日の範囲（下限・上限のいずれか）を設定してください（カテゴリ管理タブ）。",
+              "AGEカテゴリ別の参加費を使うには、すべての AGEカテゴリに生年月日の範囲（下限・上限のいずれか）を設定してください。",
           },
           { status: 400 }
         );
@@ -185,38 +181,6 @@ export async function PUT(
       }
 
       entryFeeData = { ageCategoryFeeTiers: tiers };
-    } else if (body.pricingMode === "byUnderAge") {
-      if (!competition.underAgeSystemEnabled) {
-        return NextResponse.json(
-          {
-            message:
-              "アンダー別の参加費を使うには、先に「年齢・所属クラブ」で大会のアンダー制を有効にしてください。",
-          },
-          { status: 400 }
-        );
-      }
-      if (!Array.isArray(body.underFeeTiers)) {
-        return NextResponse.json(
-          { message: "アンダー別参加費の形式が正しくありません" },
-          { status: 400 }
-        );
-      }
-      const tiers = parseUnderFeeTiers({ underFeeTiers: body.underFeeTiers });
-      if (!tiers) {
-        return NextResponse.json(
-          { message: "アンダー別の料金を1件以上、正しい形式で指定してください" },
-          { status: 400 }
-        );
-      }
-      const part = partitionUnderBandsForCompetition(competition);
-      if (!part) {
-        return NextResponse.json({ message: "アンダー制が無効です" }, { status: 400 });
-      }
-      const underErr = validateUnderFeeTiersAgainstPartition(part, tiers);
-      if (underErr) {
-        return NextResponse.json({ message: underErr }, { status: 400 });
-      }
-      entryFeeData = { underFeeTiers: tiers };
     } else if (body.pricingMode === "byAge") {
       if (!Array.isArray(body.ageFeeTiers)) {
         return NextResponse.json(

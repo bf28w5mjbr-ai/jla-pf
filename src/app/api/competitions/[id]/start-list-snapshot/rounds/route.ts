@@ -9,6 +9,7 @@ import { canManageCompetitionStartListSettings } from "@/lib/competitionStartLis
 import {
   parseStartListSettings,
   resolveHeatCountForSnapshotTransition,
+  resolveMaxLanesForSnapshotTransition,
 } from "@/lib/startListSettings";
 import {
   buildNextRoundHeatsFromPreviousResults,
@@ -225,7 +226,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       requestedHeatCount: typeof payload.heatCount === "number" ? payload.heatCount : undefined,
     });
 
-    const maxLanes = event.preliminaryHeatLaneCount;
+    const maxLanes = resolveMaxLanesForSnapshotTransition({
+      setting: eventSetting,
+      eventDefaultLanes: event.preliminaryHeatLaneCount,
+      fromRound: payload.fromRound,
+      toRound: payload.toRound,
+    });
     const useUniformTop = typeof payload.topPerHeat === "number";
 
     let advancePerHeat: number[] | null = null;
@@ -238,7 +244,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         return NextResponse.json(
           {
             error:
-              "按分アップには種目の「1レースあたりの最大レーン数」（全ラウンド共通）が必要です。エントリー設定の種目設定で登録するか、従来どおり topPerHeat を指定してください。",
+              "按分アップには最大レーン数が必要です。種目の共通設定か、スタートリストのラウンド設定で遷移先ラウンドの最大レーンを指定するか、従来どおり topPerHeat を指定してください。",
           },
           { status: 400 }
         );

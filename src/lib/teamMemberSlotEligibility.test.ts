@@ -8,9 +8,6 @@ import {
 function competitionBase(): TeamAssignmentCompetitionJson {
   return {
     startDate: "2026-07-01T00:00:00.000Z",
-    underAgeSystemEnabled: false,
-    underAgeUThresholds: [],
-    underAgeOpenEnabled: true,
     ageCategories: [],
   };
 }
@@ -23,9 +20,6 @@ function eventBase(over: Partial<TeamAssignmentEventJson> = {}): TeamAssignmentE
     eligibleBirthDateFrom: null,
     eligibleBirthDateTo: null,
     ageCategoryId: null,
-    underBandKeysOverride: null,
-    underAgeEligibilityEnabled: true,
-    ageCategory: null,
     ...over,
   };
 }

@@ -7,10 +7,6 @@ import {
 import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import { resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
-import {
-  partitionUnderBandsForCompetition,
-  type CompetitionUnderAgeDbFields,
-} from "@/lib/competitionUnderAgeSettings";
 
 type Tx = Omit<
   PrismaClient,
@@ -23,7 +19,6 @@ export async function sumInstantPrepaidIndividualsYen(
   params: {
     startDate: Date;
     entryFee: unknown;
-    underAge: CompetitionUnderAgeDbFields;
     ageCategories: {
       id: string;
       displayOrder: number;
@@ -42,7 +37,6 @@ export async function sumInstantPrepaidIndividualsYen(
     where: { id: { in: params.coveredUserIds } },
     select: { id: true, dateOfBirth: true },
   });
-  const underPartition = partitionUnderBandsForCompetition(params.underAge);
   let sum = 0;
   for (const u of users) {
     const dob = u.dateOfBirth ? new Date(u.dateOfBirth) : null;
@@ -52,7 +46,6 @@ export async function sumInstantPrepaidIndividualsYen(
     const { individualUnit, ageTierMissing } = resolveEntryFeeUnits(params.entryFee, age, {
       userDateOfBirth: dob,
       competitionAgeCategories: params.ageCategories,
-      underFeePartition: underPartition ?? null,
     });
     if (ageTierMissing) continue;
     sum += individualUnit;

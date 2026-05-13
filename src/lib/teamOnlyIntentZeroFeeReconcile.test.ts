@@ -6,12 +6,6 @@ import {
   resolveClubIdForTeamOnlyIntent,
 } from "./teamOnlyIntentZeroFeeReconcile";
 
-const underOff = {
-  underAgeSystemEnabled: false,
-  underAgeUThresholds: [] as number[],
-  underAgeOpenEnabled: true,
-};
-
 describe("countSnapshotRowsForEntryBilling", () => {
   it("counts only rows with non-empty eventId for items", () => {
     expect(
@@ -85,7 +79,6 @@ describe("computeTeamOnlyIntentPersonalEntryFee", () => {
         competitionStartDate: new Date("2026-06-01"),
         entryFee: { individualEntryFee: 4000, teamEntryFeePerTeam: 10000 },
         ageCategories: [],
-        underAgeDbFields: underOff,
         userDateOfBirth: new Date("1990-01-01"),
       })
     ).toBe(4000);
@@ -97,7 +90,6 @@ describe("computeTeamOnlyIntentPersonalEntryFee", () => {
         competitionStartDate: new Date("2026-06-01"),
         entryFee: null,
         ageCategories: [],
-        underAgeDbFields: underOff,
         userDateOfBirth: new Date("1990-01-01"),
       })
     ).toBe(0);

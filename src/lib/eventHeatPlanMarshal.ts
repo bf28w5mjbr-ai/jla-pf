@@ -47,7 +47,7 @@ export async function assertHeatSettingsUnchangedForMarshalLockedEvents(params: 
     if (heatPlanSplitFingerprint(prev) !== heatPlanSplitFingerprint(next)) {
       return {
         ok: false,
-        message: "マーシャル開始後はラウンド別ヒートの分割設定を変更できません",
+        message: "マーシャル開始後はラウンド設定のヒート分割を変更できません",
       };
     }
   }

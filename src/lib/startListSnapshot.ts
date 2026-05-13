@@ -5,6 +5,7 @@ import {
   normalizeRoundTabs,
   parseStartListSettings,
   primaryHeatSettingFromEventConfig,
+  resolveTabMaxLanes,
   roundTabToHeatSetting,
 } from "@/lib/startListSettings";
 import {
@@ -233,7 +234,7 @@ export async function buildStartListSnapshotPayload(
     const heatCount = enforceMinHeatCountForMaxLanes(
       n,
       heatCountRaw,
-      event.preliminaryHeatLaneCount
+      resolveTabMaxLanes(firstTab, event.preliminaryHeatLaneCount)
     );
     const sortedIds =
       event.type === "TEAM"

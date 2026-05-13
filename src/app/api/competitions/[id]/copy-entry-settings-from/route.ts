@@ -122,10 +122,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
             displayOrder: cat.displayOrder,
             eligibleBirthDateFrom: cat.eligibleBirthDateFrom,
             eligibleBirthDateTo: cat.eligibleBirthDateTo,
-            underBandKeysEnabled:
-              cat.underBandKeysEnabled == null
-                ? undefined
-                : (cat.underBandKeysEnabled as Prisma.InputJsonValue),
           },
         });
         ageCategoryIdMap.set(cat.id, created.id);
@@ -160,11 +156,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 ? undefined
                 : (ev.teamRelayPositionNames as Prisma.InputJsonValue),
             maxTeamEntriesPerClub: ev.maxTeamEntriesPerClub ?? null,
-            underAgeEligibilityEnabled: ev.underAgeEligibilityEnabled ?? true,
-            underBandKeysOverride:
-              ev.underBandKeysOverride == null
-                ? undefined
-                : (ev.underBandKeysOverride as Prisma.InputJsonValue),
           },
         });
       }

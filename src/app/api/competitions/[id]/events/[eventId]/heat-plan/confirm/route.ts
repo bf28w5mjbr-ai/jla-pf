@@ -70,7 +70,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     });
 
     return NextResponse.json({
-      message: "ステップ1（ラウンド別ヒート数）を確定しました。当日運用のマーシャル操作が可能になります。",
+      message: "ステップ1（ラウンド設定）を確定しました。当日運用のマーシャル操作が可能になります。",
       startListHeatPlanConfirmedAt: now.toISOString(),
     });
   } catch (error) {

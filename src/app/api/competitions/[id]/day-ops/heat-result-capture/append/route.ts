@@ -102,7 +102,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json(
         {
           error:
-            "先にスタートリストでステップ1（ラウンド別ヒート数）を確定してください。",
+            "先にスタートリストでステップ1（ラウンド設定）を確定してください。",
         },
         { status: 409 }
       );

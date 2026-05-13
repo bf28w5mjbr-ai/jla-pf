@@ -8,6 +8,8 @@ import {
   defaultStartListRoundTabLabels,
   normalizeRoundTabs,
   resolveHeatCountForSnapshotTransition,
+  resolveMaxLanesForSnapshotTransition,
+  resolveTabMaxLanes,
 } from "./startListSettings";
 
 describe("defaultProgressionRoundLabels", () => {
@@ -271,5 +273,52 @@ describe("normalizeRoundTabs", () => {
       ],
     });
     expect(tabs.map((t) => t.label)).toEqual(["予選", "準決勝A"]);
+  });
+
+  it("maxLanesPerHeat を保持する", () => {
+    const tabs = normalizeRoundTabs({
+      roundTabs: [
+        { id: "1", label: "h", mode: "count", heatCount: "2", heatSize: "", maxLanesPerHeat: 7 },
+      ],
+      mode: "count",
+      heatCount: "2",
+      heatSize: "",
+    });
+    expect(tabs[0]!.maxLanesPerHeat).toBe(7);
+  });
+});
+
+describe("resolveTabMaxLanes", () => {
+  it("タブ上書きを優先する", () => {
+    expect(
+      resolveTabMaxLanes(
+        { id: "x", label: "q", mode: "count", heatCount: "1", heatSize: "", maxLanesPerHeat: 6 },
+        10
+      )
+    ).toBe(6);
+  });
+
+  it("上書きが無ければ種目共通を使う", () => {
+    expect(
+      resolveTabMaxLanes({ id: "x", label: "q", mode: "count", heatCount: "1", heatSize: "" }, 10)
+    ).toBe(10);
+  });
+});
+
+describe("resolveMaxLanesForSnapshotTransition", () => {
+  it("HEAT→FINAL（2タブ）は最終タブの maxLanes を使う", () => {
+    expect(
+      resolveMaxLanesForSnapshotTransition({
+        setting: {
+          roundTabs: [
+            { id: "a", label: "h", mode: "count", heatCount: "5", heatSize: "" },
+            { id: "b", label: "f", mode: "count", heatCount: "2", heatSize: "", maxLanesPerHeat: 8 },
+          ],
+        },
+        eventDefaultLanes: 16,
+        fromRound: "HEAT",
+        toRound: "FINAL",
+      })
+    ).toBe(8);
   });
 });

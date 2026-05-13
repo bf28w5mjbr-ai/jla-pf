@@ -49,6 +49,7 @@ import {
   defaultStartListRoundTabLabels,
   normalizeRoundTabs,
   parseStartListSettings,
+  resolveTabMaxLanes,
   type HeatSetting,
   type StartListRoundTab,
 } from "@/lib/startListSettings";
@@ -489,14 +490,22 @@ export default function StartListEventUnifiedCard({
 
   const step1CompactSummary = useMemo(() => {
     if (tabs.length === 0) return "";
+    const common = effectivePreliminaryLanesForPreview;
     return tabs
       .map((t, index) => {
         const label = roundTabDisplayLabels[index]?.trim() || `ラウンド${index + 1}`;
         const n = Math.max(1, parseInt(String(t.heatCount || "1"), 10) || 1);
-        return `${label} ${n}ヒート`;
+        const effL = resolveTabMaxLanes(t, common ?? null);
+        const showLane =
+          typeof effL === "number" &&
+          (t.maxLanesPerHeat !== undefined ||
+            typeof common !== "number" ||
+            effL !== common);
+        const laneSuffix = showLane ? `·L${effL}` : "";
+        return `${label} ${n}ヒート${laneSuffix}`;
       })
       .join(" · ");
-  }, [tabs, roundTabDisplayLabels]);
+  }, [tabs, roundTabDisplayLabels, effectivePreliminaryLanesForPreview]);
 
   const tabCount = tabs.length;
 
@@ -793,6 +802,7 @@ export default function StartListEventUnifiedCard({
             heatCount: c.heatCount,
             mode: c.mode,
             heatSize: c.heatSize,
+            maxLanesPerHeat: c.maxLanesPerHeat,
           };
         })
       );
@@ -824,7 +834,22 @@ export default function StartListEventUnifiedCard({
       }
     }
 
-    const payloadSetting = heatSettingFromTabs(clamped);
+    const roundTabsForPayload: StartListRoundTab[] = canEditPreliminaryLanes
+      ? clamped.map((row) => {
+          const ml = row.maxLanesPerHeat;
+          if (typeof ml !== "number" || !Number.isInteger(ml) || ml < 1 || ml > 32) {
+            const { maxLanesPerHeat: _omit, ...rest } = row;
+            void _omit;
+            return rest;
+          }
+          return { ...row, maxLanesPerHeat: Math.floor(ml) };
+        })
+      : clamped.map(({ maxLanesPerHeat: _omit, ...rest }) => {
+          void _omit;
+          return rest;
+        });
+
+    const payloadSetting = heatSettingFromTabs(roundTabsForPayload);
     const nextEvents: Record<string, HeatSetting> = {};
     for (const id of allEventIds) {
       nextEvents[id] =
@@ -1219,7 +1244,7 @@ export default function StartListEventUnifiedCard({
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/80 bg-card px-3 py-2.5 shadow-sm">
             <div className="min-w-0 flex-1 space-y-1">
               <p className="text-xs font-semibold text-foreground">
-                ラウンド別ヒート数
+                ラウンド設定
                 {heatLockedByMarshal ? (
                   <span className="ml-1.5 font-normal text-muted-foreground">（固定）</span>
                 ) : null}
@@ -1245,7 +1270,7 @@ export default function StartListEventUnifiedCard({
         {tabCount > 0 && showStep1FullForm ? (
           <div className="space-y-3 rounded-xl border border-border/80 bg-muted/10 p-3 sm:p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-2 border-l-2 border-primary/60 pl-3">
-              <p className="text-sm font-semibold text-foreground">ラウンド別ヒート数</p>
+              <p className="text-sm font-semibold text-foreground">ラウンド設定</p>
               {tabCount >= 2 ? (
                 <span className="text-[11px] text-muted-foreground">後続 ≤ 前</span>
               ) : null}
@@ -1253,7 +1278,7 @@ export default function StartListEventUnifiedCard({
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="start-list-max-lanes" className="text-xs text-muted-foreground">
-                  最大レーン数（1レースあたり）
+                  共通の最大レーン数（1レースあたり）
                 </Label>
                 <Input
                   id="start-list-max-lanes"
@@ -1317,7 +1342,7 @@ export default function StartListEventUnifiedCard({
                         「大会設定 → 種目・参加費」でも同じ項目を変えられます。当日はここからまとめて保存できます。
                       </p>
                     ) : null}
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                       <span className="text-xs text-muted-foreground">ヒート数</span>
                       <Input
                         numericInput="integer"
@@ -1346,6 +1371,34 @@ export default function StartListEventUnifiedCard({
                           });
                         }}
                         aria-label={`${roundTitle} のヒート数`}
+                      />
+                      <span className="text-xs text-muted-foreground">最大レーン</span>
+                      <Input
+                        numericInput="integer"
+                        min={1}
+                        max={32}
+                        className="h-9 w-14 px-2 text-center text-sm tabular-nums"
+                        disabled={heatLockedByMarshal || !canEditPreliminaryLanes}
+                        placeholder="共通"
+                        title="空欄のときは上の共通最大レーン数を使います"
+                        value={t.maxLanesPerHeat != null ? String(t.maxLanesPerHeat) : ""}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/\D/g, "");
+                          setTabs((prev) =>
+                            prev.map((row) =>
+                              row.id === t.id
+                                ? {
+                                    ...row,
+                                    maxLanesPerHeat:
+                                      raw === ""
+                                        ? undefined
+                                        : Math.min(32, Math.max(1, parseInt(raw, 10))),
+                                  }
+                                : row
+                            )
+                          );
+                        }}
+                        aria-label={`${roundTitle} の最大レーン数（空欄は共通）`}
                       />
                     </div>
                   </li>

@@ -19,11 +19,6 @@ import { syncStartListSettingsRoundTabsForEvent } from "@/lib/startListRoundCoun
 import { parseEligibleBirthDateInput } from "@/lib/eligibleBirthDateInput";
 import { eventBirthFieldsFromAgeCategory } from "@/lib/competitionAgeCategorySync";
 import { eventSiblingGroupWhere } from "@/lib/eventSiblingGroup";
-import {
-  competitionUsesUnderAgeSystem,
-  partitionUnderBandsForCompetition,
-} from "@/lib/competitionUnderAgeSettings";
-import { validateUnderBandKeysForPartition } from "@/lib/underBandAllowList";
 
 export async function DELETE(
   request: NextRequest,
@@ -219,111 +214,6 @@ export async function PATCH(
           ? "種目を年齢カテゴリに連動しました（参加可能な生年月日がカテゴリに合わせて更新されました）。"
           : "種目の年齢カテゴリ連動を解除しました。",
         events: updatedEventsLink,
-      });
-    }
-
-    const hasUnderAgeEligibilityKey = Object.prototype.hasOwnProperty.call(
-      raw,
-      "underAgeEligibilityEnabled"
-    );
-    const hasUnderBandKeysOverrideKey = Object.prototype.hasOwnProperty.call(
-      raw,
-      "underBandKeysOverride"
-    );
-    const onlyUnderAgeEligibility =
-      rawKeys.length === 1 && hasUnderAgeEligibilityKey;
-    const onlyUnderBandKeysOverride =
-      rawKeys.length === 1 && hasUnderBandKeysOverrideKey;
-    const underAgeAndBandsTogether =
-      rawKeys.length === 2 && hasUnderAgeEligibilityKey && hasUnderBandKeysOverrideKey;
-
-    if (onlyUnderAgeEligibility || onlyUnderBandKeysOverride || underAgeAndBandsTogether) {
-      if (!isAdmin) {
-        return NextResponse.json({ message: "権限がありません" }, { status: 403 });
-      }
-
-      let nextUnderAgeEligibilityEnabled: boolean | undefined;
-      if (hasUnderAgeEligibilityKey) {
-        const v = raw.underAgeEligibilityEnabled;
-        if (typeof v !== "boolean") {
-          return NextResponse.json(
-            { message: "underAgeEligibilityEnabled は true または false にしてください" },
-            { status: 400 }
-          );
-        }
-        nextUnderAgeEligibilityEnabled = v;
-      }
-
-      let storedUnderBandKeysOverride: string[] | null | undefined;
-      if (hasUnderBandKeysOverrideKey) {
-        const rawVal = raw.underBandKeysOverride;
-        if (rawVal !== null && !competitionUsesUnderAgeSystem(event.competition)) {
-          return NextResponse.json(
-            { message: "アンダー制が無効な大会では種目の帯上書きは設定できません" },
-            { status: 400 }
-          );
-        }
-        if (rawVal === null) {
-          storedUnderBandKeysOverride = null;
-        } else {
-          const partition = partitionUnderBandsForCompetition(event.competition);
-          if (!partition) {
-            return NextResponse.json(
-              { message: "アンダー帯を計算できません。大会の U しきい値を確認してください" },
-              { status: 400 }
-            );
-          }
-          const checked = validateUnderBandKeysForPartition(rawVal, partition);
-          if (!checked.ok) {
-            return NextResponse.json({ message: checked.message }, { status: 400 });
-          }
-          storedUnderBandKeysOverride = checked.value;
-        }
-      }
-
-      const mutationStateUnder = await loadCompetitionMutationState(competitionId);
-      try {
-        assertEventAgePatchAllowed(mutationStateUnder);
-      } catch (e) {
-        if (e instanceof CompetitionEditForbiddenError) {
-          return NextResponse.json({ message: e.message }, { status: 400 });
-        }
-        throw e;
-      }
-
-      const updateData: Prisma.EventUpdateManyMutationInput = {};
-      if (nextUnderAgeEligibilityEnabled !== undefined) {
-        updateData.underAgeEligibilityEnabled = nextUnderAgeEligibilityEnabled;
-      }
-      if (storedUnderBandKeysOverride !== undefined) {
-        updateData.underBandKeysOverride =
-          storedUnderBandKeysOverride === null ? Prisma.DbNull : storedUnderBandKeysOverride;
-      }
-
-      await prisma.event.updateMany({
-        where: eventSiblingGroupWhere(competitionId, event),
-        data: updateData,
-      });
-      const updatedEventsUnder = await prisma.event.findMany({
-        where: { competitionId },
-        orderBy: { displayOrder: "asc" },
-      });
-
-      let message = "種目設定を更新しました。";
-      if (onlyUnderAgeEligibility && nextUnderAgeEligibilityEnabled !== undefined) {
-        message = nextUnderAgeEligibilityEnabled
-          ? "この種目グループでアンダー制による年齢判定を有効にしました。"
-          : "この種目グループでは従来の生年月日／年齢のみで判定します。";
-      } else if (onlyUnderBandKeysOverride) {
-        message =
-          storedUnderBandKeysOverride === null
-            ? "種目の帯設定をタブ既定に戻しました。"
-            : "この種目グループの許可帯を更新しました。";
-      }
-
-      return NextResponse.json({
-        message,
-        events: updatedEventsUnder,
       });
     }
 

@@ -422,6 +422,7 @@ export default async function CompetitionDetailPage({
                   })
                 : "",
               venue: competition.venue,
+              requireClubMembership: competition.requireClubMembership ?? false,
             }}
           />
 
@@ -461,8 +462,6 @@ export default async function CompetitionDetailPage({
                 minAge: e.minAge,
                 maxAge: e.maxAge,
                 ageCategoryId: e.ageCategoryId ?? null,
-                underAgeEligibilityEnabled: e.underAgeEligibilityEnabled ?? true,
-                underBandKeysOverride: e.underBandKeysOverride as string[] | null | undefined,
                 createdAt: e.createdAt.toISOString(),
                 updatedAt: e.updatedAt.toISOString(),
               })) as unknown as NonNullable<EntrySettingsEditorProps["initialEvents"]>
@@ -473,7 +472,6 @@ export default async function CompetitionDetailPage({
               displayOrder: c.displayOrder,
               eligibleBirthDateFrom: c.eligibleBirthDateFrom,
               eligibleBirthDateTo: c.eligibleBirthDateTo,
-              underBandKeysEnabled: c.underBandKeysEnabled as string[] | null | undefined,
             }))}
             qualificationTemplates={qualificationTemplates.map((template) => ({
               id: template.id,
@@ -526,8 +524,6 @@ export default async function CompetitionDetailPage({
                 minAge: e.minAge,
                 maxAge: e.maxAge,
                 ageCategoryId: e.ageCategoryId ?? null,
-                underAgeEligibilityEnabled: e.underAgeEligibilityEnabled ?? true,
-                underBandKeysOverride: e.underBandKeysOverride as string[] | null | undefined,
                 createdAt: e.createdAt.toISOString(),
                 updatedAt: e.updatedAt.toISOString(),
               })) as unknown as NonNullable<EntrySettingsEditorProps["initialEvents"]>
@@ -538,7 +534,6 @@ export default async function CompetitionDetailPage({
               displayOrder: c.displayOrder,
               eligibleBirthDateFrom: c.eligibleBirthDateFrom,
               eligibleBirthDateTo: c.eligibleBirthDateTo,
-              underBandKeysEnabled: c.underBandKeysEnabled as string[] | null | undefined,
             }))}
             qualificationTemplates={qualificationTemplates.map((template) => ({
               id: template.id,

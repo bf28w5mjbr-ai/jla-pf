@@ -39,7 +39,7 @@ function roundTabsHeatMonotonicErrorMessage(
     const prev = eff[i]!;
     const next = eff[i + 1]!;
     if (prev >= 1 && next > prev) {
-      return `ラウンド別ヒート数が不正です。ラウンド${i + 2}はラウンド${i + 1}以下（最大${prev}ヒート）にしてください。`;
+      return `ラウンド設定のヒート数が不正です。ラウンド${i + 2}はラウンド${i + 1}以下（最大${prev}ヒート）にしてください。`;
     }
   }
   return null;
@@ -115,6 +115,11 @@ function parseRoundTabOne(item: unknown): StartListRoundTab | null {
   }
   const useAutoHeatFromMaxLanes =
     t.useAutoHeatFromMaxLanes === false ? (false as const) : undefined;
+  const rawMl = t.maxLanesPerHeat;
+  const maxLanesPerHeat =
+    typeof rawMl === "number" && Number.isFinite(rawMl) && rawMl >= 1 && rawMl <= 32
+      ? Math.floor(rawMl)
+      : undefined;
   return {
     id,
     label,
@@ -122,6 +127,7 @@ function parseRoundTabOne(item: unknown): StartListRoundTab | null {
     heatCount,
     heatSize,
     ...(useAutoHeatFromMaxLanes === false ? { useAutoHeatFromMaxLanes: false } : {}),
+    ...(maxLanesPerHeat !== undefined ? { maxLanesPerHeat } : {}),
   };
 }
 

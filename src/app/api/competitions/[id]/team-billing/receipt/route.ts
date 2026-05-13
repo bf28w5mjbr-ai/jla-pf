@@ -14,7 +14,6 @@ import {
 import { isClubAdminRole } from "@/lib/roleScopes";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import { resolveEntryFeeUnits } from "@/lib/competitionEntryAgeTiered";
-import { partitionUnderBandsForCompetition } from "@/lib/competitionUnderAgeSettings";
 import { competitionHostDisplayName } from "@/lib/competitionHostDisplay";
 import { coercePdfIssuedDate, nonNegativeYenForPdf } from "@/lib/receiptPdfGuards";
 
@@ -117,9 +116,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
           hostOrganizationName: true,
           startDate: true,
           entryFee: true,
-          underAgeSystemEnabled: true,
-          underAgeUThresholds: true,
-          underAgeOpenEnabled: true,
           ageCategories: {
             orderBy: { displayOrder: "asc" },
             select: {
@@ -190,11 +186,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
         )
       : null;
     const payerDob = payerForAge?.dateOfBirth ? new Date(payerForAge.dateOfBirth) : null;
-    const underPartition = partitionUnderBandsForCompetition(competition);
     const teamUnit = resolveEntryFeeUnits(competition.entryFee, payerAge, {
       userDateOfBirth: payerDob,
       competitionAgeCategories: competition.ageCategories,
-      underFeePartition: underPartition ?? null,
     }).teamUnit;
     const totalFeeFromPricing =
       billingScope === "prepaid" ? 0 : teamCount * teamUnit;

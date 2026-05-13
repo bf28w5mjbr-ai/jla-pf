@@ -60,7 +60,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json(
         {
           error:
-            "先にスタートリストでステップ1（ラウンド別ヒート数）を確定してください。確定後にマーシャル操作が可能になります。",
+            "先にスタートリストでステップ1（ラウンド設定）を確定してください。確定後にマーシャル操作が可能になります。",
         },
         { status: 409 }
       );

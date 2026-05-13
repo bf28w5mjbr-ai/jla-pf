@@ -11,14 +11,14 @@ import {
 } from "@/lib/competitionPublishedEditRules";
 import {
   deriveEntryQualificationOptionsFromTemplates,
+  normalizeAgeCategoryQualificationTiersInput,
   normalizeEntryRequiredQualifications,
-  parseUnderQualificationTiers,
+  validateAgeCategoryQualificationTiersAgainstCategories,
   validateAgeQualificationTiersCoverCompetitionRange,
   validateAgeTiersNoOverlap,
-  validateUnderQualificationTiersAgainstPartition,
+  type AgeCategoryQualificationTier,
   type AgeQualificationTier,
 } from "@/lib/competitionEntryAgeTiered";
-import { partitionUnderBandsForCompetition } from "@/lib/competitionUnderAgeSettings";
 import { isOrgAdminRole } from "@/lib/roleScopes";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -106,55 +106,65 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const body = (await request.json().catch(() => ({}))) as {
       requiredQualifications?: unknown;
       ageQualificationTiers?: unknown;
-      underQualificationTiers?: unknown;
+      ageCategoryQualificationTiers?: unknown;
       announcementMessage?: unknown;
     };
-    const { requiredQualifications, ageQualificationTiers, underQualificationTiers, announcementMessage } =
-      body;
+    const {
+      requiredQualifications,
+      ageQualificationTiers,
+      ageCategoryQualificationTiers,
+      announcementMessage,
+    } = body;
 
     let stored: unknown;
 
-    if (underQualificationTiers !== undefined) {
-      if (!competition.underAgeSystemEnabled) {
+    if (ageCategoryQualificationTiers !== undefined) {
+      if (!Array.isArray(ageCategoryQualificationTiers)) {
+        return NextResponse.json(
+          { message: "AGEカテゴリ別の資格の形式が正しくありません" },
+          { status: 400 }
+        );
+      }
+      const tiers = normalizeAgeCategoryQualificationTiersInput(
+        ageCategoryQualificationTiers,
+        allowedQualificationSet
+      );
+      if (!tiers?.length) {
+        return NextResponse.json(
+          { message: "AGEカテゴリを1件以上、正しい形式で指定してください" },
+          { status: 400 }
+        );
+      }
+      const categories = await prisma.competitionAgeCategory.findMany({
+        where: { competitionId },
+        orderBy: { displayOrder: "asc" },
+        select: { id: true },
+      });
+      if (categories.length === 0) {
         return NextResponse.json(
           {
             message:
-              "アンダー区分別の資格を使うには、先に大会のアンダー制を有効にしてください。",
+              "AGEカテゴリがまだありません。大会出場条件カードの「AGEカテゴリ」で先にカテゴリを作成してください。",
           },
           { status: 400 }
         );
       }
-      if (!Array.isArray(underQualificationTiers)) {
-        return NextResponse.json(
-          { message: "アンダー区分別の資格の形式が正しくありません" },
-          { status: 400 }
-        );
+      const categoryIdSet = new Set(categories.map((c) => c.id));
+      const validationError = validateAgeCategoryQualificationTiersAgainstCategories(
+        tiers,
+        categoryIdSet
+      );
+      if (validationError) {
+        return NextResponse.json({ message: validationError }, { status: 400 });
       }
-      const fake = { underQualificationTiers };
-      const tiers = parseUnderQualificationTiers(fake, allowedQualificationSet);
-      if (!tiers?.length) {
-        return NextResponse.json(
-          { message: "アンダー区分を1件以上、正しい形式で指定してください" },
-          { status: 400 }
-        );
-      }
-      const part = partitionUnderBandsForCompetition(competition);
-      if (!part) {
-        return NextResponse.json({ message: "アンダー制が無効です" }, { status: 400 });
-      }
-      const uErr = validateUnderQualificationTiersAgainstPartition(part, tiers);
-      if (uErr) {
-        return NextResponse.json({ message: uErr }, { status: 400 });
-      }
-      stored = {
-        underQualificationTiers: tiers.map((tier) => ({
-          ...tier,
-          requiredQualifications: normalizeEntryRequiredQualifications(tier.requiredQualifications, {
-            allowedQualifications: allowedQualificationSet,
-            expandCertifiedLifesaverMacro: true,
-          }),
-        })),
-      };
+      const normalized: AgeCategoryQualificationTier[] = tiers.map((tier) => ({
+        ageCategoryId: tier.ageCategoryId,
+        requiredQualifications: normalizeEntryRequiredQualifications(tier.requiredQualifications, {
+          allowedQualifications: allowedQualificationSet,
+          expandCertifiedLifesaverMacro: true,
+        }),
+      }));
+      stored = { ageCategoryQualificationTiers: normalized };
     } else if (ageQualificationTiers !== undefined) {
       if (!Array.isArray(ageQualificationTiers)) {
         return NextResponse.json(

@@ -3,6 +3,7 @@ import {
   buildRoundTabsForRoundCount,
   normalizeRoundTabs,
   resolveHeatCountForSnapshotTransition,
+  resolveTabMaxLanes,
   roundTabToHeatSetting,
   type HeatSetting,
   type StartListRoundTab,
@@ -143,11 +144,10 @@ export function computeLiveAdvanceQuotasForFrozenNonFinalTab(params: {
   if (!expectedKey || expectedKey !== snapshotRound) return null;
   if (snapshotRound === "FINAL") return null;
   if (tabIndex >= tabCount - 1) return null;
-  if (
-    typeof preliminaryHeatLaneCount !== "number" ||
-    !Number.isFinite(preliminaryHeatLaneCount) ||
-    preliminaryHeatLaneCount < 1
-  ) {
+  const destTab = liveTabs[tabIndex + 1];
+  if (!destTab) return null;
+  const Lresolved = resolveTabMaxLanes(destTab, preliminaryHeatLaneCount);
+  if (typeof Lresolved !== "number" || !Number.isFinite(Lresolved) || Lresolved < 1) {
     return null;
   }
   const toKey = snapshotRoundForTab(tabIndex + 1, tabCount);
@@ -170,9 +170,9 @@ export function computeLiveAdvanceQuotasForFrozenNonFinalTab(params: {
     fromRound: fromApi,
     toRound: toApi,
   });
-  const L = Math.min(64, Math.floor(preliminaryHeatLaneCount));
+  const L = Math.min(64, Math.floor(Lresolved));
   const capacity = nextHeatCount * L;
-  return computeAdvanceCountsByLaneSlotsPerHeat(n, preliminaryHeatLaneCount, capacity);
+  return computeAdvanceCountsByLaneSlotsPerHeat(n, Lresolved, capacity);
 }
 
 /**
@@ -200,12 +200,11 @@ function estimateMaxParticipantsForStartListTabPreview(params: {
   tabCount: number;
   total: number;
   liveTabs: StartListRoundTab[];
-  maxLanes: number;
+  eventDefaultLanes: number | null | undefined;
   eventHeatSetting?: HeatSetting | undefined;
 }): number {
-  const { tabIndex, tabCount, total, liveTabs, maxLanes, eventHeatSetting } = params;
+  const { tabIndex, tabCount, total, liveTabs, eventDefaultLanes, eventHeatSetting } = params;
   if (tabIndex <= 0) return total;
-  const L = Math.min(64, Math.max(1, Math.floor(maxLanes)));
   const head = liveTabs[0];
   if (!head) return total;
   const setting: HeatSetting = {
@@ -236,7 +235,11 @@ function estimateMaxParticipantsForStartListTabPreview(params: {
       H = resolveHeatCount(n, roundTabToHeatSetting(destTab));
     }
     H = Math.max(1, Math.min(64, H));
-    n = Math.min(H * L, n);
+    const Ldest = resolveTabMaxLanes(destTab, eventDefaultLanes);
+    if (typeof Ldest === "number" && Ldest >= 1) {
+      const L = Math.min(64, Math.max(1, Math.floor(Ldest)));
+      n = Math.min(H * L, n);
+    }
   }
   return Math.max(0, n);
 }
@@ -496,22 +499,21 @@ export function getLiveHeatsByTab(params: {
       };
     }
 
+    const LThisTab = resolveTabMaxLanes(tab, preliminaryHeatLaneCount);
     const lanesOk =
-      typeof preliminaryHeatLaneCount === "number" &&
-      Number.isFinite(preliminaryHeatLaneCount) &&
-      preliminaryHeatLaneCount >= 1;
+      typeof LThisTab === "number" && Number.isFinite(LThisTab) && LThisTab >= 1;
 
     const heatSetting = roundTabToHeatSetting(tab);
 
     /** 後続タブは進行定員で人数を絞り、最大レーン L をヒート分割に反映（未設定時は従来どおり全員） */
     const nForRound =
-      tabIndex > 0 && lanesOk
+      tabIndex > 0
         ? estimateMaxParticipantsForStartListTabPreview({
             tabIndex,
             tabCount,
             total,
             liveTabs,
-            maxLanes: preliminaryHeatLaneCount,
+            eventDefaultLanes: preliminaryHeatLaneCount,
             eventHeatSetting,
           })
         : total;
@@ -519,9 +521,9 @@ export function getLiveHeatsByTab(params: {
     const resolvedCount = resolveHeatCount(nForRound, heatSetting);
     const heatCount =
       tabIndex === 0
-        ? enforceMinHeatCountForMaxLanes(total, resolvedCount, preliminaryHeatLaneCount)
+        ? enforceMinHeatCountForMaxLanes(total, resolvedCount, LThisTab)
         : lanesOk
-          ? enforceMinHeatCountForMaxLanes(nForRound, resolvedCount, preliminaryHeatLaneCount)
+          ? enforceMinHeatCountForMaxLanes(nForRound, resolvedCount, LThisTab)
           : resolvedCount;
 
     const activeIndividuals =

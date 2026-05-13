@@ -12,6 +12,8 @@ export type StartListRoundTab = {
    * 未指定・true なら ceil(人数÷最大レーン) の自動ヒート数（従来どおり）。
    */
   useAutoHeatFromMaxLanes?: boolean;
+  /** 1レースあたりの最大レーン数（1〜32）。未指定時は種目の preliminaryHeatLaneCount を使う */
+  maxLanesPerHeat?: number;
 };
 
 export type HeatSetting = {
@@ -170,6 +172,14 @@ export function normalizeRoundTabs(setting: HeatSetting): StartListRoundTab[] {
     const mapped: StartListRoundTab[] = setting.roundTabs.map((t, i) => {
       const mode = (t.mode === "size" ? "size" : "count") as "count" | "size";
       const heatSizeRaw = typeof t.heatSize === "string" ? t.heatSize.trim() : "";
+      const rawMl = t.maxLanesPerHeat;
+      const maxLanesPerHeat =
+        typeof rawMl === "number" &&
+        Number.isFinite(rawMl) &&
+        rawMl >= 1 &&
+        rawMl <= 32
+          ? Math.floor(rawMl)
+          : undefined;
       return {
         id: typeof t.id === "string" && t.id.trim() ? t.id.trim() : `round-${i}`,
         label: (t.label?.trim() || "ラウンド").slice(0, START_LIST_ROUND_LABEL_MAX_LEN),
@@ -182,6 +192,7 @@ export function normalizeRoundTabs(setting: HeatSetting): StartListRoundTab[] {
               : "8"
             : "",
         ...(t.useAutoHeatFromMaxLanes === false ? { useAutoHeatFromMaxLanes: false as const } : {}),
+        ...(maxLanesPerHeat !== undefined ? { maxLanesPerHeat } : {}),
       };
     });
     return reapplyDefaultRoundTabLabelsIfGeneric(mapped);
@@ -257,6 +268,12 @@ export function buildRoundTabsForRoundCount(
         heatCount: p.heatCount ?? "1",
         heatSize: mode === "size" ? (hs !== "" ? hs : "8") : "",
         ...(p.useAutoHeatFromMaxLanes === false ? { useAutoHeatFromMaxLanes: false as const } : {}),
+        ...(typeof p.maxLanesPerHeat === "number" &&
+        Number.isFinite(p.maxLanesPerHeat) &&
+        p.maxLanesPerHeat >= 1 &&
+        p.maxLanesPerHeat <= 32
+          ? { maxLanesPerHeat: Math.floor(p.maxLanesPerHeat) }
+          : {}),
       });
     } else {
       out.push({
@@ -369,6 +386,55 @@ export function resolveHeatCountForSnapshotTransition(params: {
     return Math.min(64, prog[progIdx]!);
   }
   return toRound === "FINAL" ? 1 : 2;
+}
+
+/** タブの上書きがあればそれを、無ければ種目の共通最大レーンを返す（いずれも無効なら null） */
+export function resolveTabMaxLanes(
+  tab: StartListRoundTab | undefined,
+  eventDefaultLanes: number | null | undefined
+): number | null {
+  const override = tab?.maxLanesPerHeat;
+  if (
+    typeof override === "number" &&
+    Number.isFinite(override) &&
+    override >= 1 &&
+    override <= 32
+  ) {
+    return Math.min(32, Math.floor(override));
+  }
+  if (
+    typeof eventDefaultLanes === "number" &&
+    Number.isFinite(eventDefaultLanes) &&
+    eventDefaultLanes >= 1
+  ) {
+    return Math.min(32, Math.floor(eventDefaultLanes));
+  }
+  return null;
+}
+
+/**
+ * 次ラウンド生成・按分用: 遷移先ラウンド（タブ）の実効最大レーン数。
+ * {@link resolveHeatCountForSnapshotTransition} と同じタブ index 規則。
+ */
+export function resolveMaxLanesForSnapshotTransition(params: {
+  setting: HeatSetting | undefined;
+  eventDefaultLanes: number | null | undefined;
+  fromRound: "HEAT" | "SEMI";
+  toRound: "SEMI" | "FINAL";
+}): number | null {
+  const tabs = normalizeRoundTabs(params.setting ?? {});
+  let tabIndex: number | null = null;
+  if (params.fromRound === "HEAT" && params.toRound === "SEMI") {
+    tabIndex = tabs.length >= 2 ? 1 : null;
+  } else if (params.fromRound === "HEAT" && params.toRound === "FINAL" && tabs.length >= 2) {
+    tabIndex = tabs.length - 1;
+  } else if (params.fromRound === "SEMI" && params.toRound === "FINAL") {
+    tabIndex = tabs.length >= 2 ? tabs.length - 1 : null;
+  }
+  if (tabIndex != null && tabs[tabIndex]) {
+    return resolveTabMaxLanes(tabs[tabIndex], params.eventDefaultLanes);
+  }
+  return resolveTabMaxLanes(undefined, params.eventDefaultLanes);
 }
 
 /**

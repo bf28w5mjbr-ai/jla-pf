@@ -1353,11 +1353,12 @@ model Competition {
   minAge          Int? // 参加可能な最小年齢
   maxAge          Int? // 参加可能な最大年齢
 
-  /// true のとき U-○・OPEN（年度年齢）で種目の参加可否を判定。false は従来の生年月日／種目年齢のみ。
+  /// AGEカテゴリ・テンプレ用フラグ。true のとき U/OPEN（年度年齢）テンプレを保存中。
+  /// 種目の参加可否判定はすべて AGEカテゴリ（生年月日レンジ）に統一されている。
   underAgeSystemEnabled Boolean @default(false)
-  /// U のしきい値（満年齢・年度末基準）。空配列で OPEN のみ＝年齢制限なし（無差別）。
+  /// AGEカテゴリ・テンプレ用の U のしきい値（満年齢・年度末基準）。
   underAgeUThresholds   Int[]   @default([])
-  /// 最大 U より上を OPEN とするか。false のときその年齢帯は不可（仕様 A）。
+  /// AGEカテゴリ・テンプレ用の OPEN フラグ。
   underAgeOpenEnabled   Boolean @default(true)
 
   /// エントリー時の誓約（公開時に未使用だった大会は後から有効化不可）
@@ -1652,8 +1653,6 @@ model CompetitionAgeCategory {
   displayOrder   Int      @default(0)
   eligibleBirthDateFrom DateTime? @db.Date
   eligibleBirthDateTo   DateTime? @db.Date
-  /// アンダー制ON時、このタブで許可する帯キー（"U-10","OPEN" 等の JSON 配列）。null はマスタの全帯を許可
-  underBandKeysEnabled Json?
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
   events      Event[]
@@ -1686,7 +1685,7 @@ model Event {
   preliminaryHeatLaneCount Int?
   /// スタートリストのラウンド数（初回レースを含む全タブ数。1〜32）
   startListRoundCount      Int      @default(1)
-  /// スタートリスト「ステップ1」（ラウンド別ヒート数）確定日時。未確定の間は当日マーシャル操作不可
+  /// スタートリスト「ステップ1」（ラウンド設定）確定日時。未確定の間は当日マーシャル操作不可
   startListHeatPlanConfirmedAt DateTime?
   /// マーシャル（召集・状態更新等）開始日時。設定後はラウンド別ヒート分割を変更不可
   marshalStartedAt         DateTime?
@@ -1696,10 +1695,6 @@ model Event {
   teamRelayPositionNames   Json?
   /// チーム種目のみ: 同一クラブがこの種目（性別行）に出せるチーム数の上限。null は制限なし
   maxTeamEntriesPerClub    Int?
-  /// 大会でアンダー制が有効なとき、この種目でアンダー判定を使うか（false は従来の生年月日／年齢のみ）。
-  underAgeEligibilityEnabled Boolean @default(true)
-  /// null: タブ（年齢カテゴリ）の underBandKeysEnabled を継承。JSON 配列で種目単位に上書き
-  underBandKeysOverride Json?
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
   ageCategory CompetitionAgeCategory? @relation(fields: [ageCategoryId], references: [id], onDelete: Restrict)

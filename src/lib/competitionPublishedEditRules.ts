@@ -5,11 +5,12 @@ import {
   PUBLISHED_ENTRY_PERIOD_SHORTEN_FORBIDDEN_MESSAGE,
 } from "@/lib/autoEntryChangeAnnouncement";
 import {
+  isQualificationRelaxedByAgeCategory,
   isQualificationRelaxedMulti,
+  isQualificationTighteningByAgeCategory,
   isQualificationTighteningMulti,
   parseFlatRequiredQualifications,
 } from "@/lib/competitionEntryAgeTiered";
-import { partitionUnderBandsForCompetition } from "@/lib/competitionUnderAgeSettings";
 import { prisma } from "@/server/db";
 import { createNotification } from "@/lib/notificationService";
 
@@ -305,14 +306,18 @@ export function assertRequiredQualificationsChange(
   if (!state.hasEstablishedEntry) return;
 
   const oldRaw = competition.requiredQualifications;
-  const underPart = partitionUnderBandsForCompetition(competition);
-  if (isQualificationTighteningMulti(oldRaw, newStored, underPart ?? undefined)) {
+  const tighter =
+    isQualificationTighteningMulti(oldRaw, newStored) ||
+    isQualificationTighteningByAgeCategory(oldRaw, newStored);
+  if (tighter) {
     throw new CompetitionEditForbiddenError(
       "エントリー成立後は、必要資格を厳しくする変更はできません。"
     );
   }
-
-  if (isQualificationRelaxedMulti(oldRaw, newStored, underPart ?? undefined) && !announcementMessage?.trim()) {
+  const relaxed =
+    isQualificationRelaxedMulti(oldRaw, newStored) ||
+    isQualificationRelaxedByAgeCategory(oldRaw, newStored);
+  if (relaxed && !announcementMessage?.trim()) {
     throw new CompetitionEditForbiddenError(
       "必要資格を緩和する場合は announcementMessage で参加者への告知内容を入力してください。"
     );

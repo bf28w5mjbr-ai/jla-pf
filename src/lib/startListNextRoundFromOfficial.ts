@@ -9,6 +9,7 @@ import {
   normalizeRoundTabs,
   parseStartListSettings,
   resolveHeatCountForSnapshotTransition,
+  resolveMaxLanesForSnapshotTransition,
   type HeatSetting,
 } from "@/lib/startListSettings";
 import {
@@ -142,7 +143,7 @@ export async function areAllSnapshotHeatsResultConfirmed(params: {
 
 /**
  * 前ラウンドの公式結果が確定したあと、スナップショットに次ラウンドを自動追記する。
- * 進出はラウンド別ヒート数・最大レーンから算出した定員で按分（手動次ラ API と同じ）。
+ * 進出はラウンド設定・最大レーンから算出した定員で按分（手動次ラ API と同じ）。
  *
  * 実行条件: （1）当該ラウンドの OfficialResult が lockedAt 付きで確定している、または
  * （2）スタートリストスナップショット上のそのラウンドの全ヒートがヒート単位リザルト確定済み。
@@ -264,7 +265,12 @@ export async function tryAutoAppendNextStartListRound(params: {
     toRound,
   });
 
-  const maxLanes = event.preliminaryHeatLaneCount;
+  const maxLanes = resolveMaxLanesForSnapshotTransition({
+    setting: eventSetting,
+    eventDefaultLanes: event.preliminaryHeatLaneCount,
+    fromRound,
+    toRound,
+  });
   if (typeof maxLanes !== "number" || !Number.isFinite(maxLanes) || maxLanes < 1) {
     return { ok: true, skipped: true, reason: "NEEDS_PRELIMINARY_MAX_LANES" };
   }

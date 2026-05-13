@@ -1,6 +1,4 @@
 import { entryFeeReadinessOk } from "@/lib/competitionEntryAgeTiered";
-import { partitionUnderBandsForCompetition } from "@/lib/competitionUnderAgeSettings";
-import type { Competition } from "@prisma/client";
 
 export type EntryFeeShape = {
   individualEntryFee?: number;
@@ -23,11 +21,6 @@ type BuildArgs = {
   individualEventCount: number;
   teamEventCount: number;
   entryFee: EntryFeeShape | null | undefined;
-  /** アンダー別料金の検証用（大会行の列から算出） */
-  competitionForUnderFee?: Pick<
-    Competition,
-    "underAgeSystemEnabled" | "underAgeUThresholds" | "underAgeOpenEnabled"
-  > | null;
 };
 
 /**
@@ -38,12 +31,7 @@ export function buildEntrySettingsReadinessItems(
 ): EntrySettingsReadinessItem[] {
   const hasIndividualEvents = a.individualEventCount > 0;
   const hasTeamEvents = a.teamEventCount > 0;
-  const underPart = a.competitionForUnderFee
-    ? partitionUnderBandsForCompetition(a.competitionForUnderFee)
-    : null;
-  const feesOk = entryFeeReadinessOk(a.entryFee, hasIndividualEvents, hasTeamEvents, {
-    underFeePartition: underPart ?? null,
-  });
+  const feesOk = entryFeeReadinessOk(a.entryFee, hasIndividualEvents, hasTeamEvents);
 
   const periodOk = Boolean(a.entryStartDate && a.entryEndDate);
   const eventsOk = a.eventsCount > 0;

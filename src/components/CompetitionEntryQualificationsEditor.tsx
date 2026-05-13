@@ -17,11 +17,11 @@ import {
   ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
   getCertifiedLifesaverUpperQualifications,
   normalizeEntryRequiredQualifications,
+  parseAgeCategoryQualificationTiers,
   parseAgeQualificationTiers,
-  parseUnderQualificationTiers,
+  type AgeCategoryQualificationTier,
   type AgeQualificationTier,
 } from "@/lib/competitionEntryAgeTiered";
-import { expectedUnderFeeTierKeys, partitionUnderAgeBands } from "@/lib/competitionUnderAgeSystem";
 import { splitQualificationOptionsForAdminUi } from "@/lib/competitionEntryQualificationUiGroups";
 
 function withOptionalAnnounce(
@@ -120,23 +120,22 @@ function QualificationOptionGroups({
 
 type QualificationTemplate = { id: string; name: string; kind: string | null };
 
-type UnderAgeSlice = Pick<
-  {
-    underAgeSystemEnabled?: boolean | null;
-    underAgeUThresholds?: number[] | null;
-    underAgeOpenEnabled?: boolean | null;
-  },
-  "underAgeSystemEnabled" | "underAgeUThresholds" | "underAgeOpenEnabled"
->;
+/** AGEカテゴリ別資格 UI で使うカテゴリ行。表示順は呼び出し側で確定済みのものを渡す */
+export type CompetitionAgeCategoryForQualifications = {
+  id: string;
+  name: string;
+  displayOrder: number;
+};
 
 export type CompetitionEntryQualificationsEditorProps = {
   competitionId: string;
   canEdit: boolean;
   requiresParticipantNotice: boolean;
   qualificationTemplates: QualificationTemplate[];
-  /** requiredQualifications + アンダー帯の算出に必要な大会行の一部 */
+  /** requiredQualifications + ageCategory 別ティアを含む大会行の resolved JSON */
   initialRequiredQualifications: unknown;
-  underAge: UnderAgeSlice;
+  /** AGEカテゴリ一覧（空のときはカテゴリ別タブを無効化） */
+  ageCategories: CompetitionAgeCategoryForQualifications[];
   /** true: 大会出場条件などカード内。フォーカスがセクション外に出たとき未保存なら保存し、下部の更新ボタンは出さない */
   autoSaveOnBlur?: boolean;
   /** false のとき外側の Card を付けない（親が枠を持つ） */
@@ -150,7 +149,7 @@ export default function CompetitionEntryQualificationsEditor({
   requiresParticipantNotice,
   qualificationTemplates,
   initialRequiredQualifications,
-  underAge,
+  ageCategories,
   autoSaveOnBlur = false,
   wrapInCard = true,
   onSuccessfulSave,
@@ -214,20 +213,27 @@ export default function CompetitionEntryQualificationsEditor({
 
   const [isUpdatingQualifications, setIsUpdatingQualifications] = useState(false);
 
+  const sortedAgeCategories = useMemo(
+    () => [...ageCategories].sort((a, b) => a.displayOrder - b.displayOrder),
+    [ageCategories]
+  );
+
   const initialParsedQualTiers = parseAgeQualificationTiers(
     initialRequiredQualifications,
     allowedQualificationSet
   );
-  const initialParsedUnderQualTiers = parseUnderQualificationTiers(
+  const initialParsedCategoryQualTiers = parseAgeCategoryQualificationTiers(
     initialRequiredQualifications,
     allowedQualificationSet
   );
 
-  const [qualPricingMode, setQualPricingMode] = useState<"flat" | "byAge" | "byUnder">(() => {
-    if (initialParsedUnderQualTiers?.length) return "byUnder";
-    if (initialParsedQualTiers?.length) return "byAge";
-    return "flat";
-  });
+  const [qualPricingMode, setQualPricingMode] = useState<"flat" | "byAge" | "byAgeCategory">(
+    () => {
+      if (initialParsedCategoryQualTiers?.length) return "byAgeCategory";
+      if (initialParsedQualTiers?.length) return "byAge";
+      return "flat";
+    }
+  );
   const [ageQualFormRows, setAgeQualFormRows] = useState<
     { id: string; minAge: string; maxAge: string; qualifications: string[] }[]
   >(() => {
@@ -257,45 +263,31 @@ export default function CompetitionEntryQualificationsEditor({
     ];
   });
 
-  const [underQualDraft, setUnderQualDraft] = useState<Record<string, string[]>>(() => {
-    if (!underAge.underAgeSystemEnabled) return {};
-    const part = partitionUnderAgeBands(
-      underAge.underAgeUThresholds ?? [],
-      underAge.underAgeOpenEnabled ?? true
-    );
-    const keys = expectedUnderFeeTierKeys(part);
-    const parsed = initialParsedUnderQualTiers;
+  const [categoryQualDraft, setCategoryQualDraft] = useState<Record<string, string[]>>(() => {
+    const parsed = initialParsedCategoryQualTiers;
     const m: Record<string, string[]> = {};
-    for (const k of keys) {
-      m[k] = [...(parsed?.find((t) => t.tierKey === k)?.requiredQualifications ?? [])];
+    for (const cat of sortedAgeCategories) {
+      m[cat.id] = [
+        ...(parsed?.find((t) => t.ageCategoryId === cat.id)?.requiredQualifications ?? []),
+      ];
     }
     return m;
   });
 
-  const underPartitionForEditors = useMemo(() => {
-    if (!underAge.underAgeSystemEnabled) return null;
-    return partitionUnderAgeBands(
-      underAge.underAgeUThresholds ?? [],
-      underAge.underAgeOpenEnabled ?? true
-    );
-  }, [underAge.underAgeOpenEnabled, underAge.underAgeSystemEnabled, underAge.underAgeUThresholds]);
-
   const rqFingerprint = useMemo(() => JSON.stringify(initialRequiredQualifications), [initialRequiredQualifications]);
-  const underFingerprint = useMemo(
-    () =>
-      JSON.stringify({
-        e: underAge.underAgeSystemEnabled,
-        t: underAge.underAgeUThresholds,
-        o: underAge.underAgeOpenEnabled,
-      }),
-    [underAge.underAgeOpenEnabled, underAge.underAgeSystemEnabled, underAge.underAgeUThresholds]
+  const ageCategoriesFingerprint = useMemo(
+    () => JSON.stringify(sortedAgeCategories.map((c) => c.id)),
+    [sortedAgeCategories]
   );
 
   useEffect(() => {
     const parsedFlat = parseAgeQualificationTiers(initialRequiredQualifications, allowedQualificationSet);
-    const parsedUnder = parseUnderQualificationTiers(initialRequiredQualifications, allowedQualificationSet);
-    const mode: "flat" | "byAge" | "byUnder" = parsedUnder?.length
-      ? "byUnder"
+    const parsedCategory = parseAgeCategoryQualificationTiers(
+      initialRequiredQualifications,
+      allowedQualificationSet
+    );
+    const mode: "flat" | "byAge" | "byAgeCategory" = parsedCategory?.length
+      ? "byAgeCategory"
       : parsedFlat?.length
         ? "byAge"
         : "flat";
@@ -338,22 +330,15 @@ export default function CompetitionEntryQualificationsEditor({
         },
       ]);
     }
-    if (underAge.underAgeSystemEnabled) {
-      const part = partitionUnderAgeBands(
-        underAge.underAgeUThresholds ?? [],
-        underAge.underAgeOpenEnabled ?? true
-      );
-      const keys = expectedUnderFeeTierKeys(part);
-      const m: Record<string, string[]> = {};
-      for (const k of keys) {
-        m[k] = [...(parsedUnder?.find((t) => t.tierKey === k)?.requiredQualifications ?? [])];
-      }
-      setUnderQualDraft(m);
-    } else {
-      setUnderQualDraft({});
+    const nextCatDraft: Record<string, string[]> = {};
+    for (const cat of sortedAgeCategories) {
+      nextCatDraft[cat.id] = [
+        ...(parsedCategory?.find((t) => t.ageCategoryId === cat.id)?.requiredQualifications ?? []),
+      ];
     }
+    setCategoryQualDraft(nextCatDraft);
     dirtyRef.current = false;
-  }, [rqFingerprint, underFingerprint, allowedQualificationSet]);
+  }, [rqFingerprint, ageCategoriesFingerprint, allowedQualificationSet]);
 
   const toggleQualification = (value: string) => {
     markDirty();
@@ -379,13 +364,13 @@ export default function CompetitionEntryQualificationsEditor({
     );
   };
 
-  const toggleQualInUnderTier = (tierKey: string, option: string) => {
+  const toggleQualInCategoryTier = (ageCategoryId: string, option: string) => {
     markDirty();
-    setUnderQualDraft((prev) => {
-      const cur = prev[tierKey] ?? [];
+    setCategoryQualDraft((prev) => {
+      const cur = prev[ageCategoryId] ?? [];
       return {
         ...prev,
-        [tierKey]: applyEntryQualificationToggleWithCertifiedMacro(
+        [ageCategoryId]: applyEntryQualificationToggleWithCertifiedMacro(
           cur,
           option,
           allowedQualificationOptions
@@ -411,9 +396,11 @@ export default function CompetitionEntryQualificationsEditor({
       }
     }
 
-    if (qualPricingMode === "byUnder") {
-      if (!underAge.underAgeSystemEnabled || !underPartitionForEditors) {
-        toast.error("アンダー制を有効にしてから、アンダー区分別の資格を設定してください");
+    if (qualPricingMode === "byAgeCategory") {
+      if (sortedAgeCategories.length === 0) {
+        toast.error(
+          "先に大会出場条件の「AGEカテゴリ」でカテゴリを作成してから、AGEカテゴリ別の資格を設定してください"
+        );
         return;
       }
     }
@@ -435,14 +422,17 @@ export default function CompetitionEntryQualificationsEditor({
               };
             }),
           }
-        : qualPricingMode === "byUnder" && underPartitionForEditors
+        : qualPricingMode === "byAgeCategory"
           ? {
-              underQualificationTiers: expectedUnderFeeTierKeys(underPartitionForEditors).map((k) => ({
-                tierKey: k,
-                requiredQualifications: normalizeEntryRequiredQualifications(underQualDraft[k] ?? [], {
-                  allowedQualifications: allowedQualificationSet,
-                  expandCertifiedLifesaverMacro: true,
-                }),
+              ageCategoryQualificationTiers: sortedAgeCategories.map((cat) => ({
+                ageCategoryId: cat.id,
+                requiredQualifications: normalizeEntryRequiredQualifications(
+                  categoryQualDraft[cat.id] ?? [],
+                  {
+                    allowedQualifications: allowedQualificationSet,
+                    expandCertifiedLifesaverMacro: true,
+                  }
+                ),
               })),
             }
           : normalizeEntryRequiredQualifications(requiredQualifications, {
@@ -456,8 +446,7 @@ export default function CompetitionEntryQualificationsEditor({
       const announce = buildQualificationRelaxAnnouncementFromConfigs(
         initialRequiredQualifications,
         nextStored,
-        requiresParticipantNotice,
-        underPartitionForEditors ?? null
+        requiresParticipantNotice
       );
       const basePayload =
         qualPricingMode === "byAge"
@@ -465,13 +454,13 @@ export default function CompetitionEntryQualificationsEditor({
               ageQualificationTiers: (nextStored as { ageQualificationTiers: AgeQualificationTier[] })
                 .ageQualificationTiers,
             }
-          : qualPricingMode === "byUnder"
+          : qualPricingMode === "byAgeCategory"
             ? {
-                underQualificationTiers: (
+                ageCategoryQualificationTiers: (
                   nextStored as {
-                    underQualificationTiers: { tierKey: string; requiredQualifications: string[] }[];
+                    ageCategoryQualificationTiers: AgeCategoryQualificationTier[];
                   }
-                ).underQualificationTiers,
+                ).ageCategoryQualificationTiers,
               }
             : {
                 requiredQualifications: normalizeEntryRequiredQualifications(requiredQualifications, {
@@ -515,6 +504,7 @@ export default function CompetitionEntryQualificationsEditor({
   }, [
     ageQualFormRows,
     allowedQualificationSet,
+    categoryQualDraft,
     competitionId,
     initialRequiredQualifications,
     onSuccessfulSave,
@@ -522,9 +512,7 @@ export default function CompetitionEntryQualificationsEditor({
     requiredQualifications,
     requiresParticipantNotice,
     router,
-    underAge.underAgeSystemEnabled,
-    underPartitionForEditors,
-    underQualDraft,
+    sortedAgeCategories,
   ]);
 
   const onSectionBlur = (e: React.FocusEvent<HTMLDivElement>) => {
@@ -582,21 +570,28 @@ export default function CompetitionEntryQualificationsEditor({
             <input
               type="radio"
               className="h-3.5 w-3.5"
-              checked={qualPricingMode === "byUnder"}
+              checked={qualPricingMode === "byAgeCategory"}
               onChange={() => {
                 markDirty();
-                setQualPricingMode("byUnder");
+                setQualPricingMode("byAgeCategory");
               }}
-              disabled={!canEdit || !underAge.underAgeSystemEnabled}
+              disabled={!canEdit || sortedAgeCategories.length === 0}
             />
-            アンダー区分別
+            年齢カテゴリ別
           </label>
         </div>
         <p className="text-xs text-muted-foreground">
-          {qualPricingMode === "byUnder"
-            ? "大会でアンダー制を有効にし、U/OPEN を保存してから設定してください。区分キーは料金（アンダー区分別）と一致します。"
-            : "年齢は大会の「年齢・所属クラブ」で設定した範囲（開催日時点の満年齢）に合わせて帯を分けてください。帯が重なると保存できません。"}
+          {qualPricingMode === "byAgeCategory"
+            ? "大会出場条件の「AGEカテゴリ」で定義した区分ごとに資格を設定します。各カテゴリに生年月日の範囲が必要です。エントリー時は登録者の生年月日が属する区分の資格が使われます（複数に該当する場合は表示順が先の区分）。"
+            : qualPricingMode === "byAge"
+              ? "年齢は大会の「年齢・所属クラブ」で設定した範囲（開催日時点の満年齢）に合わせて帯を分けてください。帯が重なると保存できません。"
+              : "すべての参加者に同じ資格を要求します。"}
         </p>
+        {sortedAgeCategories.length === 0 ? (
+          <p className="text-[11px] text-amber-800 dark:text-amber-200/90">
+            年齢カテゴリ別を使うには、先に大会出場条件の「AGEカテゴリ」でカテゴリを作成してください。
+          </p>
+        ) : null}
         {autoSaveOnBlur ? (
           <p className="text-[11px] text-muted-foreground">
             変更後、セクションの外をクリックすると保存されます。
@@ -638,25 +633,30 @@ export default function CompetitionEntryQualificationsEditor({
               )}
             />
           </div>
-        ) : qualPricingMode === "byUnder" && underPartitionForEditors ? (
+        ) : qualPricingMode === "byAgeCategory" && sortedAgeCategories.length > 0 ? (
           <div className="space-y-3">
-            {expectedUnderFeeTierKeys(underPartitionForEditors).map((k) => (
-              <div key={k} className="space-y-2 rounded-lg border border-border/80 bg-muted/15 p-3">
-                <p className="text-sm font-medium leading-tight">{k}</p>
+            {sortedAgeCategories.map((cat) => (
+              <div
+                key={cat.id}
+                className="space-y-2 rounded-lg border border-border/80 bg-muted/15 p-3"
+              >
+                <p className="text-sm font-medium leading-tight">{cat.name}</p>
                 <QualificationOptionGroups
                   primaryOptions={primaryQualOptions}
                   foundationOptions={foundationQualOptions}
                   otherOptions={otherQualOptions}
                   showCertifiedBulkHelp={showCertifiedBulkHelp}
-                  isOptionSelected={(option) => (underQualDraft[k] ?? []).includes(option)}
+                  isOptionSelected={(option) =>
+                    (categoryQualDraft[cat.id] ?? []).includes(option)
+                  }
                   renderOption={(option) => (
                     <label
                       className="flex items-center gap-2 rounded-md border border-gray-200 bg-background px-2 py-1.5 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
                     >
                       <input
                         type="checkbox"
-                        checked={(underQualDraft[k] ?? []).includes(option)}
-                        onChange={() => toggleQualInUnderTier(k, option)}
+                        checked={(categoryQualDraft[cat.id] ?? []).includes(option)}
+                        onChange={() => toggleQualInCategoryTier(cat.id, option)}
                         disabled={!canEdit || isUpdatingQualifications}
                       />
                       <span>{option}</span>
