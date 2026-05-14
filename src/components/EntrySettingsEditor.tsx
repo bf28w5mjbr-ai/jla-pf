@@ -43,14 +43,6 @@ import {
 } from "@/lib/entryPledge";
 import SimpleMarkdown from "@/components/SimpleMarkdown";
 import CompetitionEntryQualificationsEditor from "@/components/CompetitionEntryQualificationsEditor";
-import {
-  buildRoundTabsForRoundCount,
-  buildStartListSettingsPayload,
-  defaultStartListRoundTabLabels,
-  normalizeRoundTabs,
-  parseStartListSettings,
-  type HeatSetting,
-} from "@/lib/startListSettings";
 
 // デフォルト種目リスト
 const DEFAULT_EVENTS = {
@@ -123,98 +115,36 @@ type Event = {
   ageCategoryId?: string | null;
 };
 
-function clampStartListRoundCount(n: number): number {
-  if (!Number.isFinite(n) || !Number.isInteger(n)) return 1;
-  return Math.min(32, Math.max(1, n));
+/** 種目カードで男女行をまとめるキー（代表行の id と種目名ドラフトの整合用） */
+function eventCardGroupKey(event: Pick<Event, "category" | "type" | "name">) {
+  return `${event.category}:${event.type}:${event.name}`;
 }
 
-function buildRoundHeatStringsFromSetting(
-  setting: HeatSetting | undefined,
-  roundCount: number
-): string[] {
-  const tabs = normalizeRoundTabs(setting ?? {});
-  const rc = clampStartListRoundCount(roundCount);
-  const out: string[] = [];
-  for (let i = 0; i < rc; i += 1) {
-    const t = tabs[i];
-    if (!t) {
-      out.push("1");
-      continue;
-    }
-    out.push((t.heatCount ?? "1").trim() || "1");
+function groupHasDeleteDraft(
+  rep: Pick<Event, "category" | "type" | "name">,
+  scope: Event[],
+  eventDeleteDrafts: Record<string, boolean>
+) {
+  const gk = eventCardGroupKey(rep);
+  return scope.some((e) => eventCardGroupKey(e) === gk && eventDeleteDrafts[e.id]);
+}
+
+function getNameDraftTextForGroup(
+  rep: Pick<Event, "id" | "name" | "category" | "type">,
+  eventNameDrafts: Record<string, string>,
+  scope: Event[]
+): string | undefined {
+  if (Object.prototype.hasOwnProperty.call(eventNameDrafts, rep.id)) {
+    return eventNameDrafts[rep.id];
   }
-  return out;
-}
-
-function buildHeatSettingForEntryTablePersist(params: {
-  existing: HeatSetting | undefined;
-  roundCount: number;
-  heatCountStrings: string[];
-}): HeatSetting {
-  const { existing, roundCount, heatCountStrings } = params;
-  const prevTabs = normalizeRoundTabs(existing ?? {});
-  const rc = clampStartListRoundCount(roundCount);
-  const baseTabs = prevTabs.map((t) => {
-    const { useAutoHeatFromMaxLanes: _drop, ...rest } = t;
-    void _drop;
-    return { ...rest, mode: "count" as const, heatSize: "" };
-  });
-  const mergedTabs = buildRoundTabsForRoundCount(
-    rc,
-    baseTabs.map((t, i) => ({
-      ...t,
-      heatCount: (heatCountStrings[i] ?? t.heatCount ?? "1").trim() || "1",
-    }))
-  ).map(({ useAutoHeatFromMaxLanes: _u, ...t }) => {
-    void _u;
-    return t;
-  });
-  const {
-    roundTabs: _rt,
-    mode: _m,
-    heatCount: _hc,
-    heatSize: _hs,
-    ...kept
-  } = existing ?? {};
-  void _rt;
-  void _m;
-  void _hc;
-  void _hs;
-  const first = mergedTabs[0];
-  return {
-    ...kept,
-    roundTabs: mergedTabs,
-    mode: "count",
-    heatCount: first?.heatCount ?? "1",
-    heatSize: "",
-  };
-}
-
-function mergeEventRoundHeatDraftsFromSync(
-  prev: Record<string, string[]>,
-  updatedEvents: Event[],
-  settingsJson: unknown
-): Record<string, string[]> {
-  const parsed = parseStartListSettings(settingsJson);
-  const next: Record<string, string[]> = {};
-  for (const e of updatedEvents) {
-    const rc = clampStartListRoundCount(
-      typeof e.startListRoundCount === "number" ? e.startListRoundCount : 1
-    );
-    const prevRow = prev[e.id];
-    if (prevRow && prevRow.length === rc) {
-      next[e.id] = prevRow;
-      continue;
+  const gk = eventCardGroupKey(rep);
+  for (const e of scope) {
+    if (eventCardGroupKey(e) !== gk) continue;
+    if (Object.prototype.hasOwnProperty.call(eventNameDrafts, e.id)) {
+      return eventNameDrafts[e.id];
     }
-    if (prevRow && prevRow.length !== rc) {
-      const resized = prevRow.slice(0, rc);
-      while (resized.length < rc) resized.push("1");
-      next[e.id] = resized;
-      continue;
-    }
-    next[e.id] = buildRoundHeatStringsFromSetting(parsed.eventSettings[e.id], rc);
   }
-  return next;
+  return undefined;
 }
 
 export type CompetitionAgeCategoryDraft = {
@@ -308,8 +238,6 @@ type EntrySettingsEditorProps = {
   /** 公開済みかつエントリー成立済みのとき、延長・緩和・種目追加等で告知が必要 */
   requiresParticipantNotice?: boolean;
   isPublished?: boolean;
-  /** 大会のスタートリスト JSON（種目別 roundTabs 等）。種目表保存時に PUT へ反映 */
-  initialStartListSettings?: unknown;
   initialData: {
     entryStartDate: Date | null;
     entryEndDate: Date | null;
@@ -385,17 +313,12 @@ export default function EntrySettingsEditor({
   initialData,
   initialEvents = [],
   initialAgeCategories = [],
-  initialStartListSettings = null,
   qualificationTemplates = [],
   canEdit,
   onSuccessfulSectionSave,
   onEventsChange,
 }: EntrySettingsEditorProps) {
   const router = useRouter();
-  const startListSettingsJsonRef = useRef(initialStartListSettings ?? null);
-  useEffect(() => {
-    startListSettingsJsonRef.current = initialStartListSettings ?? null;
-  }, [initialStartListSettings]);
   const notifySectionSaved = () => {
     onSuccessfulSectionSave?.();
   };
@@ -648,54 +571,6 @@ export default function EntrySettingsEditor({
     }
   }, [ageCategories, eventScopeTabId, events]);
 
-  const buildPreliminaryLanesMap = (evts: Event[]) => {
-    const map: Record<string, string> = {};
-    evts.forEach((e) => {
-      map[e.id] =
-        typeof e.preliminaryHeatLaneCount === "number"
-          ? String(e.preliminaryHeatLaneCount)
-          : "";
-    });
-    return map;
-  };
-
-  const buildStartListRoundCountsMap = (evts: Event[]) => {
-    const map: Record<string, string> = {};
-    evts.forEach((e) => {
-      const n =
-        typeof e.startListRoundCount === "number" && e.startListRoundCount >= 1
-          ? e.startListRoundCount
-          : 1;
-      map[e.id] = String(Math.min(32, n));
-    });
-    return map;
-  };
-
-  /** 種目の追加・削除などで一覧だけ更新するとき、入力中のレーン／ラウンドを消さない */
-  const mergePreliminaryLanesFromSync = (
-    prev: Record<string, string>,
-    updatedEvents: Event[]
-  ) => {
-    const surv = new Set(updatedEvents.map((e) => e.id));
-    const next = buildPreliminaryLanesMap(updatedEvents);
-    for (const id of Object.keys(prev)) {
-      if (surv.has(id)) next[id] = prev[id] as string;
-    }
-    return next;
-  };
-
-  const mergeStartListRoundCountsFromSync = (
-    prev: Record<string, string>,
-    updatedEvents: Event[]
-  ) => {
-    const surv = new Set(updatedEvents.map((e) => e.id));
-    const next = buildStartListRoundCountsMap(updatedEvents);
-    for (const id of Object.keys(prev)) {
-      if (surv.has(id)) next[id] = prev[id] as string;
-    }
-    return next;
-  };
-
   const mergeEventBirthDateRangesFromSync = (
     prev: Record<string, { from: string; to: string }>,
     updatedEvents: Event[]
@@ -744,29 +619,6 @@ export default function EntrySettingsEditor({
     return next;
   };
 
-  const eventSiblingsFor = (
-    name: string,
-    type: "INDIVIDUAL" | "TEAM",
-    category: "POOL" | "OCEAN"
-  ) =>
-    eventsInTabScope
-      .filter((e) => e.category === category && e.type === type && e.name === name)
-      .slice()
-      .sort((a, b) => {
-        if (a.displayOrder !== b.displayOrder) {
-          return a.displayOrder - b.displayOrder;
-        }
-        return a.sex === "MALE" ? -1 : 1;
-      });
-  const [eventPreliminaryLanes, setEventPreliminaryLanes] = useState<Record<string, string>>(
-    () => buildPreliminaryLanesMap(initialEvents)
-  );
-  const [eventStartListRoundCounts, setEventStartListRoundCounts] = useState<
-    Record<string, string>
-  >(() => buildStartListRoundCountsMap(initialEvents));
-  const [eventRoundHeatDrafts, setEventRoundHeatDrafts] = useState<Record<string, string[]>>(() =>
-    mergeEventRoundHeatDraftsFromSync({}, initialEvents, initialStartListSettings ?? null)
-  );
   const [eventTeamRelayPositions, setEventTeamRelayPositions] = useState<
     Record<
       string,
@@ -793,22 +645,12 @@ export default function EntrySettingsEditor({
         }
       });
       setEventBirthDateRanges(updatedMap);
-      setEventPreliminaryLanes(buildPreliminaryLanesMap(updatedEvents));
-      setEventStartListRoundCounts(buildStartListRoundCountsMap(updatedEvents));
-      setEventRoundHeatDrafts(
-        mergeEventRoundHeatDraftsFromSync({}, updatedEvents, startListSettingsJsonRef.current)
-      );
       setEventTeamRelayPositions(buildTeamRelayPositionsMap(updatedEvents));
       onEventsChange?.(updatedEvents);
       return;
     }
 
     setEventBirthDateRanges((prev) => mergeEventBirthDateRangesFromSync(prev, updatedEvents));
-    setEventPreliminaryLanes((prev) => mergePreliminaryLanesFromSync(prev, updatedEvents));
-    setEventStartListRoundCounts((prev) => mergeStartListRoundCountsFromSync(prev, updatedEvents));
-    setEventRoundHeatDrafts((prev) =>
-      mergeEventRoundHeatDraftsFromSync(prev, updatedEvents, startListSettingsJsonRef.current)
-    );
     setEventTeamRelayPositions((prev) => mergeTeamRelayPositionsFromSync(prev, updatedEvents));
     onEventsChange?.(updatedEvents);
   };
@@ -842,9 +684,30 @@ export default function EntrySettingsEditor({
     () =>
       Array.from(
         new Map(
-          eventsInTabScope.map((e) => [`${e.category}:${e.type}:${e.name}`, e] as const)
+          eventsInTabScope.map((e) => [eventCardGroupKey(e), e] as const)
         ).values()
       ),
+    [eventsInTabScope]
+  );
+
+  const getEventSexOption = useCallback(
+    (eventName: string, category: "POOL" | "OCEAN", type: "INDIVIDUAL" | "TEAM"): SexOption => {
+      const sexes = new Set(
+        eventsInTabScope
+          .filter(
+            (event) =>
+              event.name === eventName &&
+              event.category === category &&
+              event.type === type
+          )
+          .map((event) => event.sex)
+      );
+      if (sexes.has("OTHER")) return "MIXED_ONLY";
+      if (sexes.has("MALE") && sexes.has("FEMALE")) return "BOTH";
+      if (sexes.has("MALE")) return "MALE_ONLY";
+      if (sexes.has("FEMALE")) return "FEMALE_ONLY";
+      return "BOTH";
+    },
     [eventsInTabScope]
   );
 
@@ -855,29 +718,57 @@ export default function EntrySettingsEditor({
         if (!Object.prototype.hasOwnProperty.call(eventSexOptionDrafts, key)) return false;
         return eventSexOptionDrafts[key] !== getEventSexOption(event.name, event.category, event.type);
       }),
-    [eventCardRepresentativesInScope, eventSexOptionDrafts]
+    [eventCardRepresentativesInScope, eventSexOptionDrafts, getEventSexOption]
   );
 
   const hasPendingEventNameChanges = useMemo(
     () =>
       eventCardRepresentativesInScope.some((event) => {
-        if (eventDeleteDrafts[event.id]) return false;
-        if (!Object.prototype.hasOwnProperty.call(eventNameDrafts, event.id)) return false;
-        const draft = (eventNameDrafts[event.id] ?? "").trim();
+        if (groupHasDeleteDraft(event, eventsInTabScope, eventDeleteDrafts)) return false;
+        const raw = getNameDraftTextForGroup(event, eventNameDrafts, eventsInTabScope);
+        if (raw === undefined) return false;
+        const draft = raw.trim();
         return draft.length > 0 && draft !== event.name.trim();
       }),
-    [eventCardRepresentativesInScope, eventDeleteDrafts, eventNameDrafts]
+    [eventCardRepresentativesInScope, eventDeleteDrafts, eventNameDrafts, eventsInTabScope]
   );
 
   const hasPendingEventDeleteChanges = useMemo(
-    () => eventCardRepresentativesInScope.some((event) => eventDeleteDrafts[event.id]),
-    [eventCardRepresentativesInScope, eventDeleteDrafts]
+    () =>
+      eventCardRepresentativesInScope.some((event) =>
+        groupHasDeleteDraft(event, eventsInTabScope, eventDeleteDrafts)
+      ),
+    [eventCardRepresentativesInScope, eventDeleteDrafts, eventsInTabScope]
   );
 
   /** 種目ごとの性別区分ドラフトを API に反映（トースト・再取得・ドラフトクリアは呼び出し側） */
   const applyEventSexOptionDraftsToServer = async () => {
+    const loadEvents = async (): Promise<Event[]> => {
+      const listRes = await fetch(`/api/competitions/${competitionId}/events`);
+      if (!listRes.ok) {
+        const err = await listRes.json().catch(() => ({}));
+        throw new Error(
+          typeof err.message === "string" ? err.message : "種目一覧の取得に失敗しました"
+        );
+      }
+      const data = (await listRes.json()) as { events: Event[] };
+      return data.events;
+    };
+
+    let liveEvents = await loadEvents();
+
+    const resolvePatchTargetId = (ev: Event): string | null => {
+      if (liveEvents.some((e) => e.id === ev.id)) return ev.id;
+      const nm = ev.name.trim();
+      const hit = liveEvents.find(
+        (e) =>
+          e.category === ev.category && e.type === ev.type && e.name.trim() === nm
+      );
+      return hit?.id ?? null;
+    };
+
     for (const event of eventCardRepresentativesInScope) {
-      if (eventDeleteDrafts[event.id]) continue;
+      if (groupHasDeleteDraft(event, eventsInTabScope, eventDeleteDrafts)) continue;
       const key = makeEventSexOptionKey(event);
       const hasDraft = Object.prototype.hasOwnProperty.call(eventSexOptionDrafts, key);
       if (!hasDraft) continue;
@@ -890,7 +781,14 @@ export default function EntrySettingsEditor({
         ? buildEventSexOptionExpandAnnouncement(event.name, requiresParticipantNotice)
         : undefined;
 
-      const response = await fetch(`/api/competitions/${competitionId}/events/${event.id}`, {
+      const targetId = resolvePatchTargetId(event);
+      if (!targetId || !liveEvents.some((e) => e.id === targetId)) {
+        throw new Error(
+          `「${event.name}」に対応する種目が見つかりません。ページを再読み込みしてからやり直してください。`
+        );
+      }
+
+      const response = await fetch(`/api/competitions/${competitionId}/events/${targetId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
@@ -899,23 +797,57 @@ export default function EntrySettingsEditor({
           })
         ),
       });
+      const body = (await response.json().catch(() => ({}))) as {
+        message?: string;
+        events?: Event[];
+      };
       if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
         throw new Error(
-          typeof error.message === "string" ? error.message : "種目性別の更新に失敗しました"
+          typeof body.message === "string" ? body.message : "種目性別の更新に失敗しました"
         );
+      }
+      if (Array.isArray(body.events) && body.events.length > 0) {
+        liveEvents = body.events;
       }
     }
   };
 
   /** 種目名ドラフトを API に反映（削除予定の種目は除外） */
   const applyEventNameDraftsToServer = async () => {
+    const listRes = await fetch(`/api/competitions/${competitionId}/events`);
+    if (!listRes.ok) {
+      const err = await listRes.json().catch(() => ({}));
+      throw new Error(
+        typeof err.message === "string" ? err.message : "種目一覧の取得に失敗しました"
+      );
+    }
+    const { events: liveEvents } = (await listRes.json()) as { events: Event[] };
+    const liveById = new Map(liveEvents.map((e) => [e.id, e]));
+
     for (const event of eventCardRepresentativesInScope) {
-      if (eventDeleteDrafts[event.id]) continue;
-      if (!Object.prototype.hasOwnProperty.call(eventNameDrafts, event.id)) continue;
-      const next = (eventNameDrafts[event.id] ?? "").trim();
+      if (groupHasDeleteDraft(event, eventsInTabScope, eventDeleteDrafts)) continue;
+      const rawDraft = getNameDraftTextForGroup(event, eventNameDrafts, eventsInTabScope);
+      if (rawDraft === undefined) continue;
+      const next = rawDraft.trim();
       if (!next || next === event.name.trim()) continue;
-      const response = await fetch(`/api/competitions/${competitionId}/events/${event.id}`, {
+
+      let targetId = event.id;
+      if (!liveById.has(targetId)) {
+        const group = liveEvents.find(
+          (e) =>
+            e.category === event.category &&
+            e.type === event.type &&
+            e.name.trim() === event.name.trim()
+        );
+        if (!group) {
+          throw new Error(
+            `「${event.name}」に対応する種目が見つかりません。ページを再読み込みしてからやり直してください。`
+          );
+        }
+        targetId = group.id;
+      }
+
+      const response = await fetch(`/api/competitions/${competitionId}/events/${targetId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: next }),
@@ -932,7 +864,7 @@ export default function EntrySettingsEditor({
   /** 削除ドラフトを API に反映（男女行まとめて削除） */
   const applyEventDeleteDraftsToServer = async () => {
     for (const event of eventCardRepresentativesInScope) {
-      if (!eventDeleteDrafts[event.id]) continue;
+      if (!groupHasDeleteDraft(event, eventsInTabScope, eventDeleteDrafts)) continue;
       const response = await fetch(`/api/competitions/${competitionId}/events/${event.id}`, {
         method: "DELETE",
       });
@@ -1035,28 +967,6 @@ export default function EntrySettingsEditor({
     return "";
   };
 
-  const getEventSexOption = (
-    eventName: string,
-    category: "POOL" | "OCEAN",
-    type: "INDIVIDUAL" | "TEAM"
-  ): SexOption => {
-    const sexes = new Set(
-      eventsInTabScope
-        .filter(
-          (event) =>
-            event.name === eventName &&
-            event.category === category &&
-            event.type === type
-        )
-        .map((event) => event.sex)
-    );
-    if (sexes.has("OTHER")) return "MIXED_ONLY";
-    if (sexes.has("MALE") && sexes.has("FEMALE")) return "BOTH";
-    if (sexes.has("MALE")) return "MALE_ONLY";
-    if (sexes.has("FEMALE")) return "FEMALE_ONLY";
-    return "BOTH";
-  };
-
   function makeEventSexOptionKey(event: Event) {
     return `${event.category}-${event.type}-${event.name}`;
   }
@@ -1153,7 +1063,7 @@ export default function EntrySettingsEditor({
       new Map(
         eventsInTabScope
           .filter((e) => e.category === category && e.type === type)
-          .map((e) => [e.name, e] as const)
+          .map((e) => [eventCardGroupKey(e), e] as const)
       ).values()
     );
     if (targetEvents.length === 0) {
@@ -1173,7 +1083,12 @@ export default function EntrySettingsEditor({
     }
     setEventDeleteDrafts((prev) => {
       const next = { ...prev };
-      for (const ev of targetEvents) next[ev.id] = true;
+      for (const ev of targetEvents) {
+        const gk = eventCardGroupKey(ev);
+        for (const e of eventsInTabScope) {
+          if (eventCardGroupKey(e) === gk) next[e.id] = true;
+        }
+      }
       return next;
     });
     toast.success(`${categoryLabel}${typeLabel}種目を削除予定に追加しました`);
@@ -1780,7 +1695,7 @@ export default function EntrySettingsEditor({
       new Map(
         eventsInTabScope
           .filter((event) => event.category === category && event.type === type)
-          .map((event) => [event.name, event])
+          .map((event) => [eventCardGroupKey(event), event])
       ).values()
     );
     const rowTargets = eventsInTabScope.filter((e) => e.category === category && e.type === type);
@@ -1823,58 +1738,6 @@ export default function EntrySettingsEditor({
           ok: false,
           message: `「${event.name}」の生年月日の開始は終了以前の日付にしてください`,
         };
-      }
-    }
-
-    const sexLabelForToast = (sex: string) =>
-      sex === "MALE" ? "男子" : sex === "FEMALE" ? "女子" : sex === "OTHER" ? "混合" : "";
-
-    for (const event of rowTargets) {
-      const raw = (eventPreliminaryLanes[event.id] ?? "").trim();
-      if (raw === "") continue;
-      const n = Number(raw);
-      if (Number.isNaN(n) || !Number.isInteger(n) || n < 1 || n > 32) {
-        return {
-          ok: false,
-          message: `「${event.name}」${sexLabelForToast(event.sex)}の1レースあたりの最大レーン数は1〜32の整数、または空欄（未設定）にしてください`,
-        };
-      }
-    }
-
-    for (const event of rowTargets) {
-      const raw = (eventStartListRoundCounts[event.id] ?? "1").trim();
-      const n = Number(raw);
-      if (!Number.isInteger(n) || n < 1 || n > 32) {
-        return {
-          ok: false,
-          message: `「${event.name}」のスタートリストのラウンド数は1〜32の整数にしてください`,
-        };
-      }
-    }
-
-    for (const event of rowTargets) {
-      const rc = clampStartListRoundCount(Number((eventStartListRoundCounts[event.id] ?? "1").trim()) || 1);
-      const heats =
-        eventRoundHeatDrafts[event.id] ??
-        buildRoundHeatStringsFromSetting(
-          parseStartListSettings(startListSettingsJsonRef.current).eventSettings[event.id],
-          rc
-        );
-      if (heats.length !== rc) {
-        return {
-          ok: false,
-          message: `「${event.name}」のラウンド設定の入力数がラウンド数（${rc}）と一致しません`,
-        };
-      }
-      for (let i = 0; i < rc; i += 1) {
-        const raw = (heats[i] ?? "").trim();
-        const hc = Number(raw);
-        if (!Number.isInteger(hc) || hc < 1 || hc > 64) {
-          return {
-            ok: false,
-            message: `「${event.name}」のラウンド${i + 1}のヒート数は1〜64の整数にしてください`,
-          };
-        }
       }
     }
 
@@ -1930,7 +1793,7 @@ export default function EntrySettingsEditor({
     category: "POOL" | "OCEAN",
     type: "INDIVIDUAL" | "TEAM"
   ): Promise<number> => {
-    const { ageTargets, rowTargets } = getEventTableSectionTargets(category, type);
+    const { ageTargets } = getEventTableSectionTargets(category, type);
     let errorCount = 0;
 
     const patchEvent = async (eventId: string, body: Record<string, unknown>) => {
@@ -1968,34 +1831,6 @@ export default function EntrySettingsEditor({
     );
     errorCount += ageOk.filter((ok) => !ok).length;
 
-    const laneOk = await Promise.all(
-      rowTargets.map((event) => {
-        const raw = (eventPreliminaryLanes[event.id] ?? "").trim();
-        const laneValue = raw === "" ? null : Number(raw);
-        return patchEvent(event.id, { preliminaryHeatLaneCount: laneValue });
-      })
-    );
-    errorCount += laneOk.filter((ok) => !ok).length;
-
-    const roundRes = await fetch(
-      `/api/competitions/${competitionId}/events/bulk-round-counts`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: rowTargets.map((event) => ({
-            eventId: event.id,
-            startListRoundCount: Number(
-              (eventStartListRoundCounts[event.id] ?? "1").trim()
-            ),
-          })),
-        }),
-      }
-    );
-    if (!roundRes.ok) {
-      errorCount += rowTargets.length;
-    }
-
     if (type === "TEAM") {
       const teamOk = await Promise.all(
         ageTargets.map((event) => {
@@ -2025,57 +1860,6 @@ export default function EntrySettingsEditor({
         })
       );
       errorCount += teamOk.filter((ok) => !ok).length;
-    }
-
-    if (errorCount === 0 && roundRes.ok && canEdit) {
-      const prevParsed = parseStartListSettings(startListSettingsJsonRef.current);
-      const merged: Record<string, HeatSetting> = {};
-      for (const e of events) {
-        const existing = prevParsed.eventSettings[e.id];
-        const isTarget = rowTargets.some((x) => x.id === e.id);
-        const rc = clampStartListRoundCount(
-          Number((eventStartListRoundCounts[e.id] ?? "1").trim()) || 1
-        );
-        if (isTarget) {
-          const heats =
-            eventRoundHeatDrafts[e.id] ?? buildRoundHeatStringsFromSetting(existing, rc);
-          merged[e.id] = buildHeatSettingForEntryTablePersist({
-            existing,
-            roundCount: rc,
-            heatCountStrings: heats,
-          });
-        } else if (existing) {
-          merged[e.id] = existing;
-        } else {
-          merged[e.id] = buildHeatSettingForEntryTablePersist({
-            existing: undefined,
-            roundCount: rc,
-            heatCountStrings: Array.from({ length: rc }, () => "1"),
-          });
-        }
-      }
-      const payload = buildStartListSettingsPayload({
-        eventSettings: merged,
-        teamAssignmentDeadline: prevParsed.teamAssignmentDeadline,
-      });
-      const slRes = await fetch(`/api/competitions/${competitionId}/start-list-settings`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startListSettings: payload }),
-      });
-      if (!slRes.ok) {
-        let message = "スタートリスト設定の保存に失敗しました";
-        try {
-          const body = (await slRes.json()) as { message?: string };
-          if (typeof body.message === "string") message = body.message;
-        } catch {
-          /* ignore */
-        }
-        toast.error(message);
-        errorCount += 1;
-      } else {
-        startListSettingsJsonRef.current = payload;
-      }
     }
 
     return errorCount;
@@ -2124,18 +1908,21 @@ export default function EntrySettingsEditor({
       }
     }
     if (willSaveEventNames) {
-      for (const event of eventCardRepresentativesInScope) {
-        if (eventDeleteDrafts[event.id]) continue;
-        if (!Object.prototype.hasOwnProperty.call(eventNameDrafts, event.id)) continue;
-        if ((eventNameDrafts[event.id] ?? "").trim().length === 0) {
-          toast.error("種目名は空欄にできません");
-          return;
-        }
+    for (const event of eventCardRepresentativesInScope) {
+      if (groupHasDeleteDraft(event, eventsInTabScope, eventDeleteDrafts)) continue;
+      const rawDraft = getNameDraftTextForGroup(event, eventNameDrafts, eventsInTabScope);
+      if (rawDraft === undefined) continue;
+      if ((rawDraft ?? "").trim().length === 0) {
+        toast.error("種目名は空欄にできません");
+        return;
       }
-      const seen = new Set<string>();
-      for (const event of eventCardRepresentativesInScope) {
-        if (eventDeleteDrafts[event.id]) continue;
-        const drafted = (eventNameDrafts[event.id] ?? event.name).trim();
+    }
+    const seen = new Set<string>();
+    for (const event of eventCardRepresentativesInScope) {
+      if (groupHasDeleteDraft(event, eventsInTabScope, eventDeleteDrafts)) continue;
+      const rawDraft = getNameDraftTextForGroup(event, eventNameDrafts, eventsInTabScope);
+      if (rawDraft === undefined) continue;
+      const drafted = rawDraft.trim();
         const key = `${event.category}:${event.type}:${drafted}`;
         if (seen.has(key)) {
           toast.error(`同じ区分に同名種目「${drafted}」が重複しています`);
@@ -2149,10 +1936,21 @@ export default function EntrySettingsEditor({
     toast.loading("保存中…");
 
     try {
+      let totalErrors = 0;
+      if (willSaveTables) {
+        for (const [c, t] of active) {
+          const vr = validateEventTableSection(c, t);
+          if (!vr.ok) continue;
+          totalErrors += await persistEventTableSection(c, t);
+        }
+      }
+      if (willSaveEventNames) {
+        await applyEventNameDraftsToServer();
+      }
       if (willSaveSex) {
         const reducedEvents = eventCardRepresentativesInScope
           .filter((event) => {
-            if (eventDeleteDrafts[event.id]) return false;
+            if (groupHasDeleteDraft(event, eventsInTabScope, eventDeleteDrafts)) return false;
             const key = makeEventSexOptionKey(event);
             if (!Object.prototype.hasOwnProperty.call(eventSexOptionDrafts, key)) return false;
             const nextOption = eventSexOptionDrafts[key];
@@ -2174,18 +1972,6 @@ export default function EntrySettingsEditor({
         }
         await applyEventSexOptionDraftsToServer();
       }
-
-      let totalErrors = 0;
-      if (willSaveTables) {
-        for (const [c, t] of active) {
-          const vr = validateEventTableSection(c, t);
-          if (!vr.ok) continue;
-          totalErrors += await persistEventTableSection(c, t);
-        }
-      }
-      if (willSaveEventNames) {
-        await applyEventNameDraftsToServer();
-      }
       if (willSaveEventDeletes) {
         await applyEventDeleteDraftsToServer();
       }
@@ -2204,10 +1990,10 @@ export default function EntrySettingsEditor({
       }
 
       const savedTargets: string[] = [];
-      if (willSaveEventNames) savedTargets.push("種目名");
-      if (willSaveEventDeletes) savedTargets.push("削除予定");
-      if (willSaveSex) savedTargets.push("性別区分");
       if (willSaveTables) savedTargets.push("種目表");
+      if (willSaveEventNames) savedTargets.push("種目名");
+      if (willSaveSex) savedTargets.push("性別区分");
+      if (willSaveEventDeletes) savedTargets.push("削除予定");
       if (totalErrors === 0) {
         toast.success(`${savedTargets.join("・")}を保存しました`);
         router.refresh();
@@ -2248,15 +2034,28 @@ export default function EntrySettingsEditor({
     ) {
       return;
     }
-    setEventDeleteDrafts((prev) => ({ ...prev, [event.id]: true }));
+    setEventDeleteDrafts((prev) => {
+      const next = { ...prev };
+      const gk = eventCardGroupKey(event);
+      for (const e of eventsInTabScope) {
+        if (eventCardGroupKey(e) === gk) next[e.id] = true;
+      }
+      return next;
+    });
   };
 
   const unmarkEventDeleteDraft = (event: Event) => {
     setEventDeleteDrafts((prev) => {
-      if (!prev[event.id]) return prev;
+      const gk = eventCardGroupKey(event);
+      let changed = false;
       const next = { ...prev };
-      delete next[event.id];
-      return next;
+      for (const e of eventsInTabScope) {
+        if (eventCardGroupKey(e) === gk && next[e.id]) {
+          delete next[e.id];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
     });
   };
 
@@ -2268,7 +2067,7 @@ export default function EntrySettingsEditor({
       new Map(
         eventsInTabScope
           .filter((e) => e.category === category && e.type === type)
-          .map((e) => [e.name, e])
+          .map((e) => [eventCardGroupKey(e), e])
       ).values()
     ).sort((a, b) => a.displayOrder - b.displayOrder);
 
@@ -2317,9 +2116,9 @@ export default function EntrySettingsEditor({
     const sexOptionKey = makeEventSexOptionKey(event);
     const serverSexOption = getEventSexOption(event.name, category, type);
     const sexOption = eventSexOptionDrafts[sexOptionKey] ?? serverSexOption;
-    const deleteDrafted = Boolean(eventDeleteDrafts[event.id]);
-    const nameDraft = eventNameDrafts[event.id] ?? event.name;
-    const siblings = eventSiblingsFor(event.name, type, category);
+    const deleteDrafted = groupHasDeleteDraft(event, eventsInTabScope, eventDeleteDrafts);
+    const nameDraft =
+      getNameDraftTextForGroup(event, eventNameDrafts, eventsInTabScope) ?? event.name;
     const relayKey = teamRelayStateKey(category, event.name, event.ageCategoryId);
     const linked = Boolean(event.ageCategoryId);
 
@@ -2411,10 +2210,10 @@ export default function EntrySettingsEditor({
           <div
             className="space-y-2.5 rounded-md border border-border/50 bg-background/40 px-2.5 py-2.5"
             role="group"
-            aria-label="進行・スタートリスト用（ページ下部の「このタブを保存」でまとめて保存）"
+            aria-label="種目ごとの参加条件（ページ下部の「このタブを保存」でまとめて保存）"
           >
             <p className="text-[10px] font-medium text-muted-foreground">
-              進行・スタートリスト（ページ下部の「このタブを保存」でまとめて反映）
+              参加条件（ページ下部の「このタブを保存」でまとめて反映）
             </p>
             <div className="space-y-2">
               <div>
@@ -2459,124 +2258,6 @@ export default function EntrySettingsEditor({
                     className="h-8 w-[9.5rem] px-1.5 text-xs"
                   />
                 </label>
-              </div>
-              <div>
-                <p className="mb-1 text-[10px] text-muted-foreground">
-                  1レースの最大レーン数・全ラウンド共通（男女別・1〜32、空欄は未設定）
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  {siblings.map((row) => (
-                    <label key={row.id} className="flex items-center gap-1">
-                      <span className="w-4 shrink-0 text-center text-[10px] font-medium text-muted-foreground">
-                        {row.sex === "MALE" ? "男" : row.sex === "FEMALE" ? "女" : "他"}
-                      </span>
-                      <Input
-                        numericInput="integer"
-                        min={1}
-                        max={32}
-                        placeholder="—"
-                        title="1〜32、空欄で未設定"
-                        value={eventPreliminaryLanes[row.id] ?? ""}
-                        onChange={(e) => {
-                          setEventPreliminaryLanes((prev) => ({
-                            ...prev,
-                            [row.id]: e.target.value,
-                          }));
-                        }}
-                        disabled={!canEdit || deleteDrafted || bulkSavingAllEventTables}
-                        className="h-8 w-11 px-1 text-center text-xs tabular-nums"
-                      />
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <p className="mb-1 text-[10px] text-muted-foreground">
-                  スタートリストのラウンド数（男女別・全ラウンド1〜32）
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  {siblings.map((row) => (
-                    <label key={`rc-${row.id}`} className="flex items-center gap-1">
-                      <span className="w-4 shrink-0 text-center text-[10px] font-medium text-muted-foreground">
-                        {row.sex === "MALE" ? "男" : row.sex === "FEMALE" ? "女" : "他"}
-                      </span>
-                      <Input
-                        numericInput="integer"
-                        min={1}
-                        max={32}
-                        title="1〜32（全ラウンドのタブ数）"
-                        value={eventStartListRoundCounts[row.id] ?? "1"}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setEventStartListRoundCounts((prev) => ({
-                            ...prev,
-                            [row.id]: v,
-                          }));
-                          const rc = clampStartListRoundCount(Number(v.trim()) || 1);
-                          setEventRoundHeatDrafts((draftPrev) => {
-                            const cur = draftPrev[row.id] ?? Array.from({ length: rc }, () => "1");
-                            const resized = cur.slice(0, rc);
-                            while (resized.length < rc) resized.push("1");
-                            return { ...draftPrev, [row.id]: resized };
-                          });
-                        }}
-                        disabled={!canEdit || deleteDrafted || bulkSavingAllEventTables}
-                        className="h-8 w-11 px-1 text-center text-xs tabular-nums"
-                      />
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <p className="mb-1 text-[10px] text-muted-foreground">
-                  ラウンド設定（男女別・上から第1ラウンド順。各1〜64。下の保存でスタートリスト設定に反映）
-                </p>
-                <div className="flex flex-wrap gap-3">
-                  {siblings.map((row) => {
-                    const rc = clampStartListRoundCount(
-                      Number((eventStartListRoundCounts[row.id] ?? "1").trim()) || 1
-                    );
-                    const tabLabels = defaultStartListRoundTabLabels(rc);
-                    const heats =
-                      eventRoundHeatDrafts[row.id] ?? Array.from({ length: rc }, () => "1");
-                    return (
-                      <div key={`rh-${row.id}`} className="min-w-[8rem] space-y-1">
-                        <span className="block text-center text-[10px] font-medium text-muted-foreground">
-                          {row.sex === "MALE" ? "男" : row.sex === "FEMALE" ? "女" : "他"}
-                        </span>
-                        <div className="space-y-1">
-                          {Array.from({ length: rc }, (_, i) => (
-                            <label key={i} className="flex items-center gap-1.5 text-[10px]">
-                              <span
-                                className="w-14 shrink-0 truncate text-muted-foreground"
-                                title={tabLabels[i]}
-                              >
-                                {tabLabels[i]}
-                              </span>
-                              <Input
-                                numericInput="integer"
-                                min={1}
-                                max={64}
-                                className="h-7 w-10 px-1 text-center text-xs tabular-nums"
-                                value={heats[i] ?? "1"}
-                                disabled={!canEdit || deleteDrafted || bulkSavingAllEventTables}
-                                onChange={(ev) => {
-                                  const nextVal = ev.target.value;
-                                  setEventRoundHeatDrafts((prev) => {
-                                    const base = prev[row.id] ?? Array.from({ length: rc }, () => "1");
-                                    const next = [...base];
-                                    next[i] = nextVal;
-                                    return { ...prev, [row.id]: next };
-                                  });
-                                }}
-                              />
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
               </div>
               {type === "TEAM" ? (
                 <div className="border-t border-border/50 pt-2.5">
@@ -3173,8 +2854,9 @@ export default function EntrySettingsEditor({
               もう少し詳しく
             </summary>
             <ul className="mt-2 list-inside list-disc space-y-1 pl-0.5 pt-1 leading-relaxed">
-              <li>最大レーン: 1レースあたりのレーン数で、全ラウンド共通（1〜32、空欄は未設定）</li>
-              <li>ラウンド数: スタートリストのタブ数（初回レースを含む全ラウンド・1〜32）</li>
+              <li>
+                最大レーン数・ラウンド数・ラウンドごとのヒート数は、公開ページの大会「スタートリスト」タブのラウンド設定、または種目ごとのスタートリスト画面のラウンド設定から変更します（種目設定のこの画面では編集しません）。
+              </li>
               <li>
                 種目ごとの参加可能な生年月日: 大会全体の年齢に加え、種目ごとに「この日〜この日に生まれた人」（両端含む）を指定できます。空欄は大会の年齢設定に従います。
               </li>
@@ -3208,7 +2890,7 @@ export default function EntrySettingsEditor({
                 … 大会出場条件の「AGEカテゴリ」で名前と生年月日範囲を追加し、各カテゴリのタブで種目を追加します
               </li>
               <li>
-                <span className="text-foreground">年齢・最大レーン・ラウンド数・種目ごとのアンダー設定</span>
+                <span className="text-foreground">年齢・生年月日範囲・チームポジション</span>
                 … 一番下の「<span className="text-foreground">このタブを保存</span>」でまとめてサーバーに反映します（未保存のままでは反映されません）
               </li>
               <li>
@@ -3302,7 +2984,7 @@ export default function EntrySettingsEditor({
                       new Map(
                         eventsInTabScope
                           .filter((e) => e.category === "POOL" && e.type === "INDIVIDUAL")
-                          .map((e) => [e.name, e])
+                          .map((e) => [eventCardGroupKey(e), e])
                       ).values()
                     )
                       .sort((a, b) => a.displayOrder - b.displayOrder)
@@ -3394,7 +3076,7 @@ export default function EntrySettingsEditor({
                       new Map(
                         eventsInTabScope
                           .filter((e) => e.category === "POOL" && e.type === "TEAM")
-                          .map((e) => [e.name, e])
+                          .map((e) => [eventCardGroupKey(e), e])
                       ).values()
                     )
                       .sort((a, b) => a.displayOrder - b.displayOrder)
@@ -3493,7 +3175,7 @@ export default function EntrySettingsEditor({
                       new Map(
                         eventsInTabScope
                           .filter((e) => e.category === "OCEAN" && e.type === "INDIVIDUAL")
-                          .map((e) => [e.name, e])
+                          .map((e) => [eventCardGroupKey(e), e])
                       ).values()
                     )
                       .sort((a, b) => a.displayOrder - b.displayOrder)
@@ -3586,7 +3268,7 @@ export default function EntrySettingsEditor({
                       new Map(
                         eventsInTabScope
                           .filter((e) => e.category === "OCEAN" && e.type === "TEAM")
-                          .map((e) => [e.name, e])
+                          .map((e) => [eventCardGroupKey(e), e])
                       ).values()
                     )
                       .sort((a, b) => a.displayOrder - b.displayOrder)
@@ -3602,7 +3284,7 @@ export default function EntrySettingsEditor({
             <div className="flex flex-col gap-2 rounded-lg border border-primary/25 bg-primary/[0.06] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between dark:bg-primary/[0.08]">
               <p className="text-[11px] leading-snug text-muted-foreground">
                 <span className="font-semibold text-foreground">このタブを保存</span>
-                … プール／オーシャン・個人／チームの種目表（年齢・最大レーン・ラウンド・チームポジション）をまとめて書き込みます。
+                … プール／オーシャン・個人／チームの種目表（参加可能な生年月日・チームポジション）をまとめて書き込みます。
                 {hasPendingEventNameChanges ? (
                   <span className="mt-1 block text-[10px] font-medium text-amber-800 dark:text-amber-200">
                     未保存: 種目名変更

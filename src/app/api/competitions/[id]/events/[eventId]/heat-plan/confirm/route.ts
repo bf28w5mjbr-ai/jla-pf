@@ -2,7 +2,7 @@ import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
+import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 
 type RouteContext = { params: Promise<{ id: string; eventId: string }> };
@@ -40,12 +40,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ message: "種目が見つかりません" }, { status: 404 });
     }
 
-    if (
-      !canManageCompetitionStartListSettings({
-        orgAdminsForCurrentUser: event.competition.organization.admins,
-        hasDayOpsUnlock,
-      })
-    ) {
+    if (!hasOrgAdminAccess(event.competition.organization.admins)) {
       return NextResponse.json({ message: "権限がありません" }, { status: 403 });
     }
 

@@ -2,7 +2,7 @@ import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
+import { canEditCompetitionPublishedSchedule } from "@/lib/competitionStartListAccess";
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 import { ensureCompetitionScheduleTabs } from "@/lib/ensureCompetitionScheduleTabs";
 
@@ -78,9 +78,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     if (
-      !canManageCompetitionStartListSettings({
+      !canEditCompetitionPublishedSchedule({
         orgAdminsForCurrentUser: competition.organization.admins,
-        hasDayOpsUnlock,
       })
     ) {
       return NextResponse.json({ message: "権限がありません" }, { status: 403 });

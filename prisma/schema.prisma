@@ -1399,6 +1399,8 @@ model Competition {
   status      CompetitionStatus @default(DRAFT)
   isPublished Boolean           @default(false)
   publishedAt DateTime?
+  /// この大会の公開ページにおけるスタートリスト全体（タイムスケジュール・全種目のリスト）を一般閲覧者に表示するか。種目単位の設定ではない（主催管理者・当日運用アンロックは除く）
+  startListPubliclyVisible Boolean @default(true)
 
   // Relations
   organization  Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)

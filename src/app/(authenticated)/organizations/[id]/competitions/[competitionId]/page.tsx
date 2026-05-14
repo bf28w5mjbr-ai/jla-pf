@@ -47,7 +47,6 @@ import {
   parseOfficialSubTab,
   resolveCompetitionManagementActiveTab,
   type CompetitionManagementPageSearchParams,
-  type CompetitionManagementTabValue,
 } from "@/lib/competitionManagementTab";
 import { getCompetitionManagementAccess } from "@/lib/competitionManagementAccess";
 import CopyAbsoluteUrlButton from "@/components/public/CopyAbsoluteUrlButton";
@@ -359,6 +358,11 @@ export default async function CompetitionDetailPage({
               </Button>
             </div>
           ) : null}
+          {canEdit ? (
+            <p className="max-w-2xl text-[11px] leading-relaxed text-muted-foreground">
+              スタートリスト全体の公開／非公開は、「公開ページ」を開いた先のタブ行の右から切り替えられます（大会単位で、全種目共通です）。
+            </p>
+          ) : null}
         </div>
       </header>
 
@@ -495,7 +499,6 @@ export default async function CompetitionDetailPage({
             }))}
             copyEntrySettingsAllowed={copyEntrySettingsAllowed}
             copyEntrySettingsBlockedReason={copyEntrySettingsBlockedReason}
-            initialStartListSettings={competition.startListSettings}
             initialData={{
               entryStartDate: competition.entryStartDate,
               entryEndDate: competition.entryEndDate,

@@ -57,7 +57,7 @@ export default function DayOpsUnlockBanner({
     <div className="rounded-lg border border-primary/25 bg-primary/[0.04] px-3 py-3 sm:px-4">
       <p className="text-xs font-medium text-foreground">当日運用（マーシャル・リザルト等）</p>
       <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-        主催から共有された暗号を入力すると、このブラウザでスタートリストの編集と当日運用 API が利用できます。
+        主催から共有された暗号を入力すると、このブラウザでマーシャル・リザルト・ヒート運用（当日のスタートリスト操作）が利用できます。公開ページのタイムスケジュールやラウンド数の編集は主催の管理者のみが行えます。
       </p>
       <AutofillSyncForm onSubmit={onSubmit} className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
         <div className="min-w-0 flex-1 space-y-1">

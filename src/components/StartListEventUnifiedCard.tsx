@@ -51,6 +51,8 @@ import {
 import type { HeatMarshalHeatRow } from "@/components/HeatMarshalLanePanel";
 import { LiveRoundContent, sexLabel } from "@/components/StartListRoundListPanels";
 import { getHeatResultCapture, type HeatResultCaptureRow } from "@/lib/heatResultCaptureApi";
+import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
+import { StartListEventPageRoundSettingsPanel } from "@/components/StartListEventPageRoundSettingsPanel";
 import { cn } from "@/lib/utils";
 import {
   dispatchJlaDayOpsParticipantStatusChanged,
@@ -103,6 +105,16 @@ type Props = {
   showResultOps?: boolean;
   /** false のときヒート・レーン設定を編集不可（レコーダー等） */
   canEditHeatConfiguration?: boolean;
+  /**
+   * 公開ページのタイムスケジュールからラウンド設定・ヒート保存まで進められるか（主催 org 管理者のみ true）。
+   * 当日運用のみのときは false にし、未確定時の案内を分ける。
+   */
+  canEditPublishedScheduleForRoundSetup?: boolean;
+  /**
+   * 主催管理者が種目ページからラウンド・ヒートを編集するときの全種目行（ヒート保存 API のマージ用）。
+   * 未指定時は種目ページからのインライン編集は出さない。
+   */
+  roundHeatBarItems?: StartListEventBarItem[] | null;
   /** 種目の当日運用ステータス（ヒート表に終了系バッジ。マーシャル API なしでも表示） */
   participantStatusByKey?: Record<string, string>;
   /** marshalRound 別の当日運用行（SSR）。ポーリングで上書き */
@@ -173,6 +185,8 @@ export default function StartListEventUnifiedCard({
   showMarshalOps: showMarshalOpsProp,
   showResultOps: showResultOpsProp,
   canEditHeatConfiguration = true,
+  canEditPublishedScheduleForRoundSetup = false,
+  roundHeatBarItems = null,
   participantStatusByKey,
   initialParticipantStatusRows,
   initialRoundIndex = null,
@@ -927,18 +941,37 @@ export default function StartListEventUnifiedCard({
         {!heatPlanConfirmed && !canEditHeatConfiguration ? (
           <p className="text-xs text-muted-foreground">主催者のヒート・レーン確定待ちです。</p>
         ) : null}
-        {canEditHeatConfiguration && !heatPlanConfirmed ? (
+        {canEditHeatConfiguration && !heatPlanConfirmed && !canEditPublishedScheduleForRoundSetup ? (
           <div className="rounded-lg border border-border/80 bg-muted/15 px-3 py-2.5 text-xs leading-relaxed">
-            <p className="font-medium text-foreground">ラウンド・ヒート・レーン</p>
+            <p className="font-medium text-foreground">ラウンド・ヒート・レーン（準備中）</p>
             <p className="mt-1 text-muted-foreground">
-              大会ページの「スタートリスト」タブで、種目一覧の「ラウンド設定」から「ヒート・レーンを保存」まで完了してください（保存と同時に確定が記録されます）。1レースあたりの最大レーン数（全ラウンド共通）は「大会設定 → 種目・参加費」で編集できます。
+              タイムスケジュールやラウンド数の編集は主催の管理者のみが行えます。管理者が大会ページの「スタートリスト」から設定・保存・確定するまでお待ちください。
             </p>
-            <div className="mt-2">
-              <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
-                <Link href={`/competitions/${competitionId}?tab=start-list`}>スタートリスト設定へ</Link>
-              </Button>
-            </div>
           </div>
+        ) : null}
+        {canEditHeatConfiguration && !heatPlanConfirmed && canEditPublishedScheduleForRoundSetup ? (
+          roundHeatBarItems && roundHeatBarItems.length > 0 ? (
+            <StartListEventPageRoundSettingsPanel
+              competitionId={competitionId}
+              competitionName={competitionName}
+              focusEventId={event.id}
+              barItems={roundHeatBarItems}
+              initialStartListSettings={initialSettings}
+              scheduleLabel={scheduleLabel}
+            />
+          ) : (
+            <div className="rounded-lg border border-border/80 bg-muted/15 px-3 py-2.5 text-xs leading-relaxed">
+              <p className="font-medium text-foreground">ラウンド・ヒート・レーン</p>
+              <p className="mt-1 text-muted-foreground">
+                種目データの読み込みに失敗したか、大会に種目がまだありません。大会ページの「スタートリスト」タブから設定してください。
+              </p>
+              <div className="mt-2">
+                <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
+                  <Link href={`/competitions/${competitionId}?tab=start-list`}>スタートリスト設定へ</Link>
+                </Button>
+              </div>
+            </div>
+          )
         ) : null}
         {selectedTabId && tabCount > 0 ? (
           useTabsChrome ? (

@@ -12,6 +12,9 @@ import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
 import type { ResultRound } from "@prisma/client";
 import { parseStartListSettings } from "@/lib/startListSettings";
+import { sortEventsByScheduleTabs } from "@/lib/competitionScheduleTabDisplay";
+import { fetchPaidEntryCountByEventId } from "@/lib/competitionStartListEntryCounts";
+import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
 import { formatEventScheduleJa } from "@/lib/eventScheduleDisplay";
 import { computePlacementSeed } from "@/lib/startListHeatPlacement";
 import { extractFrozenRoundsForEventFromSnapshotData } from "@/lib/startListEventTabDisplay";
@@ -32,14 +35,7 @@ const CompetitionStartListEventBlock = nextDynamic(
   }
 );
 
-const StartListEventUnifiedCard = nextDynamic(
-  () => import("@/components/StartListEventUnifiedCard"),
-  {
-    loading: () => (
-      <div className="min-h-[14rem] animate-pulse rounded-lg border border-border/60 bg-muted/25" />
-    ),
-  }
-);
+import StartListEventUnifiedCard from "@/components/StartListEventUnifiedCard";
 
 export const dynamic = "force-dynamic";
 
@@ -103,7 +99,7 @@ export default async function CompetitionEventStartListPage({
   const session = await verifySessionCached(token);
   const sessionUserId = session?.userId ?? null;
 
-  const [competition, event] = await Promise.all([
+  const [competition, event, hasDayOpsUnlock] = await Promise.all([
     prisma.competition.findUnique({
       where: { id: competitionId },
       select: {
@@ -111,6 +107,7 @@ export default async function CompetitionEventStartListPage({
         name: true,
         status: true,
         dayOpsAccessSecretHash: true,
+        startListPubliclyVisible: true,
         startListSettings: true,
         organization: {
           select: {
@@ -130,6 +127,7 @@ export default async function CompetitionEventStartListPage({
       },
     }),
     getStartListEventDetail(competitionId, eventId),
+    verifyDayOpsUnlockFromCookies(competitionId),
   ]);
 
   if (!competition || !event) {
@@ -137,24 +135,58 @@ export default async function CompetitionEventStartListPage({
   }
 
   const dayOpsUnlockConfigured = Boolean(competition.dayOpsAccessSecretHash);
-  const hasDayOpsUnlock = await verifyDayOpsUnlockFromCookies(competitionId);
 
   const isOrgAdmin = hasOrgAdminAccess(competition.organization.admins);
-  const canEditStartListSplit = canManageCompetitionStartListSettings({
+  const canManageStartListOps = canManageCompetitionStartListSettings({
     orgAdminsForCurrentUser: competition.organization.admins,
     hasDayOpsUnlock,
   });
-  const showUnifiedStartListCard = canEditStartListSplit;
+  const showUnifiedStartListCard = canManageStartListOps;
   const showVenueOps = isOrgAdmin || hasDayOpsUnlock;
 
   if (competition.status === "DRAFT" && !isOrgAdmin) {
     notFound();
   }
 
+  const canViewStartListOnPublicPage =
+    (competition.startListPubliclyVisible ?? true) || isOrgAdmin || hasDayOpsUnlock;
+
+  if (!canViewStartListOnPublicPage) {
+    return (
+      <div className="app-page mx-auto max-w-3xl space-y-3.5 px-3 py-4 sm:max-w-4xl sm:px-5 sm:py-6">
+        <DayOpsUnlockBanner
+          competitionId={competitionId}
+          passphraseConfigured={dayOpsUnlockConfigured}
+          alreadyUnlocked={hasDayOpsUnlock}
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" className="h-9 gap-1 px-3 text-xs shadow-sm" asChild>
+            <Link href={`/competitions/${competitionId}`}>
+              <ChevronLeft className="size-4" />
+              大会ページへ
+            </Link>
+          </Button>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          この大会のスタートリスト全体が主催の設定により非公開です（種目ごとの切替ではありません）。主催管理者または当日運用でアンロック済みの端末から閲覧できます。
+        </p>
+      </div>
+    );
+  }
+
   const { eventSettings: settings } = parseStartListSettings(competition.startListSettings);
   const setting = settings[event.id] ?? { mode: "count" as const, heatCount: "1", heatSize: "" };
 
-  const [liveEntries, liveTeamEntries, officialResults, participantStatusRows] = await Promise.all([
+  const needRoundHeatBarItems =
+    isOrgAdmin && showUnifiedStartListCard && !event.startListHeatPlanConfirmedAt;
+
+  const [
+    liveEntries,
+    liveTeamEntries,
+    officialResults,
+    participantStatusRows,
+    roundHeatBarItems,
+  ] = await Promise.all([
     prisma.competitionEntry.findMany({
       where: {
         competitionId,
@@ -167,7 +199,7 @@ export default async function CompetitionEventStartListPage({
         userId: true,
         club: { select: { id: true, name: true } },
         user: { select: { familyName: true, givenName: true } },
-        items: { where: { eventId }, select: { eventId: true } },
+        items: { where: { eventId }, take: 1, select: { eventId: true } },
       },
       orderBy: { createdAt: "asc" },
     }),
@@ -215,6 +247,65 @@ export default async function CompetitionEventStartListPage({
         calledAt: true,
       },
     }),
+    needRoundHeatBarItems
+      ? (async (): Promise<StartListEventBarItem[]> => {
+          const [scheduleTabsRow, allEventsForHeat] = await Promise.all([
+            prisma.competitionScheduleTab.findMany({
+              where: { competitionId },
+              orderBy: { displayOrder: "asc" },
+              select: { id: true, name: true, displayOrder: true },
+            }),
+            prisma.event.findMany({
+              where: { competitionId },
+              select: {
+                id: true,
+                name: true,
+                sex: true,
+                type: true,
+                displayOrder: true,
+                scheduledStartAt: true,
+                roundScheduledStarts: true,
+                scheduledEndAt: true,
+                startListRoundCount: true,
+                scheduleTabId: true,
+                scheduleTabSortOrder: true,
+                preliminaryHeatLaneCount: true,
+                startListHeatPlanConfirmedAt: true,
+                marshalStartedAt: true,
+                ageCategory: { select: { id: true, name: true } },
+              },
+              orderBy: [{ displayOrder: "asc" }, { sex: "asc" }, { id: "asc" }],
+            }),
+          ]);
+          const entryCountByEventId =
+            allEventsForHeat.length > 0
+              ? await fetchPaidEntryCountByEventId(
+                  competitionId,
+                  allEventsForHeat.map((e) => ({ id: e.id, type: e.type }))
+                )
+              : {};
+          const mapped: StartListEventBarItem[] = allEventsForHeat.map((e) => ({
+            id: e.id,
+            name: e.name,
+            sex: e.sex,
+            type: e.type,
+            displayOrder: e.displayOrder,
+            ageCategoryId: e.ageCategory?.id ?? null,
+            ageCategoryName: e.ageCategory?.name ?? null,
+            scheduledStartAt: e.scheduledStartAt,
+            roundScheduledStarts: e.roundScheduledStarts,
+            scheduledEndAt: e.scheduledEndAt,
+            startListRoundCount: e.startListRoundCount ?? undefined,
+            scheduleTabId: e.scheduleTabId,
+            scheduleTabSortOrder: e.scheduleTabSortOrder,
+            entryCount: entryCountByEventId[e.id] ?? 0,
+            preliminaryHeatLaneCount: e.preliminaryHeatLaneCount,
+            startListHeatPlanConfirmedAt: e.startListHeatPlanConfirmedAt,
+            marshalStartedAt: e.marshalStartedAt,
+          }));
+          return sortEventsByScheduleTabs(mapped, scheduleTabsRow);
+        })()
+      : Promise.resolve<StartListEventBarItem[] | null>(null),
   ]);
 
   const participantStatusByKey = buildParticipantDayOpsStatusByKey(participantStatusRows);
@@ -371,12 +462,14 @@ export default async function CompetitionEventStartListPage({
           preliminaryHeatLaneCount={event.preliminaryHeatLaneCount ?? null}
           heatPlanConfirmedAtIso={event.startListHeatPlanConfirmedAt?.toISOString() ?? null}
           marshalStartedAtIso={event.marshalStartedAt?.toISOString() ?? null}
-          canEditHeatConfiguration={canEditStartListSplit}
+          canEditHeatConfiguration={canManageStartListOps}
+          canEditPublishedScheduleForRoundSetup={isOrgAdmin}
           showMarshalOps={showVenueOps}
           showResultOps={showVenueOps}
           participantStatusByKey={participantStatusByKey}
           initialParticipantStatusRows={participantStatusRows}
           initialRoundIndex={initialRoundIndex}
+          roundHeatBarItems={roundHeatBarItems}
         />
       ) : (
         <CompetitionStartListEventBlock

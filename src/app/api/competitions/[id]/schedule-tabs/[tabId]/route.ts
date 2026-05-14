@@ -2,7 +2,7 @@ import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
+import { canEditCompetitionPublishedSchedule } from "@/lib/competitionStartListAccess";
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 import { ensureCompetitionScheduleTabs } from "@/lib/ensureCompetitionScheduleTabs";
 
@@ -33,9 +33,8 @@ async function assertEditor(
     return { ok: false as const, status: 404, message: "大会が見つかりません" };
   }
   if (
-    !canManageCompetitionStartListSettings({
+    !canEditCompetitionPublishedSchedule({
       orgAdminsForCurrentUser: competition.organization.admins,
-      hasDayOpsUnlock,
     })
   ) {
     return { ok: false as const, status: 403, message: "権限がありません" };

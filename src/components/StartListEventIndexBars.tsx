@@ -32,11 +32,7 @@ import {
   isInstantWithinCompetitionEventSchedule,
 } from "@/lib/eventScheduleWithinCompetition";
 import { cn } from "@/lib/utils";
-import {
-  effectiveRoundStartIso,
-  parseRoundScheduledStarts,
-  roundStartKey,
-} from "@/lib/eventRoundScheduledStarts";
+import { effectiveRoundStartIso, roundStartKey } from "@/lib/eventRoundScheduledStarts";
 import {
   buildScheduleTabListItems,
   expandEventsToScheduleRoundRows,
@@ -48,39 +44,18 @@ import {
   filterEventsByStartListAgeCategory,
   mergeReorderedEventsByIds,
 } from "@/lib/startListAgeCategoryTabs";
-import { clampRoundTabsToNonIncreasingHeatCounts } from "@/lib/startListEventHeatValidation";
+import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
+import { serverEventsSyncKeyFromSorted } from "@/lib/startListEventBarServerSyncKey";
 import {
   buildRoundTabsForRoundCount,
-  buildStartListSettingsPayload,
   normalizeRoundTabs,
   parseStartListSettings,
   type HeatSetting,
-  type StartListRoundTab,
 } from "@/lib/startListSettings";
+import { useStartListRoundHeatDrafts } from "@/hooks/useStartListRoundHeatDrafts";
+import { StartListEventRoundSettingsRow } from "@/components/StartListEventRoundSettingsRow";
 
-export type StartListEventBarItem = {
-  id: string;
-  name: string;
-  sex: string;
-  type: "INDIVIDUAL" | "TEAM";
-  displayOrder: number;
-  ageCategoryId?: string | null;
-  ageCategoryName?: string | null;
-  scheduledStartAt?: Date | string | null;
-  /** ラウンド別の想定開始（API・DB の JSON） */
-  roundScheduledStarts?: unknown;
-  scheduledEndAt?: Date | string | null;
-  /** スタートリストのラウンド数（全ラウンド） */
-  startListRoundCount?: number;
-  scheduleTabId?: string | null;
-  scheduleTabSortOrder?: number | null;
-  /** 確定エントリー相当の件数（ラウンド設定カード用） */
-  entryCount?: number;
-  preliminaryHeatLaneCount?: number | null;
-  /** ヒート計画確定日時 */
-  startListHeatPlanConfirmedAt?: Date | string | null;
-  marshalStartedAt?: Date | string | null;
-};
+export type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
 
 type Props = {
   competitionId: string;
@@ -166,44 +141,7 @@ function sortByStartTimeOrder(
   });
 }
 
-function serverEventsSyncKeyFromSorted(sorted: StartListEventBarItem[]) {
-  return sorted
-    .map(
-      (e) =>
-        `${e.id}:${e.displayOrder}:${e.scheduleTabId ?? ""}:${e.scheduleTabSortOrder ?? 0}:${e.scheduledStartAt ? new Date(e.scheduledStartAt).getTime() : ""}:${JSON.stringify(parseRoundScheduledStarts(e.roundScheduledStarts))}:${e.startListRoundCount ?? 1}:${e.entryCount ?? 0}:${e.preliminaryHeatLaneCount ?? ""}:${e.startListHeatPlanConfirmedAt ? new Date(e.startListHeatPlanConfirmedAt).getTime() : ""}:${e.marshalStartedAt ? new Date(e.marshalStartedAt).getTime() : ""}`
-    )
-    .join("|");
-}
-
 const AUTO_SORT_STORAGE_KEY = "bluvium:start-list:auto-sort-after-save";
-
-/** ヒート設定 PUT 成功後、統合カードの persistTabs と同様にスナップショットを更新する */
-async function captureStartListSnapshotAfterHeatSave(competitionId: string): Promise<boolean> {
-  try {
-    const capRes = await fetch(
-      `/api/competitions/${competitionId}/start-list-snapshot/capture`,
-      { method: "POST" }
-    );
-    const capJson = (await capRes.json().catch(() => ({}))) as {
-      error?: string;
-      message?: string;
-    };
-    if (!capRes.ok) {
-      toast.error(
-        capJson.error ||
-          capJson.message ||
-          "スタートリスト記録の更新に失敗しました（ヒート設定は保存済みです）。もう一度保存してください。"
-      );
-      return false;
-    }
-    return true;
-  } catch {
-    toast.error(
-      "スタートリスト記録の更新に失敗しました（ヒート設定は保存済みです）。通信を確認のうえ、もう一度保存してください。"
-    );
-    return false;
-  }
-}
 
 type SchedulePatchResponseEvent = {
   id: string;
@@ -273,11 +211,6 @@ export default function StartListEventIndexBars({
   const [reorderSaving, setReorderSaving] = useState(false);
   const [roundStarts, setRoundStarts] = useState<Record<string, string>>({});
   const [timeSavingId, setTimeSavingId] = useState<string | null>(null);
-  const [roundCounts, setRoundCounts] = useState<Record<string, string>>({});
-  const [roundSavingId, setRoundSavingId] = useState<string | null>(null);
-  const [heatDraftByEvent, setHeatDraftByEvent] = useState<Record<string, HeatSetting>>({});
-  const [heatSavingEventId, setHeatSavingEventId] = useState<string | null>(null);
-  const [heatPlanConfirmingId, setHeatPlanConfirmingId] = useState<string | null>(null);
   const [autoSortAfterSaveStart, setAutoSortAfterSaveStart] = useState(true);
   const [staggerBase, setStaggerBase] = useState("");
   const [staggerMinutes, setStaggerMinutes] = useState("15");
@@ -303,6 +236,27 @@ export default function StartListEventIndexBars({
     };
   }, [events]);
 
+  const {
+    roundCounts,
+    setRoundCounts,
+    heatDraftByEvent,
+    roundSavingId,
+    heatSavingEventId,
+    heatPlanConfirmingId,
+    parseRoundCountDraft,
+    savedRoundCount,
+    saveRoundCount,
+    updateHeatTab,
+    saveHeatPlanForEvent,
+  } = useStartListRoundHeatDrafts({
+    competitionId,
+    mergeOrderedBarItems: order,
+    roundCountResetBarItems: sortedFromServer,
+    initialStartListSettings: initialStartListSettings ?? null,
+    serverSyncKey,
+    syncHeatDraftsFromSettings: canEditRoundCount,
+  });
+
   const heatDraftSyncKey = useMemo(() => {
     const s =
       initialStartListSettings && typeof initialStartListSettings === "object"
@@ -310,14 +264,6 @@ export default function StartListEventIndexBars({
         : "";
     return `${serverSyncKey}|${s}`;
   }, [serverSyncKey, initialStartListSettings]);
-
-  useEffect(() => {
-    if (!canEditRoundCount) return;
-    const { eventSettings } = parseStartListSettings(initialStartListSettings ?? null);
-    setHeatDraftByEvent({ ...eventSettings });
-    // initialStartListSettings の内容は heatDraftSyncKey（JSON 化）に含まれる
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- heatDraftSyncKey で十分
-  }, [heatDraftSyncKey, canEditRoundCount]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.localStorage.getItem(AUTO_SORT_STORAGE_KEY) === "0") {
@@ -328,15 +274,6 @@ export default function StartListEventIndexBars({
   useEffect(() => {
     setOrder(sortedFromServer);
     setRoundStarts(roundStartsDraftFromBarItems(sortedFromServer));
-    const rc: Record<string, string> = {};
-    for (const e of sortedFromServer) {
-      const n =
-        typeof e.startListRoundCount === "number" && e.startListRoundCount >= 1
-          ? Math.min(32, e.startListRoundCount)
-          : 1;
-      rc[e.id] = String(n);
-    }
-    setRoundCounts(rc);
     // 配列参照を依存にすると React 19 で依存配列の長さが種目数に連動することがあるため、文字列キーのみ使う
     // eslint-disable-next-line react-hooks/exhaustive-deps -- serverSyncKey に表示順・開始時刻の実体が含まれる
   }, [serverSyncKey]);
@@ -601,141 +538,6 @@ export default function StartListEventIndexBars({
       toast.error(e instanceof Error ? e.message : "エリアの並び替えに失敗しました");
     } finally {
       setTabMutationSaving(false);
-    }
-  };
-
-  const saveRoundCount = async (eventId: string) => {
-    const raw = (roundCounts[eventId] ?? "1").trim();
-    const n = Number(raw);
-    if (!Number.isInteger(n) || n < 1 || n > 32) {
-      toast.error("ラウンド数は1〜32の整数にしてください");
-      return;
-    }
-    setRoundSavingId(eventId);
-    try {
-      const res = await fetch(`/api/competitions/${competitionId}/events/${eventId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startListRoundCount: n }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { message?: string };
-      if (!res.ok) throw new Error(data.message || "ラウンド数の保存に失敗しました");
-      toast.success(data.message || "ラウンド数を保存しました");
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "ラウンド数の保存に失敗しました");
-    } finally {
-      setRoundSavingId(null);
-    }
-  };
-
-  const parseRoundCountDraft = (raw: string | undefined): number => {
-    const n = Number(String(raw ?? "1").trim());
-    if (!Number.isInteger(n) || n < 1 || n > 32) return 1;
-    return n;
-  };
-
-  const savedRoundCount = (e: StartListEventBarItem): number => {
-    const n = e.startListRoundCount;
-    if (typeof n === "number" && Number.isInteger(n) && n >= 1 && n <= 32) return n;
-    return 1;
-  };
-
-  const updateHeatTab = (eventId: string, tabIndex: number, patch: Partial<StartListRoundTab>) => {
-    setHeatDraftByEvent((prev) => {
-      const baseline = parseStartListSettings(initialStartListSettings ?? null);
-      const mergedBase: HeatSetting = {
-        ...(baseline.eventSettings[eventId] ?? {}),
-        ...(prev[eventId] ?? {}),
-      };
-      const n = parseRoundCountDraft(roundCounts[eventId]);
-      const tabs = buildRoundTabsForRoundCount(n, normalizeRoundTabs(mergedBase)).map((t, i) =>
-        i === tabIndex ? { ...t, ...patch } : t
-      );
-      return {
-        ...prev,
-        [eventId]: {
-          ...mergedBase,
-          roundTabs: tabs,
-          mode: tabs[0]?.mode === "size" ? "size" : "count",
-          heatCount: tabs[0]?.heatCount ?? "1",
-          heatSize: tabs[0]?.heatSize ?? "",
-        },
-      };
-    });
-  };
-
-  const saveHeatPlanForEvent = async (eventId: string) => {
-    const ev = order.find((e) => e.id === eventId);
-    if (!ev) return;
-    const draftN = parseRoundCountDraft(roundCounts[eventId]);
-    if (draftN !== savedRoundCount(ev)) {
-      toast.error("先に「ラウンド」の保存でラウンド数を確定してください");
-      return;
-    }
-    setHeatSavingEventId(eventId);
-    try {
-      const baseline = parseStartListSettings(initialStartListSettings ?? null);
-      const full: Record<string, HeatSetting> = {};
-      for (const e of order) {
-        const mergedBase: HeatSetting = {
-          ...(baseline.eventSettings[e.id] ?? {}),
-          ...(heatDraftByEvent[e.id] ?? {}),
-        };
-        const n = savedRoundCount(e);
-        const tabs = clampRoundTabsToNonIncreasingHeatCounts(
-          buildRoundTabsForRoundCount(n, normalizeRoundTabs(mergedBase)),
-          e.entryCount ?? 0,
-          e.preliminaryHeatLaneCount ?? null
-        );
-        full[e.id] = {
-          ...mergedBase,
-          roundTabs: tabs,
-          mode: tabs[0]?.mode === "size" ? "size" : "count",
-          heatCount: tabs[0]?.heatCount ?? "1",
-          heatSize: tabs[0]?.heatSize ?? "",
-        };
-      }
-      const payload = buildStartListSettingsPayload({
-        eventSettings: full,
-        teamAssignmentDeadline: baseline.teamAssignmentDeadline,
-      });
-      const res = await fetch(`/api/competitions/${competitionId}/start-list-settings`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startListSettings: payload }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { message?: string };
-      if (!res.ok) throw new Error(data.message || "ヒート・レーン設定の保存に失敗しました");
-      const snapOk = await captureStartListSnapshotAfterHeatSave(competitionId);
-      if (!snapOk) {
-        router.refresh();
-        return;
-      }
-      if (!ev.startListHeatPlanConfirmedAt && !ev.marshalStartedAt) {
-        setHeatPlanConfirmingId(eventId);
-        try {
-          const cres = await fetch(
-            `/api/competitions/${competitionId}/events/${encodeURIComponent(eventId)}/heat-plan/confirm`,
-            { method: "POST" }
-          );
-          const cdata = (await cres.json().catch(() => ({}))) as { message?: string };
-          if (!cres.ok) {
-            throw new Error(
-              cdata.message ||
-                "ヒート設定は保存済みですが、確定の記録に失敗しました。もう一度「ヒート・レーンを保存」してください。"
-            );
-          }
-        } finally {
-          setHeatPlanConfirmingId(null);
-        }
-      }
-      toast.success(data.message || "ヒート・レーンを保存し確定しました");
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "ヒート・レーン設定の保存に失敗しました");
-    } finally {
-      setHeatSavingEventId(null);
     }
   };
 
@@ -1104,176 +906,40 @@ export default function StartListEventIndexBars({
               heatSavingEventId !== null ||
               roundSavingId !== null ||
               heatPlanConfirmingId !== null;
-            const entryMeta =
-              typeof event.preliminaryHeatLaneCount === "number"
-                ? `エントリー ${event.entryCount ?? 0} 件 · 最大レーン ${event.preliminaryHeatLaneCount}`
-                : `エントリー ${event.entryCount ?? 0} 件`;
             return (
-              <li key={event.id} className="flex flex-col">
-                <div className="flex flex-col sm:flex-row sm:items-stretch">
-                  <div className="flex min-w-0 flex-1 items-stretch">
-                    <div className="flex min-w-0 flex-1 flex-col gap-0 px-2 py-1 text-left text-sm sm:flex-row sm:items-center sm:gap-2 sm:py-1">
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium leading-tight">{event.name}</span>
-                        {scheduleText ? (
-                          <span className="mt-0.5 block truncate text-[10px] leading-tight text-muted-foreground">
-                            {scheduleText}
-                          </span>
-                        ) : null}
-                        <span className="mt-0.5 block truncate text-[10px] leading-tight text-muted-foreground">
-                          {entryMeta}
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-[10px] text-muted-foreground">
-                        {sexLabel(event.sex)}
-                        {event.type === "TEAM" ? " · 団体" : " · 個人"}
-                        {event.ageCategoryName ? ` · ${event.ageCategoryName}` : ""}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1 border-t border-border/50 px-2 py-1 sm:w-auto sm:border-l sm:border-t-0 sm:py-1 sm:pl-2 sm:pr-2">
-                    <span className="whitespace-nowrap text-[10px] text-muted-foreground">ラウンド</span>
-                    <Input
-                      numericInput="integer"
-                      min={1}
-                      max={32}
-                      className="h-7 w-11 px-1 text-center text-[11px] tabular-nums"
-                      aria-label={`${event.name} のスタートリストのラウンド数`}
-                      value={roundCounts[event.id] ?? "1"}
-                      onChange={(e) => setRoundCounts((p) => ({ ...p, [event.id]: e.target.value }))}
-                      disabled={heatUiLocked}
-                    />
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      className="h-7 shrink-0 px-2 text-[11px]"
-                      onClick={() => void saveRoundCount(event.id)}
-                      disabled={
-                        bulkApplying ||
-                        roundSavingId === event.id ||
-                        timeSavingId !== null ||
-                        reorderSaving ||
-                        heatSavingEventId !== null ||
-                        heatPlanConfirmingId !== null
-                      }
-                    >
-                      {roundSavingId === event.id ? "保存中" : "保存"}
-                    </Button>
-                  </div>
-                </div>
-                {draftN >= 1 ? (
-                  <div className="border-t border-border/50 bg-muted/5 px-2 py-1.5">
-                    <p className="mb-1 text-[10px] leading-snug text-muted-foreground">
-                      ラウンドごとのヒート数・最大レーン（空の最大レーンは種目の既定）
-                    </p>
-                    <ul className="divide-y divide-border/40">
-                      {displayTabs.map((tab, tabIdx) => (
-                        <li
-                          key={tab.id}
-                          className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1 first:pt-0 last:pb-0"
-                        >
-                          <span className="w-[6.5rem] shrink-0 truncate text-[10px] font-medium text-foreground">
-                            {tab.label?.trim() ? tab.label : `ラウンド ${tabIdx + 1}`}
-                          </span>
-                          {tab.mode === "size" ? (
-                            <>
-                              <span className="text-[10px] text-muted-foreground">1ヒート人数</span>
-                              <Input
-                                numericInput="integer"
-                                min={1}
-                                max={64}
-                                className="h-7 w-11 px-1 text-center text-[11px] tabular-nums"
-                                value={tab.heatSize ?? ""}
-                                onChange={(e) =>
-                                  updateHeatTab(event.id, tabIdx, { heatSize: e.target.value })
-                                }
-                                disabled={heatUiLocked}
-                              />
-                            </>
-                          ) : (
-                            <>
-                              <span className="text-[10px] text-muted-foreground">ヒート数</span>
-                              <Input
-                                numericInput="integer"
-                                min={1}
-                                max={64}
-                                className="h-7 w-11 px-1 text-center text-[11px] tabular-nums"
-                                value={tab.heatCount ?? "1"}
-                                onChange={(e) =>
-                                  updateHeatTab(event.id, tabIdx, { heatCount: e.target.value })
-                                }
-                                disabled={heatUiLocked}
-                              />
-                            </>
-                          )}
-                          <span className="text-[10px] text-muted-foreground">最大レーン</span>
-                          <Input
-                            numericInput="integer"
-                            min={1}
-                            max={32}
-                            title="最大レーン（空なら種目の既定）"
-                            placeholder={
-                              typeof event.preliminaryHeatLaneCount === "number"
-                                ? String(event.preliminaryHeatLaneCount)
-                                : "—"
-                            }
-                            className="h-7 w-11 px-1 text-center text-[11px] tabular-nums"
-                            value={
-                              typeof tab.maxLanesPerHeat === "number"
-                                ? String(tab.maxLanesPerHeat)
-                                : ""
-                            }
-                            onChange={(e) => {
-                              const t = e.target.value.trim();
-                              if (t === "") {
-                                updateHeatTab(event.id, tabIdx, { maxLanesPerHeat: undefined });
-                                return;
-                              }
-                              const v = parseInt(t, 10);
-                              if (Number.isInteger(v) && v >= 1 && v <= 32) {
-                                updateHeatTab(event.id, tabIdx, { maxLanesPerHeat: v });
-                              }
-                            }}
-                            disabled={heatUiLocked}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                    <div className="mt-1.5 flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className="h-7 w-fit px-2 text-[11px]"
-                        onClick={() => void saveHeatPlanForEvent(event.id)}
-                        disabled={
-                          heatUiLocked ||
-                          heatSavingEventId === event.id ||
-                          heatPlanConfirmingId === event.id ||
-                          draftN !== savedN
-                        }
-                      >
-                        {heatSavingEventId === event.id
-                          ? !event.startListHeatPlanConfirmedAt && !event.marshalStartedAt
-                            ? "保存・確定中…"
-                            : "保存中…"
-                          : heatPlanConfirmingId === event.id
-                            ? "確定を記録中…"
-                            : "ヒート・レーンを保存"}
-                      </Button>
-                      {event.startListHeatPlanConfirmedAt ? (
-                        <span className="text-[10px] text-muted-foreground">ヒート・レーン確定済み</span>
-                      ) : null}
-                      {draftN !== savedN ? (
-                        <p className="text-[10px] leading-snug text-amber-700 dark:text-amber-300">
-                          先に上の「保存」でラウンド数を確定してください。
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-              </li>
+              <StartListEventRoundSettingsRow
+                key={event.id}
+                event={event}
+                scheduleText={scheduleText}
+                displayTabs={displayTabs}
+                draftN={draftN}
+                savedN={savedN}
+                roundCountValue={roundCounts[event.id] ?? "1"}
+                onRoundCountChange={(value) =>
+                  setRoundCounts((p) => ({ ...p, [event.id]: value }))
+                }
+                heatUiLocked={heatUiLocked}
+                roundSaveDisabled={
+                  bulkApplying ||
+                  roundSavingId === event.id ||
+                  timeSavingId !== null ||
+                  reorderSaving ||
+                  heatSavingEventId !== null ||
+                  heatPlanConfirmingId !== null
+                }
+                savingRound={roundSavingId === event.id}
+                onSaveRoundCount={() => void saveRoundCount(event.id)}
+                onUpdateHeatTab={(tabIdx, patch) => updateHeatTab(event.id, tabIdx, patch)}
+                heatSaveDisabled={
+                  heatUiLocked ||
+                  heatSavingEventId === event.id ||
+                  heatPlanConfirmingId === event.id ||
+                  draftN !== savedN
+                }
+                heatSaving={heatSavingEventId === event.id}
+                heatPlanConfirming={heatPlanConfirmingId === event.id}
+                onSaveHeatPlan={() => void saveHeatPlanForEvent(event.id)}
+              />
             );
           })}
         </ul>

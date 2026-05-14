@@ -171,6 +171,9 @@ export async function PATCH(
     const onlyScheduleSort =
       rawKeys.length === 1 && Object.prototype.hasOwnProperty.call(raw, "scheduleTabSortOrder");
     if (onlyScheduleSort) {
+      if (!isAdmin) {
+        return NextResponse.json({ message: "権限がありません" }, { status: 403 });
+      }
       const sv = raw.scheduleTabSortOrder;
       if (typeof sv !== "number" || !Number.isInteger(sv) || sv < 0 || sv > 99999) {
         return NextResponse.json(
@@ -277,6 +280,9 @@ export async function PATCH(
     const onlyScheduleTab =
       rawKeys.length > 0 && rawKeys.every((k) => scheduleTabKeySet.has(k));
     if (onlyScheduleTab) {
+      if (!isAdmin) {
+        return NextResponse.json({ message: "権限がありません" }, { status: 403 });
+      }
       if (!Object.prototype.hasOwnProperty.call(raw, "scheduleTabId")) {
         return NextResponse.json(
           { message: "scheduleTabId を指定してください" },
@@ -480,8 +486,6 @@ export async function PATCH(
       );
     }
     const hasBirthDatePair = hasEligibleBirthFrom && hasEligibleBirthTo;
-    const onlyStartListRoundCount =
-      rawKeys.length === 1 && rawKeys[0] === "startListRoundCount";
 
     const hasTeamRelayPositionCountKey = Object.prototype.hasOwnProperty.call(
       raw,
@@ -713,11 +717,11 @@ export async function PATCH(
           { status: 400 }
         );
       }
-      if (!isAdmin && !(hasDayOpsUnlock && onlyStartListRoundCount)) {
+      if (!isAdmin) {
         return NextResponse.json(
           {
             message:
-              "スタートリストのラウンド数は主催者管理者、または当日運用アクセス済みの端末が単独項目でのみ更新できます",
+              "スタートリストのラウンド数は主催者管理者のみが更新できます",
           },
           { status: 403 }
         );

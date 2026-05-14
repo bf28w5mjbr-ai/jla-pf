@@ -29,10 +29,12 @@ export async function PUT(
     const body = (await request.json().catch(() => ({}))) as {
       officialQualificationFilterEnabled?: unknown;
       officialRecruitmentEnabled?: unknown;
+      startListPubliclyVisible?: unknown;
     };
     const hasFilterFlag = typeof body.officialQualificationFilterEnabled === "boolean";
     const hasRecruitmentFlag = typeof body.officialRecruitmentEnabled === "boolean";
-    if (!hasFilterFlag && !hasRecruitmentFlag) {
+    const hasStartListPublicFlag = typeof body.startListPubliclyVisible === "boolean";
+    if (!hasFilterFlag && !hasRecruitmentFlag && !hasStartListPublicFlag) {
       return NextResponse.json(
         { error: "更新対象の設定値が不正です" },
         { status: 400 }
@@ -56,12 +58,16 @@ export async function PUT(
         ...(hasRecruitmentFlag
           ? { officialRecruitmentEnabled: body.officialRecruitmentEnabled as boolean }
           : {}),
+        ...(hasStartListPublicFlag
+          ? { startListPubliclyVisible: body.startListPubliclyVisible as boolean }
+          : {}),
       },
       select: {
         id: true,
         officialQualificationFilterEnabled: true,
         officialRecruitmentEnabled: true,
         technicalOfficialRecruitmentEnabled: true,
+        startListPubliclyVisible: true,
       },
     });
 
