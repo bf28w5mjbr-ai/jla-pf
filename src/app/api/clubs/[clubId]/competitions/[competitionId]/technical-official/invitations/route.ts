@@ -23,6 +23,7 @@ import {
 import { buildTechnicalOfficialInviteSmsMessage } from "@/lib/technicalOfficialSms";
 import { sendSecurityNoticeSms } from "@/lib/sns";
 import { isSmsOutboundHeld } from "@/lib/smsHoldPolicy";
+import { computeClubDirectTechnicalOfficialAddMeta } from "@/lib/clubDirectTechnicalOfficialAddMeta";
 
 type PostBody = {
   memberUserId?: string;
@@ -383,6 +384,15 @@ export async function GET(
           diagnostics: undefined,
         };
 
+    const directAdd =
+      viewerIsAdmin && status.configured
+        ? await computeClubDirectTechnicalOfficialAddMeta(prisma, {
+            competitionId,
+            clubId,
+            viewerIsClubAdmin: true,
+          })
+        : { allowed: false as const };
+
     return NextResponse.json({
       configured: status.configured,
       status: statusForResponse,
@@ -396,6 +406,7 @@ export async function GET(
       })),
       eligibleMembers,
       viewerIsAdmin,
+      directAdd,
     });
   } catch (error) {
     return jsonInternalError500(

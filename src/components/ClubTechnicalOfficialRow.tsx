@@ -1,12 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, TriangleAlert, User, Users } from "lucide-react";
+import { Loader2, TriangleAlert, User, UserPlus, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -44,6 +52,11 @@ type InvitationsPayload = {
     createdAt: string;
   }[];
   eligibleMembers?: { id: string; name: string }[];
+  directAdd?: {
+    allowed: boolean;
+    closedReason?: string;
+    closesAtLabel?: string;
+  };
 };
 
 export default function ClubTechnicalOfficialRow({
@@ -63,6 +76,20 @@ export default function ClubTechnicalOfficialRow({
   const [memberId, setMemberId] = useState<string>("");
   const [smsPhone, setSmsPhone] = useState("");
   const [busy, setBusy] = useState(false);
+  const [addToOpen, setAddToOpen] = useState(false);
+  const [searchQ, setSearchQ] = useState("");
+  const [searchResults, setSearchResults] = useState<
+    { id: string; displayName: string; email: string }[]
+  >([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<{
+    id: string;
+    displayName: string;
+    email: string;
+  } | null>(null);
+  const [directAddBusy, setDirectAddBusy] = useState(false);
+  const searchAbortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -92,6 +119,45 @@ export default function ClubTechnicalOfficialRow({
       cancelled = true;
     };
   }, [load]);
+
+  useEffect(() => {
+    if (!addToOpen) return;
+    const q = searchQ.trim();
+    if (q.length < 2) {
+      setSearchResults([]);
+      setSearchError(null);
+      setSearchLoading(false);
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      searchAbortRef.current?.abort();
+      const ac = new AbortController();
+      searchAbortRef.current = ac;
+      (async () => {
+        setSearchLoading(true);
+        setSearchError(null);
+        try {
+          const res = await fetch(
+            `/api/clubs/${clubId}/competitions/${competitionId}/technical-official/user-search?q=${encodeURIComponent(q)}`,
+            { cache: "no-store", signal: ac.signal }
+          );
+          const j = (await res.json()) as {
+            error?: string;
+            users?: { id: string; displayName: string; email: string }[];
+          };
+          if (!res.ok) throw new Error(j.error ?? "検索に失敗しました");
+          setSearchResults(j.users ?? []);
+        } catch (e) {
+          if (e instanceof DOMException && e.name === "AbortError") return;
+          setSearchResults([]);
+          setSearchError(e instanceof Error ? e.message : "検索に失敗しました");
+        } finally {
+          setSearchLoading(false);
+        }
+      })();
+    }, 350);
+    return () => window.clearTimeout(handle);
+  }, [addToOpen, searchQ, clubId, competitionId]);
 
   if (loading) {
     return (
@@ -210,6 +276,51 @@ export default function ClubTechnicalOfficialRow({
     }
   };
 
+  const directAddMeta = data.directAdd ?? { allowed: false as const };
+  const directAddDisabledTitle =
+    isClubAdmin && !directAddMeta.allowed
+      ? [directAddMeta.closedReason, directAddMeta.closesAtLabel].filter(Boolean).join(" ") ||
+        "現在は追加できません"
+      : undefined;
+
+  const onDirectAddOpenChange = (open: boolean) => {
+    setAddToOpen(open);
+    if (!open) {
+      setSearchQ("");
+      setSearchResults([]);
+      setSearchError(null);
+      setSelectedUser(null);
+      searchAbortRef.current?.abort();
+    }
+  };
+
+  const onDirectAddConfirm = async () => {
+    if (!selectedUser) {
+      toast.error("ユーザーを選択してください");
+      return;
+    }
+    setDirectAddBusy(true);
+    try {
+      const res = await fetch(
+        `/api/clubs/${clubId}/competitions/${competitionId}/technical-official/direct-add`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ targetUserId: selectedUser.id }),
+        }
+      );
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(body.error ?? "追加に失敗しました");
+      toast.success(`${selectedUser.displayName} をテクニカルオフィシャルに追加しました`);
+      onDirectAddOpenChange(false);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "追加に失敗しました");
+    } finally {
+      setDirectAddBusy(false);
+    }
+  };
+
   const shortage = st.shortage > 0;
   const shortageTone = shortage
     ? "border-rose-500/40 bg-rose-500/[0.06] ring-rose-500/15 dark:border-rose-500/35 dark:bg-rose-950/25 dark:ring-rose-900/30"
@@ -266,6 +377,117 @@ export default function ClubTechnicalOfficialRow({
           </p>
         )}
       </div>
+
+      {isClubAdmin ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="gap-1.5"
+            disabled={!directAddMeta.allowed || directAddBusy}
+            title={directAddDisabledTitle}
+            onClick={() => onDirectAddOpenChange(true)}
+          >
+            <UserPlus className="h-3.5 w-3.5" aria-hidden />
+            TO追加
+          </Button>
+          {!directAddMeta.allowed && directAddMeta.closedReason ? (
+            <p className="text-xs text-muted-foreground">{directAddMeta.closedReason}</p>
+          ) : null}
+          <Dialog open={addToOpen} onOpenChange={onDirectAddOpenChange}>
+            <DialogContent className="max-h-[min(90vh,32rem)] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>テクニカルオフィシャルを追加</DialogTitle>
+                <DialogDescription>
+                  ユーザー名・メールなどで検索し、選択して追加します。クラブ外のユーザーも指定できます。
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="to-direct-add-search" className="text-xs">
+                    検索
+                  </Label>
+                  <Input
+                    id="to-direct-add-search"
+                    value={searchQ}
+                    onChange={(e) => {
+                      setSearchQ(e.target.value);
+                      setSelectedUser(null);
+                    }}
+                    placeholder="2文字以上（氏名・メールなど）"
+                    autoComplete="off"
+                  />
+                </div>
+                {searchLoading ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                    検索中…
+                  </div>
+                ) : null}
+                {searchError ? (
+                  <p className="text-xs text-destructive" role="alert">
+                    {searchError}
+                  </p>
+                ) : null}
+                {searchResults.length > 0 ? (
+                  <ul
+                    className="max-h-48 overflow-y-auto rounded-md border border-border/60 bg-muted/10 text-sm"
+                    role="listbox"
+                    aria-label="検索結果"
+                  >
+                    {searchResults.map((u) => {
+                      const selected = selectedUser?.id === u.id;
+                      return (
+                        <li key={u.id}>
+                          <button
+                            type="button"
+                            className={cn(
+                              "flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors hover:bg-accent/60",
+                              selected && "bg-accent/80"
+                            )}
+                            onClick={() => setSelectedUser(u)}
+                          >
+                            <span className="font-medium text-foreground">{u.displayName}</span>
+                            <span className="text-xs text-muted-foreground">{u.email}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : searchQ.trim().length >= 2 && !searchLoading && !searchError ? (
+                  <p className="text-xs text-muted-foreground">該当するユーザーがいません</p>
+                ) : null}
+                {selectedUser ? (
+                  <p className="rounded-md border border-primary/25 bg-primary/[0.06] px-3 py-2 text-xs text-foreground">
+                    追加対象: <span className="font-medium">{selectedUser.displayName}</span>
+                  </p>
+                ) : null}
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={directAddBusy}
+                  onClick={() => onDirectAddOpenChange(false)}
+                >
+                  キャンセル
+                </Button>
+                <Button type="button" disabled={!selectedUser || directAddBusy} onClick={onDirectAddConfirm}>
+                  {directAddBusy ? (
+                    <>
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" aria-hidden />
+                      追加中…
+                    </>
+                  ) : (
+                    "追加する"
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      ) : null}
 
       {isClubAdmin && st.shortage > 0 ? (
         <div className="space-y-3 rounded-lg border border-border/50 bg-background/45 p-3 shadow-sm dark:bg-background/35">

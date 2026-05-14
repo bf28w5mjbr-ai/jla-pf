@@ -165,7 +165,7 @@ export async function resolveOfficialApplicationPositionName(
 
 export async function assertOfficialQualificationFilterForUser(
   prisma: PrismaClient,
-  sessionUserId: string,
+  applicantUserId: string,
   filterEnabled: boolean
 ): Promise<GateError | GateOkEmpty> {
   if (!filterEnabled) {
@@ -183,7 +183,7 @@ export async function assertOfficialQualificationFilterForUser(
     }),
     prisma.qualification.findMany({
       where: {
-        userId: sessionUserId,
+        userId: applicantUserId,
         status: "APPROVED",
       },
       select: {
