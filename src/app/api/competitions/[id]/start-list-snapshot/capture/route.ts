@@ -3,8 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
-import { replaceCompetitionStartListSnapshot } from "@/lib/startListSnapshot";
-import { getRequestContext, logAuditAction } from "@/lib/auditLog";
+import { replaceCompetitionStartListSnapshotWithAudit } from "@/lib/replaceStartListSnapshotWithAudit";
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -49,25 +48,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }
 
-    const result = await replaceCompetitionStartListSnapshot({
+    const result = await replaceCompetitionStartListSnapshotWithAudit(request, {
       competitionId,
-      createdByUserId: sessionUserId ?? undefined,
-    });
-
-    await logAuditAction({
-      action: "COMPETITION_START_LIST_SNAPSHOT_CAPTURE",
-      actorType: sessionUserId ? "USER" : "SYSTEM",
-      actorKey: sessionUserId ? `user:${sessionUserId}` : "dayops:unlock",
-      actorUserId: sessionUserId ?? undefined,
-      targetType: "CompetitionStartListSnapshot",
-      targetId: result.snapshotId,
-      targetKey: `competition:${competitionId}`,
-      metadata: {
-        competitionId,
-        wasUpdate: result.wasUpdate,
-      },
-      request: getRequestContext(request),
-      result: "SUCCESS",
+      sessionUserId,
     });
 
     return NextResponse.json({

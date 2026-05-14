@@ -20,6 +20,7 @@ import { prisma } from "@/server/db";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
+import { replaceCompetitionStartListSnapshotWithAudit } from "@/lib/replaceStartListSnapshotWithAudit";
 import { syncAllEventStartListRoundCountsFromSettings } from "@/lib/startListRoundCountSync";
 
 export async function PUT(
@@ -69,7 +70,11 @@ export async function PUT(
     const isAdmin = hasOrgAdminAccess(competition.organization.admins);
 
     const body = await request.json().catch(() => ({}));
-    const { startListSettings } = body as { startListSettings?: unknown };
+    const { startListSettings, captureSnapshot } = body as {
+      startListSettings?: unknown;
+      captureSnapshot?: unknown;
+    };
+    const shouldCaptureSnapshot = captureSnapshot === true;
 
     if (typeof startListSettings !== "object" || startListSettings === null) {
       return NextResponse.json(
@@ -206,11 +211,42 @@ export async function PUT(
       },
     });
 
-    await syncAllEventStartListRoundCountsFromSettings(competitionId);
+    await syncAllEventStartListRoundCountsFromSettings(competitionId, {
+      startListSettings: updated.startListSettings,
+      eventIds: competition.events.map((e) => e.id),
+    });
+
+    type SnapshotCapturePayload =
+      | { ok: true; snapshotId: string; wasUpdate: boolean }
+      | { ok: false; error: string };
+
+    let snapshotCapture: SnapshotCapturePayload | undefined;
+    if (shouldCaptureSnapshot) {
+      try {
+        const snap = await replaceCompetitionStartListSnapshotWithAudit(request, {
+          competitionId,
+          sessionUserId,
+        });
+        snapshotCapture = {
+          ok: true,
+          snapshotId: snap.snapshotId,
+          wasUpdate: snap.wasUpdate,
+        };
+      } catch (snapErr) {
+        snapshotCapture = {
+          ok: false,
+          error:
+            snapErr instanceof Error
+              ? snapErr.message
+              : "スタートリスト記録の更新に失敗しました（設定は保存済みです）。",
+        };
+      }
+    }
 
     return NextResponse.json({
       message: "スタートリスト設定を更新しました",
       competition: updated,
+      ...(snapshotCapture !== undefined ? { snapshotCapture } : {}),
     });
   } catch (error) {
     return jsonInternalError500("PUT api/competitions/[id]/start-list-settings/route.ts", error);

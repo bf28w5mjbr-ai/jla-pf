@@ -205,11 +205,28 @@ export function useStartListRoundHeatDrafts({
         const res = await fetch(`/api/competitions/${competitionId}/start-list-settings`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ startListSettings: payload }),
+          body: JSON.stringify({ startListSettings: payload, captureSnapshot: true }),
         });
-        const data = (await res.json().catch(() => ({}))) as { message?: string };
+        const data = (await res.json().catch(() => ({}))) as {
+          message?: string;
+          snapshotCapture?:
+            | { ok: true; snapshotId: string; wasUpdate: boolean }
+            | { ok: false; error: string };
+        };
         if (!res.ok) throw new Error(data.message || "ヒート・レーン設定の保存に失敗しました");
-        const snapOk = await captureStartListSnapshotAfterHeatSave(competitionId);
+
+        let snapOk: boolean;
+        if (data.snapshotCapture !== undefined) {
+          snapOk = data.snapshotCapture.ok === true;
+          if (data.snapshotCapture.ok === false) {
+            toast.error(
+              data.snapshotCapture.error ||
+                "スタートリスト記録の更新に失敗しました（ヒート設定は保存済みです）。もう一度保存してください。"
+            );
+          }
+        } else {
+          snapOk = await captureStartListSnapshotAfterHeatSave(competitionId);
+        }
         if (!snapOk) {
           router.refresh();
           return;

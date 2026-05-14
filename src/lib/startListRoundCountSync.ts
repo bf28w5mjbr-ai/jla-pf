@@ -116,23 +116,42 @@ export async function syncStartListSettingsRoundTabsForEvents(params: {
 
 /** startListSettings の roundTabs 長に合わせ、全種目の startListRoundCount を揃える */
 export async function syncAllEventStartListRoundCountsFromSettings(
-  competitionId: string
+  competitionId: string,
+  options?: {
+    /** 直前に保存した startListSettings（大会行の再取得を省略） */
+    startListSettings?: unknown;
+    /** 種目 id 一覧（startListSettings とセットで渡す） */
+    eventIds?: readonly string[];
+  }
 ): Promise<void> {
-  const comp = await prisma.competition.findUnique({
-    where: { id: competitionId },
-    select: {
-      startListSettings: true,
-      events: { select: { id: true } },
-    },
-  });
-  if (!comp) return;
-  const { eventSettings } = parseStartListSettings(comp.startListSettings);
+  let startListSettings: unknown;
+  let eventIds: readonly string[];
+
+  if (options?.startListSettings !== undefined && options.eventIds !== undefined) {
+    startListSettings = options.startListSettings;
+    eventIds = options.eventIds;
+  } else {
+    const comp = await prisma.competition.findUnique({
+      where: { id: competitionId },
+      select: {
+        startListSettings: true,
+        events: { select: { id: true } },
+      },
+    });
+    if (!comp) return;
+    startListSettings = comp.startListSettings;
+    eventIds = comp.events.map((e) => e.id);
+  }
+
+  if (eventIds.length === 0) return;
+
+  const { eventSettings } = parseStartListSettings(startListSettings);
   await prisma.$transaction(
-    comp.events.map((e) => {
-      const len = normalizeRoundTabs(eventSettings[e.id] ?? {}).length;
+    eventIds.map((id) => {
+      const len = normalizeRoundTabs(eventSettings[id] ?? {}).length;
       const n = Math.min(32, Math.max(1, len || 1));
       return prisma.event.update({
-        where: { id: e.id },
+        where: { id },
         data: { startListRoundCount: n },
       });
     })
