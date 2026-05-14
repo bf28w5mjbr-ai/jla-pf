@@ -349,13 +349,13 @@ export default async function CompetitionsPage({
     return (
       <Card className="overflow-hidden border-border/80 shadow-sm transition hover:border-primary/30 hover:shadow-md">
         <CardContent className="p-3.5 sm:p-5">
-          <div className="flex items-start gap-3 sm:gap-4">
+          <div className="flex items-start gap-4 sm:gap-5">
             <div className="hidden shrink-0 sm:block">
               <OrganizationLogoImage
                 key={`${competition.id}-${competition.organization.logoUrl ?? ""}`}
                 logoUrl={competition.organization.logoUrl}
                 organizationName={competitionHostDisplayName(competition)}
-                frameClassName="h-14 w-14 rounded-xl border border-border/60 shadow-sm"
+                frameClassName="h-32 w-32 shrink-0 rounded-3xl border border-border/60 shadow-sm"
               />
             </div>
             <div className="min-w-0 flex-1 space-y-2">
