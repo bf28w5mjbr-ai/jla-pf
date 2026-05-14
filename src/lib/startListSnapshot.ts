@@ -1,5 +1,6 @@
 import { prisma } from "@/server/db";
 import { competitionEntryPaidCheckoutWhere } from "@/lib/entryCheckoutSessionPaid";
+import { heatPlanSplitFingerprint } from "@/lib/eventHeatPlanMarshal";
 import { hasIndividualWithdrawalForEvent } from "@/lib/entryWithdrawalAdminLabel";
 import {
   normalizeRoundTabs,
@@ -7,6 +8,7 @@ import {
   primaryHeatSettingFromEventConfig,
   resolveTabMaxLanes,
   roundTabToHeatSetting,
+  type HeatSetting,
 } from "@/lib/startListSettings";
 import {
   buildDispersedIndividualParticipantHeats,
@@ -54,7 +56,23 @@ export type ReplaceStartListSnapshotResult = {
   ok: true;
   snapshotId: string;
   wasUpdate: boolean;
+  /** 先頭 HEAT の分割に変更がなく、スナップショット行を更新しなかった */
+  skipped?: boolean;
+  /** 種目の一部だけヒートを再計算した */
+  partialRebuild?: boolean;
 };
+
+/** 先頭ラウンド（HEAT）だけ差し替え、既存の次ラウンド以降を残す */
+function mergeNewHeatHeadOntoPreviousTailForEvent(
+  old: SnapshotEvent | undefined,
+  freshForEvent: SnapshotEvent
+): SnapshotEvent {
+  if (!old?.rounds || old.rounds.length <= 1) return freshForEvent;
+  const [, ...tail] = old.rounds;
+  const head = freshForEvent.rounds[0];
+  if (!head) return freshForEvent;
+  return { ...freshForEvent, rounds: [head, ...tail] };
+}
 
 /** 手動記録で HEAT を差し替えつつ、既存の次ラウンド以降（進行生成済み）を残す */
 function mergeSnapshotPreservingTailRounds(
@@ -65,15 +83,32 @@ function mergeSnapshotPreservingTailRounds(
   const p = previous as { events?: SnapshotEvent[] };
   if (!Array.isArray(p.events)) return next;
   const prevById = new Map(p.events.map((e) => [e.eventId, e]));
-  const events = next.events.map((ev) => {
-    const old = prevById.get(ev.eventId);
-    if (!old?.rounds || old.rounds.length <= 1) return ev;
-    const [, ...tail] = old.rounds;
-    const head = ev.rounds[0];
-    if (!head) return ev;
-    return { ...ev, rounds: [head, ...tail] };
-  });
+  const events = next.events.map((ev) => mergeNewHeatHeadOntoPreviousTailForEvent(prevById.get(ev.eventId), ev));
   return { ...next, events };
+}
+
+/** 一部種目だけ fresh に含み、それ以外は previous の種目ブロックをそのまま引き継ぐ */
+function mergePartialFreshSnapshotPreservingTailRounds(
+  previous: unknown,
+  freshPartial: StartListSnapshotPayload,
+  orderedEventIds: readonly string[]
+): StartListSnapshotPayload {
+  if (!previous || typeof previous !== "object") return freshPartial;
+  const p = previous as { events?: SnapshotEvent[] };
+  if (!Array.isArray(p.events)) return freshPartial;
+  const prevById = new Map(p.events.map((e) => [e.eventId, e]));
+  const freshById = new Map(freshPartial.events.map((e) => [e.eventId, e]));
+  const events: SnapshotEvent[] = [];
+  for (const id of orderedEventIds) {
+    const freshEv = freshById.get(id);
+    if (freshEv) {
+      events.push(mergeNewHeatHeadOntoPreviousTailForEvent(prevById.get(id), freshEv));
+    } else {
+      const old = prevById.get(id);
+      if (old) events.push(old);
+    }
+  }
+  return { version: 1, capturedAt: freshPartial.capturedAt, events };
 }
 
 async function countPendingEntryCheckoutSessions(competitionId: string): Promise<number> {
@@ -96,42 +131,103 @@ async function competitionHasEligibleParticipantsForSnapshot(competitionId: stri
   return individuals + teams > 0;
 }
 
+export type BuildStartListSnapshotPayloadOptions = {
+  /** 指定した種目だけヒート再計算（エントリー取得もこの種目に絞る） */
+  onlyEventIds?: ReadonlySet<string>;
+};
+
+async function loadCompetitionEventIdsOrdered(competitionId: string): Promise<string[]> {
+  const rows = await prisma.event.findMany({
+    where: { competitionId },
+    select: { id: true },
+    orderBy: { displayOrder: "asc" },
+  });
+  return rows.map((r) => r.id);
+}
+
+/**
+ * 先頭 HEAT の分割に効く設定が変わった種目 id のみ返す（スナップショット部分再計算用）。
+ */
+export function eventIdsWhereHeatPlanSplitChanged(params: {
+  orderedEventIds: readonly string[];
+  previous: Record<string, HeatSetting | undefined>;
+  next: Record<string, HeatSetting | undefined>;
+}): string[] {
+  const out: string[] = [];
+  for (const id of params.orderedEventIds) {
+    if (heatPlanSplitFingerprint(params.previous[id]) !== heatPlanSplitFingerprint(params.next[id])) {
+      out.push(id);
+    }
+  }
+  return out;
+}
+
 /**
  * 現在のエントリーとヒート設定からスナップショット用 JSON を組み立てる（DB 書き込みなし）。
  */
 export async function buildStartListSnapshotPayload(
   competitionId: string,
-  firstRoundGeneratedBy: FirstRoundGeneratedBy
+  firstRoundGeneratedBy: FirstRoundGeneratedBy,
+  options?: BuildStartListSnapshotPayloadOptions
 ): Promise<StartListSnapshotPayload> {
+  const only = options?.onlyEventIds;
+  const onlyArray = only && only.size > 0 ? [...only] : null;
+
   const competition = await prisma.competition.findUnique({
     where: { id: competitionId },
     select: {
       id: true,
       startListSettings: true,
-      events: {
-        select: {
-          id: true,
-          name: true,
-          sex: true,
-          type: true,
-          displayOrder: true,
-          preliminaryHeatLaneCount: true,
-        },
-        orderBy: { displayOrder: "asc" },
-      },
+      events:
+        onlyArray && onlyArray.length > 0
+          ? {
+              where: { id: { in: onlyArray } },
+              select: {
+                id: true,
+                name: true,
+                sex: true,
+                type: true,
+                displayOrder: true,
+                preliminaryHeatLaneCount: true,
+              },
+              orderBy: { displayOrder: "asc" },
+            }
+          : {
+              select: {
+                id: true,
+                name: true,
+                sex: true,
+                type: true,
+                displayOrder: true,
+                preliminaryHeatLaneCount: true,
+              },
+              orderBy: { displayOrder: "asc" },
+            },
     },
   });
   if (!competition) {
     throw new Error("COMPETITION_NOT_FOUND");
   }
 
+  const entryWhere = {
+    competitionId,
+    status: "SUBMITTED" as const,
+    OR: [{ totalFee: { lte: 0 } }, competitionEntryPaidCheckoutWhere],
+    ...(onlyArray
+      ? {
+          items: { some: { eventId: { in: onlyArray } } },
+        }
+      : {}),
+  };
+
+  const teamWhere =
+    onlyArray && onlyArray.length > 0
+      ? { competitionId, eventId: { in: onlyArray } }
+      : { competitionId };
+
   const [entries, teamEntries] = await Promise.all([
     prisma.competitionEntry.findMany({
-      where: {
-        competitionId,
-        status: "SUBMITTED",
-        OR: [{ totalFee: { lte: 0 } }, competitionEntryPaidCheckoutWhere],
-      },
+      where: entryWhere,
       include: {
         user: {
           select: {
@@ -158,7 +254,7 @@ export async function buildStartListSnapshotPayload(
       orderBy: { createdAt: "asc" },
     }),
     prisma.teamEntry.findMany({
-      where: { competitionId },
+      where: teamWhere,
       include: {
         club: {
           select: { id: true, name: true },
@@ -184,6 +280,7 @@ export async function buildStartListSnapshotPayload(
   const individualByEvent = new Map<string, StartListParticipant[]>();
   for (const entry of entries) {
     for (const item of entry.items) {
+      if (only && !only.has(item.eventId)) continue;
       if (hasIndividualWithdrawalForEvent(entry.participantStatuses, item.eventId)) {
         continue;
       }
@@ -202,6 +299,7 @@ export async function buildStartListSnapshotPayload(
 
   const teamByEvent = new Map<string, StartListParticipant[]>();
   for (const teamEntry of teamEntries) {
+    if (only && !only.has(teamEntry.eventId)) continue;
     const list = teamByEvent.get(teamEntry.eventId) ?? [];
     list.push({
       kind: "TEAM",
@@ -323,19 +421,76 @@ export async function buildStartListSnapshotPayload(
 /**
  * 主催の明示操作で、現在のエントリー状態をスナップショットに上書き保存する（記録・監査用）。
  * 画面表示は常にライブデータを使い、本データは参照用。
+ *
+ * @param onlyRebuildEventIds `undefined` のときは全会場フル再計算（capture API 相当）。
+ * 空配列は「先頭 HEAT 分割に変更なし」で、既存スナップショットがあれば DB 更新を省略する。
  */
 export async function replaceCompetitionStartListSnapshot(params: {
   competitionId: string;
   createdByUserId?: string;
+  /** 省略時フル再計算。空は分割変更なしでスキップ可 */
+  onlyRebuildEventIds?: readonly string[] | undefined;
 }): Promise<ReplaceStartListSnapshotResult> {
-  const { competitionId, createdByUserId } = params;
-  const fresh = await buildStartListSnapshotPayload(competitionId, "RECORD_CAPTURE");
-  const existing = await prisma.competitionStartListSnapshot.findUnique({
-    where: { competitionId },
-    select: { id: true, data: true },
-  });
+  const { competitionId, createdByUserId, onlyRebuildEventIds: requestedRebuild } = params;
+
+  const [existing, orderedIds] = await Promise.all([
+    prisma.competitionStartListSnapshot.findUnique({
+      where: { competitionId },
+      select: { id: true, data: true },
+    }),
+    loadCompetitionEventIdsOrdered(competitionId),
+  ]);
+
+  const prevEvents =
+    existing?.data &&
+    typeof existing.data === "object" &&
+    Array.isArray((existing.data as { events?: unknown }).events)
+      ? (existing.data as { events: SnapshotEvent[] }).events
+      : [];
+  const prevEventIdSet = new Set(prevEvents.map((e) => e.eventId));
+
+  const hasUsablePrior = prevEvents.length > 0 && Boolean(existing?.id);
+
+  if (requestedRebuild !== undefined && requestedRebuild.length === 0) {
+    if (hasUsablePrior && existing) {
+      return {
+        ok: true,
+        snapshotId: existing.id,
+        wasUpdate: false,
+        skipped: true,
+      };
+    }
+  }
+
+  const fullMode = requestedRebuild === undefined;
+  const rebuildIds = fullMode
+    ? orderedIds
+    : [...new Set((requestedRebuild ?? []).filter((id) => orderedIds.includes(id)))];
+
+  const anyCurrentEventMissingFromPriorSnapshot =
+    hasUsablePrior && orderedIds.some((id) => !prevEventIdSet.has(id));
+
+  const usePartial =
+    !fullMode &&
+    hasUsablePrior &&
+    rebuildIds.length > 0 &&
+    rebuildIds.length < orderedIds.length &&
+    !anyCurrentEventMissingFromPriorSnapshot;
+
+  const fresh = await buildStartListSnapshotPayload(
+    competitionId,
+    "RECORD_CAPTURE",
+    usePartial ? { onlyEventIds: new Set(rebuildIds) } : undefined
+  );
+
+  const payload = hasUsablePrior
+    ? usePartial
+      ? mergePartialFreshSnapshotPreservingTailRounds(existing!.data, fresh, orderedIds)
+      : mergeSnapshotPreservingTailRounds(existing!.data, fresh)
+    : mergeSnapshotPreservingTailRounds(undefined, fresh);
+
   const now = new Date();
-  const payload = mergeSnapshotPreservingTailRounds(existing?.data, fresh);
+  const partialRebuild = Boolean(usePartial);
 
   if (existing) {
     await prisma.competitionStartListSnapshot.update({
@@ -346,7 +501,12 @@ export async function replaceCompetitionStartListSnapshot(params: {
         createdByUserId: createdByUserId ?? null,
       },
     });
-    return { ok: true, snapshotId: existing.id, wasUpdate: true };
+    return {
+      ok: true,
+      snapshotId: existing.id,
+      wasUpdate: true,
+      partialRebuild,
+    };
   }
 
   const created = await prisma.competitionStartListSnapshot.create({
@@ -358,7 +518,12 @@ export async function replaceCompetitionStartListSnapshot(params: {
     },
     select: { id: true },
   });
-  return { ok: true, snapshotId: created.id, wasUpdate: false };
+  return {
+    ok: true,
+    snapshotId: created.id,
+    wasUpdate: false,
+    partialRebuild,
+  };
 }
 
 /**

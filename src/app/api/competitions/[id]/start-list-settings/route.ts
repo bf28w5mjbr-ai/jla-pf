@@ -21,6 +21,7 @@ import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 import { replaceCompetitionStartListSnapshotWithAudit } from "@/lib/replaceStartListSnapshotWithAudit";
+import { eventIdsWhereHeatPlanSplitChanged } from "@/lib/startListSnapshot";
 import { syncAllEventStartListRoundCountsFromSettings } from "@/lib/startListRoundCountSync";
 
 export async function PUT(
@@ -217,20 +218,34 @@ export async function PUT(
     });
 
     type SnapshotCapturePayload =
-      | { ok: true; snapshotId: string; wasUpdate: boolean }
+      | {
+          ok: true;
+          snapshotId: string;
+          wasUpdate: boolean;
+          skipped?: boolean;
+          partialRebuild?: boolean;
+        }
       | { ok: false; error: string };
 
     let snapshotCapture: SnapshotCapturePayload | undefined;
     if (shouldCaptureSnapshot) {
+      const heatPlanChangedIds = eventIdsWhereHeatPlanSplitChanged({
+        orderedEventIds: competition.events.map((e) => e.id),
+        previous: existingParsed.eventSettings,
+        next: eventSettingsForMonotonic,
+      });
       try {
         const snap = await replaceCompetitionStartListSnapshotWithAudit(request, {
           competitionId,
           sessionUserId,
+          onlyRebuildEventIds: heatPlanChangedIds,
         });
         snapshotCapture = {
           ok: true,
           snapshotId: snap.snapshotId,
           wasUpdate: snap.wasUpdate,
+          skipped: snap.skipped,
+          partialRebuild: snap.partialRebuild,
         };
       } catch (snapErr) {
         snapshotCapture = {
