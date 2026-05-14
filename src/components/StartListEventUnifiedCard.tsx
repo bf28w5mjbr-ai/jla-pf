@@ -949,7 +949,7 @@ export default function StartListEventUnifiedCard({
             </p>
           </div>
         ) : null}
-        {canEditHeatConfiguration && !heatPlanConfirmed && canEditPublishedScheduleForRoundSetup ? (
+        {canEditHeatConfiguration && canEditPublishedScheduleForRoundSetup ? (
           roundHeatBarItems && roundHeatBarItems.length > 0 ? (
             <StartListEventPageRoundSettingsPanel
               competitionId={competitionId}

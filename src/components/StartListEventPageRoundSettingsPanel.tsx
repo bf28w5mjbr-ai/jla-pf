@@ -93,6 +93,11 @@ export function StartListEventPageRoundSettingsPanel({
         <p className="text-[10px] leading-snug text-muted-foreground">
           ラウンド数を保存してから、ヒート数・最大レーンを入力して「ヒート・レーンを保存」で確定します。ラウンドごとの最大レーンはここで編集でき、空欄のときは種目の既定レーン数が使われます。
         </p>
+        {focusEvent.startListHeatPlanConfirmedAt ? (
+          <p className="mt-1 text-[10px] leading-snug text-amber-900 dark:text-amber-100">
+            ヒート・レーンは確定済みですが、内容を変えて再保存できます。当日運用や記録に影響するので注意してください。マーシャル開始後は、分割やラウンド数の変更がサーバーで拒否されることがあります。
+          </p>
+        ) : null}
       </CardHeader>
       <CardContent className="p-0">
         <ul className="divide-y divide-border/50">

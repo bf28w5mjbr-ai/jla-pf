@@ -177,8 +177,7 @@ export default async function CompetitionEventStartListPage({
   const { eventSettings: settings } = parseStartListSettings(competition.startListSettings);
   const setting = settings[event.id] ?? { mode: "count" as const, heatCount: "1", heatSize: "" };
 
-  const needRoundHeatBarItems =
-    isOrgAdmin && showUnifiedStartListCard && !event.startListHeatPlanConfirmedAt;
+  const needRoundHeatBarItems = isOrgAdmin && showUnifiedStartListCard;
 
   const [
     liveEntries,
