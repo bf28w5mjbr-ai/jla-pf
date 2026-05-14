@@ -40,6 +40,7 @@ import {
   maxIndividualEntryFeeUnitAcrossTiers,
   parseAgeCategoryFeeTiers,
   parseAgeCategoryQualificationTiers,
+  pickAgeCategoryIdForBirthDate,
   resolveEntryFeeUnits,
   resolveRequiredQualificationsForAge,
   resolveRequiredQualificationsForAgeCategory,
@@ -327,12 +328,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const hasAgeCategoryQual =
       parseAgeCategoryQualificationTiers(competition.requiredQualifications) !== null;
     const userAgeCategoryId = userDobForCat
-      ? (competition.ageCategories.find((c) =>
-          c.eligibleBirthDateFrom !== null && c.eligibleBirthDateTo !== null
-            ? userDobForCat.getTime() >= c.eligibleBirthDateFrom.getTime() &&
-              userDobForCat.getTime() <= c.eligibleBirthDateTo.getTime()
-            : false
-        )?.id ?? null)
+      ? pickAgeCategoryIdForBirthDate(competition.ageCategories, userDobForCat)
       : null;
     const rq = hasAgeCategoryQual
       ? resolveRequiredQualificationsForAgeCategory(
@@ -344,8 +340,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json(
         {
           message: user?.dateOfBirth
-            ? "出場資格の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
-            : "この大会は年齢帯ごとの出場資格が設定されています。プロフィールに生年月日を登録してください。",
+            ? hasAgeCategoryQual
+              ? "出場資格の AGEカテゴリに、あなたの生年月日が該当するものがありません。主催者へお問い合わせください。"
+              : "出場資格の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
+            : hasAgeCategoryQual
+              ? "この大会は AGEカテゴリごとの出場資格が設定されています。プロフィールに生年月日を登録してください。"
+              : "この大会は年齢帯ごとの出場資格が設定されています。プロフィールに生年月日を登録してください。",
         },
         { status: 400 }
       );

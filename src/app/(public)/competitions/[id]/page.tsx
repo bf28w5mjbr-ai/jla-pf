@@ -26,6 +26,7 @@ import CompetitionAnnouncementsManager from "@/components/CompetitionAnnouncemen
 import CompetitionAttachmentsManager from "@/components/CompetitionAttachmentsManager";
 import CompetitionPublicGallery from "@/components/CompetitionPublicGallery";
 import CompetitionStartListPanel from "@/components/CompetitionStartListPanel";
+import { fetchPaidEntryCountByEventId } from "@/lib/competitionStartListEntryCounts";
 import { appRoutes } from "@/lib/appRoutes";
 import { hasOrgAdminAccess, isClubAdminRole } from "@/lib/roleScopes";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
@@ -52,10 +53,11 @@ import {
   CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP,
   parseAgeCategoryFeeTiers,
   parseAgeFeeTiers,
-  parseAgeQualificationTiers,
   requiredQualificationsMentionCertifiedLifesaver,
-  unionRequiredQualifications,
 } from "@/lib/competitionEntryAgeTiered";
+import { renderRequiredQualificationsSummary } from "@/lib/competitionParticipationSummaries";
+import { ensureCompetitionScheduleTabs } from "@/lib/ensureCompetitionScheduleTabs";
+import { sortEventsByScheduleTabs } from "@/lib/competitionScheduleTabDisplay";
 
 export const dynamic = "force-dynamic";
 
@@ -92,6 +94,8 @@ export default async function CompetitionDetailPage({
   const session = await verifySessionCached(token);
   const sessionUserId = session?.userId ?? null;
 
+  await ensureCompetitionScheduleTabs(id);
+
   const competition = await prisma.competition.findUnique({
     where: { id },
     include: {
@@ -120,6 +124,10 @@ export default async function CompetitionDetailPage({
         orderBy: { displayOrder: "asc" },
         select: { id: true, name: true, displayOrder: true },
       },
+      scheduleTabs: {
+        orderBy: { displayOrder: "asc" },
+        select: { id: true, name: true, displayOrder: true },
+      },
       events: {
         select: {
           id: true,
@@ -129,8 +137,14 @@ export default async function CompetitionDetailPage({
           category: true,
           displayOrder: true,
           scheduledStartAt: true,
+          roundScheduledStarts: true,
           scheduledEndAt: true,
           startListRoundCount: true,
+          preliminaryHeatLaneCount: true,
+          startListHeatPlanConfirmedAt: true,
+          marshalStartedAt: true,
+          scheduleTabId: true,
+          scheduleTabSortOrder: true,
           ageCategory: {
             select: { id: true, name: true, displayOrder: true },
           },
@@ -148,6 +162,25 @@ export default async function CompetitionDetailPage({
   if (!competition) {
     notFound();
   }
+
+  const scheduleTabsForPanel = competition.scheduleTabs.map((t) => ({
+    id: t.id,
+    name: t.name,
+    displayOrder: t.displayOrder,
+  }));
+
+  const eventsForStartListPanel = sortEventsByScheduleTabs(
+    competition.events,
+    scheduleTabsForPanel
+  );
+
+  const startListEntryCountByEventId =
+    competition.events.length > 0
+      ? await fetchPaidEntryCountByEventId(
+          id,
+          competition.events.map((e) => ({ id: e.id, type: e.type }))
+        )
+      : {};
 
   const dayOpsUnlockConfigured = Boolean(competition.dayOpsAccessSecretHash);
   const hasDayOpsUnlock = await verifyDayOpsUnlockFromCookies(id);
@@ -314,43 +347,8 @@ export default async function CompetitionDetailPage({
     );
   };
 
-  const renderRequiredQualifications = (requiredQualifications: unknown) => {
-    const tiered = parseAgeQualificationTiers(requiredQualifications);
-    if (tiered?.length) {
-      return (
-        <div className="space-y-1">
-          <p className="text-[11px] font-medium text-muted-foreground">年齢帯別</p>
-          {tiered.map((t, i) => (
-            <p key={i} className="text-sm font-medium leading-snug">
-              {t.minAge}〜{t.maxAge == null ? "上限なし" : `${t.maxAge}歳`}
-              {t.requiredQualifications.length > 0
-                ? ` · ${t.requiredQualifications.join("、")}`
-                : " · 資格不要"}
-            </p>
-          ))}
-        </div>
-      );
-    }
-
-    const items = unionRequiredQualifications(requiredQualifications);
-
-    if (items.length === 0) {
-      return <p className="text-sm font-medium">資格不要</p>;
-    }
-
-    return (
-      <div className="flex flex-wrap gap-1">
-        {items.map((item) => (
-          <span
-            key={item}
-            className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[11px] text-foreground"
-          >
-            {item}
-          </span>
-        ))}
-      </div>
-    );
-  };
+  const renderRequiredQualifications = (requiredQualifications: unknown) =>
+    renderRequiredQualificationsSummary(requiredQualifications, competition.ageCategories);
 
   const renderParticipantEligibility = (value: unknown) => {
     if (typeof value !== "string" || value.trim().length === 0) {
@@ -925,12 +923,14 @@ export default async function CompetitionDetailPage({
             canEditStartListSplit={canEditStartListSplit}
             canEditEventSchedule={canEditStartListSplit}
             canEditStartListRoundCount={canEditStartListSplit}
+            initialStartListSettings={competition.startListSettings}
+            scheduleTabs={scheduleTabsForPanel}
             competition={{
               id: competition.id,
               name: competition.name,
               startDate: competition.startDate,
               endDate: competition.endDate,
-              events: competition.events.map((event) => ({
+              events: eventsForStartListPanel.map((event) => ({
                 id: event.id,
                 name: event.name,
                 sex: event.sex,
@@ -939,8 +939,15 @@ export default async function CompetitionDetailPage({
                 ageCategoryId: event.ageCategory?.id ?? null,
                 ageCategoryName: event.ageCategory?.name ?? null,
                 scheduledStartAt: event.scheduledStartAt,
+                roundScheduledStarts: event.roundScheduledStarts,
                 scheduledEndAt: event.scheduledEndAt,
                 startListRoundCount: event.startListRoundCount,
+                scheduleTabId: event.scheduleTabId,
+                scheduleTabSortOrder: event.scheduleTabSortOrder,
+                entryCount: startListEntryCountByEventId[event.id] ?? 0,
+                preliminaryHeatLaneCount: event.preliminaryHeatLaneCount,
+                startListHeatPlanConfirmedAt: event.startListHeatPlanConfirmedAt,
+                marshalStartedAt: event.marshalStartedAt,
               })),
             }}
           />

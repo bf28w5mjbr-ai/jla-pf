@@ -13,6 +13,7 @@ import {
   parseAgeCategoryFeeTiers,
   parseAgeCategoryQualificationTiers,
   parseAgeFeeTiers,
+  pickAgeCategoryIdForBirthDate,
   pickTierForAge,
   resolveEntryFeeUnits,
   resolveRequiredQualificationsForAge,
@@ -50,6 +51,38 @@ describe("competitionEntryAgeTiered", () => {
     const ok = resolveEntryFeeUnits(fee, 40);
     expect(ok.ageTierMissing).toBe(false);
     expect(ok.individualUnit).toBe(1);
+  });
+
+  it("片側のみの生年月日上限でも pickAgeCategoryId で参加費・資格のカテゴリが一致して解決する", () => {
+    const to = new Date(Date.UTC(2015, 11, 31));
+    const cats = [
+      { id: "cat-open", displayOrder: 1, eligibleBirthDateFrom: null, eligibleBirthDateTo: to },
+    ];
+    const dob = new Date(Date.UTC(2012, 5, 15));
+
+    expect(pickAgeCategoryIdForBirthDate(cats, dob)).toBe("cat-open");
+
+    const fee = {
+      ageCategoryFeeTiers: [
+        { ageCategoryId: "cat-open", individualEntryFee: 5000, teamEntryFeePerTeam: 8000 },
+      ],
+    };
+    const feeR = resolveEntryFeeUnits(fee, null, {
+      userDateOfBirth: dob,
+      competitionAgeCategories: cats,
+    });
+    expect(feeR.ageTierMissing).toBe(false);
+    expect(feeR.individualUnit).toBe(5000);
+
+    const rawQual = {
+      ageCategoryQualificationTiers: [
+        { ageCategoryId: "cat-open", requiredQualifications: ["選手登録"] },
+      ],
+    };
+    const catId = pickAgeCategoryIdForBirthDate(cats, dob);
+    const rq = resolveRequiredQualificationsForAgeCategory(rawQual, catId);
+    expect(rq.tierMissing).toBe(false);
+    expect(rq.list).toEqual(["選手登録"]);
   });
 
   it("resolveEntryFeeUnits resolves age category tiers by birth date", () => {

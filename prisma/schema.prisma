@@ -1407,6 +1407,7 @@ model Competition {
   galleryPhotos CompetitionGalleryPhoto[]
   events        Event[] // 大会種目
   ageCategories CompetitionAgeCategory[]
+  scheduleTabs CompetitionScheduleTab[]
   entries       CompetitionEntry[]
   entryCheckoutSessions EntryCheckoutSession[]
   teamEntries   TeamEntry[]
@@ -1433,6 +1434,22 @@ model Competition {
   @@index([organizationId, startDate])
   @@index([status, isPublished])
   @@index([entryEndDate])
+}
+
+/// 公開ページ「タイムスケジュール」のタブ（年齢カテゴリとは独立）
+model CompetitionScheduleTab {
+  id            String @id @default(cuid())
+  competitionId String
+  name          String
+  displayOrder  Int    @default(0)
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  events      Event[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([competitionId, displayOrder])
 }
 
 /// 大会主催者からPFへ行う「大会種別（1種/2種）」申請
@@ -1677,8 +1694,10 @@ model Event {
   eligibleBirthDateFrom DateTime? @db.Date
   /// 参加可能な生年月日の上限（この日に生まれた人を含む）
   eligibleBirthDateTo   DateTime? @db.Date
-  /// 種目の想定開始日時（進行・表示用）
+  /// 種目の想定開始日時（進行・表示用・第1ラウンドの既定。ラウンド別は roundScheduledStarts も参照）
   scheduledStartAt  DateTime?
+  /// ラウンド別の想定開始日時（0 始まりインデックスのキー → ISO 文字列。未設定キーは scheduledStartAt や未入力を意味する）
+  roundScheduledStarts Json?
   /// 種目の想定終了日時（任意）
   scheduledEndAt    DateTime?
   /// 1レースあたりの最大レーン数（全ラウンド共通・プール／オーシャン共通、null は未設定）
@@ -1696,7 +1715,13 @@ model Event {
   /// チーム種目のみ: 同一クラブがこの種目（性別行）に出せるチーム数の上限。null は制限なし
   maxTeamEntriesPerClub    Int?
 
+  /// タイムスケジュール（公開ページ）での所属タブ
+  scheduleTabId        String?
+  /// 同一タブ内の並び（小さいほど上）
+  scheduleTabSortOrder Int     @default(0)
+
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  scheduleTab CompetitionScheduleTab? @relation(fields: [scheduleTabId], references: [id], onDelete: Restrict)
   ageCategory CompetitionAgeCategory? @relation(fields: [ageCategoryId], references: [id], onDelete: Restrict)
   entryItems  EntryItem[]
   teamEntries TeamEntry[]
@@ -1711,6 +1736,8 @@ model Event {
 
   @@index([competitionId, displayOrder])
   @@index([ageCategoryId])
+  @@index([scheduleTabId])
+  @@index([competitionId, scheduleTabId, scheduleTabSortOrder])
 }
 
 /// マーシャル／リザルトの未確定 UI ドラフト（複数端末共有・確定 API で promotion 後は削除を想定）

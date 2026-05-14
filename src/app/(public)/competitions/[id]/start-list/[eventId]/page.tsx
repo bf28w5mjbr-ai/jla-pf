@@ -80,10 +80,24 @@ export async function generateMetadata({
 
 export default async function CompetitionEventStartListPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string; eventId: string }>;
+  searchParams: Promise<{ roundIndex?: string }>;
 }) {
   const { id: competitionId, eventId } = await params;
+  const sp = await searchParams;
+  const rawRoundIndex = sp.roundIndex;
+  const parsedRoundIndex =
+    typeof rawRoundIndex === "string" && rawRoundIndex.trim() !== ""
+      ? Number.parseInt(rawRoundIndex, 10)
+      : Number.NaN;
+  const initialRoundIndex =
+    Number.isFinite(parsedRoundIndex) &&
+    Number.isInteger(parsedRoundIndex) &&
+    parsedRoundIndex >= 0
+      ? parsedRoundIndex
+      : null;
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
   const session = await verifySessionCached(token);
@@ -137,7 +151,6 @@ export default async function CompetitionEventStartListPage({
     notFound();
   }
 
-  const allEventIds = competition.events.map((e) => e.id);
   const { eventSettings: settings } = parseStartListSettings(competition.startListSettings);
   const setting = settings[event.id] ?? { mode: "count" as const, heatCount: "1", heatSize: "" };
 
@@ -327,7 +340,7 @@ export default async function CompetitionEventStartListPage({
         <Button variant="outline" size="sm" className="h-9 gap-1 px-3 text-xs shadow-sm" asChild>
           <Link href={`/competitions/${competitionId}?tab=start-list`}>
             <ChevronLeft className="size-4" />
-            種目一覧へ
+            タイムスケジュールへ
           </Link>
         </Button>
       </div>
@@ -344,7 +357,6 @@ export default async function CompetitionEventStartListPage({
             type: event.type,
             ageCategoryName: event.ageCategory?.name ?? null,
           }}
-          allEventIds={allEventIds}
           initialSettings={competition.startListSettings}
           defaultMaxLanesPerRace={event.preliminaryHeatLaneCount}
           configuredStartListRoundCount={event.startListRoundCount ?? null}
@@ -360,11 +372,11 @@ export default async function CompetitionEventStartListPage({
           heatPlanConfirmedAtIso={event.startListHeatPlanConfirmedAt?.toISOString() ?? null}
           marshalStartedAtIso={event.marshalStartedAt?.toISOString() ?? null}
           canEditHeatConfiguration={canEditStartListSplit}
-          canEditPreliminaryLanes={isOrgAdmin}
           showMarshalOps={showVenueOps}
           showResultOps={showVenueOps}
           participantStatusByKey={participantStatusByKey}
           initialParticipantStatusRows={participantStatusRows}
+          initialRoundIndex={initialRoundIndex}
         />
       ) : (
         <CompetitionStartListEventBlock

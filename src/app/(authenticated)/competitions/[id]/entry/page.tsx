@@ -36,6 +36,7 @@ import {
   parseAgeCategoryFeeTiers,
   parseAgeCategoryQualificationTiers,
   parseAgeFeeTiers,
+  pickAgeCategoryIdForBirthDate,
   resolveEntryFeeUnits,
   resolveRequiredQualificationsForAge,
   resolveRequiredQualificationsForAgeCategory,
@@ -442,14 +443,7 @@ export default async function CompetitionEntryPage({
   const rq = hasAgeCategoryQual
     ? resolveRequiredQualificationsForAgeCategory(
         competition.requiredQualifications,
-        userDob
-          ? (competition.ageCategories.find((c) =>
-              c.eligibleBirthDateFrom !== null && c.eligibleBirthDateTo !== null
-                ? userDob.getTime() >= c.eligibleBirthDateFrom.getTime() &&
-                  userDob.getTime() <= c.eligibleBirthDateTo.getTime()
-                : false
-            )?.id ?? null)
-          : null
+        userDob ? pickAgeCategoryIdForBirthDate(competition.ageCategories, userDob) : null
       )
     : resolveRequiredQualificationsForAge(competition.requiredQualifications, userAge);
   const meetsQualification =

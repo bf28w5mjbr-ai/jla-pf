@@ -15,6 +15,12 @@ import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 import { assertEventScheduleWithinCompetitionRange } from "@/lib/eventScheduleWithinCompetition";
+import {
+  mergeRoundScheduledStart,
+  parseRoundScheduledStarts,
+  pruneRoundScheduledStarts,
+  roundScheduledStartsToPrismaJson,
+} from "@/lib/eventRoundScheduledStarts";
 import { syncStartListSettingsRoundTabsForEvent } from "@/lib/startListRoundCountSync";
 import { parseEligibleBirthDateInput } from "@/lib/eligibleBirthDateInput";
 import { eventBirthFieldsFromAgeCategory } from "@/lib/competitionAgeCategorySync";
@@ -148,14 +154,183 @@ export async function PATCH(
       raw,
       "preliminaryHeatLaneCount"
     );
-    const hasSchedulePatch =
-      Object.prototype.hasOwnProperty.call(raw, "scheduledStartAt") ||
-      Object.prototype.hasOwnProperty.call(raw, "scheduledEndAt");
     const hasStartListRoundCountKey = Object.prototype.hasOwnProperty.call(
       raw,
       "startListRoundCount"
     );
     const rawKeys = Object.keys(raw);
+    const isRoundSchedulePatch =
+      rawKeys.length === 2 &&
+      Object.prototype.hasOwnProperty.call(raw, "scheduleRoundIndex") &&
+      Object.prototype.hasOwnProperty.call(raw, "scheduledStartAt");
+    const hasSchedulePatch =
+      !isRoundSchedulePatch &&
+      (Object.prototype.hasOwnProperty.call(raw, "scheduledStartAt") ||
+        Object.prototype.hasOwnProperty.call(raw, "scheduledEndAt"));
+
+    const onlyScheduleSort =
+      rawKeys.length === 1 && Object.prototype.hasOwnProperty.call(raw, "scheduleTabSortOrder");
+    if (onlyScheduleSort) {
+      const sv = raw.scheduleTabSortOrder;
+      if (typeof sv !== "number" || !Number.isInteger(sv) || sv < 0 || sv > 99999) {
+        return NextResponse.json(
+          { message: "scheduleTabSortOrder は 0〜99999 の整数にしてください" },
+          { status: 400 }
+        );
+      }
+      await prisma.event.update({
+        where: { id: eventId },
+        data: { scheduleTabSortOrder: sv },
+      });
+      const updatedEvents = await prisma.event.findMany({
+        where: { competitionId },
+        orderBy: [
+          { scheduleTabId: "asc" },
+          { scheduleTabSortOrder: "asc" },
+          { displayOrder: "asc" },
+        ],
+      });
+      return NextResponse.json({
+        message: "タイムスケジュール内の並びを更新しました",
+        events: updatedEvents,
+      });
+    }
+
+    if (isRoundSchedulePatch) {
+      if (!isAdmin) {
+        return NextResponse.json({ message: "権限がありません" }, { status: 403 });
+      }
+      const ri = raw.scheduleRoundIndex;
+      if (typeof ri !== "number" || !Number.isInteger(ri) || ri < 0 || ri > 31) {
+        return NextResponse.json(
+          { message: "scheduleRoundIndex は 0〜31 の整数にしてください" },
+          { status: 400 }
+        );
+      }
+      const nRounds =
+        typeof event.startListRoundCount === "number" &&
+        Number.isInteger(event.startListRoundCount) &&
+        event.startListRoundCount >= 1
+          ? Math.min(32, event.startListRoundCount)
+          : 1;
+      if (ri >= nRounds) {
+        return NextResponse.json(
+          { message: "scheduleRoundIndex はこの種目のラウンド数未満にしてください" },
+          { status: 400 }
+        );
+      }
+      const parseOneStart = (v: unknown): Date | null => {
+        if (v === null || v === "") return null;
+        if (typeof v !== "string") throw new Error("invalid");
+        const d = new Date(v);
+        if (Number.isNaN(d.getTime())) throw new Error("invalid");
+        return d;
+      };
+      let parsedStart: Date | null;
+      try {
+        parsedStart = parseOneStart(raw.scheduledStartAt);
+      } catch {
+        return NextResponse.json({ message: "開始日時の形式が不正です" }, { status: 400 });
+      }
+      const rangeMsg = assertEventScheduleWithinCompetitionRange(
+        parsedStart,
+        null,
+        event.competition.startDate,
+        event.competition.endDate
+      );
+      if (rangeMsg) {
+        return NextResponse.json({ message: rangeMsg }, { status: 400 });
+      }
+
+      const nextMap = mergeRoundScheduledStart(
+        event.roundScheduledStarts,
+        ri,
+        parsedStart ? parsedStart.toISOString() : null
+      );
+      const data: Prisma.EventUpdateInput = {
+        roundScheduledStarts: roundScheduledStartsToPrismaJson(nextMap),
+      };
+      if (ri === 0) {
+        data.scheduledStartAt = parsedStart;
+      }
+
+      await prisma.event.update({
+        where: { id: eventId },
+        data,
+      });
+
+      const updatedEventsRound = await prisma.event.findMany({
+        where: { competitionId },
+        orderBy: [
+          { scheduleTabId: "asc" },
+          { scheduleTabSortOrder: "asc" },
+          { displayOrder: "asc" },
+        ],
+      });
+      return NextResponse.json({
+        message: "ラウンドの開始日時を更新しました",
+        events: updatedEventsRound,
+      });
+    }
+
+    const scheduleTabKeySet = new Set(["scheduleTabId", "scheduleTabSortOrder"]);
+    const onlyScheduleTab =
+      rawKeys.length > 0 && rawKeys.every((k) => scheduleTabKeySet.has(k));
+    if (onlyScheduleTab) {
+      if (!Object.prototype.hasOwnProperty.call(raw, "scheduleTabId")) {
+        return NextResponse.json(
+          { message: "scheduleTabId を指定してください" },
+          { status: 400 }
+        );
+      }
+      const newTabId =
+        typeof raw.scheduleTabId === "string" ? raw.scheduleTabId.trim() : "";
+      if (!newTabId) {
+        return NextResponse.json({ message: "scheduleTabId が不正です" }, { status: 400 });
+      }
+      const tab = await prisma.competitionScheduleTab.findFirst({
+        where: { id: newTabId, competitionId },
+      });
+      if (!tab) {
+        return NextResponse.json({ message: "タブが見つかりません" }, { status: 404 });
+      }
+
+      let nextSort: number;
+      if (Object.prototype.hasOwnProperty.call(raw, "scheduleTabSortOrder")) {
+        const sv = raw.scheduleTabSortOrder;
+        if (typeof sv !== "number" || !Number.isInteger(sv) || sv < 0 || sv > 99999) {
+          return NextResponse.json(
+            { message: "scheduleTabSortOrder は 0〜99999 の整数にしてください" },
+            { status: 400 }
+          );
+        }
+        nextSort = sv;
+      } else {
+        const agg = await prisma.event.aggregate({
+          where: { competitionId, scheduleTabId: newTabId },
+          _max: { scheduleTabSortOrder: true },
+        });
+        nextSort = (agg._max.scheduleTabSortOrder ?? 0) + 1;
+      }
+
+      await prisma.event.update({
+        where: { id: eventId },
+        data: { scheduleTabId: newTabId, scheduleTabSortOrder: nextSort },
+      });
+
+      const updatedEvents = await prisma.event.findMany({
+        where: { competitionId },
+        orderBy: [
+          { scheduleTabId: "asc" },
+          { scheduleTabSortOrder: "asc" },
+          { displayOrder: "asc" },
+        ],
+      });
+      return NextResponse.json({
+        message: "タイムスケジュールのタブを更新しました",
+        events: updatedEvents,
+      });
+    }
 
     const onlyAgeCategoryId =
       rawKeys.length === 1 && Object.prototype.hasOwnProperty.call(raw, "ageCategoryId");
@@ -574,9 +749,17 @@ export async function PATCH(
         );
       }
 
+      const pruned = pruneRoundScheduledStarts(
+        parseRoundScheduledStarts(event.roundScheduledStarts),
+        nextRound
+      );
+
       await prisma.event.update({
         where: { id: eventId },
-        data: { startListRoundCount: nextRound },
+        data: {
+          startListRoundCount: nextRound,
+          roundScheduledStarts: roundScheduledStartsToPrismaJson(pruned),
+        },
       });
       await syncStartListSettingsRoundTabsForEvent({
         competitionId,
@@ -723,7 +906,7 @@ export async function PATCH(
 
       const current = await prisma.event.findUnique({
         where: { id: eventId },
-        select: { scheduledStartAt: true, scheduledEndAt: true },
+        select: { scheduledStartAt: true, scheduledEndAt: true, roundScheduledStarts: true },
       });
       const effStart =
         nextStart !== undefined ? nextStart : current?.scheduledStartAt ?? null;
@@ -745,11 +928,23 @@ export async function PATCH(
         return NextResponse.json({ message: rangeMsg }, { status: 400 });
       }
 
+      const nextRoundMap =
+        nextStart !== undefined
+          ? mergeRoundScheduledStart(
+              current?.roundScheduledStarts ?? null,
+              0,
+              nextStart === null ? null : nextStart.toISOString()
+            )
+          : undefined;
+
       await prisma.event.update({
         where: { id: eventId },
         data: {
           ...(nextStart !== undefined && { scheduledStartAt: nextStart }),
           ...(nextEnd !== undefined && { scheduledEndAt: nextEnd }),
+          ...(nextRoundMap !== undefined && {
+            roundScheduledStarts: roundScheduledStartsToPrismaJson(nextRoundMap),
+          }),
         },
       });
 

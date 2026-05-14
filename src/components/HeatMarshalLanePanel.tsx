@@ -59,7 +59,7 @@ type Props = {
   eventId: string;
   marshalRound: MarshalRoundKey;
   heat: HeatMarshalHeatRow;
-  /** ステップ1未確定など */
+  /** ヒート・レーン未確定など */
   marshalOpsBlocked: boolean;
   /** 種目全体の召集締切 */
   isCallClosed: boolean;
@@ -322,8 +322,8 @@ export function HeatMarshalLanePanel({
         <p className={compact ? "text-[11px] text-red-600" : "text-sm text-red-600"}>
           {marshalOpsBlocked
             ? compact
-              ? "ステップ1未確定のためマーシャルできません。"
-              : "先にスタートリストでステップ1（ヒート設定）を確定してください。"
+              ? "ヒート・レーンが未確定のためマーシャルできません。"
+              : "先にスタートリストでヒート・レーンを保存・確定してください。"
             : compact
               ? "種目の召集締切のためマーシャルできません。"
               : "種目全体の召集が締切済みのため、ここからのマーシャルは実行できません。"}

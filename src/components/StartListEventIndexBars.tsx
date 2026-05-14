@@ -1,16 +1,30 @@
 "use client";
 
 import type { DragEvent } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Clock, GripVertical } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ChevronLeft, ChevronRight, Clock, GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { formatDateForDatetimeLocalInput } from "@/lib/datetimeLocal";
 import { formatEventStartJa } from "@/lib/eventScheduleDisplay";
 import {
@@ -19,11 +33,30 @@ import {
 } from "@/lib/eventScheduleWithinCompetition";
 import { cn } from "@/lib/utils";
 import {
-  START_LIST_UNCATEGORIZED_KEY,
+  effectiveRoundStartIso,
+  parseRoundScheduledStarts,
+  roundStartKey,
+} from "@/lib/eventRoundScheduledStarts";
+import {
+  buildScheduleTabListItems,
+  expandEventsToScheduleRoundRows,
+  filterEventsByScheduleTabId,
+  type CompetitionScheduleTabLite,
+} from "@/lib/competitionScheduleTabDisplay";
+import {
   buildStartListAgeCategoryTabs,
   filterEventsByStartListAgeCategory,
   mergeReorderedEventsByIds,
 } from "@/lib/startListAgeCategoryTabs";
+import { clampRoundTabsToNonIncreasingHeatCounts } from "@/lib/startListEventHeatValidation";
+import {
+  buildRoundTabsForRoundCount,
+  buildStartListSettingsPayload,
+  normalizeRoundTabs,
+  parseStartListSettings,
+  type HeatSetting,
+  type StartListRoundTab,
+} from "@/lib/startListSettings";
 
 export type StartListEventBarItem = {
   id: string;
@@ -34,9 +67,19 @@ export type StartListEventBarItem = {
   ageCategoryId?: string | null;
   ageCategoryName?: string | null;
   scheduledStartAt?: Date | string | null;
+  /** ラウンド別の想定開始（API・DB の JSON） */
+  roundScheduledStarts?: unknown;
   scheduledEndAt?: Date | string | null;
   /** スタートリストのラウンド数（全ラウンド） */
   startListRoundCount?: number;
+  scheduleTabId?: string | null;
+  scheduleTabSortOrder?: number | null;
+  /** 確定エントリー相当の件数（ラウンド設定カード用） */
+  entryCount?: number;
+  preliminaryHeatLaneCount?: number | null;
+  /** ヒート計画確定日時 */
+  startListHeatPlanConfirmedAt?: Date | string | null;
+  marshalStartedAt?: Date | string | null;
 };
 
 type Props = {
@@ -44,7 +87,11 @@ type Props = {
   competitionName?: string;
   competitionStartDate: Date | string;
   competitionEndDate: Date | string;
+  /** タイムスケジュール用タブ（大会単位） */
+  scheduleTabs: CompetitionScheduleTabLite[];
   events: StartListEventBarItem[];
+  /** 大会の startListSettings（ラウンド別ヒート／レーン） */
+  initialStartListSettings?: unknown;
   canReorder: boolean;
   /** 主催者管理者のみ。開始時刻のみ一覧から編集 */
   canEditSchedule?: boolean;
@@ -75,32 +122,33 @@ function compareStartListEvents(a: StartListEventBarItem, b: StartListEventBarIt
   return a.id.localeCompare(b.id);
 }
 
-function sortEvents(list: StartListEventBarItem[]) {
-  return [...list].sort(compareStartListEvents);
+/** 同一エリア（スケジュールタブ）内の並び: DB の scheduleTabSortOrder を優先 */
+function sortEventsWithinScheduleTab(events: readonly StartListEventBarItem[]): StartListEventBarItem[] {
+  return [...events].sort((a, b) => {
+    const oa = a.scheduleTabSortOrder ?? 0;
+    const ob = b.scheduleTabSortOrder ?? 0;
+    if (oa !== ob) return oa - ob;
+    return compareStartListEvents(a, b);
+  });
 }
 
-/** サーバー由来の一覧・開始時刻が変わったときだけ同期するためのキー（{@link sortEvents} 済み配列用・二重ソート回避） */
-function serverEventsSyncKeyFromSorted(sorted: StartListEventBarItem[]) {
-  return sorted
-    .map(
-      (e) =>
-        `${e.id}:${e.displayOrder}:${e.scheduledStartAt ? new Date(e.scheduledStartAt).getTime() : ""}:${e.startListRoundCount ?? 1}`
-    )
-    .join("|");
-}
-
-/** 並べ替え用: 入力欄の下書きがあればそれを優先し、なければ保存済みの開始時刻。未設定は後ろへ */
+/** 並べ替え用: 第1ラウンドの入力下書きがあれば優先し、なければ保存済み（ラウンド別または種目の scheduledStartAt）。未設定は後ろへ */
 function effectiveStartMsForSort(
   e: StartListEventBarItem,
-  drafts: Record<string, string>
+  roundStartsDraft: Record<string, string>
 ): number {
-  const draft = drafts[e.id]?.trim();
+  const draft = roundStartsDraft[roundStartKey(e.id, 0)]?.trim();
   if (draft) {
     const d = new Date(draft);
     return Number.isNaN(d.getTime()) ? Number.POSITIVE_INFINITY : d.getTime();
   }
-  if (e.scheduledStartAt) {
-    const t = new Date(e.scheduledStartAt).getTime();
+  const iso = effectiveRoundStartIso({
+    scheduledStartAt: e.scheduledStartAt,
+    roundScheduledStarts: e.roundScheduledStarts,
+    roundIndex: 0,
+  });
+  if (iso) {
+    const t = new Date(iso).getTime();
     return Number.isNaN(t) ? Number.POSITIVE_INFINITY : t;
   }
   return Number.POSITIVE_INFINITY;
@@ -108,26 +156,107 @@ function effectiveStartMsForSort(
 
 function sortByStartTimeOrder(
   list: StartListEventBarItem[],
-  drafts: Record<string, string>
+  roundStartsDraft: Record<string, string>
 ): StartListEventBarItem[] {
   return [...list].sort((a, b) => {
-    const da = effectiveStartMsForSort(a, drafts);
-    const db = effectiveStartMsForSort(b, drafts);
+    const da = effectiveStartMsForSort(a, roundStartsDraft);
+    const db = effectiveStartMsForSort(b, roundStartsDraft);
     if (da !== db) return da - db;
     return compareStartListEvents(a, b);
   });
 }
 
+function serverEventsSyncKeyFromSorted(sorted: StartListEventBarItem[]) {
+  return sorted
+    .map(
+      (e) =>
+        `${e.id}:${e.displayOrder}:${e.scheduleTabId ?? ""}:${e.scheduleTabSortOrder ?? 0}:${e.scheduledStartAt ? new Date(e.scheduledStartAt).getTime() : ""}:${JSON.stringify(parseRoundScheduledStarts(e.roundScheduledStarts))}:${e.startListRoundCount ?? 1}:${e.entryCount ?? 0}:${e.preliminaryHeatLaneCount ?? ""}:${e.startListHeatPlanConfirmedAt ? new Date(e.startListHeatPlanConfirmedAt).getTime() : ""}:${e.marshalStartedAt ? new Date(e.marshalStartedAt).getTime() : ""}`
+    )
+    .join("|");
+}
+
 const AUTO_SORT_STORAGE_KEY = "bluvium:start-list:auto-sort-after-save";
 
-type SchedulePatchResponseEvent = { id: string; scheduledStartAt: string | null };
+/** ヒート設定 PUT 成功後、統合カードの persistTabs と同様にスナップショットを更新する */
+async function captureStartListSnapshotAfterHeatSave(competitionId: string): Promise<boolean> {
+  try {
+    const capRes = await fetch(
+      `/api/competitions/${competitionId}/start-list-snapshot/capture`,
+      { method: "POST" }
+    );
+    const capJson = (await capRes.json().catch(() => ({}))) as {
+      error?: string;
+      message?: string;
+    };
+    if (!capRes.ok) {
+      toast.error(
+        capJson.error ||
+          capJson.message ||
+          "スタートリスト記録の更新に失敗しました（ヒート設定は保存済みです）。もう一度保存してください。"
+      );
+      return false;
+    }
+    return true;
+  } catch {
+    toast.error(
+      "スタートリスト記録の更新に失敗しました（ヒート設定は保存済みです）。通信を確認のうえ、もう一度保存してください。"
+    );
+    return false;
+  }
+}
+
+type SchedulePatchResponseEvent = {
+  id: string;
+  scheduledStartAt: string | null;
+  startListRoundCount?: number;
+  roundScheduledStarts?: unknown;
+};
+
+function roundStartsDraftFromBarItems(events: readonly StartListEventBarItem[]): Record<string, string> {
+  const rs: Record<string, string> = {};
+  for (const e of events) {
+    const n =
+      typeof e.startListRoundCount === "number" && e.startListRoundCount >= 1
+        ? Math.min(32, e.startListRoundCount)
+        : 1;
+    for (let ri = 0; ri < n; ri += 1) {
+      const iso = effectiveRoundStartIso({
+        scheduledStartAt: e.scheduledStartAt,
+        roundScheduledStarts: e.roundScheduledStarts,
+        roundIndex: ri,
+      });
+      rs[roundStartKey(e.id, ri)] = iso ? formatDateForDatetimeLocalInput(new Date(iso)) : "";
+    }
+  }
+  return rs;
+}
+
+function applyScheduleEventsPatchToOrder(
+  prev: StartListEventBarItem[],
+  apiEvents: SchedulePatchResponseEvent[]
+): StartListEventBarItem[] {
+  const byId = new Map(apiEvents.map((ev) => [ev.id, ev]));
+  return prev.map((row) => {
+    const up = byId.get(row.id);
+    if (!up) return row;
+    return {
+      ...row,
+      scheduledStartAt: up.scheduledStartAt,
+      roundScheduledStarts: up.roundScheduledStarts ?? row.roundScheduledStarts,
+      startListRoundCount:
+        typeof up.startListRoundCount === "number" ? up.startListRoundCount : row.startListRoundCount,
+    };
+  });
+}
 
 export default function StartListEventIndexBars({
   competitionId,
   competitionName,
   competitionStartDate,
   competitionEndDate,
+  scheduleTabs,
   events,
+  initialStartListSettings,
   canReorder,
   canEditSchedule = false,
   canEditRoundCount = false,
@@ -139,26 +268,56 @@ export default function StartListEventIndexBars({
     () => competitionScheduleDatetimeLocalMinMax(compStart, compEnd),
     [compStart, compEnd]
   );
-  const [order, setOrder] = useState<StartListEventBarItem[]>(() => sortEvents(events));
+  const [order, setOrder] = useState<StartListEventBarItem[]>(() => [...events].sort(compareStartListEvents));
   const [dragId, setDragId] = useState<string | null>(null);
   const [reorderSaving, setReorderSaving] = useState(false);
-  const [starts, setStarts] = useState<Record<string, string>>({});
+  const [roundStarts, setRoundStarts] = useState<Record<string, string>>({});
   const [timeSavingId, setTimeSavingId] = useState<string | null>(null);
   const [roundCounts, setRoundCounts] = useState<Record<string, string>>({});
   const [roundSavingId, setRoundSavingId] = useState<string | null>(null);
+  const [heatDraftByEvent, setHeatDraftByEvent] = useState<Record<string, HeatSetting>>({});
+  const [heatSavingEventId, setHeatSavingEventId] = useState<string | null>(null);
+  const [heatPlanConfirmingId, setHeatPlanConfirmingId] = useState<string | null>(null);
   const [autoSortAfterSaveStart, setAutoSortAfterSaveStart] = useState(true);
   const [staggerBase, setStaggerBase] = useState("");
   const [staggerMinutes, setStaggerMinutes] = useState("15");
   const [bulkApplying, setBulkApplying] = useState(false);
-  const [activeCategoryTab, setActiveCategoryTab] = useState<string>("");
+  /** ラウンド設定カードの年齢（未分類）タブ */
+  const [activeRoundSettingsAgeTab, setActiveRoundSettingsAgeTab] = useState<string>("");
+  /** タイムスケジュールで表示・並べ替え対象にするエリア（スケジュールタブ） */
+  const [activeAreaTabId, setActiveAreaTabId] = useState<string>("");
+  const [newTabNameDraft, setNewTabNameDraft] = useState("");
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameTargetTabId, setRenameTargetTabId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteTargetTabId, setDeleteTargetTabId] = useState<string | null>(null);
+  const [deleteMigrateToTabId, setDeleteMigrateToTabId] = useState<string>("");
+  const [tabMutationSaving, setTabMutationSaving] = useState(false);
 
   const { sortedFromServer, serverSyncKey } = useMemo(() => {
-    const sorted = sortEvents(events);
+    const sorted = [...events].sort(compareStartListEvents);
     return {
       sortedFromServer: sorted,
       serverSyncKey: serverEventsSyncKeyFromSorted(sorted),
     };
   }, [events]);
+
+  const heatDraftSyncKey = useMemo(() => {
+    const s =
+      initialStartListSettings && typeof initialStartListSettings === "object"
+        ? JSON.stringify(initialStartListSettings)
+        : "";
+    return `${serverSyncKey}|${s}`;
+  }, [serverSyncKey, initialStartListSettings]);
+
+  useEffect(() => {
+    if (!canEditRoundCount) return;
+    const { eventSettings } = parseStartListSettings(initialStartListSettings ?? null);
+    setHeatDraftByEvent({ ...eventSettings });
+    // initialStartListSettings の内容は heatDraftSyncKey（JSON 化）に含まれる
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- heatDraftSyncKey で十分
+  }, [heatDraftSyncKey, canEditRoundCount]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.localStorage.getItem(AUTO_SORT_STORAGE_KEY) === "0") {
@@ -168,13 +327,7 @@ export default function StartListEventIndexBars({
 
   useEffect(() => {
     setOrder(sortedFromServer);
-    const m: Record<string, string> = {};
-    for (const e of sortedFromServer) {
-      m[e.id] = e.scheduledStartAt
-        ? formatDateForDatetimeLocalInput(new Date(e.scheduledStartAt))
-        : "";
-    }
-    setStarts(m);
+    setRoundStarts(roundStartsDraftFromBarItems(sortedFromServer));
     const rc: Record<string, string> = {};
     for (const e of sortedFromServer) {
       const n =
@@ -188,43 +341,123 @@ export default function StartListEventIndexBars({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- serverSyncKey に表示順・開始時刻の実体が含まれる
   }, [serverSyncKey]);
 
-  const ageCategoryTabs = useMemo(() => buildStartListAgeCategoryTabs(order), [order]);
-  const resolvedActiveCategoryTab = useMemo(() => {
-    if (activeCategoryTab && ageCategoryTabs.some((tab) => tab.key === activeCategoryTab)) {
-      return activeCategoryTab;
-    }
-    return ageCategoryTabs[0]?.key ?? "";
-  }, [activeCategoryTab, ageCategoryTabs]);
-  const visibleOrder = useMemo(
-    () => filterEventsByStartListAgeCategory(order, resolvedActiveCategoryTab),
-    [order, resolvedActiveCategoryTab]
+  const scheduleTabBarItems = useMemo(
+    () => buildScheduleTabListItems(scheduleTabs, order),
+    [scheduleTabs, order]
   );
-  const hasCategoryTabs = ageCategoryTabs.length > 1;
-  const activeCategoryLabel =
-    ageCategoryTabs.find((tab) => tab.key === resolvedActiveCategoryTab)?.label ??
-    (resolvedActiveCategoryTab === START_LIST_UNCATEGORIZED_KEY ? "未分類" : "");
+
+  const ageCategoryTabsForRoundSettings = useMemo(
+    () => buildStartListAgeCategoryTabs(order),
+    [order]
+  );
+
+  const resolvedRoundSettingsAgeTab = useMemo(() => {
+    if (
+      activeRoundSettingsAgeTab &&
+      ageCategoryTabsForRoundSettings.some((t) => t.key === activeRoundSettingsAgeTab)
+    ) {
+      return activeRoundSettingsAgeTab;
+    }
+    return ageCategoryTabsForRoundSettings[0]?.key ?? "";
+  }, [activeRoundSettingsAgeTab, ageCategoryTabsForRoundSettings]);
 
   useEffect(() => {
-    if (!activeCategoryTab && ageCategoryTabs[0]?.key) {
-      setActiveCategoryTab(ageCategoryTabs[0].key);
+    const first = ageCategoryTabsForRoundSettings[0]?.key ?? "";
+    if (!first) return;
+    if (
+      !activeRoundSettingsAgeTab ||
+      !ageCategoryTabsForRoundSettings.some((t) => t.key === activeRoundSettingsAgeTab)
+    ) {
+      setActiveRoundSettingsAgeTab(first);
     }
-  }, [activeCategoryTab, ageCategoryTabs]);
+  }, [activeRoundSettingsAgeTab, ageCategoryTabsForRoundSettings]);
 
-  const persistOrder = async (nextOrder: StartListEventBarItem[], successMessage?: string) => {
+  const visibleRoundSettingsEvents = useMemo(
+    () => filterEventsByStartListAgeCategory(order, resolvedRoundSettingsAgeTab),
+    [order, resolvedRoundSettingsAgeTab]
+  );
+
+  const resolvedActiveAreaTabId = useMemo(() => {
+    if (activeAreaTabId && scheduleTabs.some((t) => t.id === activeAreaTabId)) {
+      return activeAreaTabId;
+    }
+    return scheduleTabs[0]?.id ?? "";
+  }, [activeAreaTabId, scheduleTabs]);
+
+  const visibleEventsInArea = useMemo(() => {
+    const soleTabId = scheduleTabs.length === 1 ? scheduleTabs[0]?.id : undefined;
+    const filtered =
+      soleTabId !== undefined
+        ? order.filter(
+            (e) => e.scheduleTabId === soleTabId || e.scheduleTabId == null
+          )
+        : filterEventsByScheduleTabId(order, resolvedActiveAreaTabId);
+    return sortEventsWithinScheduleTab(filtered);
+  }, [order, resolvedActiveAreaTabId, scheduleTabs]);
+
+  const heatSettingForExpandedRow = useCallback(
+    (eventId: string): HeatSetting => {
+      const baseline = parseStartListSettings(initialStartListSettings ?? null);
+      return {
+        ...(baseline.eventSettings[eventId] ?? {}),
+        ...(heatDraftByEvent[eventId] ?? {}),
+      };
+    },
+    [initialStartListSettings, heatDraftByEvent]
+  );
+
+  const visibleRoundRows = useMemo(
+    () =>
+      expandEventsToScheduleRoundRows(visibleEventsInArea, roundCounts, (eventId) =>
+        heatSettingForExpandedRow(eventId)
+      ),
+    [visibleEventsInArea, roundCounts, heatSettingForExpandedRow]
+  );
+
+  useEffect(() => {
+    const first = scheduleTabs[0]?.id ?? "";
+    if (!first) return;
+    if (!activeAreaTabId || !scheduleTabs.some((t) => t.id === activeAreaTabId)) {
+      setActiveAreaTabId(first);
+    }
+  }, [activeAreaTabId, scheduleTabs]);
+
+  const persistTabEventOrder = async (
+    tabId: string,
+    nextVisibleOrderedEvents: StartListEventBarItem[],
+    successMessage?: string
+  ) => {
+    if (!tabId) return;
     setReorderSaving(true);
     try {
-      const res = await fetch(`/api/competitions/${competitionId}/events/display-order`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderedEventIds: nextOrder.map((e) => e.id) }),
-      });
+      for (const e of nextVisibleOrderedEvents) {
+        if ((e.scheduleTabId ?? "") === tabId) continue;
+        const res = await fetch(`/api/competitions/${competitionId}/events/${e.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scheduleTabId: tabId }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { message?: string };
+        if (!res.ok) {
+          throw new Error(data.message || "種目のエリア割当に失敗しました");
+        }
+      }
+
+      const res = await fetch(
+        `/api/competitions/${competitionId}/schedule-tabs/${encodeURIComponent(tabId)}/events/order`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderedEventIds: nextVisibleOrderedEvents.map((e) => e.id) }),
+        }
+      );
       const data = (await res.json().catch(() => ({}))) as { message?: string };
       if (!res.ok) throw new Error(data.message || "並べ替えの保存に失敗しました");
       toast.success(successMessage ?? "表示順を保存しました");
       router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "並べ替えの保存に失敗しました");
-      setOrder(sortEvents(events));
+      setOrder([...events].sort(compareStartListEvents));
     } finally {
       setReorderSaving(false);
     }
@@ -234,6 +467,140 @@ export default function StartListEventIndexBars({
     setAutoSortAfterSaveStart(enabled);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(AUTO_SORT_STORAGE_KEY, enabled ? "1" : "0");
+    }
+  };
+
+  const moveEventToScheduleTab = async (eventId: string, nextTabId: string) => {
+    const ev = order.find((e) => e.id === eventId);
+    if (!ev || (ev.scheduleTabId ?? "") === nextTabId) return;
+    try {
+      const res = await fetch(`/api/competitions/${competitionId}/events/${eventId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduleTabId: nextTabId }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { message?: string };
+      if (!res.ok) throw new Error(data.message || "エリアへの移動に失敗しました");
+      toast.success(data.message || "エリアを変更しました");
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "エリアへの移動に失敗しました");
+    }
+  };
+
+  const addScheduleTab = async () => {
+    const name = newTabNameDraft.trim();
+    if (!name) {
+      toast.error("エリア名を入力してください");
+      return;
+    }
+    setTabMutationSaving(true);
+    try {
+      const res = await fetch(`/api/competitions/${competitionId}/schedule-tabs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        message?: string;
+        tab?: { id: string };
+      };
+      if (!res.ok) throw new Error(data.message || "エリアの追加に失敗しました");
+      toast.success(data.message || "エリアを追加しました");
+      setNewTabNameDraft("");
+      if (data.tab?.id) setActiveAreaTabId(data.tab.id);
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "エリアの追加に失敗しました");
+    } finally {
+      setTabMutationSaving(false);
+    }
+  };
+
+  const submitRenameTab = async () => {
+    if (!renameTargetTabId) return;
+    const name = renameDraft.trim();
+    if (!name) {
+      toast.error("エリア名を入力してください");
+      return;
+    }
+    setTabMutationSaving(true);
+    try {
+      const res = await fetch(
+        `/api/competitions/${competitionId}/schedule-tabs/${encodeURIComponent(renameTargetTabId)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        }
+      );
+      const data = (await res.json().catch(() => ({}))) as { message?: string };
+      if (!res.ok) throw new Error(data.message || "エリア名の更新に失敗しました");
+      toast.success(data.message || "エリア名を更新しました");
+      setRenameOpen(false);
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "エリア名の更新に失敗しました");
+    } finally {
+      setTabMutationSaving(false);
+    }
+  };
+
+  const submitDeleteTab = async () => {
+    if (!deleteTargetTabId) return;
+    const src = scheduleTabBarItems.find((t) => t.id === deleteTargetTabId);
+    if (src && src.eventCount > 0 && !deleteMigrateToTabId.trim()) {
+      toast.error("種目を移す先のエリアを選んでください");
+      return;
+    }
+    setTabMutationSaving(true);
+    try {
+      const qs =
+        src && src.eventCount > 0
+          ? `?migrateToTabId=${encodeURIComponent(deleteMigrateToTabId.trim())}`
+          : "";
+      const res = await fetch(
+        `/api/competitions/${competitionId}/schedule-tabs/${encodeURIComponent(deleteTargetTabId)}${qs}`,
+        { method: "DELETE" }
+      );
+      const data = (await res.json().catch(() => ({}))) as { message?: string };
+      if (!res.ok) throw new Error(data.message || "エリアの削除に失敗しました");
+      toast.success(data.message || "エリアを削除しました");
+      setDeleteOpen(false);
+      setActiveAreaTabId((cur) => (cur === deleteTargetTabId ? scheduleTabs[0]?.id ?? "" : cur));
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "エリアの削除に失敗しました");
+    } finally {
+      setTabMutationSaving(false);
+    }
+  };
+
+  const shiftActiveScheduleTab = async (dir: -1 | 1) => {
+    const ids = scheduleTabs.map((t) => t.id);
+    const i = ids.indexOf(resolvedActiveAreaTabId);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    const next = [...ids];
+    const a = next[i]!;
+    const b = next[j]!;
+    next[i] = b;
+    next[j] = a;
+    setTabMutationSaving(true);
+    try {
+      const res = await fetch(`/api/competitions/${competitionId}/schedule-tabs/reorder`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderedTabIds: next }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { message?: string };
+      if (!res.ok) throw new Error(data.message || "エリアの並び替えに失敗しました");
+      toast.success(data.message || "エリアの並びを更新しました");
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "エリアの並び替えに失敗しました");
+    } finally {
+      setTabMutationSaving(false);
     }
   };
 
@@ -262,8 +629,119 @@ export default function StartListEventIndexBars({
     }
   };
 
-  const saveStart = async (eventId: string) => {
-    const raw = starts[eventId] ?? "";
+  const parseRoundCountDraft = (raw: string | undefined): number => {
+    const n = Number(String(raw ?? "1").trim());
+    if (!Number.isInteger(n) || n < 1 || n > 32) return 1;
+    return n;
+  };
+
+  const savedRoundCount = (e: StartListEventBarItem): number => {
+    const n = e.startListRoundCount;
+    if (typeof n === "number" && Number.isInteger(n) && n >= 1 && n <= 32) return n;
+    return 1;
+  };
+
+  const updateHeatTab = (eventId: string, tabIndex: number, patch: Partial<StartListRoundTab>) => {
+    setHeatDraftByEvent((prev) => {
+      const baseline = parseStartListSettings(initialStartListSettings ?? null);
+      const mergedBase: HeatSetting = {
+        ...(baseline.eventSettings[eventId] ?? {}),
+        ...(prev[eventId] ?? {}),
+      };
+      const n = parseRoundCountDraft(roundCounts[eventId]);
+      const tabs = buildRoundTabsForRoundCount(n, normalizeRoundTabs(mergedBase)).map((t, i) =>
+        i === tabIndex ? { ...t, ...patch } : t
+      );
+      return {
+        ...prev,
+        [eventId]: {
+          ...mergedBase,
+          roundTabs: tabs,
+          mode: tabs[0]?.mode === "size" ? "size" : "count",
+          heatCount: tabs[0]?.heatCount ?? "1",
+          heatSize: tabs[0]?.heatSize ?? "",
+        },
+      };
+    });
+  };
+
+  const saveHeatPlanForEvent = async (eventId: string) => {
+    const ev = order.find((e) => e.id === eventId);
+    if (!ev) return;
+    const draftN = parseRoundCountDraft(roundCounts[eventId]);
+    if (draftN !== savedRoundCount(ev)) {
+      toast.error("先に「ラウンド」の保存でラウンド数を確定してください");
+      return;
+    }
+    setHeatSavingEventId(eventId);
+    try {
+      const baseline = parseStartListSettings(initialStartListSettings ?? null);
+      const full: Record<string, HeatSetting> = {};
+      for (const e of order) {
+        const mergedBase: HeatSetting = {
+          ...(baseline.eventSettings[e.id] ?? {}),
+          ...(heatDraftByEvent[e.id] ?? {}),
+        };
+        const n = savedRoundCount(e);
+        const tabs = clampRoundTabsToNonIncreasingHeatCounts(
+          buildRoundTabsForRoundCount(n, normalizeRoundTabs(mergedBase)),
+          e.entryCount ?? 0,
+          e.preliminaryHeatLaneCount ?? null
+        );
+        full[e.id] = {
+          ...mergedBase,
+          roundTabs: tabs,
+          mode: tabs[0]?.mode === "size" ? "size" : "count",
+          heatCount: tabs[0]?.heatCount ?? "1",
+          heatSize: tabs[0]?.heatSize ?? "",
+        };
+      }
+      const payload = buildStartListSettingsPayload({
+        eventSettings: full,
+        teamAssignmentDeadline: baseline.teamAssignmentDeadline,
+      });
+      const res = await fetch(`/api/competitions/${competitionId}/start-list-settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startListSettings: payload }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { message?: string };
+      if (!res.ok) throw new Error(data.message || "ヒート・レーン設定の保存に失敗しました");
+      const snapOk = await captureStartListSnapshotAfterHeatSave(competitionId);
+      if (!snapOk) {
+        router.refresh();
+        return;
+      }
+      if (!ev.startListHeatPlanConfirmedAt && !ev.marshalStartedAt) {
+        setHeatPlanConfirmingId(eventId);
+        try {
+          const cres = await fetch(
+            `/api/competitions/${competitionId}/events/${encodeURIComponent(eventId)}/heat-plan/confirm`,
+            { method: "POST" }
+          );
+          const cdata = (await cres.json().catch(() => ({}))) as { message?: string };
+          if (!cres.ok) {
+            throw new Error(
+              cdata.message ||
+                "ヒート設定は保存済みですが、確定の記録に失敗しました。もう一度「ヒート・レーンを保存」してください。"
+            );
+          }
+        } finally {
+          setHeatPlanConfirmingId(null);
+        }
+      }
+      toast.success(data.message || "ヒート・レーンを保存し確定しました");
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "ヒート・レーン設定の保存に失敗しました");
+    } finally {
+      setHeatSavingEventId(null);
+    }
+  };
+
+  const saveRoundStart = async (eventId: string, roundIndex: number) => {
+    const rk = roundStartKey(eventId, roundIndex);
+    const raw = roundStarts[rk] ?? "";
     if (raw.trim() !== "") {
       const parsed = new Date(raw);
       if (Number.isNaN(parsed.getTime())) {
@@ -275,15 +753,19 @@ export default function StartListEventIndexBars({
         return;
       }
     }
-    setTimeSavingId(eventId);
+    setTimeSavingId(`${eventId}:${roundIndex}`);
     try {
-      const res = await fetch(`/api/competitions/${competitionId}/events/${eventId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scheduledStartAt: raw.trim() === "" ? null : raw,
-        }),
-      });
+      const res = await fetch(
+        `/api/competitions/${competitionId}/events/${encodeURIComponent(eventId)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scheduleRoundIndex: roundIndex,
+            scheduledStartAt: raw.trim() === "" ? null : raw,
+          }),
+        }
+      );
       const data = (await res.json().catch(() => ({}))) as {
         message?: string;
         events?: SchedulePatchResponseEvent[];
@@ -291,39 +773,59 @@ export default function StartListEventIndexBars({
       if (!res.ok) throw new Error(data.message || "開始時刻の保存に失敗しました");
 
       const apiEvents = data.events;
-      let mergedStarts = starts;
+      let mergedRoundStarts = roundStarts;
       let mergedOrder = order;
 
       if (apiEvents?.length) {
+        mergedOrder = applyScheduleEventsPatchToOrder(order, apiEvents);
+        setOrder(mergedOrder);
         const byId = new Map(apiEvents.map((ev) => [ev.id, ev]));
-        mergedStarts = { ...starts };
         const u = byId.get(eventId);
         if (u) {
-          mergedStarts[eventId] = u.scheduledStartAt
-            ? formatDateForDatetimeLocalInput(new Date(u.scheduledStartAt))
-            : "";
+          mergedRoundStarts = { ...roundStarts };
+          const nRounds =
+            typeof u.startListRoundCount === "number" && u.startListRoundCount >= 1
+              ? Math.min(32, u.startListRoundCount)
+              : 1;
+          for (let ri = 0; ri < nRounds; ri += 1) {
+            const iso = effectiveRoundStartIso({
+              scheduledStartAt: u.scheduledStartAt,
+              roundScheduledStarts: u.roundScheduledStarts,
+              roundIndex: ri,
+            });
+            mergedRoundStarts[roundStartKey(eventId, ri)] = iso
+              ? formatDateForDatetimeLocalInput(new Date(iso))
+              : "";
+          }
+          setRoundStarts(mergedRoundStarts);
         }
-        setStarts(mergedStarts);
-        mergedOrder = order.map((row) => {
-          const up = byId.get(row.id);
-          return up ? { ...row, scheduledStartAt: up.scheduledStartAt } : row;
-        });
       }
 
       if (canReorder && autoSortAfterSaveStart && apiEvents?.length) {
-        const sortedVisible = sortByStartTimeOrder(
-          filterEventsByStartListAgeCategory(mergedOrder, resolvedActiveCategoryTab),
-          mergedStarts
-        );
-        const nextSorted = mergeReorderedEventsByIds(
-          mergedOrder,
-          sortedVisible.map((event) => event.id)
-        );
-        const changed = !nextSorted.every((e, i) => e.id === order[i]?.id);
-        if (changed) {
-          setOrder(nextSorted);
-          await persistOrder(nextSorted, "開始時刻を保存し、時刻順に並べ替えました");
-          return;
+        const areaId = resolvedActiveAreaTabId;
+        if (areaId) {
+          const inArea = sortEventsWithinScheduleTab(
+            filterEventsByScheduleTabId(mergedOrder, areaId)
+          );
+          const sortedInArea = sortByStartTimeOrder(inArea, mergedRoundStarts);
+          const prevIds = inArea.map((e) => e.id).join(",");
+          const nextIds = sortedInArea.map((e) => e.id).join(",");
+          if (prevIds !== nextIds) {
+            const nextFull = mergeReorderedEventsByIds(mergedOrder, sortedInArea.map((e) => e.id));
+            const withSort = nextFull.map((e) => {
+              if (e.scheduleTabId !== areaId) return e;
+              const idx = sortedInArea.findIndex((v) => v.id === e.id);
+              if (idx < 0) return e;
+              return { ...e, scheduleTabSortOrder: idx + 1 };
+            });
+            setOrder(withSort);
+            await persistTabEventOrder(
+              areaId,
+              sortedInArea,
+              "開始時刻を保存し、時刻順に並べ替えました"
+            );
+            return;
+          }
         }
       }
 
@@ -357,57 +859,86 @@ export default function StartListEventIndexBars({
       return;
     }
 
-    const slots: { id: string; at: Date }[] = [];
-    for (let i = 0; i < visibleOrder.length; i++) {
+    const areaId = resolvedActiveAreaTabId;
+    if (!areaId) {
+      toast.error("表示中のエリアが未設定です");
+      return;
+    }
+    if (visibleRoundRows.length === 0) {
+      toast.error("このエリアに表示する種目がありません");
+      return;
+    }
+
+    const slots: { eventId: string; roundIndex: number; at: Date }[] = [];
+    for (let i = 0; i < visibleRoundRows.length; i++) {
+      const row = visibleRoundRows[i]!;
       const at = new Date(base.getTime() + i * step * 60_000);
       if (!isInstantWithinCompetitionEventSchedule(at, compStart, compEnd)) {
         toast.error(
-          `「${visibleOrder[i]?.name ?? ""}」の時刻が開催期間外になります（${i + 1}件目）。間隔または開始を見直してください。`
+          `「${row.event.name ?? ""}（${row.roundLabel}）」の時刻が開催期間外になります（${i + 1}件目）。間隔または開始を見直してください。`
         );
         return;
       }
-      slots.push({ id: visibleOrder[i]!.id, at });
+      slots.push({
+        eventId: row.event.id,
+        roundIndex: row.roundIndex,
+        at,
+      });
     }
 
     setBulkApplying(true);
     try {
-      for (const { id, at } of slots) {
-        const payload = formatDateForDatetimeLocalInput(at);
-        const res = await fetch(`/api/competitions/${competitionId}/events/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scheduledStartAt: payload }),
-        });
-        const data = (await res.json().catch(() => ({}))) as { message?: string };
+      let mergedOrder = order;
+      for (const slot of slots) {
+        const payload = formatDateForDatetimeLocalInput(slot.at);
+        const res = await fetch(
+          `/api/competitions/${competitionId}/events/${encodeURIComponent(slot.eventId)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              scheduleRoundIndex: slot.roundIndex,
+              scheduledStartAt: payload,
+            }),
+          }
+        );
+        const data = (await res.json().catch(() => ({}))) as {
+          message?: string;
+          events?: SchedulePatchResponseEvent[];
+        };
         if (!res.ok) {
           throw new Error(data.message || "一括保存に失敗しました");
         }
+        if (data.events?.length) {
+          mergedOrder = applyScheduleEventsPatchToOrder(mergedOrder, data.events);
+        }
       }
 
-      const nextStarts: Record<string, string> = { ...starts };
-      for (const { id, at } of slots) {
-        nextStarts[id] = formatDateForDatetimeLocalInput(at);
-      }
-      setStarts(nextStarts);
-
-      const mergedOrder = order.map((row) => {
-        const slot = slots.find((s) => s.id === row.id);
-        return slot ? { ...row, scheduledStartAt: slot.at.toISOString() } : row;
-      });
+      const nextRoundStarts = roundStartsDraftFromBarItems(mergedOrder);
+      setRoundStarts(nextRoundStarts);
+      setOrder(mergedOrder);
 
       if (canReorder && autoSortAfterSaveStart) {
-        const sortedVisible = sortByStartTimeOrder(
-          filterEventsByStartListAgeCategory(mergedOrder, resolvedActiveCategoryTab),
-          nextStarts
+        const inAreaAfter = sortEventsWithinScheduleTab(
+          filterEventsByScheduleTabId(mergedOrder, areaId)
         );
-        const nextSorted = mergeReorderedEventsByIds(
-          mergedOrder,
-          sortedVisible.map((event) => event.id)
-        );
-        const changed = !nextSorted.every((e, i) => e.id === order[i]?.id);
-        if (changed) {
-          setOrder(nextSorted);
-          await persistOrder(nextSorted, "一括で開始時刻を保存し、時刻順に並べ替えました");
+        const sortedInArea = sortByStartTimeOrder(inAreaAfter, nextRoundStarts);
+        const prevOrder = inAreaAfter.map((e) => e.id).join(",");
+        const nextOrderIds = sortedInArea.map((e) => e.id).join(",");
+        if (prevOrder !== nextOrderIds) {
+          const nextFull = mergeReorderedEventsByIds(mergedOrder, sortedInArea.map((e) => e.id));
+          const withSort = nextFull.map((e) => {
+            if (e.scheduleTabId !== areaId) return e;
+            const idx = sortedInArea.findIndex((v) => v.id === e.id);
+            if (idx < 0) return e;
+            return { ...e, scheduleTabSortOrder: idx + 1 };
+          });
+          setOrder(withSort);
+          await persistTabEventOrder(
+            areaId,
+            sortedInArea,
+            "一括で開始時刻を保存し、時刻順に並べ替えました"
+          );
           return;
         }
       }
@@ -426,7 +957,12 @@ export default function StartListEventIndexBars({
       setDragId(null);
       return;
     }
-    const nextVisible = [...visibleOrder];
+    const areaId = resolvedActiveAreaTabId;
+    if (!areaId) {
+      setDragId(null);
+      return;
+    }
+    const nextVisible = [...visibleEventsInArea];
     const fi = nextVisible.findIndex((x) => x.id === dragId);
     const ti = nextVisible.findIndex((x) => x.id === targetId);
     if (fi < 0 || ti < 0) {
@@ -434,58 +970,81 @@ export default function StartListEventIndexBars({
       return;
     }
     const [item] = nextVisible.splice(fi, 1);
-    nextVisible.splice(ti, 0, item);
+    nextVisible.splice(ti, 0, item!);
     const next = mergeReorderedEventsByIds(order, nextVisible.map((event) => event.id));
-    setOrder(next);
+    const withSort = next.map((e) => {
+      if (e.scheduleTabId !== areaId) return e;
+      const idx = nextVisible.findIndex((v) => v.id === e.id);
+      if (idx < 0) return e;
+      return { ...e, scheduleTabSortOrder: idx + 1 };
+    });
+    setOrder(withSort);
     setDragId(null);
-    void persistOrder(next);
+    void persistTabEventOrder(areaId, nextVisible);
   };
 
   const handleSortByStartTime = () => {
-    const hasComparable = visibleOrder.some((e) =>
-      Number.isFinite(effectiveStartMsForSort(e, starts))
-    );
+    const areaId = resolvedActiveAreaTabId;
+    if (!areaId) return;
+    const inArea = visibleEventsInArea;
+    const hasComparable = inArea.some((e) => Number.isFinite(effectiveStartMsForSort(e, roundStarts)));
     if (!hasComparable) {
-      toast.info("開始時刻が入力または保存されている種目がありません");
+      toast.info("このエリアで開始時刻が入力または保存されている種目がありません");
       return;
     }
-    const sortedVisible = sortByStartTimeOrder(visibleOrder, starts);
-    const next = mergeReorderedEventsByIds(order, sortedVisible.map((event) => event.id));
-    const unchanged = sortedVisible.every((e, i) => e.id === visibleOrder[i]?.id);
+    const sortedInArea = sortByStartTimeOrder(inArea, roundStarts);
+    const unchanged = sortedInArea.every((e, i) => e.id === inArea[i]?.id);
     if (unchanged) {
       toast.info("すでに開始時刻順です");
       return;
     }
-    setOrder(next);
-    void persistOrder(next, "開始時刻の早い順に並べ替えました");
+    const next = mergeReorderedEventsByIds(order, sortedInArea.map((event) => event.id));
+    const withSort = next.map((e) => {
+      if (e.scheduleTabId !== areaId) return e;
+      const idx = sortedInArea.findIndex((v) => v.id === e.id);
+      if (idx < 0) return e;
+      return { ...e, scheduleTabSortOrder: idx + 1 };
+    });
+    setOrder(withSort);
+    void persistTabEventOrder(areaId, sortedInArea, "開始時刻の早い順に並べ替えました");
   };
 
   const publicScheduleBarsOnly =
     !canReorder && !canEditSchedule && !canEditRoundCount;
 
-  const hintCompact = (() => {
+  const splitRoundSettingsCard = canEditRoundCount;
+
+  const hintRoundSettingsCard = (() => {
+    if (publicScheduleBarsOnly) return "";
+    return "ラウンド数を「保存」で確定してから「ヒート・レーンを保存」で記録まで完了してください（保存と同時に当日運用向けの確定が記録されます）。種目のスタートリストは下の一覧から。";
+  })();
+
+  const hintEventListCard = (() => {
     if (publicScheduleBarsOnly) {
-      return "開催（表示）順です。行をタップでスタートリストを表示します。";
+      return "一覧の上から表示順です。行をタップでスタートリストを表示します。";
     }
     const parts: string[] = [];
     if (canReorder) {
-      parts.push("握りをドラッグして並べ替え（自動保存）");
+      parts.push("表示中のエリア内で握りをドラッグして並べ替え（自動保存）");
     }
     parts.push("行をタップで詳細");
     if (canEditSchedule) {
       parts.push("開始は開催期内・終了は種目ページ");
     }
-    if (canEditRoundCount) {
-      parts.push("ラウンド数は全ラウンドで1〜32");
-    }
     return parts.join(" · ");
   })();
+
+  const baselineForHeatUi = useMemo(
+    () => parseStartListSettings(initialStartListSettings ?? null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- heatDraftSyncKey に settings の実体が含まれる
+    [heatDraftSyncKey]
+  );
 
   if (order.length === 0) {
     return (
       <Card className="border-border/80 shadow-sm">
         <CardHeader className="border-b border-border/80 bg-muted/15 px-2.5 py-1.5">
-          <CardTitle className="text-sm font-semibold">種目一覧</CardTitle>
+          <CardTitle className="text-sm font-semibold">タイムスケジュール</CardTitle>
           {competitionName ? (
             <p className="truncate text-[10px] text-muted-foreground">{competitionName}</p>
           ) : null}
@@ -497,14 +1056,254 @@ export default function StartListEventIndexBars({
     );
   }
 
-  return (
-    <Card className="border-border/80 shadow-sm">
+  const roundSettingsCard = splitRoundSettingsCard ? (
+    <Card className="overflow-hidden border-border/80 shadow-sm">
       <CardHeader className="space-y-0.5 border-b border-border/80 bg-muted/15 px-2.5 py-1.5">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-2">
           <div className="min-w-0 flex-1">
-            <CardTitle className="text-sm font-semibold leading-tight">種目一覧</CardTitle>
+            <CardTitle className="text-sm font-semibold leading-tight">ラウンド設定</CardTitle>
             {competitionName ? (
               <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{competitionName}</p>
+            ) : null}
+          </div>
+        </div>
+        <p className="text-[10px] leading-snug text-muted-foreground">{hintRoundSettingsCard}</p>
+      </CardHeader>
+      <CardContent className="p-0">
+        {ageCategoryTabsForRoundSettings.length > 1 ? (
+          <div className="border-b border-border/50 bg-muted/10 px-2.5 py-1.5">
+            <Tabs value={resolvedRoundSettingsAgeTab} onValueChange={setActiveRoundSettingsAgeTab}>
+              <TabsList className="flex h-auto w-full flex-wrap justify-start gap-0.5 bg-muted/50 p-0.5">
+                {ageCategoryTabsForRoundSettings.map((t) => (
+                  <TabsTrigger key={t.key} value={t.key} className="shrink-0 px-2 py-1 text-[11px]">
+                    {t.label}
+                    <span className="ml-0.5 tabular-nums text-muted-foreground">({t.count})</span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          </div>
+        ) : null}
+        <ul className="divide-y divide-border/50">
+          {visibleRoundSettingsEvents.map((event) => {
+            const scheduleText = canEditSchedule ? null : formatEventStartJa(event.scheduledStartAt);
+            const mergedBase: HeatSetting = {
+              ...(baselineForHeatUi.eventSettings[event.id] ?? {}),
+              ...(heatDraftByEvent[event.id] ?? {}),
+            };
+            const displayTabs = buildRoundTabsForRoundCount(
+              parseRoundCountDraft(roundCounts[event.id]),
+              normalizeRoundTabs(mergedBase)
+            );
+            const draftN = parseRoundCountDraft(roundCounts[event.id]);
+            const savedN = savedRoundCount(event);
+            const heatUiLocked =
+              bulkApplying ||
+              timeSavingId !== null ||
+              reorderSaving ||
+              heatSavingEventId !== null ||
+              roundSavingId !== null ||
+              heatPlanConfirmingId !== null;
+            const entryMeta =
+              typeof event.preliminaryHeatLaneCount === "number"
+                ? `エントリー ${event.entryCount ?? 0} 件 · 最大レーン ${event.preliminaryHeatLaneCount}`
+                : `エントリー ${event.entryCount ?? 0} 件`;
+            return (
+              <li key={event.id} className="flex flex-col">
+                <div className="flex flex-col sm:flex-row sm:items-stretch">
+                  <div className="flex min-w-0 flex-1 items-stretch">
+                    <div className="flex min-w-0 flex-1 flex-col gap-0 px-2 py-1 text-left text-sm sm:flex-row sm:items-center sm:gap-2 sm:py-1">
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-medium leading-tight">{event.name}</span>
+                        {scheduleText ? (
+                          <span className="mt-0.5 block truncate text-[10px] leading-tight text-muted-foreground">
+                            {scheduleText}
+                          </span>
+                        ) : null}
+                        <span className="mt-0.5 block truncate text-[10px] leading-tight text-muted-foreground">
+                          {entryMeta}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
+                        {sexLabel(event.sex)}
+                        {event.type === "TEAM" ? " · 団体" : " · 個人"}
+                        {event.ageCategoryName ? ` · ${event.ageCategoryName}` : ""}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1 border-t border-border/50 px-2 py-1 sm:w-auto sm:border-l sm:border-t-0 sm:py-1 sm:pl-2 sm:pr-2">
+                    <span className="whitespace-nowrap text-[10px] text-muted-foreground">ラウンド</span>
+                    <Input
+                      numericInput="integer"
+                      min={1}
+                      max={32}
+                      className="h-7 w-11 px-1 text-center text-[11px] tabular-nums"
+                      aria-label={`${event.name} のスタートリストのラウンド数`}
+                      value={roundCounts[event.id] ?? "1"}
+                      onChange={(e) => setRoundCounts((p) => ({ ...p, [event.id]: e.target.value }))}
+                      disabled={heatUiLocked}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="h-7 shrink-0 px-2 text-[11px]"
+                      onClick={() => void saveRoundCount(event.id)}
+                      disabled={
+                        bulkApplying ||
+                        roundSavingId === event.id ||
+                        timeSavingId !== null ||
+                        reorderSaving ||
+                        heatSavingEventId !== null ||
+                        heatPlanConfirmingId !== null
+                      }
+                    >
+                      {roundSavingId === event.id ? "保存中" : "保存"}
+                    </Button>
+                  </div>
+                </div>
+                {draftN >= 1 ? (
+                  <div className="border-t border-border/50 bg-muted/5 px-2 py-1.5">
+                    <p className="mb-1 text-[10px] leading-snug text-muted-foreground">
+                      ラウンドごとのヒート数・最大レーン（空の最大レーンは種目の既定）
+                    </p>
+                    <ul className="divide-y divide-border/40">
+                      {displayTabs.map((tab, tabIdx) => (
+                        <li
+                          key={tab.id}
+                          className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1 first:pt-0 last:pb-0"
+                        >
+                          <span className="w-[6.5rem] shrink-0 truncate text-[10px] font-medium text-foreground">
+                            {tab.label?.trim() ? tab.label : `ラウンド ${tabIdx + 1}`}
+                          </span>
+                          {tab.mode === "size" ? (
+                            <>
+                              <span className="text-[10px] text-muted-foreground">1ヒート人数</span>
+                              <Input
+                                numericInput="integer"
+                                min={1}
+                                max={64}
+                                className="h-7 w-11 px-1 text-center text-[11px] tabular-nums"
+                                value={tab.heatSize ?? ""}
+                                onChange={(e) =>
+                                  updateHeatTab(event.id, tabIdx, { heatSize: e.target.value })
+                                }
+                                disabled={heatUiLocked}
+                              />
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-[10px] text-muted-foreground">ヒート数</span>
+                              <Input
+                                numericInput="integer"
+                                min={1}
+                                max={64}
+                                className="h-7 w-11 px-1 text-center text-[11px] tabular-nums"
+                                value={tab.heatCount ?? "1"}
+                                onChange={(e) =>
+                                  updateHeatTab(event.id, tabIdx, { heatCount: e.target.value })
+                                }
+                                disabled={heatUiLocked}
+                              />
+                            </>
+                          )}
+                          <span className="text-[10px] text-muted-foreground">最大レーン</span>
+                          <Input
+                            numericInput="integer"
+                            min={1}
+                            max={32}
+                            title="最大レーン（空なら種目の既定）"
+                            placeholder={
+                              typeof event.preliminaryHeatLaneCount === "number"
+                                ? String(event.preliminaryHeatLaneCount)
+                                : "—"
+                            }
+                            className="h-7 w-11 px-1 text-center text-[11px] tabular-nums"
+                            value={
+                              typeof tab.maxLanesPerHeat === "number"
+                                ? String(tab.maxLanesPerHeat)
+                                : ""
+                            }
+                            onChange={(e) => {
+                              const t = e.target.value.trim();
+                              if (t === "") {
+                                updateHeatTab(event.id, tabIdx, { maxLanesPerHeat: undefined });
+                                return;
+                              }
+                              const v = parseInt(t, 10);
+                              if (Number.isInteger(v) && v >= 1 && v <= 32) {
+                                updateHeatTab(event.id, tabIdx, { maxLanesPerHeat: v });
+                              }
+                            }}
+                            disabled={heatUiLocked}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="mt-1.5 flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-7 w-fit px-2 text-[11px]"
+                        onClick={() => void saveHeatPlanForEvent(event.id)}
+                        disabled={
+                          heatUiLocked ||
+                          heatSavingEventId === event.id ||
+                          heatPlanConfirmingId === event.id ||
+                          draftN !== savedN
+                        }
+                      >
+                        {heatSavingEventId === event.id
+                          ? !event.startListHeatPlanConfirmedAt && !event.marshalStartedAt
+                            ? "保存・確定中…"
+                            : "保存中…"
+                          : heatPlanConfirmingId === event.id
+                            ? "確定を記録中…"
+                            : "ヒート・レーンを保存"}
+                      </Button>
+                      {event.startListHeatPlanConfirmedAt ? (
+                        <span className="text-[10px] text-muted-foreground">ヒート・レーン確定済み</span>
+                      ) : null}
+                      {draftN !== savedN ? (
+                        <p className="text-[10px] leading-snug text-amber-700 dark:text-amber-300">
+                          先に上の「保存」でラウンド数を確定してください。
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+        {roundSavingId ? (
+          <p className="border-t border-border/50 px-2.5 py-1 text-[10px] text-muted-foreground">
+            ラウンド数保存中…
+          </p>
+        ) : null}
+        {heatSavingEventId ? (
+          <p className="border-t border-border/50 px-2.5 py-1 text-[10px] text-muted-foreground">
+            ヒート・レーン保存中…
+          </p>
+        ) : null}
+        {heatPlanConfirmingId ? (
+          <p className="border-t border-border/50 px-2.5 py-1 text-[10px] text-muted-foreground">
+            ヒート・レーンの確定を記録中…
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
+  ) : null;
+
+  const eventListCard = (
+    <Card className="overflow-hidden border-border/80 shadow-sm">
+      <CardHeader className="space-y-0.5 border-b border-border/80 bg-muted/15 px-2.5 py-1.5">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-2">
+          <div className="min-w-0 flex-1 space-y-0.5">
+            <CardTitle className="text-sm font-semibold leading-tight">タイムスケジュール</CardTitle>
+            {competitionName ? (
+              <p className="truncate text-[10px] text-muted-foreground">{competitionName}</p>
             ) : null}
           </div>
           {canReorder ? (
@@ -515,7 +1314,7 @@ export default function StartListEventIndexBars({
                 size="sm"
                 className="h-6 gap-0.5 px-2 text-[11px]"
                 onClick={() => void handleSortByStartTime()}
-                disabled={reorderSaving || bulkApplying || timeSavingId !== null || roundSavingId !== null}
+                disabled={reorderSaving || bulkApplying || timeSavingId !== null || roundSavingId !== null || heatSavingEventId !== null || heatPlanConfirmingId !== null}
               >
                 <Clock className="h-3 w-3" />
                 時刻順
@@ -534,21 +1333,131 @@ export default function StartListEventIndexBars({
             </div>
           ) : null}
         </div>
-        <p className="text-[10px] leading-snug text-muted-foreground">{hintCompact}</p>
-        {hasCategoryTabs ? (
-          <Tabs value={resolvedActiveCategoryTab} onValueChange={setActiveCategoryTab} className="mt-1">
-            <TabsList className="h-auto min-h-8 w-full flex-wrap justify-start gap-1 rounded-md border border-border/70 bg-background/80 p-1">
-              {ageCategoryTabs.map((tab) => (
-                <TabsTrigger
-                  key={tab.key}
-                  value={tab.key}
-                  className="h-7 rounded-md px-2 text-[11px] data-[state=active]:shadow-sm"
+        <p className="text-[10px] leading-snug text-muted-foreground">{hintEventListCard}</p>
+        {scheduleTabs.length > 0 && (scheduleTabs.length > 1 || canReorder) ? (
+          <div className="mt-2 space-y-2 border-t border-border/40 pt-2">
+            {scheduleTabs.length > 1 ? (
+              <Tabs value={resolvedActiveAreaTabId} onValueChange={setActiveAreaTabId}>
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between lg:gap-3">
+                  <TabsList className="h-auto min-h-9 w-full max-w-full flex-1 flex-wrap justify-start gap-0.5 bg-muted/50 p-1">
+                    {scheduleTabs.map((t) => (
+                      <TabsTrigger
+                        key={t.id}
+                        value={t.id}
+                        className="max-w-[11rem] shrink-0 px-2 py-1 text-left text-[11px]"
+                      >
+                        <span className="truncate">{t.name}</span>
+                        <span className="ml-0.5 shrink-0 tabular-nums text-muted-foreground">
+                          ({scheduleTabBarItems.find((x) => x.id === t.id)?.eventCount ?? 0})
+                        </span>
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                  {canReorder ? (
+                    <div className="flex flex-wrap items-center gap-1 lg:shrink-0">
+                      <Input
+                        placeholder="例: メイン池 東側"
+                        className="h-7 max-w-[10rem] text-[11px]"
+                        value={newTabNameDraft}
+                        onChange={(e) => setNewTabNameDraft(e.target.value)}
+                        disabled={tabMutationSaving}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-7 px-2 text-[11px]"
+                        onClick={() => void addScheduleTab()}
+                        disabled={tabMutationSaving || reorderSaving}
+                        aria-label="エリアを追加"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 gap-0.5 px-2 text-[11px]"
+                        onClick={() => {
+                          const tab = scheduleTabs.find((t) => t.id === resolvedActiveAreaTabId);
+                          if (!tab) return;
+                          setRenameTargetTabId(tab.id);
+                          setRenameDraft(tab.name);
+                          setRenameOpen(true);
+                        }}
+                        disabled={tabMutationSaving || !resolvedActiveAreaTabId}
+                      >
+                        <Pencil className="h-3 w-3" />
+                        名前
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 gap-0.5 px-2 text-[11px]"
+                        onClick={() => {
+                          setDeleteTargetTabId(resolvedActiveAreaTabId);
+                          const other = scheduleTabs.find((t) => t.id !== resolvedActiveAreaTabId);
+                          setDeleteMigrateToTabId(other?.id ?? "");
+                          setDeleteOpen(true);
+                        }}
+                        disabled={
+                          tabMutationSaving || scheduleTabs.length <= 1 || !resolvedActiveAreaTabId
+                        }
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        削除
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-1 text-[11px]"
+                        disabled={tabMutationSaving || scheduleTabs.length <= 1}
+                        onClick={() => void shiftActiveScheduleTab(-1)}
+                        aria-label="エリアを左へ"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-1 text-[11px]"
+                        disabled={tabMutationSaving || scheduleTabs.length <= 1}
+                        onClick={() => void shiftActiveScheduleTab(1)}
+                        aria-label="エリアを右へ"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              </Tabs>
+            ) : (
+              <div className="flex flex-wrap items-center gap-1">
+                <Input
+                  placeholder="例: メイン池 東側"
+                  className="h-7 max-w-[10rem] text-[11px]"
+                  value={newTabNameDraft}
+                  onChange={(e) => setNewTabNameDraft(e.target.value)}
+                  disabled={tabMutationSaving}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 px-2 text-[11px]"
+                  onClick={() => void addScheduleTab()}
+                  disabled={tabMutationSaving || reorderSaving}
+                  aria-label="エリアを追加"
                 >
-                  {tab.label} ({tab.count})
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+                <span className="text-[10px] text-muted-foreground">エリアを分けるときは名前を入れて追加</span>
+              </div>
+            )}
+          </div>
         ) : null}
       </CardHeader>
       <CardContent className="p-0">
@@ -556,7 +1465,7 @@ export default function StartListEventIndexBars({
           <details className="group border-b border-border/50 bg-muted/5">
             <summary className="cursor-pointer list-none px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground marker:content-none hover:bg-muted/25 [&::-webkit-details-marker]:hidden">
               <span className="underline decoration-dotted underline-offset-2 group-open:no-underline">
-                一括で開始時刻（表示順に分刻みで保存）
+                一括で開始時刻（表示中のエリアのリスト上から順に、各行＝ラウンドごとに分刻みで保存）
               </span>
             </summary>
             <div className="flex flex-wrap items-end gap-2 border-t border-border/40 px-2.5 py-2">
@@ -572,7 +1481,7 @@ export default function StartListEventIndexBars({
                   max={scheduleMinMax.max}
                   value={staggerBase}
                   onChange={(e) => setStaggerBase(e.target.value)}
-                  disabled={bulkApplying}
+                  disabled={bulkApplying || roundSavingId !== null || reorderSaving || heatSavingEventId !== null || heatPlanConfirmingId !== null}
                 />
               </div>
               <div className="space-y-0.5">
@@ -587,7 +1496,7 @@ export default function StartListEventIndexBars({
                   className="h-7 w-[4.25rem] text-[11px]"
                   value={staggerMinutes}
                   onChange={(e) => setStaggerMinutes(e.target.value)}
-                  disabled={bulkApplying}
+                  disabled={bulkApplying || roundSavingId !== null || reorderSaving || heatSavingEventId !== null || heatPlanConfirmingId !== null}
                 />
               </div>
               <Button
@@ -596,23 +1505,33 @@ export default function StartListEventIndexBars({
                 variant="secondary"
                 className="h-7 px-2 text-[11px]"
                 onClick={() => void applyStaggerAndSave()}
-                disabled={bulkApplying || reorderSaving || timeSavingId !== null || roundSavingId !== null}
+                disabled={bulkApplying || reorderSaving || timeSavingId !== null || roundSavingId !== null || heatSavingEventId !== null || heatPlanConfirmingId !== null}
               >
-                {bulkApplying ? "保存中…" : "全種目に保存"}
+                {bulkApplying ? "保存中…" : "このエリアに保存"}
               </Button>
             </div>
           </details>
         ) : null}
-        {activeCategoryLabel ? (
-          <p className="border-b border-border/50 px-2.5 py-1 text-[10px] text-muted-foreground">
-            表示カテゴリ: {activeCategoryLabel}
-          </p>
-        ) : null}
         <ul className="divide-y divide-border/50">
-          {visibleOrder.map((event) => {
+          {visibleRoundRows.length === 0 ? (
+            <li className="px-2.5 py-6 text-center text-xs text-muted-foreground">
+              {scheduleTabs.length > 1
+                ? "このエリアに表示する種目がありません。行の「エリア」から移すか、別のエリアを選んでください。"
+                : "表示する種目がありません。エリアを追加すると種目を分けて表示できます。"}
+            </li>
+          ) : null}
+          {visibleRoundRows.map(({ event, roundIndex, roundLabel }) => {
+            const rk = roundStartKey(event.id, roundIndex);
+            const roundIso = effectiveRoundStartIso({
+              scheduledStartAt: event.scheduledStartAt,
+              roundScheduledStarts: event.roundScheduledStarts,
+              roundIndex,
+            });
             const scheduleText = canEditSchedule
               ? null
-              : formatEventStartJa(event.scheduledStartAt);
+              : roundIso
+                ? formatEventStartJa(roundIso)
+                : null;
             const rowDrop = canReorder
               ? {
                   onDragOver: (e: DragEvent) => {
@@ -626,12 +1545,19 @@ export default function StartListEventIndexBars({
                   },
                 }
               : {};
+            const nRounds = parseRoundCountDraft(roundCounts[event.id]);
+            const startListHref =
+              nRounds > 1
+                ? `/competitions/${competitionId}/start-list/${event.id}?roundIndex=${roundIndex}`
+                : `/competitions/${competitionId}/start-list/${event.id}`;
+            const tabSelectValue = event.scheduleTabId ?? scheduleTabs[0]?.id ?? "";
+
             return (
               <li
-                key={event.id}
+                key={`${event.id}-${roundIndex}`}
                 className={cn(
                   "flex flex-col sm:flex-row sm:items-stretch",
-                  dragId === event.id ? "bg-muted/40" : ""
+                  dragId === event.id ? "bg-muted/40" : roundIndex % 2 === 1 ? "bg-muted/[0.06]" : ""
                 )}
               >
                 <div className="flex min-w-0 flex-1 items-stretch">
@@ -639,8 +1565,8 @@ export default function StartListEventIndexBars({
                     <button
                       type="button"
                       draggable
-                      aria-label={`${event.name} の並べ替え`}
-                      className="flex shrink-0 cursor-grab touch-none items-center border-r border-border/50 px-1 text-muted-foreground active:cursor-grabbing"
+                      aria-label={`${event.name}（${roundLabel}）の並べ替え`}
+                      className="flex w-7 shrink-0 cursor-grab touch-none items-center justify-center border-r border-border/50 px-0 text-muted-foreground active:cursor-grabbing"
                       onDragStart={(e) => {
                         setDragId(event.id);
                         e.dataTransfer.effectAllowed = "move";
@@ -652,13 +1578,38 @@ export default function StartListEventIndexBars({
                       <GripVertical className="h-3.5 w-3.5" />
                     </button>
                   ) : null}
+                  {canReorder && scheduleTabs.length > 1 ? (
+                    <div className="flex w-[8.25rem] shrink-0 items-center justify-center border-r border-border/50 px-1">
+                      <Select
+                        value={tabSelectValue}
+                        onValueChange={(v) => void moveEventToScheduleTab(event.id, v)}
+                      >
+                        <SelectTrigger
+                          className="h-7 w-full max-w-[7.5rem] text-[10px]"
+                          aria-label={`${event.name} のエリア`}
+                        >
+                          <SelectValue placeholder="エリア" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {scheduleTabs.map((t) => (
+                            <SelectItem key={t.id} value={t.id} className="text-xs">
+                              {t.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
                   <Link
-                    href={`/competitions/${competitionId}/start-list/${event.id}`}
-                    className="flex min-w-0 flex-1 flex-col gap-0 px-2 py-1 text-left text-sm transition hover:bg-muted/40 sm:flex-row sm:items-center sm:gap-2 sm:py-1"
+                    href={startListHref}
+                    className="flex min-w-0 flex-1 flex-col gap-0 px-2 py-1.5 text-left text-sm transition hover:bg-muted/30 sm:flex-row sm:items-center sm:gap-2 sm:py-1.5"
                     {...rowDrop}
                   >
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium leading-tight">{event.name}</span>
+                      <span className="block truncate text-[13px] font-medium leading-tight">
+                        {event.name}
+                        <span className="font-normal text-muted-foreground"> · {roundLabel}</span>
+                      </span>
                       {scheduleText ? (
                         <span className="mt-0.5 block truncate text-[10px] leading-tight text-muted-foreground">
                           {scheduleText}
@@ -676,54 +1627,38 @@ export default function StartListEventIndexBars({
                   <div className="flex shrink-0 items-center gap-1 border-t border-border/50 px-2 py-1 sm:w-auto sm:border-l sm:border-t-0 sm:py-1 sm:pl-2 sm:pr-2">
                     <Input
                       type="datetime-local"
-                      aria-label={`${event.name} の開始時刻`}
+                      aria-label={`${event.name}（${roundLabel}）の開始時刻`}
                       className="h-7 max-w-[10.5rem] text-[11px]"
                       min={scheduleMinMax.min}
                       max={scheduleMinMax.max}
-                      value={starts[event.id] ?? ""}
+                      value={roundStarts[rk] ?? ""}
                       onChange={(e) =>
-                        setStarts((p) => ({ ...p, [event.id]: e.target.value }))
+                        setRoundStarts((p) => ({ ...p, [rk]: e.target.value }))
                       }
-                      disabled={bulkApplying}
-                    />
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      className="h-7 shrink-0 px-2 text-[11px]"
-                      onClick={() => void saveStart(event.id)}
-                      disabled={bulkApplying || timeSavingId === event.id}
-                    >
-                      {timeSavingId === event.id ? "保存中" : "保存"}
-                    </Button>
-                  </div>
-                ) : null}
-                {canEditRoundCount ? (
-                  <div className="flex shrink-0 items-center gap-1 border-t border-border/50 px-2 py-1 sm:w-auto sm:border-l sm:border-t-0 sm:py-1 sm:pl-2 sm:pr-2">
-                    <span className="whitespace-nowrap text-[10px] text-muted-foreground">ラウンド</span>
-                    <Input
-                      numericInput="integer"
-                      min={1}
-                      max={32}
-                      className="h-7 w-11 px-1 text-center text-[11px] tabular-nums"
-                      aria-label={`${event.name} のスタートリストのラウンド数`}
-                      value={roundCounts[event.id] ?? "1"}
-                      onChange={(e) =>
-                        setRoundCounts((p) => ({ ...p, [event.id]: e.target.value }))
-                      }
-                      disabled={bulkApplying || timeSavingId !== null}
-                    />
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      className="h-7 shrink-0 px-2 text-[11px]"
-                      onClick={() => void saveRoundCount(event.id)}
                       disabled={
-                        bulkApplying || roundSavingId === event.id || timeSavingId !== null
+                        bulkApplying ||
+                        roundSavingId !== null ||
+                        reorderSaving ||
+                        heatSavingEventId !== null ||
+                        heatPlanConfirmingId !== null
+                      }
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="h-7 shrink-0 px-2 text-[11px]"
+                      onClick={() => void saveRoundStart(event.id, roundIndex)}
+                      disabled={
+                        bulkApplying ||
+                        timeSavingId === `${event.id}:${roundIndex}` ||
+                        roundSavingId !== null ||
+                        reorderSaving ||
+                        heatSavingEventId !== null ||
+                        heatPlanConfirmingId !== null
                       }
                     >
-                      {roundSavingId === event.id ? "保存中" : "保存"}
+                      {timeSavingId === `${event.id}:${roundIndex}` ? "保存中" : "保存"}
                     </Button>
                   </div>
                 ) : null}
@@ -743,5 +1678,99 @@ export default function StartListEventIndexBars({
         ) : null}
       </CardContent>
     </Card>
+  );
+
+  const scheduleTabDialogsEl = (
+    <>
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>エリア名を変更</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-1">
+            <Label htmlFor="rename-schedule-tab" className="text-xs text-muted-foreground">
+              名前
+            </Label>
+            <Input
+              id="rename-schedule-tab"
+              value={renameDraft}
+              onChange={(e) => setRenameDraft(e.target.value)}
+              className="h-9 text-sm"
+              maxLength={64}
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setRenameOpen(false)}>
+              キャンセル
+            </Button>
+            <Button type="button" onClick={() => void submitRenameTab()} disabled={tabMutationSaving}>
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>エリアを削除</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            このエリアを削除します。種目が残っている場合は、あらかじめ移動先のエリアを選んでください。
+          </p>
+          {deleteTargetTabId &&
+          (scheduleTabBarItems.find((x) => x.id === deleteTargetTabId)?.eventCount ?? 0) > 0 ? (
+            <div className="space-y-2 py-2">
+              <Label className="text-xs text-muted-foreground">移動先エリア</Label>
+              <Select value={deleteMigrateToTabId} onValueChange={setDeleteMigrateToTabId}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="エリアを選択" />
+                </SelectTrigger>
+                <SelectContent>
+                  {scheduleTabs
+                    .filter((t) => t.id !== deleteTargetTabId)
+                    .map((t) => (
+                      <SelectItem key={t.id} value={t.id} className="text-sm">
+                        {t.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setDeleteOpen(false)}>
+              キャンセル
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void submitDeleteTab()}
+              disabled={tabMutationSaving}
+            >
+              削除する
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+
+  if (splitRoundSettingsCard) {
+    return (
+      <>
+        <div className="space-y-3">
+          {roundSettingsCard}
+          {eventListCard}
+        </div>
+        {scheduleTabDialogsEl}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {eventListCard}
+      {scheduleTabDialogsEl}
+    </>
   );
 }
