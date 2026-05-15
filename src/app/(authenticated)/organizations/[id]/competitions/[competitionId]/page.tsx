@@ -51,6 +51,7 @@ import {
 import { getCompetitionManagementAccess } from "@/lib/competitionManagementAccess";
 import CopyAbsoluteUrlButton from "@/components/public/CopyAbsoluteUrlButton";
 import CompetitionManagementTabsClient from "@/components/admin/CompetitionManagementTabsClient";
+import { StartListVisibilityAdminControls } from "@/components/StartListVisibilityAdminControls";
 
 type EntrySettingsEditorProps = ComponentProps<typeof CompetitionEntrySettingsEditor>;
 
@@ -177,6 +178,8 @@ export default async function CompetitionDetailPage({
       : [];
 
   const canEdit = true;
+  /** {@link getCompetitionManagementAccess} で org 管理者のみ到達可能 */
+  const canToggleStartListVisibility = access.kind === "ok";
 
   const getStatusLabel = (status: string) => {
     switch (status) {
@@ -358,9 +361,17 @@ export default async function CompetitionDetailPage({
               </Button>
             </div>
           ) : null}
+          {canEdit && canToggleStartListVisibility ? (
+            <StartListVisibilityAdminControls
+              canManage={canToggleStartListVisibility}
+              organizationId={organizationId}
+              competitionId={competitionId}
+              initialVisible={competition.startListPubliclyVisible ?? true}
+            />
+          ) : null}
           {canEdit ? (
             <p className="max-w-2xl text-[11px] leading-relaxed text-muted-foreground">
-              スタートリスト全体の公開／非公開は、「公開ページ」を開いた先のタブ行の右から切り替えられます（大会単位で、全種目共通です）。
+              スタートリスト全体の公開／非公開は、この画面または「公開ページ」のスタートリストタブ右から切り替えられます（大会単位で、全種目共通です）。
             </p>
           ) : null}
         </div>

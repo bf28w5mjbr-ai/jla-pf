@@ -10,9 +10,19 @@ type Props = {
   competitionId: string;
   /** この大会の公開ページにおけるスタートリスト全体（タイムスケジュール・全種目）を一般向けに出すか */
   initialVisible: boolean;
+  /** 主催 org 管理者のみ true。false のときは何も描画しない */
+  canManage: boolean;
 };
 
-export function StartListPublicToggleButton({ organizationId, competitionId, initialVisible }: Props) {
+export function StartListPublicToggleButton({
+  organizationId,
+  competitionId,
+  initialVisible,
+  canManage,
+}: Props) {
+  if (!canManage) {
+    return null;
+  }
   const router = useRouter();
   const [visible, setVisible] = useState(initialVisible);
   const [isPending, startTransition] = useTransition();

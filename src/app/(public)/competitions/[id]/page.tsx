@@ -29,7 +29,10 @@ import CompetitionStartListPanel from "@/components/CompetitionStartListPanel";
 import { fetchPaidEntryCountByEventId } from "@/lib/competitionStartListEntryCounts";
 import { appRoutes } from "@/lib/appRoutes";
 import { hasOrgAdminAccess, isClubAdminRole } from "@/lib/roleScopes";
-import { canEditCompetitionPublishedSchedule } from "@/lib/competitionStartListAccess";
+import {
+  canEditCompetitionPublishedSchedule,
+  canToggleCompetitionStartListVisibility,
+} from "@/lib/competitionStartListAccess";
 import {
   competitionHostAbbreviation,
   competitionHostDisplayName,
@@ -47,7 +50,7 @@ import { parseTechnicalOfficialTiers } from "@/lib/technicalOfficialRules";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
 import DayOpsUnlockBanner from "@/components/DayOpsUnlockBanner";
 import CompetitionPublicPageTabs from "@/components/public/CompetitionPublicPageTabs";
-import { StartListPublicToggleButton } from "@/components/StartListPublicToggleButton";
+import { StartListVisibilityAdminControls } from "@/components/StartListVisibilityAdminControls";
 import { CompetitionHostInquiryDialog } from "@/components/public/CompetitionHostInquiryDialog";
 import { cn } from "@/lib/utils";
 import {
@@ -202,9 +205,13 @@ export default async function CompetitionDetailPage({
 
   const dayOpsUnlockConfigured = Boolean(competition.dayOpsAccessSecretHash);
 
-  const isOrgAdmin = hasOrgAdminAccess(competition.organization.admins);
+  const orgAdminsForCurrentUser = competition.organization.admins;
+  const isOrgAdmin = hasOrgAdminAccess(orgAdminsForCurrentUser);
   const canEditPublishedSchedule = canEditCompetitionPublishedSchedule({
-    orgAdminsForCurrentUser: competition.organization.admins,
+    orgAdminsForCurrentUser,
+  });
+  const canToggleStartListVisibility = canToggleCompetitionStartListVisibility({
+    orgAdminsForCurrentUser,
   });
   const canViewStartListOnPublicPage =
     (competition.startListPubliclyVisible ?? true) || isOrgAdmin || hasDayOpsUnlock;
@@ -696,18 +703,12 @@ export default async function CompetitionDetailPage({
       <CompetitionPublicPageTabs
         competitionId={id}
         tabsTrailing={
-          isOrgAdmin ? (
-            <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/15 px-2 py-1.5 sm:px-2.5">
-              <span className="max-w-[10rem] text-[11px] leading-tight text-muted-foreground sm:max-w-none">
-                スタートリスト全体
-              </span>
-              <StartListPublicToggleButton
-                organizationId={competition.organizationId}
-                competitionId={id}
-                initialVisible={competition.startListPubliclyVisible ?? true}
-              />
-            </div>
-          ) : null
+          <StartListVisibilityAdminControls
+            canManage={canToggleStartListVisibility}
+            organizationId={competition.organizationId}
+            competitionId={id}
+            initialVisible={competition.startListPubliclyVisible ?? true}
+          />
         }
         overview={
           activeTab === "overview" ? (
