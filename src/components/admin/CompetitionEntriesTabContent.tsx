@@ -20,6 +20,7 @@ import {
   sortEventsForEntryExport,
 } from "@/lib/competitionEntryExportOrdering";
 import { isPlayerRegistrationQualificationKind } from "@/lib/qualificationRegistrationKinds";
+import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
 
 type Props = {
   organizationId: string;
@@ -92,6 +93,45 @@ type IndividualEntryListRow = {
   fullName: string;
   clubName: string;
   eventsLabel: string;
+};
+
+type UnpaidIndividualEntryListRow = IndividualEntryListRow & {
+  paymentStatusLabel: string;
+  attemptedAtLabel: string;
+  amountLabel: string;
+};
+
+const yenFormatter = new Intl.NumberFormat("ja-JP", {
+  style: "currency",
+  currency: "JPY",
+  maximumFractionDigits: 0,
+});
+
+const formatYen = (amount: number) => yenFormatter.format(amount);
+
+const formatAttemptedAt = (d: Date) =>
+  new Date(d).toLocaleString("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+const unpaidCheckoutStatusLabel = (status: string | null | undefined): string => {
+  switch (status) {
+    case "PENDING":
+      return "未決済";
+    case "EXPIRED":
+      return "決済期限切れ";
+    case "DISPUTE_LOST":
+      return "決済無効";
+    case undefined:
+    case null:
+      return "Checkout未作成";
+    default:
+      return "未決済";
+  }
 };
 
 function EntriesEmpty({ message }: { message: string }) {
@@ -259,6 +299,110 @@ function IndividualEntriesResponsive({
   );
 }
 
+function UnpaidIndividualEntriesTableDesktop({ rows }: { rows: UnpaidIndividualEntryListRow[] }) {
+  return (
+    <div className="hidden overflow-x-auto rounded-xl border border-amber-200/80 shadow-sm md:block dark:border-amber-900/60">
+      <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+        <thead>
+          <tr className="border-b border-amber-200/80 bg-amber-50/70 dark:border-amber-900/60 dark:bg-amber-950/30">
+            <th className="min-w-[8rem] whitespace-nowrap px-3 py-3 text-xs font-semibold text-muted-foreground">
+              氏名
+            </th>
+            <th className="min-w-[7rem] whitespace-nowrap px-3 py-3 text-xs font-semibold text-muted-foreground">
+              所属クラブ
+            </th>
+            <th className="min-w-[14rem] px-3 py-3 text-xs font-semibold text-muted-foreground">出場種目</th>
+            <th className="whitespace-nowrap px-3 py-3 text-xs font-semibold text-muted-foreground">
+              決済状態
+            </th>
+            <th className="whitespace-nowrap px-3 py-3 text-xs font-semibold text-muted-foreground">
+              申込日時
+            </th>
+            <th className="whitespace-nowrap px-3 py-3 text-right text-xs font-semibold text-muted-foreground">
+              金額
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr
+              key={row.key}
+              className="border-b border-border last:border-0 odd:bg-muted/20 hover:bg-muted/40"
+            >
+              <td className="whitespace-nowrap px-3 py-2.5 align-top font-medium text-foreground">
+                {row.fullName}
+              </td>
+              <td className="max-w-[14rem] whitespace-normal px-3 py-2.5 align-top text-xs leading-snug text-foreground">
+                {row.clubName}
+              </td>
+              <td className="px-3 py-2.5 align-top text-xs leading-relaxed text-foreground">{row.eventsLabel}</td>
+              <td className="whitespace-nowrap px-3 py-2.5 align-top text-xs font-medium text-amber-800 dark:text-amber-200">
+                {row.paymentStatusLabel}
+              </td>
+              <td className="whitespace-nowrap px-3 py-2.5 align-top text-xs tabular-nums text-muted-foreground">
+                {row.attemptedAtLabel}
+              </td>
+              <td className="whitespace-nowrap px-3 py-2.5 align-top text-right text-xs tabular-nums text-foreground">
+                {row.amountLabel}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function UnpaidIndividualEntriesCardsMobile({ rows }: { rows: UnpaidIndividualEntryListRow[] }) {
+  return (
+    <div className="grid gap-3 md:hidden">
+      {rows.map((row) => (
+        <div key={row.key} className="rounded-xl border border-amber-200/80 bg-card p-4 shadow-sm dark:border-amber-900/60">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <p className="text-sm font-semibold text-foreground">{row.fullName}</p>
+            <span className="rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-100">
+              {row.paymentStatusLabel}
+            </span>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground/80">所属クラブ</span> {row.clubName}
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-foreground">
+            <span className="mb-1 block font-medium text-muted-foreground">出場種目</span>
+            {row.eventsLabel}
+          </p>
+          <div className="mt-3 grid gap-1.5 border-t border-border pt-3 text-xs text-muted-foreground">
+            <p>
+              <span className="font-medium text-foreground/80">申込日時</span> {row.attemptedAtLabel}
+            </p>
+            <p>
+              <span className="font-medium text-foreground/80">金額</span> {row.amountLabel}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function UnpaidIndividualEntriesResponsive({
+  rows,
+  emptyMessage,
+}: {
+  rows: UnpaidIndividualEntryListRow[];
+  emptyMessage: string;
+}) {
+  if (rows.length === 0) {
+    return <EntriesEmpty message={emptyMessage} />;
+  }
+  return (
+    <>
+      <UnpaidIndividualEntriesCardsMobile rows={rows} />
+      <UnpaidIndividualEntriesTableDesktop rows={rows} />
+    </>
+  );
+}
+
 export default async function CompetitionEntriesTabContent({
   organizationId,
   competitionId,
@@ -334,7 +478,7 @@ export default async function CompetitionEntriesTabContent({
       checkoutSessions: {
         orderBy: { createdAt: "desc" },
         take: 1,
-        select: { status: true, payload: true },
+        select: { status: true, payload: true, createdAt: true, amount: true },
       },
       items: {
         select: { eventId: true },
@@ -405,7 +549,22 @@ export default async function CompetitionEntriesTabContent({
     return labels.length > 0 ? labels.join(" / ") : "—";
   };
 
-  const individualListRows: IndividualEntryListRow[] = [];
+  const isEstablishedIndividualEntry = (entry: (typeof entries)[number]) => {
+    if (entry.status === "CANCELLED") return false;
+    if (entry.totalFee <= 0) return true;
+    if (entry.clubIndividualFeePaidAt) return true;
+    return isEntryCheckoutPaidForEligibility(entry.checkoutSessions[0]?.status);
+  };
+
+  const isUnpaidIndividualEntryAttempt = (entry: (typeof entries)[number]) => {
+    if (entry.status === "CANCELLED") return false;
+    if (entry.totalFee <= 0) return false;
+    if (entry.clubIndividualFeePaidAt) return false;
+    return !isEntryCheckoutPaidForEligibility(entry.checkoutSessions[0]?.status);
+  };
+
+  const paidIndividualListRows: IndividualEntryListRow[] = [];
+  const unpaidIndividualListRows: UnpaidIndividualEntryListRow[] = [];
   const individualCsvRows: string[][] = [];
 
   const individualCsvEvents = programOrderedEvents.filter((e) => e.type === "INDIVIDUAL");
@@ -414,16 +573,31 @@ export default async function CompetitionEntriesTabContent({
     ...individualCsvEvents.map((e) => formatEventLabel(e.id)),
   ];
 
-  entries.forEach((entry, i) => {
+  entries.forEach((entry) => {
     const u = entry.user;
     const eventsLabel = buildIndividualEventInfo(entry);
 
-    individualListRows.push({
+    const baseRow = {
       key: entry.id,
       fullName: `${u.familyName} ${u.givenName}`,
       clubName: entry.club?.name ?? "—",
       eventsLabel,
-    });
+    };
+
+    if (isEstablishedIndividualEntry(entry)) {
+      paidIndividualListRows.push(baseRow);
+    } else if (isUnpaidIndividualEntryAttempt(entry)) {
+      const latestCheckout = entry.checkoutSessions[0];
+      unpaidIndividualListRows.push({
+        ...baseRow,
+        paymentStatusLabel: unpaidCheckoutStatusLabel(latestCheckout?.status),
+        attemptedAtLabel: formatAttemptedAt(latestCheckout?.createdAt ?? entry.createdAt),
+        amountLabel: formatYen(latestCheckout?.amount ?? entry.totalFee),
+      });
+      return;
+    } else {
+      return;
+    }
 
     const mergedEventIds = getMergedEventIdsFromEntry(entry);
     const ageYears = getCompetitionEligibilityAgeYears(u.dateOfBirth, competition.startDate);
@@ -432,7 +606,7 @@ export default async function CompetitionEntriesTabContent({
     const kanaDisplay = kanaParts.length > 0 ? kanaParts.join(" ") : "";
 
     individualCsvRows.push([
-      String(i + 1),
+      String(individualCsvRows.length + 1),
       u.jlaMemberNumber ?? "",
       `${u.familyName} ${u.givenName}`,
       kanaDisplay,
@@ -627,18 +801,43 @@ export default async function CompetitionEntriesTabContent({
               <div className="flex items-baseline gap-2 rounded-xl border border-border bg-background px-4 py-3">
                 <span className="text-xs font-medium text-muted-foreground">件数</span>
                 <span className="text-2xl font-semibold tabular-nums tracking-tight text-foreground">
-                  {individualListRows.length}
+                  {paidIndividualListRows.length}
                 </span>
                 <span className="text-sm text-muted-foreground">件</span>
               </div>
+              {unpaidIndividualListRows.length > 0 ? (
+                <div className="flex items-baseline gap-2 rounded-xl border border-amber-200/80 bg-amber-50/70 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/30">
+                  <span className="text-xs font-medium text-amber-900 dark:text-amber-100">未決済</span>
+                  <span className="text-xl font-semibold tabular-nums tracking-tight text-amber-900 dark:text-amber-100">
+                    {unpaidIndividualListRows.length}
+                  </span>
+                  <span className="text-sm text-amber-800 dark:text-amber-200">件</span>
+                </div>
+              ) : null}
             </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4 pt-5">
           <IndividualEntriesResponsive
-            rows={individualListRows}
+            rows={paidIndividualListRows}
             emptyMessage="個人エントリーはまだありません。"
           />
+          <div className="border-t border-border pt-5">
+            <section className="space-y-3" aria-labelledby="unpaid-individual-entries-title">
+              <div className="space-y-1">
+                <h3 id="unpaid-individual-entries-title" className="text-sm font-semibold text-foreground">
+                  未決済のエントリー試行
+                </h3>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  エントリー手続きは開始されていますが、参加費の決済が成立していないため出場者一覧・CSVには含めません。
+                </p>
+              </div>
+              <UnpaidIndividualEntriesResponsive
+                rows={unpaidIndividualListRows}
+                emptyMessage="未決済のエントリー試行はありません。"
+              />
+            </section>
+          </div>
         </CardContent>
       </Card>
 
