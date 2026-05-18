@@ -37,21 +37,19 @@ const officialStatusLabel = {
   REJECTED: "却下",
 } as const;
 
-function formatOfficialApplicationContact(
-  email: string | null | undefined,
-  phone: string | null | undefined
-): string {
-  const e = email?.trim() || "";
-  const p = phone?.trim() || "";
-  if (e && p) return `${e} / ${p}`;
-  return e || p || "";
-}
-
 function refereeQualificationsDisplay(quals: { kind: string }[]): string {
   return quals
     .filter((q) => q.kind.startsWith("Referee"))
     .map((q) => qualificationJapaneseLabel(q.kind))
     .join("、");
+}
+
+function formatOfficialCsvDate(date: Date): string {
+  return date.toLocaleDateString("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
 }
 
 export default async function CompetitionOfficialTabHeavy({
@@ -100,6 +98,7 @@ export default async function CompetitionOfficialTabHeavy({
   let officialApplications: Array<{
     id: string;
     createdAt: Date;
+    userId: string;
     status: string;
     positionName: string;
     message: string | null;
@@ -118,6 +117,7 @@ export default async function CompetitionOfficialTabHeavy({
   }> = [];
 
   let officialAttendances: Array<{
+    userId: string;
     attendanceDate: Date;
     method: string;
     user: {
@@ -125,6 +125,7 @@ export default async function CompetitionOfficialTabHeavy({
       givenName: string;
       email: string | null;
       phoneNumber: string | null;
+      primaryClub: { name: string } | null;
     };
   }> = [];
 
@@ -141,6 +142,7 @@ export default async function CompetitionOfficialTabHeavy({
         select: {
           id: true,
           createdAt: true,
+          userId: true,
           status: true,
           positionName: true,
           message: true,
@@ -168,6 +170,7 @@ export default async function CompetitionOfficialTabHeavy({
         where: { competitionId },
         orderBy: [{ attendanceDate: "desc" }, { createdAt: "desc" }],
         select: {
+          userId: true,
           attendanceDate: true,
           method: true,
           user: {
@@ -176,6 +179,7 @@ export default async function CompetitionOfficialTabHeavy({
               givenName: true,
               email: true,
               phoneNumber: true,
+              primaryClub: { select: { name: true } },
             },
           },
         },
@@ -206,6 +210,16 @@ export default async function CompetitionOfficialTabHeavy({
     officialAttendanceCount = attendanceTotal;
   }
 
+  const attendanceDatesByUserId = new Map<string, string[]>();
+  for (const attendance of officialAttendances) {
+    const list = attendanceDatesByUserId.get(attendance.userId) ?? [];
+    list.push(formatOfficialCsvDate(attendance.attendanceDate));
+    attendanceDatesByUserId.set(attendance.userId, list);
+  }
+  for (const [userId, dates] of attendanceDatesByUserId) {
+    attendanceDatesByUserId.set(userId, [...new Set(dates)].sort());
+  }
+
   const officialApplicationsCsvRows: OfficialApplicationsCsvRow[] = officialApplications.map(
     (application, index) => ({
       通し番号: String(index + 1),
@@ -216,11 +230,10 @@ export default async function CompetitionOfficialTabHeavy({
       氏名: `${application.user.familyName} ${application.user.givenName}`,
       フリガナ: `${application.user.familyNameKana} ${application.user.givenNameKana}`.trim(),
       所属クラブ: application.user.primaryClub?.name ?? "",
+      出席日: (attendanceDatesByUserId.get(application.userId) ?? []).join(" / "),
       審判員資格: refereeQualificationsDisplay(application.user.qualifications),
-      連絡先: formatOfficialApplicationContact(
-        application.user.email,
-        application.user.phoneNumber
-      ),
+      メールアドレス: application.user.email ?? "",
+      電話番号: application.user.phoneNumber ?? "",
     })
   );
 
@@ -231,8 +244,9 @@ export default async function CompetitionOfficialTabHeavy({
 
   const officialAttendancesCsvRows: OfficialAttendancesCsvRow[] = officialAttendances.map(
     (attendance) => ({
-      出席日: attendance.attendanceDate.toLocaleDateString("ja-JP"),
+      出席日: formatOfficialCsvDate(attendance.attendanceDate),
       氏名: `${attendance.user.familyName} ${attendance.user.givenName}`,
+      所属クラブ: attendance.user.primaryClub?.name ?? "",
       メールアドレス: attendance.user.email ?? "",
       電話番号: attendance.user.phoneNumber ?? "",
       出席方法: attendance.method === "NFC" ? "NFC" : "手動",

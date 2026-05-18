@@ -9,8 +9,10 @@ export type OfficialApplicationsCsvRow = {
   氏名: string;
   フリガナ: string;
   所属クラブ: string;
+  出席日: string;
   審判員資格: string;
-  連絡先: string;
+  メールアドレス: string;
+  電話番号: string;
 };
 
 function escapeCsvCell(cell: string): string {
@@ -32,8 +34,10 @@ function buildCsv(rows: OfficialApplicationsCsvRow[]): string {
     "氏名",
     "フリガナ",
     "所属クラブ",
+    "出席日",
     "審判員資格",
-    "連絡先",
+    "メールアドレス",
+    "電話番号",
   ];
   const lines = [
     headers.join(","),

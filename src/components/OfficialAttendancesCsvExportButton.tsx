@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 export type OfficialAttendancesCsvRow = {
   出席日: string;
   氏名: string;
+  所属クラブ: string;
   メールアドレス: string;
   電話番号: string;
   出席方法: string;
@@ -29,6 +30,7 @@ function buildCsv(rows: OfficialAttendancesCsvRow[]): string {
   const headers: (keyof OfficialAttendancesCsvRow)[] = [
     "出席日",
     "氏名",
+    "所属クラブ",
     "メールアドレス",
     "電話番号",
     "出席方法",
