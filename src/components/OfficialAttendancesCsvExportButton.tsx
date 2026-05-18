@@ -12,6 +12,7 @@ export type OfficialAttendancesCsvRow = {
   出席方法: string;
   大会種別: string;
   カウント追加分: string;
+  "メモ（特筆事項）": string;
 };
 
 function escapeCsvCell(cell: string): string {
@@ -36,6 +37,7 @@ function buildCsv(rows: OfficialAttendancesCsvRow[]): string {
     "出席方法",
     "大会種別",
     "カウント追加分",
+    "メモ（特筆事項）",
   ];
   const lines = [
     headers.join(","),

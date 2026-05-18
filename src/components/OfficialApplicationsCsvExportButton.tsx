@@ -13,6 +13,7 @@ export type OfficialApplicationsCsvRow = {
   審判員資格: string;
   メールアドレス: string;
   電話番号: string;
+  "メモ（特筆事項）": string;
 };
 
 function escapeCsvCell(cell: string): string {
@@ -38,6 +39,7 @@ function buildCsv(rows: OfficialApplicationsCsvRow[]): string {
     "審判員資格",
     "メールアドレス",
     "電話番号",
+    "メモ（特筆事項）",
   ];
   const lines = [
     headers.join(","),

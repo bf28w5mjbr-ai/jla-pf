@@ -52,6 +52,43 @@ function formatOfficialCsvDate(date: Date): string {
   });
 }
 
+type OfficialCsvUserClubSources = {
+  primaryClub: { name: string } | null;
+  memberships: { club: { name: string } }[];
+};
+
+function uniqueJoinedClubNames(names: Array<string | null | undefined>): string {
+  return [...new Set(names.map((name) => name?.trim()).filter((name): name is string => Boolean(name)))]
+    .sort((a, b) => a.localeCompare(b, "ja"))
+    .join(" / ");
+}
+
+function technicalOfficialClubNameFromPosition(positionName: string | null | undefined): string {
+  const match = positionName?.match(/^テクニカルオフィシャル（([^）]+)）/);
+  return match?.[1]?.trim() ?? "";
+}
+
+function resolveOfficialCsvClubName({
+  user,
+  assignmentClubNames = [],
+  positionName,
+}: {
+  user: OfficialCsvUserClubSources;
+  assignmentClubNames?: string[];
+  positionName?: string | null;
+}): string {
+  const primaryClubName = user.primaryClub?.name?.trim();
+  if (primaryClubName) return primaryClubName;
+
+  const assignmentClubName = uniqueJoinedClubNames(assignmentClubNames);
+  if (assignmentClubName) return assignmentClubName;
+
+  const membershipClubName = uniqueJoinedClubNames(user.memberships.map((membership) => membership.club.name));
+  if (membershipClubName) return membershipClubName;
+
+  return technicalOfficialClubNameFromPosition(positionName);
+}
+
 export default async function CompetitionOfficialTabHeavy({
   /** URL のタブが official のときだけ true。false なら DB に触れずプレースホルダのみ（他タブ表示時の無駄取得を防ぐ） */
   enabled,
@@ -112,6 +149,7 @@ export default async function CompetitionOfficialTabHeavy({
       jlaMemberNumber: string | null;
       legacyJlaMemberNumber: string | null;
       primaryClub: { name: string } | null;
+      memberships: { club: { name: string } }[];
       qualifications: { kind: string }[];
     };
   }> = [];
@@ -126,7 +164,13 @@ export default async function CompetitionOfficialTabHeavy({
       email: string | null;
       phoneNumber: string | null;
       primaryClub: { name: string } | null;
+      memberships: { club: { name: string } }[];
     };
+  }> = [];
+
+  let technicalOfficialAssignments: Array<{
+    userId: string;
+    club: { name: string };
   }> = [];
 
   let officialPendingCount = 0;
@@ -135,7 +179,7 @@ export default async function CompetitionOfficialTabHeavy({
   let officialAttendanceCount = 0;
 
   if (dayOpsDataReady) {
-    const [apps, atts] = await Promise.all([
+    const [apps, atts, assignments] = await Promise.all([
       prisma.competitionOfficialApplication.findMany({
         where: { competitionId },
         orderBy: { createdAt: "desc" },
@@ -157,6 +201,10 @@ export default async function CompetitionOfficialTabHeavy({
               jlaMemberNumber: true,
               legacyJlaMemberNumber: true,
               primaryClub: { select: { name: true } },
+              memberships: {
+                where: { status: "APPROVED" },
+                select: { club: { select: { name: true } } },
+              },
               qualifications: {
                 where: { status: "APPROVED" },
                 select: { kind: true },
@@ -180,13 +228,25 @@ export default async function CompetitionOfficialTabHeavy({
               email: true,
               phoneNumber: true,
               primaryClub: { select: { name: true } },
+              memberships: {
+                where: { status: "APPROVED" },
+                select: { club: { select: { name: true } } },
+              },
             },
           },
+        },
+      }),
+      prisma.competitionTechnicalOfficialAssignment.findMany({
+        where: { competitionId },
+        select: {
+          userId: true,
+          club: { select: { name: true } },
         },
       }),
     ]);
     officialApplications = apps;
     officialAttendances = atts;
+    technicalOfficialAssignments = assignments;
     officialPendingCount = apps.filter((a) => a.status === "PENDING").length;
     officialApprovedCount = apps.filter((a) => a.status === "APPROVED").length;
     officialRejectedCount = apps.filter((a) => a.status === "REJECTED").length;
@@ -220,6 +280,21 @@ export default async function CompetitionOfficialTabHeavy({
     attendanceDatesByUserId.set(userId, [...new Set(dates)].sort());
   }
 
+  const assignmentClubNamesByUserId = new Map<string, string[]>();
+  for (const assignment of technicalOfficialAssignments) {
+    const list = assignmentClubNamesByUserId.get(assignment.userId) ?? [];
+    list.push(assignment.club.name);
+    assignmentClubNamesByUserId.set(assignment.userId, list);
+  }
+
+  const applicationMetaByUserId = new Map<string, { message: string; positionName: string }>();
+  for (const application of officialApplications) {
+    applicationMetaByUserId.set(application.userId, {
+      message: application.message?.trim() ?? "",
+      positionName: application.positionName,
+    });
+  }
+
   const officialApplicationsCsvRows: OfficialApplicationsCsvRow[] = officialApplications.map(
     (application, index) => ({
       通し番号: String(index + 1),
@@ -229,11 +304,16 @@ export default async function CompetitionOfficialTabHeavy({
         "",
       氏名: `${application.user.familyName} ${application.user.givenName}`,
       フリガナ: `${application.user.familyNameKana} ${application.user.givenNameKana}`.trim(),
-      所属クラブ: application.user.primaryClub?.name ?? "",
+      所属クラブ: resolveOfficialCsvClubName({
+        user: application.user,
+        assignmentClubNames: assignmentClubNamesByUserId.get(application.userId),
+        positionName: application.positionName,
+      }),
       出席日: (attendanceDatesByUserId.get(application.userId) ?? []).join(" / "),
       審判員資格: refereeQualificationsDisplay(application.user.qualifications),
       メールアドレス: application.user.email ?? "",
       電話番号: application.user.phoneNumber ?? "",
+      "メモ（特筆事項）": application.message?.trim() ?? "",
     })
   );
 
@@ -246,12 +326,17 @@ export default async function CompetitionOfficialTabHeavy({
     (attendance) => ({
       出席日: formatOfficialCsvDate(attendance.attendanceDate),
       氏名: `${attendance.user.familyName} ${attendance.user.givenName}`,
-      所属クラブ: attendance.user.primaryClub?.name ?? "",
+      所属クラブ: resolveOfficialCsvClubName({
+        user: attendance.user,
+        assignmentClubNames: assignmentClubNamesByUserId.get(attendance.userId),
+        positionName: applicationMetaByUserId.get(attendance.userId)?.positionName,
+      }),
       メールアドレス: attendance.user.email ?? "",
       電話番号: attendance.user.phoneNumber ?? "",
       出席方法: attendance.method === "NFC" ? "NFC" : "手動",
       大会種別: competitionTypeLabel,
       カウント追加分: attendanceCountAdditionLabel,
+      "メモ（特筆事項）": applicationMetaByUserId.get(attendance.userId)?.message ?? "",
     })
   );
 
