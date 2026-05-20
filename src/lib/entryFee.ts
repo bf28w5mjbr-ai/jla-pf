@@ -36,7 +36,7 @@ export function billingCountsForPersonalEntryPost(options: {
   entryItemsCount: number;
   teamEntriesCount: number;
 }): { individualCount: number; teamCount: number } {
-  let individualCount = Math.max(0, options.entryItemsCount);
+  const individualCount = Math.max(0, options.entryItemsCount);
   let teamCount = Math.max(0, options.teamEntriesCount);
   if (
     options.teamOnlyIntentWithoutItemSelection &&

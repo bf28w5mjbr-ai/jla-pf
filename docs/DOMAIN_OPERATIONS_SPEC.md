@@ -79,12 +79,16 @@
 ### 3-2. 管理すべき状態
 
 - 本人性:
-  - `phoneVerified`
-  - `emailVerified`
+  - `phoneVerified`（`UserContact`）
+  - `emailVerified`（`UserSecurity`）
 - 認証強度:
-  - `passwordHash`
-  - `mfaEnabled`
+  - `passwordHash`（`UserSecurity`）
+  - `mfaEnabled` / `mfaEnforced`（`UserSecurity`）
   - `passkeyCredentials`
+- ログイン履歴:
+  - `UserLoginEvent`（ユーザー向け・管理向けの直近履歴）
+  - `UserSecurity.lastLogin*`（直近1件の非正規化スナップショット）
+  - `AuditLog` の `USER_LOGIN_SUCCESS`（監査用・移行期はフォールバック参照可）
 - ライフサイクル:
   - `deletedAt`
   - `deletionScheduledAt`
@@ -94,7 +98,6 @@
 - 組織参加補助:
   - `primaryClubId`
   - `jlaMemberNumber`
-  - `legacyJlaMemberNumber`
   - 将来的には `競技団体会員番号` として抽象化する
 
 ### 3-3. 未確定事項
@@ -233,14 +236,20 @@
 
 - 開催者名と略称の重複制御をどこまで厳格にするか。
 
-### 5-3. 実装上の要確認
+### 5-3. 実装状況（`docs/ORGANIZER_DOMAIN.md` 参照）
 
-- 開催者運用の実質権限は `ADMIN` 想定だが、共通ガードと個別APIの整合を確認する必要がある。
-- オンボーディング料金、正式化、停止の実行権限と解除フローを実装へ反映する必要がある。
-- 現行実装では `PENDING` 開催者でも一部運用操作が可能な可能性があるため、開催者ステータスによる制御追加が必要。
-- 現行スキーマの `SUSPENDED / INACTIVE` を、開催者側も `停止1種類` に整理するならデータモデル見直しが必要。
-- 現行の開催者メンバー追加は即時追加方式のため、招待承諾フローへの実装変更が必要。
-- 現行権限モデルでは、`統括団体は大会開催者に干渉しない` という原則を明確に制御できていない可能性がある。
+| 項目 | 状態 | 備考 |
+|------|------|------|
+| `Organization` + `OrgAdmin` | 実装済 | 作成時 `PENDING`、作成者を `ADMIN` |
+| 正式化二層（`status` + 課金） | 実装済 | [`organizerLifecycle.ts`](../src/lib/organizerLifecycle.ts), [`organizerBilling.ts`](../src/lib/organizerBilling.ts) |
+| `PENDING` 時の操作制限 | 実装済 | `assertOrgOperational` / `assertOrgOnboardingAllowed` |
+| 管理メンバー招待→承諾 | 実装済 | `OrganizationAdminInvitation` |
+| 最後の `ADMIN` 削除ガード | 実装済 | `orgAdminInvitationService` / members API |
+| `INACTIVE` 統合 | 実装済 | `SUSPENDED` + `suspendedReason` へマイグレーション |
+| PF による停止/復旧 | 実装済 | `POST /api/admin/organizations/[orgId]/status` |
+| 認可ヘルパー整理（作成・大会 mutation） | 実装済 | `createDraftCompetition`, `requireHostOrgAdminForCompetition`, `getCompetitionManagementAccess` |
+| 開催者名・略称の重複制御 | 未確定 | §5-2 |
+| `User.role = ORG_ADMIN` enum 削除 | 未実施 | コード参照のみ廃止、DB enum は温存 |
 
 ## 6. 大会開催の運用
 

@@ -147,7 +147,6 @@ export default async function CompetitionOfficialTabHeavy({
       email: string;
       phoneNumber: string;
       jlaMemberNumber: string | null;
-      legacyJlaMemberNumber: string | null;
       primaryClub: { name: string } | null;
       memberships: { club: { name: string } }[];
       qualifications: { kind: string }[];
@@ -192,14 +191,17 @@ export default async function CompetitionOfficialTabHeavy({
           message: true,
           user: {
             select: {
-              familyName: true,
-              givenName: true,
-              familyNameKana: true,
-              givenNameKana: true,
               email: true,
-              phoneNumber: true,
-              jlaMemberNumber: true,
-              legacyJlaMemberNumber: true,
+              profile: {
+                select: {
+                  familyName: true,
+                  givenName: true,
+                  familyNameKana: true,
+                  givenNameKana: true,
+                },
+              },
+              contact: { select: { phoneNumber: true } },
+              jlaProfile: { select: { jlaMemberNumber: true } },
               primaryClub: { select: { name: true } },
               memberships: {
                 where: { status: "APPROVED" },
@@ -223,10 +225,9 @@ export default async function CompetitionOfficialTabHeavy({
           method: true,
           user: {
             select: {
-              familyName: true,
-              givenName: true,
               email: true,
-              phoneNumber: true,
+              profile: { select: { familyName: true, givenName: true } },
+              contact: { select: { phoneNumber: true } },
               primaryClub: { select: { name: true } },
               memberships: {
                 where: { status: "APPROVED" },
@@ -244,8 +245,32 @@ export default async function CompetitionOfficialTabHeavy({
         },
       }),
     ]);
-    officialApplications = apps;
-    officialAttendances = atts;
+    officialApplications = apps.map((app) => ({
+      ...app,
+      user: {
+        familyName: app.user.profile?.familyName ?? "",
+        givenName: app.user.profile?.givenName ?? "",
+        familyNameKana: app.user.profile?.familyNameKana ?? "",
+        givenNameKana: app.user.profile?.givenNameKana ?? "",
+        email: app.user.email,
+        phoneNumber: app.user.contact?.phoneNumber ?? "",
+        jlaMemberNumber: app.user.jlaProfile?.jlaMemberNumber ?? null,
+        primaryClub: app.user.primaryClub,
+        memberships: app.user.memberships,
+        qualifications: app.user.qualifications,
+      },
+    }));
+    officialAttendances = atts.map((att) => ({
+      ...att,
+      user: {
+        familyName: att.user.profile?.familyName ?? "",
+        givenName: att.user.profile?.givenName ?? "",
+        email: att.user.email,
+        phoneNumber: att.user.contact?.phoneNumber ?? null,
+        primaryClub: att.user.primaryClub,
+        memberships: att.user.memberships,
+      },
+    }));
     technicalOfficialAssignments = assignments;
     officialPendingCount = apps.filter((a) => a.status === "PENDING").length;
     officialApprovedCount = apps.filter((a) => a.status === "APPROVED").length;
@@ -298,10 +323,7 @@ export default async function CompetitionOfficialTabHeavy({
   const officialApplicationsCsvRows: OfficialApplicationsCsvRow[] = officialApplications.map(
     (application, index) => ({
       通し番号: String(index + 1),
-      JLA番号:
-        application.user.jlaMemberNumber ??
-        application.user.legacyJlaMemberNumber ??
-        "",
+      JLA番号: application.user.jlaMemberNumber ?? "",
       氏名: `${application.user.familyName} ${application.user.givenName}`,
       フリガナ: `${application.user.familyNameKana} ${application.user.givenNameKana}`.trim(),
       所属クラブ: resolveOfficialCsvClubName({

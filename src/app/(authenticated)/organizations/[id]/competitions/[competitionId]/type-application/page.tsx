@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { redirect, notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { verifySessionCached } from "@/lib/auth";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import { getCompetitionManagementAccess } from "@/lib/competitionManagementAccess";
 import { prisma } from "@/server/db";
 import { Button } from "@/components/ui/button";
 import CompetitionTypeApplicationForm from "@/components/CompetitionTypeApplicationForm";
@@ -23,6 +23,18 @@ export default async function CompetitionTypeApplicationPage({
     redirect("/login");
   }
 
+  const access = await getCompetitionManagementAccess(
+    organizationId,
+    competitionId,
+    session.userId
+  );
+  if (access.kind === "not_found") {
+    notFound();
+  }
+  if (access.kind === "wrong_org" || access.kind === "forbidden") {
+    redirect(`/organizations/${organizationId}/competitions/${competitionId}`);
+  }
+
   const competition = await prisma.competition.findUnique({
     where: { id: competitionId },
     select: {
@@ -30,13 +42,6 @@ export default async function CompetitionTypeApplicationPage({
       name: true,
       organizationId: true,
       competitionType: true,
-      organization: {
-        include: {
-          admins: {
-            where: { userId: session.userId },
-          },
-        },
-      },
       typeApplications: {
         orderBy: { createdAt: "desc" },
         take: 20,
@@ -55,11 +60,6 @@ export default async function CompetitionTypeApplicationPage({
 
   if (!competition || competition.organizationId !== organizationId) {
     notFound();
-  }
-
-  const canEdit = hasOrgAdminAccess(competition.organization.admins);
-  if (!canEdit) {
-    redirect(`/organizations/${organizationId}/competitions/${competitionId}`);
   }
 
   return (

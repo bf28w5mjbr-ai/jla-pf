@@ -176,20 +176,32 @@ async function main() {
     const user = await prisma.user.create({
       data: {
         email,
-        familyName: "IronMan",
-        givenName: `Seed${n}`,
-        familyNameKana: "アイアンマン",
-        givenNameKana: "シード",
-        normalizedFamilyName: "ironman",
-        normalizedGivenName: `seed${n}`,
-        dateOfBirth: dob,
-        sex: "MALE",
-        phoneNumber: phone,
-        phoneVerified: true,
-        postalCode: "2480006",
-        prefecture: "神奈川県",
-        city: "鎌倉市",
-        addressLine1: "テスト1-1",
+        profile: {
+          create: {
+            familyName: "IronMan",
+            givenName: `Seed${n}`,
+            familyNameKana: "アイアンマン",
+            givenNameKana: "シード",
+            normalizedFamilyName: "ironman",
+            normalizedGivenName: `seed${n}`,
+            dateOfBirth: dob,
+            sex: "MALE",
+          },
+        },
+        contact: {
+          create: {
+            phoneNumber: phone,
+            phoneVerified: true,
+          },
+        },
+        address: {
+          create: {
+            postalCode: "2480006",
+            prefecture: "神奈川県",
+            city: "鎌倉市",
+            addressLine1: "テスト1-1",
+          },
+        },
       },
     });
 

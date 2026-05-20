@@ -68,7 +68,11 @@ export async function POST(request: NextRequest) {
     // データベースを更新
     await prisma.user.update({
       where: { id: sess.userId },
-      data: { profilePhotoUrl: photoUrl },
+      data: {
+        profile: {
+          update: { profilePhotoUrl: photoUrl },
+        },
+      },
     });
 
     return NextResponse.json({ url: photoUrl });
@@ -89,16 +93,20 @@ export async function DELETE() {
 
     const current = await prisma.user.findUnique({
       where: { id: sess.userId },
-      select: { profilePhotoUrl: true },
+      select: { profile: { select: { profilePhotoUrl: true } } },
     });
-    if (current?.profilePhotoUrl?.startsWith("http")) {
-      await deletePublicAssetByUrl(current.profilePhotoUrl);
+    if (current?.profile?.profilePhotoUrl?.startsWith("http")) {
+      await deletePublicAssetByUrl(current.profile.profilePhotoUrl);
     }
 
     // データベースを更新（URLをnullに設定）
     await prisma.user.update({
       where: { id: sess.userId },
-      data: { profilePhotoUrl: null },
+      data: {
+        profile: {
+          update: { profilePhotoUrl: null },
+        },
+      },
     });
 
     return NextResponse.json({ success: true });

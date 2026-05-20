@@ -7,7 +7,6 @@ import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { z } from "zod";
-import { normalizeClubRoleForWrite } from "@/lib/roleScopes";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -45,9 +44,8 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
           select: {
             id: true,
             email: true,
-            familyName: true,
-            givenName: true,
-            phoneNumber: true,
+            profile: { select: { familyName: true, givenName: true } },
+            contact: { select: { phoneNumber: true } },
             role: true,
           },
         },
@@ -57,8 +55,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
               select: {
                 id: true,
                 email: true,
-                familyName: true,
-                givenName: true,
+                profile: { select: { familyName: true, givenName: true } },
               },
             },
           },
@@ -73,136 +70,46 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
       );
     }
 
-    return NextResponse.json(application);
+    const { creator, memberships, ...applicationFields } = application;
+    return NextResponse.json({
+      ...applicationFields,
+      creator: creator
+        ? {
+            id: creator.id,
+            email: creator.email,
+            familyName: creator.profile?.familyName ?? null,
+            givenName: creator.profile?.givenName ?? null,
+            phoneNumber: creator.contact?.phoneNumber ?? null,
+            role: creator.role,
+          }
+        : null,
+      memberships: memberships.map((membership) => {
+        const { user: memberUser, ...membershipFields } = membership;
+        return {
+          ...membershipFields,
+          user: {
+            id: memberUser.id,
+            email: memberUser.email,
+            familyName: memberUser.profile?.familyName ?? null,
+            givenName: memberUser.profile?.givenName ?? null,
+          },
+        };
+      }),
+    });
   } catch (err) {
     return jsonInternalError500("GET api/admin/club-applications/[id]/route.ts", err);
   }
 }
 
-// PATCH /api/admin/club-applications/[id] - クラブ申請の承認・却下
-export async function PATCH(req: NextRequest, ctx: RouteContext) {
-  try {
-    const jar = await cookies();
-    const token = jar.get("session")?.value ?? null;
-    const sess = token ? await verifySession(token) : null;
-
-    if (!sess?.userId) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-
-    // PF_ADMIN権限チェック
-    const user = await prisma.user.findUnique({
-      where: { id: sess.userId },
-      select: { role: true },
-    });
-
-    if (user?.role !== 'PF_ADMIN') {
-      return NextResponse.json(
-        { error: 'プラットフォーム管理者権限が必要です' },
-        { status: 403 }
-      );
-    }
-
-    const { id } = await ctx.params;
-
-    const club = await prisma.club.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        name: true,
-        creatorId: true,
-        status: true,
-      },
-    });
-
-    if (!club) {
-      return NextResponse.json(
-        { error: 'クラブが見つかりません' },
-        { status: 404 }
-      );
-    }
-
-    const body = await req.json().catch(() => ({}));
-
-    const UpdateClubApplicationSchema = z.object({
-      status: z.enum(['JLA_APPROVED', 'REJECTED']),
-      rejectionReason: z.string().optional(),
-    });
-
-    const data = UpdateClubApplicationSchema.parse(body);
-    const nextStatus = data.status === "JLA_APPROVED" ? "JLA_APPROVED" : "INACTIVE";
-    const nextSuspendedReason = data.status === "REJECTED" ? "REJECTED" : null;
-
-    // トランザクションで実行
-    const result = await prisma.$transaction(async (tx) => {
-      // クラブステータス更新
-      const updatedClub = await tx.club.update({
-        where: { id },
-        data: {
-          status: nextStatus,
-          suspendedReason: nextSuspendedReason,
-        },
-        include: {
-          creator: {
-            select: {
-              id: true,
-              email: true,
-              familyName: true,
-              givenName: true,
-              role: true,
-            },
-          },
-        },
-      });
-
-      // 承認の場合、申請者をクラブ管理者としてメンバーシップ作成
-      if (data.status === 'JLA_APPROVED') {
-        if (!club.creatorId) {
-          throw new Error('club_creator_missing');
-        }
-        const existingMembership = await tx.membership.findFirst({
-          where: {
-            userId: club.creatorId,
-            clubId: id,
-          },
-        });
-
-        if (!existingMembership) {
-          await tx.membership.create({
-            data: {
-              userId: club.creatorId,
-              clubId: id,
-              role: normalizeClubRoleForWrite('ADMIN'),
-              status: 'APPROVED',
-            },
-          });
-        }
-      }
-
-      // AuditLog 記録
-      await tx.auditLog.create({
-        data: {
-          actorUserId: sess.userId,
-          action: data.status === 'JLA_APPROVED' ? 'CLUB_APPROVE' : 'CLUB_REJECT',
-          target: id,
-          meta: {
-            status: data.status,
-            rejectionReason: data.rejectionReason,
-          },
-        },
-      });
-
-      return updatedClub;
-    });
-
-    return NextResponse.json(result);
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      return NextResponse.json(zodErrorJsonBody(err, "validation_message_ja"), { status: 400 });
-    }
-
-    return jsonInternalError500("PATCH api/admin/club-applications/[id]/route.ts", err);
-  }
+// PATCH /api/admin/club-applications/[id] - 廃止（クラブ成立審査は廃止）
+export async function PATCH() {
+  return NextResponse.json(
+    {
+      error:
+        "クラブ成立審査は廃止されました。PF のクラブ管理（/admin/clubs）で停止・復旧を行ってください。種別は協会の種別申請 API を使用してください。",
+    },
+    { status: 410 }
+  );
 }
 
 // DELETE /api/admin/club-applications/[id] - クラブ申請削除（PF_ADMINのみ）

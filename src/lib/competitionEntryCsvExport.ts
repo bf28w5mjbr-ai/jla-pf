@@ -81,8 +81,7 @@ export async function findManyPendingCsvExportRequestsForPfAdmin() {
       },
       requestedBy: {
         select: {
-          familyName: true,
-          givenName: true,
+          profile: { select: { familyName: true, givenName: true } },
           email: true,
         },
       },

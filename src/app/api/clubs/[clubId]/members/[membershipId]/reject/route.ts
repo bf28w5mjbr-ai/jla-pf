@@ -1,8 +1,10 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
-import { prisma } from "@/server/db";
-import { requireClubAdmin } from "@/lib/accessControl";
+import {
+  rejectMembership,
+  membershipServiceErrorStatus,
+} from "@/lib/membershipService";
 
 export async function POST(
   req: NextRequest,
@@ -11,38 +13,37 @@ export async function POST(
   try {
     const { clubId, membershipId } = await params;
 
-    // セッション確認
     const token = req.cookies.get("session")?.value;
     const sess = token ? await verifySession(token) : null;
     if (!sess?.userId) {
       return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
     }
 
-    // 現在のユーザーが管理者かチェック
-    try {
-      await requireClubAdmin(clubId, sess.userId);
-    } catch {
+    const body = await req.json().catch(() => ({}));
+    const reason = typeof body.reason === "string" ? body.reason : undefined;
+
+    const result = await rejectMembership(
+      membershipId,
+      sess.userId,
+      clubId,
+      reason
+    );
+
+    if (!result.success) {
       return NextResponse.json(
-        { error: "クラブの管理者のみがメンバーを拒否できます" },
-        { status: 403 }
+        { error: result.message },
+        { status: membershipServiceErrorStatus(result.error) }
       );
     }
 
-    // メンバーシップを拒否
-    const membership = await prisma.membership.update({
-      where: {
-        id: membershipId,
-      },
-      data: {
-        status: 'REJECTED',
-      },
-    });
-
     return NextResponse.json({
-      message: "メンバーを拒否しました",
-      membership,
+      message: result.message,
+      membership: result.membership,
     });
   } catch (error) {
-    return jsonInternalError500("POST api/clubs/[clubId]/members/[membershipId]/reject/route.ts", error);
+    return jsonInternalError500(
+      "POST api/clubs/[clubId]/members/[membershipId]/reject/route.ts",
+      error
+    );
   }
 }

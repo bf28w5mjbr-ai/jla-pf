@@ -52,7 +52,7 @@ export async function loadCompetitionOfficialResultsPayload(
       canViewUnpublished = true;
     } else {
       try {
-        await requireOrgAdmin(competition.organizationId, viewerUserId);
+        await requireOrgAdmin(competition.organizationId, viewerUserId, "operational");
         canViewUnpublished = true;
       } catch {
         canViewUnpublished = false;

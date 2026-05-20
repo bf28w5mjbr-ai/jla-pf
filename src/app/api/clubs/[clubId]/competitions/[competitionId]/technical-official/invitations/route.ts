@@ -243,7 +243,7 @@ export async function POST(
     }
 
     const existingUser = await prisma.user.findFirst({
-      where: { phoneNumber: phoneE164 },
+      where: { contact: { is: { phoneNumber: phoneE164 } } },
       select: { id: true },
     });
     if (existingUser) {
@@ -335,7 +335,7 @@ export async function GET(
       orderBy: { createdAt: "desc" },
       include: {
         invitedUser: {
-          select: { id: true, familyName: true, givenName: true },
+          select: { id: true, profile: { select: { familyName: true, givenName: true } } },
         },
       },
     });
@@ -346,8 +346,7 @@ export async function GET(
         user: {
           select: {
             id: true,
-            familyName: true,
-            givenName: true,
+            profile: { select: { familyName: true, givenName: true } },
             qualifications: {
               select: { kind: true, status: true, expiryDate: true },
             },
@@ -373,7 +372,7 @@ export async function GET(
           )
           .map((m) => ({
             id: m.user.id,
-            name: `${m.user.familyName} ${m.user.givenName}`,
+            name: `${m.user.profile?.familyName ?? ""} ${m.user.profile?.givenName ?? ""}`.trim(),
           }))
       : [];
 
@@ -401,7 +400,13 @@ export async function GET(
         status: i.status,
         invitePhoneE164: viewerIsAdmin ? i.invitePhoneE164 : null,
         smsInvite: Boolean(i.invitePhoneE164) && !i.invitedUser,
-        invitedUser: i.invitedUser,
+        invitedUser: i.invitedUser
+          ? {
+              id: i.invitedUser.id,
+              familyName: i.invitedUser.profile?.familyName ?? "",
+              givenName: i.invitedUser.profile?.givenName ?? "",
+            }
+          : null,
         createdAt: i.createdAt.toISOString(),
       })),
       eligibleMembers,

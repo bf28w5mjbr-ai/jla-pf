@@ -32,11 +32,11 @@
 
 ## クラブ
 - `GET /api/clubs`
-- `POST /api/clubs`
-- `POST /api/clubs/create`
-- `GET /api/clubs/search`
-- `POST /api/clubs/apply`
-- `POST /api/clubs/[id]/join`
+- `POST /api/clubs`（廃止・410。`POST /api/clubs/create` を使用）
+- `POST /api/clubs/create`（作成時 `APPROVED`・管理者メンバーシップ自動付与）
+- `GET /api/clubs/search`（参加可能クラブは `APPROVED` のみ）
+- `POST /api/clubs/apply`（非推奨。`POST /api/clubs/[clubId]/join` と同一）
+- `POST /api/clubs/[clubId]/join`（参加申請 → `Membership` は `PENDING`、管理者承認で `APPROVED`）
 - `POST /api/clubs/[id]/leave`
 - `PUT /api/clubs/[id]/update`
 - `DELETE /api/clubs/[id]/delete`

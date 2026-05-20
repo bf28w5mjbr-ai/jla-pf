@@ -7,6 +7,7 @@ import { isoBase64URL } from "@simplewebauthn/server/helpers";
 import { cookies } from "next/headers";
 import { signSession } from "@/lib/auth";
 import { z } from "zod";
+import { AuthLoginChannel } from "@prisma/client";
 import { onAuthLoginSuccess } from "@/lib/authLoginSuccess";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
@@ -195,7 +196,7 @@ export async function POST(req: NextRequest) {
       maxAge: 60 * 60 * 24 * 30,
     });
 
-    await onAuthLoginSuccess(credential.userId, req, { channel: "PASSKEY" });
+    await onAuthLoginSuccess(credential.userId, req, { channel: AuthLoginChannel.PASSKEY });
 
     await notePasskeyVerifySuccess(ip);
 

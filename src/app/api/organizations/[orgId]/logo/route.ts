@@ -2,7 +2,7 @@ import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import { hostOrgAdminCanManageOnboarding } from "@/lib/roleScopes";
 import { isValidOrganizationLogoUrl } from "@/lib/organizationLogo";
 
 /**
@@ -32,7 +32,7 @@ export async function PATCH(
       return NextResponse.json({ error: "団体が見つかりません" }, { status: 404 });
     }
 
-    if (!hasOrgAdminAccess(organization.admins)) {
+    if (!hostOrgAdminCanManageOnboarding(organization.admins, organization.status)) {
       return NextResponse.json({ error: "ロゴを変更する権限がありません" }, { status: 403 });
     }
 

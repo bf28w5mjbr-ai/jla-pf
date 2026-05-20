@@ -71,7 +71,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
     }
     try {
-      await requireOrgAdmin(organizationId, session.userId);
+      await requireOrgAdmin(organizationId, session.userId, "operational");
     } catch {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }

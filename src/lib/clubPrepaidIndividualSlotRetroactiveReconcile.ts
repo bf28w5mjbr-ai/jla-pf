@@ -137,9 +137,9 @@ export async function reconcileRetroactiveClubPrepaidSlotsForUsersInTx(
 
     const user = await tx.user.findUnique({
       where: { id: userId },
-      select: { dateOfBirth: true },
+      select: { profile: { select: { dateOfBirth: true } } },
     });
-    const userDob = user?.dateOfBirth ? new Date(user.dateOfBirth) : null;
+    const userDob = user?.profile?.dateOfBirth ? new Date(user.profile.dateOfBirth) : null;
     const userAge = userDob
       ? getCompetitionEligibilityAgeYears(userDob, new Date(competition.startDate))
       : null;

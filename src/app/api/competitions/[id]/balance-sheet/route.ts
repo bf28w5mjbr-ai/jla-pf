@@ -13,7 +13,7 @@ async function assertOrgAdminForCompetition(competitionId: string, userId: strin
     return { error: "大会が見つかりません", status: 404 as const };
   }
   try {
-    await requireOrgAdmin(competition.organizationId, userId);
+    await requireOrgAdmin(competition.organizationId, userId, "operational");
   } catch {
     return { error: "権限がありません", status: 403 as const };
   }

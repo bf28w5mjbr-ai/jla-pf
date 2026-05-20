@@ -229,7 +229,7 @@ export default async function CompetitionFinanceTabContent({
       select: {
         stripeDisputeId: true,
         amount: true,
-        user: { select: { familyName: true, givenName: true, email: true } },
+        user: { select: { profile: { select: { familyName: true, givenName: true } }, email: true } },
       },
     }),
     prisma.payment.findMany({
@@ -274,7 +274,7 @@ export default async function CompetitionFinanceTabContent({
     const sum = await stripeDisputeSummary(disputeId);
     disputeRows.push({
       disputeId,
-      scopeLabel: `個人エントリー: ${row.user.familyName} ${row.user.givenName}（${row.user.email}）`,
+      scopeLabel: `個人エントリー: ${row.user.profile?.familyName ?? ""} ${row.user.profile?.givenName ?? ""}（${row.user.email}）`,
       amountYen: row.amount,
       dueByLabel: sum.dueByLabel,
       stripeStatus: sum.status,

@@ -1,68 +1,16 @@
 import { redirect } from "next/navigation";
 
-import { getRequiredAuthenticatedUserId } from "@/lib/auth";
-import { prisma } from "@/server/db";
-import { isOrgAdminRole } from "@/lib/roleScopes";
-
 type PageProps = {
   searchParams: Promise<{ organizationId?: string }>;
 };
 
-export default async function CreateCompetitionPage({ searchParams }: PageProps) {
+/** ブックマーク互換: org 配下の作成フローへ転送 */
+export default async function CreateCompetitionRedirectPage({ searchParams }: PageProps) {
   const { organizationId } = await searchParams;
 
-  // セッション確認
-  const userId = await getRequiredAuthenticatedUserId();
-
-  if (!organizationId) {
-    redirect("/dashboard");
+  if (organizationId) {
+    redirect(`/organizations/${organizationId}/competitions/create`);
   }
 
-  // 団体への権限を確認（管理者のみ）
-  const orgAdmin = await prisma.orgAdmin.findFirst({
-    where: {
-      userId: userId,
-      organizationId,
-    },
-    include: {
-      organization: {
-        select: {
-          name: true,
-          nameKana: true,
-          abbreviation: true,
-          status: true,
-        },
-      },
-    },
-  });
-
-  if (!orgAdmin || !isOrgAdminRole(orgAdmin.role)) {
-    redirect(`/organizations/${organizationId}`);
-  }
-
-  if (orgAdmin.organization.status !== "APPROVED") {
-    redirect(`/organizations/${organizationId}`);
-  }
-
-  const now = new Date();
-  const endDate = new Date(now);
-  endDate.setDate(endDate.getDate() + 1);
-
-  const competition = await prisma.competition.create({
-    data: {
-      organizationId,
-      hostOrganizationName: orgAdmin.organization.name,
-      hostOrganizationNameKana: orgAdmin.organization.nameKana,
-      hostOrganizationAbbreviation: orgAdmin.organization.abbreviation,
-      name: `新規大会 ${now.toLocaleDateString("ja-JP")}`,
-      startDate: now,
-      endDate,
-      venue: "",
-      status: "DRAFT",
-      isPublished: false,
-    },
-    select: { id: true },
-  });
-
-  redirect(`/organizations/${organizationId}/competitions/${competition.id}`);
+  redirect("/dashboard");
 }

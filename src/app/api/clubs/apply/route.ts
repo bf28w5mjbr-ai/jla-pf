@@ -1,11 +1,13 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
-import { applyForMembership } from "@/lib/membershipService";
+import {
+  applyForMembership,
+  membershipServiceErrorStatus,
+} from "@/lib/membershipService";
 
 /**
- * プロフィール「クラブ検索・参加」からの参加。
- * {@link applyForMembership} と同一（即時 APPROVED）。`/api/clubs/[clubId]/join` と同じ正とする。
+ * @deprecated `POST /api/clubs/[clubId]/join` を使用してください。
  */
 export async function POST(request: NextRequest) {
   try {
@@ -29,18 +31,10 @@ export async function POST(request: NextRequest) {
     const result = await applyForMembership(session.userId, clubId);
 
     if (!result.success || !result.membership) {
-      const msg = result.message ?? "参加に失敗しました";
-      const code = result.error;
-      if (code === "CLUB_NOT_FOUND") {
-        return NextResponse.json({ error: msg }, { status: 404 });
-      }
-      if (code === "ALREADY_MEMBER") {
-        return NextResponse.json({ error: msg }, { status: 400 });
-      }
-      if (code === "RATE_LIMIT_EXCEEDED" || code === "REJECTED_COOLDOWN") {
-        return NextResponse.json({ error: msg }, { status: 429 });
-      }
-      return NextResponse.json({ error: msg }, { status: 400 });
+      return NextResponse.json(
+        { error: result.message ?? "参加申請に失敗しました" },
+        { status: membershipServiceErrorStatus(result.error) }
+      );
     }
 
     return NextResponse.json({

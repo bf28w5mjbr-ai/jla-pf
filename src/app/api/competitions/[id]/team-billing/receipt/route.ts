@@ -177,15 +177,16 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const payerUserId = payment?.userId ?? session.userId;
     const payerForAge = await prisma.user.findUnique({
       where: { id: payerUserId },
-      select: { dateOfBirth: true },
+      select: { profile: { select: { dateOfBirth: true } } },
     });
-    const payerAge = payerForAge?.dateOfBirth
+    const payerDateOfBirth = payerForAge?.profile?.dateOfBirth ?? null;
+    const payerAge = payerDateOfBirth
       ? getCompetitionEligibilityAgeYears(
-          new Date(payerForAge.dateOfBirth),
+          new Date(payerDateOfBirth),
           new Date(competition.startDate)
         )
       : null;
-    const payerDob = payerForAge?.dateOfBirth ? new Date(payerForAge.dateOfBirth) : null;
+    const payerDob = payerDateOfBirth ? new Date(payerDateOfBirth) : null;
     const teamUnit = resolveEntryFeeUnits(competition.entryFee, payerAge, {
       userDateOfBirth: payerDob,
       competitionAgeCategories: competition.ageCategories,
@@ -215,14 +216,17 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const payerUser = await prisma.user.findUnique({
       where: { id: payerUserId },
       select: {
-        familyName: true,
-        givenName: true,
+        profile: { select: { familyName: true, givenName: true } },
         email: true,
-        postalCode: true,
-        prefecture: true,
-        city: true,
-        addressLine1: true,
-        addressLine2: true,
+        address: {
+          select: {
+            postalCode: true,
+            prefecture: true,
+            city: true,
+            addressLine1: true,
+            addressLine2: true,
+          },
+        },
       },
     });
 
@@ -240,7 +244,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const receiptNumber = buildTeamReceiptNumber(receiptKey, issuedDate);
 
     const recipientName = payerUser
-      ? `${payerUser.familyName} ${payerUser.givenName}`.trim()
+      ? `${payerUser.profile?.familyName ?? ""} ${payerUser.profile?.givenName ?? ""}`.trim()
       : "クラブ管理者";
     const recipientLabel = `${membership.club.name}（代表者）`;
 
@@ -327,11 +331,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
           name: `${recipientLabel} ${recipientName}`,
           email: payerUser?.email ?? "",
           address: formatAddress({
-            postalCode: payerUser?.postalCode,
-            prefecture: payerUser?.prefecture,
-            city: payerUser?.city,
-            addressLine1: payerUser?.addressLine1,
-            addressLine2: payerUser?.addressLine2,
+            postalCode: payerUser?.address?.postalCode,
+            prefecture: payerUser?.address?.prefecture,
+            city: payerUser?.address?.city,
+            addressLine1: payerUser?.address?.addressLine1,
+            addressLine2: payerUser?.address?.addressLine2,
           }),
         },
         items: [

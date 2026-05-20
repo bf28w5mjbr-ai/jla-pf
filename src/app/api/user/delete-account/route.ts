@@ -23,7 +23,7 @@ export async function POST() {
     // ユーザーの存在確認
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, phoneNumber: true },
+      select: { id: true, email: true },
     });
 
     if (!user) {

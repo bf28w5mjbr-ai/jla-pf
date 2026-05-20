@@ -64,12 +64,12 @@ export default async function AccountAdminPage({
 
   const isPfAdmin = currentUser?.role === "PF_ADMIN";
 
-  const [pendingQualificationCount, userCount, clubCount, applyingClubCount, associations, hostOrganizations] =
+  const [pendingQualificationCount, userCount, clubCount, suspendedClubCount, associations, hostOrganizations] =
     await prisma.$transaction([
       prisma.qualification.count({ where: { status: "PENDING" } }),
       prisma.user.count(),
       prisma.club.count(),
-      prisma.club.count({ where: { status: "APPLYING" } }),
+      prisma.club.count({ where: { status: "SUSPENDED" } }),
       prisma.association.findMany({
         where: isPfAdmin
           ? undefined
@@ -88,8 +88,7 @@ export default async function AccountAdminPage({
               user: {
                 select: {
                   id: true,
-                  familyName: true,
-                  givenName: true,
+                  profile: { select: { familyName: true, givenName: true } },
                   email: true,
                 },
               },
@@ -114,8 +113,7 @@ export default async function AccountAdminPage({
               user: {
                 select: {
                   id: true,
-                  familyName: true,
-                  givenName: true,
+                  profile: { select: { familyName: true, givenName: true } },
                   email: true,
                 },
               },
@@ -145,8 +143,7 @@ export default async function AccountAdminPage({
           },
           requestedBy: {
             select: {
-              familyName: true,
-              givenName: true,
+              profile: { select: { familyName: true, givenName: true } },
               email: true,
             },
           },
@@ -159,7 +156,7 @@ export default async function AccountAdminPage({
       createdAt: r.createdAt.toISOString(),
       competitionName: r.competition.name,
       organizationName: r.competition.organization.name,
-      requesterLabel: `${r.requestedBy.familyName} ${r.requestedBy.givenName}`,
+      requesterLabel: `${r.requestedBy.profile?.familyName ?? ""} ${r.requestedBy.profile?.givenName ?? ""}`.trim(),
       requesterEmail: r.requestedBy.email,
     }));
     pendingCompetitionTypeApplicationRows = pendingCompetitionTypeApplications.map((r) => ({
@@ -168,7 +165,7 @@ export default async function AccountAdminPage({
       createdAt: r.createdAt.toISOString(),
       competitionName: r.competition.name,
       organizationName: r.competition.organization.name,
-      requesterLabel: `${r.requestedBy.familyName} ${r.requestedBy.givenName}`,
+      requesterLabel: `${r.requestedBy.profile?.familyName ?? ""} ${r.requestedBy.profile?.givenName ?? ""}`.trim(),
       requesterEmail: r.requestedBy.email,
     }));
   }
@@ -227,13 +224,35 @@ export default async function AccountAdminPage({
               pendingQualificationCount={pendingQualificationCount}
               userCount={userCount}
               clubCount={clubCount}
-              applyingClubCount={applyingClubCount}
-              associations={associations}
+              suspendedClubCount={suspendedClubCount}
+              associations={associations.map((association) => ({
+                ...association,
+                admins: association.admins.map((admin) => ({
+                  ...admin,
+                  user: {
+                    id: admin.user.id,
+                    email: admin.user.email,
+                    familyName: admin.user.profile?.familyName ?? "",
+                    givenName: admin.user.profile?.givenName ?? "",
+                  },
+                })),
+              }))}
             />
           }
           hostContent={
             <HostOrganizerAccountTab
-              organizations={hostOrganizations}
+              organizations={hostOrganizations.map((organization) => ({
+                ...organization,
+                admins: organization.admins.map((admin) => ({
+                  ...admin,
+                  user: {
+                    id: admin.user.id,
+                    email: admin.user.email,
+                    familyName: admin.user.profile?.familyName ?? "",
+                    givenName: admin.user.profile?.givenName ?? "",
+                  },
+                })),
+              }))}
               isPfAdmin={isPfAdmin}
               pendingCsvExportRequests={pendingCsvExportRows}
               pendingCompetitionTypeApplications={pendingCompetitionTypeApplicationRows}

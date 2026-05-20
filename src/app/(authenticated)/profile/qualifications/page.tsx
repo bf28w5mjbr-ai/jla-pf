@@ -9,7 +9,11 @@ import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP } from "@/lib/competitionEntryAgeTiered";
 import { isRegistrationQualificationKind } from "@/lib/qualificationRegistrationKinds";
-import { normalizeQualificationKind, parseQualificationTemplateMeta } from "@/lib/qualificationTemplateRules";
+import {
+  normalizeQualificationKind,
+  resolveQualificationTemplateMeta,
+  stripLegacyQualificationTemplateMetaLines,
+} from "@/lib/qualificationTemplateRules";
 import JlaMemberNumberEditor from "./JlaMemberNumberEditor";
 import QualificationsSelectionClient from "../../qualifications/QualificationsSelectionClient";
 
@@ -26,7 +30,7 @@ export default async function ProfileQualificationsPage() {
     where: { id: userId },
     select: {
       id: true,
-      jlaMemberNumber: true,
+      jlaProfile: { select: { jlaMemberNumber: true } },
     },
   });
 
@@ -52,6 +56,7 @@ export default async function ProfileQualificationsPage() {
         level: true,
         minAge: true,
         prerequisiteExpression: true,
+        prerequisiteKinds: true,
         nextKinds: true,
       },
     }),
@@ -60,12 +65,15 @@ export default async function ProfileQualificationsPage() {
   const templatesForClient = rawTemplates.map((template) => ({
     ...template,
     name: template.name?.trim() || template.kind,
-    ...parseQualificationTemplateMeta(template.description),
+    ...resolveQualificationTemplateMeta(template),
   }));
 
-  const linkedKinds = qualifications
+  const linkedTemplateIds = qualifications
     .filter((q) => q.status === "APPROVED" || q.status === "PENDING")
-    .map((q) => q.kind);
+    .map((q) => q.templateId);
+  const lockedTemplateIds = qualifications
+    .filter((q) => (q.status === "APPROVED" || q.status === "PENDING") && q.recordOrigin === "ASSOCIATION_IMPORT")
+    .map((q) => q.templateId);
 
   const isRegistrationTemplate = (template: (typeof rawTemplates)[number]) =>
     isRegistrationQualificationKind(template.kind) || isRegistrationQualificationKind(template.name);
@@ -74,10 +82,12 @@ export default async function ProfileQualificationsPage() {
     qualifications.some(
       (q) =>
         q.status === "APPROVED" &&
-        (normalizeQualificationKind(q.kind) === normalizeQualificationKind(template.kind) ||
+        (q.templateId === template.id ||
+          normalizeQualificationKind(q.kind) === normalizeQualificationKind(template.kind) ||
           normalizeQualificationKind(q.kind) === normalizeQualificationKind(template.name ?? ""))
     );
 
+  const templateById = new Map(rawTemplates.map((template) => [template.id, template]));
   const templateByKind = new Map<string, (typeof rawTemplates)[number]>();
   for (const template of rawTemplates) {
     if (!templateByKind.has(template.kind)) {
@@ -88,6 +98,8 @@ export default async function ProfileQualificationsPage() {
   const ownedQualifications = qualifications.filter(
     (q) => !isRegistrationQualificationKind(q.kind) && q.status === "APPROVED"
   );
+  const officialQualifications = ownedQualifications.filter((q) => q.recordOrigin === "ASSOCIATION_IMPORT");
+  const selfReportedQualifications = ownedQualifications.filter((q) => q.recordOrigin === "USER_APPLICATION");
 
   const unownedTemplates = rawTemplates.filter(
     (template) => !isOwnedTemplate(template) && !isRegistrationTemplate(template)
@@ -116,7 +128,7 @@ export default async function ProfileQualificationsPage() {
         </div>
       </header>
 
-      <JlaMemberNumberEditor initialValue={user.jlaMemberNumber} />
+      <JlaMemberNumberEditor initialValue={user.jlaProfile?.jlaMemberNumber ?? null} />
 
       <Card padding="none" className="overflow-hidden border-border/90 shadow-sm">
         <CardHeader className="border-b border-border/80 bg-muted/25">
@@ -139,8 +151,9 @@ export default async function ProfileQualificationsPage() {
           ) : (
             <QualificationsSelectionClient
               templates={templatesForClient}
-              linkedKinds={linkedKinds}
-              initialJlaMemberNumber={user.jlaMemberNumber}
+              linkedTemplateIds={linkedTemplateIds}
+              lockedTemplateIds={lockedTemplateIds}
+              initialJlaMemberNumber={user.jlaProfile?.jlaMemberNumber ?? null}
             />
           )}
         </CardContent>
@@ -154,28 +167,29 @@ export default async function ProfileQualificationsPage() {
               className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground"
             >
               <GraduationCap className="h-5 w-5 text-primary" strokeWidth={1.75} aria-hidden />
-              申請済み資格（更新講習）
+              公式資格（協会データ）
             </h2>
-            <p className="text-sm text-muted-foreground">紐づけ済みの資格から、更新のための講習情報へ進めます。</p>
+            <p className="text-sm text-muted-foreground">協会データ由来の資格です。ユーザー操作では解除できません。</p>
           </div>
         </div>
 
-        {ownedQualifications.length === 0 ? (
+        {officialQualifications.length === 0 ? (
           <Card className="border-dashed border-border/90 bg-muted/15">
             <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
                 <Award className="h-5 w-5" strokeWidth={1.5} aria-hidden />
               </div>
-              <p className="text-sm font-medium text-foreground">表示する資格はまだありません</p>
+              <p className="text-sm font-medium text-foreground">公式資格はまだありません</p>
               <p className="max-w-sm text-xs text-muted-foreground">
-                上の一覧で資格にチェックを入れて保存すると、ここに表示されます。
+                協会データで資格が取り込まれると、ここに表示されます。
               </p>
             </CardContent>
           </Card>
         ) : (
           <div className="grid gap-4">
-            {ownedQualifications.map((qualification) => {
-              const template = templateByKind.get(qualification.kind);
+            {officialQualifications.map((qualification) => {
+              const template = templateById.get(qualification.templateId) ?? templateByKind.get(qualification.kind);
+              const description = stripLegacyQualificationTemplateMetaLines(template?.description);
               const expiryDate = qualification.expiryDate ? new Date(qualification.expiryDate) : null;
               const lessonLink = `/lessons?qualification=${encodeURIComponent(qualification.kind)}&renewal=1`;
 
@@ -191,8 +205,97 @@ export default async function ProfileQualificationsPage() {
                         <h3 className="text-base font-semibold text-foreground">
                           {template?.name ?? qualification.kind}
                         </h3>
-                        {template?.description ? (
-                          <p className="text-xs text-muted-foreground">{template.description}</p>
+                        {description ? (
+                          <p className="text-xs text-muted-foreground">{description}</p>
+                        ) : null}
+                      </div>
+                      <Button size="sm" className="shrink-0 gap-1.5 sm:self-start" asChild>
+                        <Link href={lessonLink}>
+                          更新講習へ
+                          <ArrowRight className="h-4 w-4" aria-hidden />
+                        </Link>
+                      </Button>
+                    </div>
+                    <dl className="mt-4 grid grid-cols-1 gap-3 border-t border-border/60 pt-4 text-sm sm:grid-cols-3">
+                      <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
+                        <dt className="text-xs font-medium text-muted-foreground">発行日</dt>
+                        <dd className="mt-0.5 text-foreground">
+                          {qualification.issueDate
+                            ? new Date(qualification.issueDate).toLocaleDateString("ja-JP")
+                            : "未登録"}
+                        </dd>
+                      </div>
+                      <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
+                        <dt className="text-xs font-medium text-muted-foreground">有効期限</dt>
+                        <dd className="mt-0.5 text-foreground">
+                          {expiryDate ? expiryDate.toLocaleDateString("ja-JP") : "設定なし"}
+                        </dd>
+                      </div>
+                      <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
+                        <dt className="text-xs font-medium text-muted-foreground">システム登録日</dt>
+                        <dd className="mt-0.5 tabular-nums text-foreground">
+                          {new Date(qualification.createdAt).toLocaleDateString("ja-JP")}
+                        </dd>
+                      </div>
+                    </dl>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-4" aria-labelledby="self-qual-heading">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div className="space-y-1">
+            <h2
+              id="self-qual-heading"
+              className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground"
+            >
+              <GraduationCap className="h-5 w-5 text-primary" strokeWidth={1.75} aria-hidden />
+              自己申告資格（更新講習）
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              自分で紐づけた資格です。上のチェックボックスから追加・解除できます。
+            </p>
+          </div>
+        </div>
+
+        {selfReportedQualifications.length === 0 ? (
+          <Card className="border-dashed border-border/90 bg-muted/15">
+            <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+                <Award className="h-5 w-5" strokeWidth={1.5} aria-hidden />
+              </div>
+              <p className="text-sm font-medium text-foreground">自己申告資格はまだありません</p>
+              <p className="max-w-sm text-xs text-muted-foreground">
+                上の一覧で資格にチェックを入れて保存すると、ここに表示されます。
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4">
+            {selfReportedQualifications.map((qualification) => {
+              const template = templateById.get(qualification.templateId) ?? templateByKind.get(qualification.kind);
+              const description = stripLegacyQualificationTemplateMetaLines(template?.description);
+              const expiryDate = qualification.expiryDate ? new Date(qualification.expiryDate) : null;
+              const lessonLink = `/lessons?qualification=${encodeURIComponent(qualification.kind)}&renewal=1`;
+
+              return (
+                <Card
+                  key={qualification.id}
+                  padding="none"
+                  className="overflow-hidden border-border/90 shadow-sm"
+                >
+                  <CardContent className="p-5 sm:p-6">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0 space-y-1">
+                        <h3 className="text-base font-semibold text-foreground">
+                          {template?.name ?? qualification.kind}
+                        </h3>
+                        {description ? (
+                          <p className="text-xs text-muted-foreground">{description}</p>
                         ) : null}
                       </div>
                       <Button size="sm" className="shrink-0 gap-1.5 sm:self-start" asChild>
@@ -247,25 +350,28 @@ export default async function ProfileQualificationsPage() {
             </p>
           ) : (
             <ul className="grid gap-3">
-              {unownedTemplates.map((template) => (
-                <li
-                  key={template.id}
-                  className="flex flex-col gap-3 rounded-xl border border-border/80 bg-muted/15 p-4 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0">
-                    <p className="font-semibold text-foreground">{template.name ?? template.kind}</p>
-                    {template.description ? (
-                      <p className="mt-1 text-xs text-muted-foreground">{template.description}</p>
-                    ) : null}
-                  </div>
-                  <Button variant="outline" size="sm" className="shrink-0 gap-1.5 sm:self-center" asChild>
-                    <Link href={`/lessons?qualification=${encodeURIComponent(template.kind)}`}>
-                      取得講習へ
-                      <ArrowRight className="h-4 w-4" aria-hidden />
-                    </Link>
-                  </Button>
-                </li>
-              ))}
+              {unownedTemplates.map((template) => {
+                const description = stripLegacyQualificationTemplateMetaLines(template.description);
+                return (
+                  <li
+                    key={template.id}
+                    className="flex flex-col gap-3 rounded-xl border border-border/80 bg-muted/15 p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-semibold text-foreground">{template.name ?? template.kind}</p>
+                      {description ? (
+                        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+                      ) : null}
+                    </div>
+                    <Button variant="outline" size="sm" className="shrink-0 gap-1.5 sm:self-center" asChild>
+                      <Link href={`/lessons?qualification=${encodeURIComponent(template.kind)}`}>
+                        取得講習へ
+                        <ArrowRight className="h-4 w-4" aria-hidden />
+                      </Link>
+                    </Button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </CardContent>

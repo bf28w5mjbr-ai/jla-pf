@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { verifySession } from "@/lib/auth";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import {
+  competitionNotFoundStatus,
+  OrganizerLifecycleError,
+  requireHostOrgAdminForCompetition,
+} from "@/lib/organizerAccess";
 import { prisma } from "@/server/db";
 import { normalizeRelationLogos, relationLogosWithDisplaySrc } from "@/lib/relationLogos";
 
@@ -85,20 +89,27 @@ export async function requireCompetitionLogoAdmin(
     };
   }
 
+  try {
+    await requireHostOrgAdminForCompetition(competitionId, session.userId);
+  } catch (e) {
+    if (e instanceof OrganizerLifecycleError) {
+      return {
+        ok: false,
+        response: NextResponse.json(
+          { error: e.message },
+          { status: competitionNotFoundStatus(e.code) }
+        ),
+      };
+    }
+    throw e;
+  }
+
   const competition = await prisma.competition.findUnique({
     where: { id: competitionId },
     select: {
       id: true,
       cooperatorsLogos: true,
       grantsLogos: true,
-      organization: {
-        select: {
-          admins: {
-            where: { userId: session.userId },
-            select: { userId: true, role: true },
-          },
-        },
-      },
     },
   });
 
@@ -106,13 +117,6 @@ export async function requireCompetitionLogoAdmin(
     return {
       ok: false,
       response: NextResponse.json({ error: "大会が見つかりません" }, { status: 404 }),
-    };
-  }
-
-  if (!hasOrgAdminAccess(competition.organization.admins)) {
-    return {
-      ok: false,
-      response: NextResponse.json({ error: "編集権限がありません" }, { status: 403 }),
     };
   }
 

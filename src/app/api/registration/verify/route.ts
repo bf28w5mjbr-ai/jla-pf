@@ -10,6 +10,7 @@ import { normalizeKana } from "@/lib/normalize-kana";
 import { isSupabaseSmsOtpChannelActive } from "@/lib/smsOtpSupabase";
 import { verifySmsOtpViaSupabase } from "@/lib/supabase/otp";
 import { findUserByNormalizedNameAndDob } from "@/lib/user-uniqueness";
+import { AuthLoginChannel } from "@prisma/client";
 import { onAuthLoginSuccess } from "@/lib/authLoginSuccess";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
@@ -120,29 +121,51 @@ export async function POST(req: NextRequest) {
     const user = await prisma.user.create({
       data: {
         email: session.email || `${session.phoneNumber.replace("+", "")}@temp.jla.local`,
-        emailVerified: !verifiedPhoneBySms,
-        passwordHash: session.password || null,
-        familyName: session.familyName,
-        givenName: session.givenName,
-        familyNameKana: session.familyNameKana,
-        givenNameKana: session.givenNameKana,
-        normalizedFamilyName,
-        normalizedGivenName,
-        dateOfBirth: session.dateOfBirth,
-        sex: session.sex,
-        phoneNumber: session.phoneNumber,
-        phoneVerified: verifiedPhoneBySms,
-        phoneVerifiedAt: verifiedPhoneBySms ? new Date() : null,
-        postalCode: session.postalCode,
-        prefecture: session.prefecture,
-        city: session.city,
-        addressLine1: session.addressLine1,
-        addressLine2: session.addressLine2,
-        emergencyContactFamilyName: session.emergencyContactFamilyName,
-        emergencyContactGivenName: session.emergencyContactGivenName,
-        emergencyContactFamilyNameKana: session.emergencyContactFamilyNameKana,
-        emergencyContactGivenNameKana: session.emergencyContactGivenNameKana,
-        emergencyContactPhone: session.emergencyContactPhone,
+        security: {
+          create: {
+            emailVerified: !verifiedPhoneBySms,
+            passwordHash: session.password || null,
+          },
+        },
+        profile: {
+          create: {
+            familyName: session.familyName,
+            givenName: session.givenName,
+            familyNameKana: session.familyNameKana,
+            givenNameKana: session.givenNameKana,
+            normalizedFamilyName,
+            normalizedGivenName,
+            dateOfBirth: session.dateOfBirth,
+            sex: session.sex,
+          },
+        },
+        contact: {
+          create: {
+            phoneNumber: session.phoneNumber,
+            phoneVerified: verifiedPhoneBySms,
+            phoneVerifiedAt: verifiedPhoneBySms ? new Date() : null,
+          },
+        },
+        address: {
+          create: {
+            postalCode: session.postalCode,
+            prefecture: session.prefecture,
+            city: session.city,
+            addressLine1: session.addressLine1,
+            addressLine2: session.addressLine2,
+          },
+        },
+        emergencyContact: {
+          create: {
+            familyName: session.emergencyContactFamilyName,
+            givenName: session.emergencyContactGivenName,
+            familyNameKana: session.emergencyContactFamilyNameKana,
+            givenNameKana: session.emergencyContactGivenNameKana,
+            phoneNumber: session.emergencyContactPhone,
+          },
+        },
+        jlaProfile: { create: {} },
+        nfcTag: { create: {} },
       },
     });
 
@@ -161,7 +184,7 @@ export async function POST(req: NextRequest) {
       maxAge: 60 * 60 * 24 * 30,
     });
 
-    await onAuthLoginSuccess(user.id, req, { channel: "REGISTRATION" });
+    await onAuthLoginSuccess(user.id, req, { channel: AuthLoginChannel.REGISTRATION });
 
     return NextResponse.json({
       success: true,

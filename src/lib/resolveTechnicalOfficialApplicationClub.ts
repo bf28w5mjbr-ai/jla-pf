@@ -45,7 +45,7 @@ export async function loadCompetitionForTechnicalOfficialApplicationResolve(
     officialRecruitmentEnabled: c.officialRecruitmentEnabled,
     officialQualificationFilterEnabled: c.officialQualificationFilterEnabled,
     technicalOfficialRecruitmentEnabled: c.technicalOfficialRecruitmentEnabled ?? true,
-    organization: { admins: [] },
+    organization: { status: "APPROVED", admins: [] },
   };
 }
 

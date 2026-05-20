@@ -5,7 +5,10 @@ import { prisma } from "@/server/db";
 import { writeFile, unlink } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import {
+  hostOrgAdminGateJsonError,
+  requireHostOrgAdminForCompetition,
+} from "@/lib/organizerAccess";
 import {
   canUseSupabaseStorage,
   deletePublicAssetByUrl,
@@ -139,30 +142,27 @@ export async function DELETE(
       return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
     }
 
-    // 大会情報を取得
+    try {
+      await requireHostOrgAdminForCompetition(id, session.userId);
+    } catch (e) {
+      const gated = hostOrgAdminGateJsonError(e);
+      if (gated) {
+        return NextResponse.json({ error: gated.error }, { status: gated.status });
+      }
+      throw e;
+    }
+
     const competition = await prisma.competition.findUnique({
       where: { id },
-      include: {
-        organization: {
-          include: {
-            admins: {
-              where: { userId: session.userId },
-            },
-          },
-        },
+      select: {
+        id: true,
+        cooperatorsLogos: true,
+        grantsLogos: true,
       },
     });
 
     if (!competition) {
       return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });
-    }
-
-    // 権限確認（管理者のみ）
-    if (!hasOrgAdminAccess(competition.organization.admins)) {
-      return NextResponse.json(
-        { error: "編集権限がありません" },
-        { status: 403 }
-      );
     }
 
     const { searchParams } = new URL(request.url);

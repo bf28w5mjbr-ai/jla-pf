@@ -55,14 +55,18 @@ export async function PUT(
     const user = await prisma.user.findUnique({
       where: { id: representativeUserId },
       select: {
-        familyName: true,
-        givenName: true,
-        familyNameKana: true,
-        givenNameKana: true,
+        profile: {
+          select: {
+            familyName: true,
+            givenName: true,
+            familyNameKana: true,
+            givenNameKana: true,
+          },
+        },
       },
     });
 
-    if (!user) {
+    if (!user?.profile) {
       return NextResponse.json({ error: "ユーザーが見つかりません" }, { status: 404 });
     }
 
@@ -70,10 +74,10 @@ export async function PUT(
       where: { id: orgId },
       data: {
         representativeUserId,
-        representativeFamilyName: user.familyName,
-        representativeGivenName: user.givenName,
-        representativeFamilyNameKana: user.familyNameKana,
-        representativeGivenNameKana: user.givenNameKana,
+        representativeFamilyName: user.profile.familyName,
+        representativeGivenName: user.profile.givenName,
+        representativeFamilyNameKana: user.profile.familyNameKana,
+        representativeGivenNameKana: user.profile.givenNameKana,
       } as Prisma.OrganizationUncheckedUpdateInput,
       select: {
         id: true,

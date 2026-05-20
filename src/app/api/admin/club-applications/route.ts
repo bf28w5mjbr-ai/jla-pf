@@ -49,9 +49,8 @@ export async function GET(req: NextRequest) {
             select: {
               id: true,
               email: true,
-              familyName: true,
-              givenName: true,
-              phoneNumber: true,
+              profile: { select: { familyName: true, givenName: true } },
+              contact: { select: { phoneNumber: true } },
             },
           },
         },
@@ -61,9 +60,21 @@ export async function GET(req: NextRequest) {
       }),
       prisma.club.count({ where }),
     ]);
+    const responseApplications = applications.map(({ creator, ...application }) => ({
+      ...application,
+      creator: creator
+        ? {
+            id: creator.id,
+            email: creator.email,
+            familyName: creator.profile?.familyName ?? null,
+            givenName: creator.profile?.givenName ?? null,
+            phoneNumber: creator.contact?.phoneNumber ?? null,
+          }
+        : null,
+    }));
 
     return NextResponse.json({
-      applications,
+      applications: responseApplications,
       pagination: {
         total,
         limit,

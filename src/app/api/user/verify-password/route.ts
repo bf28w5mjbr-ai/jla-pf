@@ -32,17 +32,18 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { id: sess.userId },
-      select: { passwordHash: true },
+      select: { security: { select: { passwordHash: true } } },
     });
 
-    if (!user?.passwordHash) {
+    const passwordHash = user?.security?.passwordHash;
+    if (!passwordHash) {
       return NextResponse.json(
         { error: "パスワードが設定されていません" },
         { status: 400 }
       );
     }
 
-    const isValid = await bcrypt.compare(data.password, user.passwordHash);
+    const isValid = await bcrypt.compare(data.password, passwordHash);
     if (!isValid) {
       return NextResponse.json(
         { error: "パスワードが正しくありません" },

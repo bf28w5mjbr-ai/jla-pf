@@ -11,7 +11,11 @@ import {
   CompetitionEditForbiddenError,
   loadCompetitionMutationState,
 } from "@/lib/competitionPublishedEditRules";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import { hostOrgAdminCanManageCompetition } from "@/lib/roleScopes";
+import {
+  hostOrgAdminGateMessageError,
+  requireHostOrgAdminForCompetition,
+} from "@/lib/organizerAccess";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 import { assertEventScheduleWithinCompetitionRange } from "@/lib/eventScheduleWithinCompetition";
@@ -41,33 +45,22 @@ export async function DELETE(
       return NextResponse.json({ message: "認証が必要です" }, { status: 401 });
     }
 
-    // 種目の存在確認
-    const event = await prisma.event.findUnique({
-      where: { id: eventId },
-      include: {
-        competition: {
-          include: {
-            organization: {
-              include: {
-                admins: {
-                  where: { userId: session.userId },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!event || event.competitionId !== competitionId) {
-      return NextResponse.json({ message: "種目が見つかりません" }, { status: 404 });
+    try {
+      await requireHostOrgAdminForCompetition(competitionId, session.userId);
+    } catch (e) {
+      const gated = hostOrgAdminGateMessageError(e);
+      if (gated) {
+        return NextResponse.json({ message: gated.message }, { status: gated.status });
+      }
+      throw e;
     }
 
-    // 権限チェック（管理者のみ）
-    const isAdmin = hasOrgAdminAccess(event.competition.organization.admins);
+    const event = await prisma.event.findFirst({
+      where: { id: eventId, competitionId },
+    });
 
-    if (!isAdmin) {
-      return NextResponse.json({ message: "権限がありません" }, { status: 403 });
+    if (!event) {
+      return NextResponse.json({ message: "種目が見つかりません" }, { status: 404 });
     }
 
     const mutationState = await loadCompetitionMutationState(competitionId);
@@ -137,11 +130,12 @@ export async function PATCH(
       return NextResponse.json({ message: "種目が見つかりません" }, { status: 404 });
     }
 
-    const isAdmin = hasOrgAdminAccess(event.competition.organization.admins);
+    const isAdmin = hostOrgAdminCanManageCompetition(event.competition.organization.admins, event.competition.organization.status);
 
     if (
       !canManageCompetitionStartListSettings({
         orgAdminsForCurrentUser: event.competition.organization.admins,
+        orgStatus: event.competition.organization.status,
         hasDayOpsUnlock,
       })
     ) {

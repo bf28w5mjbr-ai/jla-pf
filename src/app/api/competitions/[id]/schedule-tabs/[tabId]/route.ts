@@ -33,9 +33,7 @@ async function assertEditor(
     return { ok: false as const, status: 404, message: "大会が見つかりません" };
   }
   if (
-    !canEditCompetitionPublishedSchedule({
-      orgAdminsForCurrentUser: competition.organization.admins,
-    })
+    !canEditCompetitionPublishedSchedule({ orgAdminsForCurrentUser: competition.organization.admins, orgStatus: competition.organization.status })
   ) {
     return { ok: false as const, status: 403, message: "権限がありません" };
   }

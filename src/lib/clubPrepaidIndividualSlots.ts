@@ -35,11 +35,11 @@ export async function sumInstantPrepaidIndividualsYen(
 
   const users = await tx.user.findMany({
     where: { id: { in: params.coveredUserIds } },
-    select: { id: true, dateOfBirth: true },
+    select: { id: true, profile: { select: { dateOfBirth: true } } },
   });
   let sum = 0;
   for (const u of users) {
-    const dob = u.dateOfBirth ? new Date(u.dateOfBirth) : null;
+    const dob = u.profile?.dateOfBirth ? new Date(u.profile.dateOfBirth) : null;
     const age = dob
       ? getCompetitionEligibilityAgeYears(dob, new Date(params.startDate))
       : null;

@@ -49,8 +49,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         select: { id: true, type: true, name: true, startListHeatPlanConfirmedAt: true },
       }),
       prisma.user.findFirst({
-        where: { nfcTagId },
-        select: { id: true, familyName: true, givenName: true },
+        where: { nfcTag: { is: { nfcTagId } } },
+        select: { id: true, profile: { select: { familyName: true, givenName: true } } },
       }),
     ]);
     if (!event) {
@@ -257,7 +257,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       eventId,
       status: nextStatus,
       targetUserId: user.id,
-      targetUserName: `${user.familyName} ${user.givenName}`,
+      targetUserName: `${user.profile?.familyName ?? ""} ${user.profile?.givenName ?? ""}`.trim(),
       updatedCount: updatedIds.length,
     });
   } catch (error) {

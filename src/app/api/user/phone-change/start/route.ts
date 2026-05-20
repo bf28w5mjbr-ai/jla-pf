@@ -46,11 +46,11 @@ export async function POST(req: NextRequest) {
     // セキュリティ設定の確認
     const user = await prisma.user.findUnique({
       where: { id: sess.userId },
-      select: { email: true, passwordHash: true },
+      select: { email: true, security: { select: { passwordHash: true } } },
     });
 
     const hasEmail = user?.email && !user.email.includes("@temp.jla.local");
-    const hasPassword = !!user?.passwordHash;
+    const hasPassword = !!user?.security?.passwordHash;
     if (!hasEmail || !hasPassword) {
       return NextResponse.json(
         { error: "セキュリティ設定を完了してください" },

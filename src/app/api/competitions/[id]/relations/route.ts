@@ -2,7 +2,10 @@ import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import {
+  hostOrgAdminGateJsonError,
+  requireHostOrgAdminForCompetition,
+} from "@/lib/organizerAccess";
 
 export async function PUT(
   request: NextRequest,
@@ -18,29 +21,14 @@ export async function PUT(
     }
 
     // 大会情報を取得
-    const competition = await prisma.competition.findUnique({
-      where: { id },
-      include: {
-        organization: {
-          include: {
-            admins: {
-              where: { userId: session.userId },
-            },
-          },
-        },
-      },
-    });
-
-    if (!competition) {
-      return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });
-    }
-
-    // 権限確認（管理者のみ）
-    if (!hasOrgAdminAccess(competition.organization.admins)) {
-      return NextResponse.json(
-        { error: "編集権限がありません" },
-        { status: 403 }
-      );
+    try {
+      await requireHostOrgAdminForCompetition(id, session.userId);
+    } catch (e) {
+      const gated = hostOrgAdminGateJsonError(e);
+      if (gated) {
+        return NextResponse.json({ error: gated.error }, { status: gated.status });
+      }
+      throw e;
     }
 
     const body = await request.json();

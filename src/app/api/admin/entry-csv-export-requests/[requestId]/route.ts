@@ -59,13 +59,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             organizationId: true,
           },
         },
-        requestedBy: {
-          select: {
-            id: true,
-            familyName: true,
-            givenName: true,
-          },
-        },
       },
     });
 

@@ -6,7 +6,10 @@ import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import {
+  hostOrgAdminGateJsonError,
+  requireHostOrgAdminForCompetition,
+} from "@/lib/organizerAccess";
 import { canUseSupabaseStorage, uploadPublicAsset } from "@/lib/supabase/storage";
 import { validateRasterImageBuffer } from "@/lib/uploadValidation";
 
@@ -29,26 +32,25 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    try {
+      await requireHostOrgAdminForCompetition(id, session.userId);
+    } catch (e) {
+      const gated = hostOrgAdminGateJsonError(e);
+      if (gated) {
+        return NextResponse.json({ error: gated.error }, { status: gated.status });
+      }
+      throw e;
+    }
+
     const competition = await prisma.competition.findUnique({
       where: { id },
       include: {
-        organization: {
-          include: {
-            admins: {
-              where: { userId: session.userId },
-            },
-          },
-        },
         _count: { select: { galleryPhotos: true } },
       },
     });
 
     if (!competition) {
       return NextResponse.json({ error: "Competition not found" }, { status: 404 });
-    }
-
-    if (!hasOrgAdminAccess(competition.organization.admins)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     if (competition._count.galleryPhotos >= MAX_GALLERY_PHOTOS) {

@@ -24,7 +24,7 @@ export async function DELETE(
       return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });
     }
     try {
-      await requireOrgAdmin(competition.organizationId, session.userId);
+      await requireOrgAdmin(competition.organizationId, session.userId, "operational");
     } catch {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }

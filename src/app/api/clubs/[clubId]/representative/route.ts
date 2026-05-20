@@ -56,20 +56,20 @@ export async function PUT(
     const user = await prisma.user.findUnique({
       where: { id: representativeUserId },
       select: {
-        familyName: true,
-        givenName: true,
-        familyNameKana: true,
-        givenNameKana: true,
-        postalCode: true,
-        prefecture: true,
-        city: true,
-        addressLine1: true,
-        addressLine2: true,
-        phoneNumber: true,
+        profile: {
+          select: {
+            familyName: true,
+            givenName: true,
+            familyNameKana: true,
+            givenNameKana: true,
+          },
+        },
+        address: true,
+        contact: { select: { phoneNumber: true } },
       },
     });
 
-    if (!user) {
+    if (!user?.profile || !user.address || !user.contact) {
       return NextResponse.json({ error: "ユーザーが見つかりません" }, { status: 404 });
     }
 
@@ -77,16 +77,16 @@ export async function PUT(
       where: { id: clubId },
       data: {
         representativeUserId,
-        representativeFamilyName: user.familyName,
-        representativeGivenName: user.givenName,
-        representativeFamilyNameKana: user.familyNameKana,
-        representativeGivenNameKana: user.givenNameKana,
-        representativePostalCode: user.postalCode,
-        representativePrefecture: user.prefecture,
-        representativeCity: user.city,
-        representativeAddressLine1: user.addressLine1,
-        representativeAddressLine2: user.addressLine2,
-        representativePhone: user.phoneNumber,
+        representativeFamilyName: user.profile.familyName,
+        representativeGivenName: user.profile.givenName,
+        representativeFamilyNameKana: user.profile.familyNameKana,
+        representativeGivenNameKana: user.profile.givenNameKana,
+        representativePostalCode: user.address.postalCode,
+        representativePrefecture: user.address.prefecture,
+        representativeCity: user.address.city,
+        representativeAddressLine1: user.address.addressLine1,
+        representativeAddressLine2: user.address.addressLine2,
+        representativePhone: user.contact.phoneNumber,
       } as Prisma.ClubUncheckedUpdateInput,
       select: {
         id: true,

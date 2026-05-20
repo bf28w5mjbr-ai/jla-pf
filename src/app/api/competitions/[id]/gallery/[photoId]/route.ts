@@ -5,7 +5,10 @@ import { unlink } from "fs/promises";
 import path from "path";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import {
+  hostOrgAdminGateJsonError,
+  requireHostOrgAdminForCompetition,
+} from "@/lib/organizerAccess";
 import { deletePublicAssetByUrl } from "@/lib/supabase/storage";
 
 export async function DELETE(
@@ -13,7 +16,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; photoId: string }> }
 ) {
   try {
-    const { photoId } = await params;
+    const { id: competitionId, photoId } = await params;
     const cookieStore = await cookies();
     const token = cookieStore.get("session")?.value;
     const session = token ? await verifySession(token) : null;
@@ -22,29 +25,22 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    try {
+      await requireHostOrgAdminForCompetition(competitionId, session.userId);
+    } catch (e) {
+      const gated = hostOrgAdminGateJsonError(e);
+      if (gated) {
+        return NextResponse.json({ error: gated.error }, { status: gated.status });
+      }
+      throw e;
+    }
+
     const photo = await prisma.competitionGalleryPhoto.findUnique({
-      where: { id: photoId },
-      include: {
-        competition: {
-          include: {
-            organization: {
-              include: {
-                admins: {
-                  where: { userId: session.userId },
-                },
-              },
-            },
-          },
-        },
-      },
+      where: { id: photoId, competitionId },
     });
 
     if (!photo) {
       return NextResponse.json({ error: "Photo not found" }, { status: 404 });
-    }
-
-    if (!hasOrgAdminAccess(photo.competition.organization.admins)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     try {

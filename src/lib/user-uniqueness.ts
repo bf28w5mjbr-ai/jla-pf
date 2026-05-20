@@ -9,9 +9,13 @@ export async function findUserByNormalizedNameAndDob(params: {
 
   return prisma.user.findFirst({
     where: {
-      normalizedFamilyName,
-      normalizedGivenName,
-      dateOfBirth,
+      profile: {
+        is: {
+          normalizedFamilyName,
+          normalizedGivenName,
+          dateOfBirth,
+        },
+      },
     },
   });
 }

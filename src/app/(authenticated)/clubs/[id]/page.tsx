@@ -314,8 +314,7 @@ export default async function ClubDetailPage({
     include: {
       creator: {
         select: {
-          familyName: true,
-          givenName: true,
+          profile: { select: { familyName: true, givenName: true } },
         },
       },
       memberships: {
@@ -323,9 +322,8 @@ export default async function ClubDetailPage({
           user: {
             select: {
               id: true,
-              familyName: true,
-              givenName: true,
               email: true,
+              profile: { select: { familyName: true, givenName: true } },
             },
           },
         },
@@ -344,12 +342,11 @@ export default async function ClubDetailPage({
   const pendingMembers = club.memberships.filter((m) => m.status === "PENDING");
 
   const clubStatusLabel = {
-    APPLYING: "申請中",
-    JLA_APPROVED: "審査通過",
-    APPROVED: "有効",
-    INACTIVE: "停止中",
-    SUSPENDED: "凍結中",
-    REJECTED: "却下",
+    APPROVED: "運用中",
+    SUSPENDED: "停止中",
+    APPLYING: "（旧）申請中",
+    JLA_APPROVED: "（旧）審査通過",
+    INACTIVE: "（旧）無効",
   } as const;
 
   const now = new Date();
@@ -539,7 +536,7 @@ export default async function ClubDetailPage({
             select: {
               competitionId: true,
               userId: true,
-              user: { select: { familyName: true, givenName: true } },
+              user: { select: { profile: { select: { familyName: true, givenName: true } } } },
               items: {
                 select: {
                   event: { select: { name: true, type: true } },
@@ -559,7 +556,7 @@ export default async function ClubDetailPage({
               members: {
                 select: {
                   userId: true,
-                  user: { select: { familyName: true, givenName: true } },
+                  user: { select: { profile: { select: { familyName: true, givenName: true } } } },
                 },
               },
             },
@@ -591,12 +588,11 @@ export default async function ClubDetailPage({
   const activeTab = parseClubDetailTab(tab);
 
   const clubStatusBadgeClass = {
+    APPROVED: "border-emerald-200 bg-emerald-100 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-100",
+    SUSPENDED: "border-rose-200 bg-rose-100 text-rose-900 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-100",
     APPLYING: "border-amber-200 bg-amber-100 text-amber-900 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-100",
     JLA_APPROVED: "border-orange-200 bg-orange-100 text-orange-900 dark:border-orange-800 dark:bg-orange-950/50 dark:text-orange-100",
-    APPROVED: "border-emerald-200 bg-emerald-100 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-100",
     INACTIVE: "border-border bg-muted text-muted-foreground",
-    SUSPENDED: "border-rose-200 bg-rose-100 text-rose-900 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-100",
-    REJECTED: "border-red-200 bg-red-100 text-red-900 dark:border-red-800 dark:bg-red-950/50 dark:text-red-100",
   } as const;
 
   return (
@@ -659,7 +655,7 @@ export default async function ClubDetailPage({
                   }
                   members={approvedMembers.map((m) => ({
                     userId: m.userId,
-                    name: `${m.user.familyName} ${m.user.givenName}`,
+                    name: `${m.user.profile?.familyName ?? ""} ${m.user.profile?.givenName ?? ""}`.trim(),
                   }))}
                 />
               </div>
@@ -850,7 +846,7 @@ export default async function ClubDetailPage({
                   columns={[
                     {
                       header: "氏名",
-                      accessor: (m) => `${m.user.familyName} ${m.user.givenName}`,
+                      accessor: (m) => `${m.user.profile?.familyName ?? ""} ${m.user.profile?.givenName ?? ""}`.trim(),
                       className: "font-medium text-foreground",
                     },
                     {
@@ -893,7 +889,7 @@ export default async function ClubDetailPage({
                 columns={[
                   {
                     header: "氏名",
-                    accessor: (m) => `${m.user.familyName} ${m.user.givenName}`,
+                    accessor: (m) => `${m.user.profile?.familyName ?? ""} ${m.user.profile?.givenName ?? ""}`.trim(),
                     className: "font-medium text-foreground",
                   },
                   {

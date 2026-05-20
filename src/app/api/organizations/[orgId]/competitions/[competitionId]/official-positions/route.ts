@@ -25,7 +25,7 @@ export async function PUT(
 
     // 組織の管理者権限チェック
     try {
-      await requireOrgAdmin(organizationId, session.userId);
+      await requireOrgAdmin(organizationId, session.userId, "operational");
     } catch {
       return NextResponse.json(
         { error: "この操作を実行する権限がありません" },

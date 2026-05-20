@@ -24,13 +24,13 @@ export async function GET(request: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { id: session.userId },
-      select: { nfcTagId: true },
+      select: { nfcTag: { select: { nfcTagId: true } } },
     });
     if (!user) {
       return NextResponse.json({ error: "ユーザーが見つかりません" }, { status: 404 });
     }
 
-    return NextResponse.json({ nfcTagId: user.nfcTagId ?? null });
+    return NextResponse.json({ nfcTagId: user.nfcTag?.nfcTagId ?? null });
   } catch (error) {
     return jsonInternalError500("GET api/user/nfc-tag/route.ts", error);
   }
@@ -53,7 +53,7 @@ export async function PUT(request: NextRequest) {
     const nfcTagId = normalizeNfcTagId(parsed.data.nfcTagId);
     const existing = await prisma.user.findFirst({
       where: {
-        nfcTagId,
+        nfcTag: { is: { nfcTagId } },
         id: { not: session.userId },
         deletedAt: null,
       },
@@ -68,7 +68,14 @@ export async function PUT(request: NextRequest) {
 
     await prisma.user.update({
       where: { id: session.userId },
-      data: { nfcTagId },
+      data: {
+        nfcTag: {
+          upsert: {
+            create: { nfcTagId },
+            update: { nfcTagId },
+          },
+        },
+      },
     });
 
     await logAuditAction({
@@ -102,7 +109,14 @@ export async function DELETE(request: NextRequest) {
 
     await prisma.user.update({
       where: { id: session.userId },
-      data: { nfcTagId: null },
+      data: {
+        nfcTag: {
+          upsert: {
+            create: { nfcTagId: null },
+            update: { nfcTagId: null },
+          },
+        },
+      },
     });
 
     await logAuditAction({

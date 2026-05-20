@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { OfficialSubTabValue } from "@/lib/competitionManagementTab";
@@ -15,7 +15,6 @@ type Props = {
 /**
  * オフィシャル用の Radix `Tabs` ルート。`TabsList` は子（カード）より上＝カード外に置く。
  * `TabsContent` は子のサーバーコンポーネント側で描画する。
- * クリック直後に見た目を切り替えるため `pendingSub` を使い、`useTransition` は使わない。
  */
 export default function CompetitionOfficialSubTabsClient({
   officialSub,
@@ -23,13 +22,6 @@ export default function CompetitionOfficialSubTabsClient({
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
-  const [pendingSub, setPendingSub] = useState<OfficialSubTabValue | null>(null);
-
-  const displaySub = pendingSub ?? officialSub;
-
-  useEffect(() => {
-    setPendingSub(null);
-  }, [officialSub]);
 
   useEffect(() => {
     router.prefetch(`${pathname}?tab=official&officialSub=manage`);
@@ -38,10 +30,9 @@ export default function CompetitionOfficialSubTabsClient({
 
   return (
     <Tabs
-      value={displaySub}
+      value={officialSub}
       onValueChange={(v) => {
         if (v === "manage" || v === "dayops") {
-          setPendingSub(v);
           router.push(`${pathname}?tab=official&officialSub=${v}`, { scroll: false });
         }
       }}

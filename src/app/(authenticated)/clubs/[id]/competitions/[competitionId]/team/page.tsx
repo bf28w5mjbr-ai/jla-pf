@@ -9,7 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { appRoutes } from "@/lib/appRoutes";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import { hostOrgAdminCanManageCompetition } from "@/lib/roleScopes";
+import { canViewCompetitionAsHostDraft } from "@/lib/competitionStartListAccess";
 import CompetitionTeamAssignmentManager from "@/components/CompetitionTeamAssignmentManager";
 import {
   getTeamEntryMarshalAssignmentBlockedMap,
@@ -176,8 +177,14 @@ export default async function ClubCompetitionTeamHubPage({
     notFound();
   }
 
-  const canEditCompetition = hasOrgAdminAccess(competition.organization.admins);
-  if (competition.status === "DRAFT" && !canEditCompetition) {
+  const canEditCompetition = hostOrgAdminCanManageCompetition(
+    competition.organization.admins,
+    competition.organization.status
+  );
+  const canViewHostDraft = canViewCompetitionAsHostDraft({
+    orgAdminsForCurrentUser: competition.organization.admins,
+  });
+  if (competition.status === "DRAFT" && !canViewHostDraft) {
     notFound();
   }
 
@@ -240,10 +247,7 @@ export default async function ClubCompetitionTeamHubPage({
       user: {
         select: {
           id: true,
-          familyName: true,
-          givenName: true,
-          sex: true,
-          dateOfBirth: true,
+          profile: { select: { familyName: true, givenName: true, sex: true, dateOfBirth: true } },
         },
       },
     },
@@ -306,12 +310,20 @@ export default async function ClubCompetitionTeamHubPage({
       cid,
       eligibleEntries
         .filter((entry) => entry.clubId === cid)
-        .map((entry) => ({
-          userId: entry.user.id,
-          name: `${entry.user.familyName} ${entry.user.givenName}`,
-          sex: entry.user.sex,
-          dateOfBirth: entry.user.dateOfBirth ? entry.user.dateOfBirth.toISOString() : null,
-        })),
+        .flatMap((entry) =>
+          entry.user.profile
+            ? [
+                {
+                  userId: entry.user.id,
+                  name: `${entry.user.profile.familyName} ${entry.user.profile.givenName}`.trim(),
+                  sex: entry.user.profile.sex,
+                  dateOfBirth: entry.user.profile.dateOfBirth
+                    ? entry.user.profile.dateOfBirth.toISOString()
+                    : null,
+                },
+              ]
+            : []
+        ),
     ])
   );
 
@@ -330,9 +342,9 @@ export default async function ClubCompetitionTeamHubPage({
   const prepaidMembershipsAll = await prisma.membership.findMany({
     where: { clubId: { in: adminClubIds }, status: "APPROVED" },
     include: {
-      user: { select: { id: true, familyName: true, givenName: true } },
+      user: { select: { id: true, profile: { select: { familyName: true, givenName: true } } } },
     },
-    orderBy: [{ clubId: "asc" }, { user: { familyName: "asc" } }, { user: { givenName: "asc" } }],
+    orderBy: [{ clubId: "asc" }, { user: { profile: { familyName: "asc" } } }, { user: { profile: { givenName: "asc" } } }],
   });
 
   const prepaidPaidIndividualCheckoutRows = await prisma.competitionEntry.findMany({
@@ -371,7 +383,7 @@ export default async function ClubCompetitionTeamHubPage({
           .filter((m) => m.clubId === cid && !paidSet.has(m.user.id))
           .map((m) => ({
             userId: m.user.id,
-            name: `${m.user.familyName} ${m.user.givenName}`,
+            name: `${m.user.profile?.familyName ?? ""} ${m.user.profile?.givenName ?? ""}`.trim(),
           })),
       ];
     })

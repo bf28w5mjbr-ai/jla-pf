@@ -125,15 +125,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
     await prisma.$transaction(async (tx) => {
       const feeUser = await tx.user.findUnique({
         where: { id: session.userId },
-        select: { dateOfBirth: true },
+        select: { profile: { select: { dateOfBirth: true } } },
       });
-      const userAge = feeUser?.dateOfBirth
+      const userDateOfBirth = feeUser?.profile?.dateOfBirth ?? null;
+      const userAge = userDateOfBirth
         ? getCompetitionEligibilityAgeYears(
-            new Date(feeUser.dateOfBirth),
+            new Date(userDateOfBirth),
             new Date(competition.startDate)
           )
         : null;
-      const userDob = feeUser?.dateOfBirth ? new Date(feeUser.dateOfBirth) : null;
+      const userDob = userDateOfBirth ? new Date(userDateOfBirth) : null;
       const defaultTeamUnit = resolveEntryFeeUnits(competition.entryFee, userAge, {
         userDateOfBirth: userDob,
         competitionAgeCategories: competition.ageCategories,

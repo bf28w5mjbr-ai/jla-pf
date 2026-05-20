@@ -10,6 +10,7 @@ import { signSession } from "@/lib/auth";
 import { cookies } from "next/headers";
 import { isSupabaseSmsOtpChannelActive } from "@/lib/smsOtpSupabase";
 import { verifySmsOtpViaSupabase } from "@/lib/supabase/otp";
+import { AuthLoginChannel } from "@prisma/client";
 import { onAuthLoginSuccess } from "@/lib/authLoginSuccess";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
@@ -91,6 +92,7 @@ export async function POST(req: NextRequest) {
     // 5. ユーザー取得
     const user = await prisma.user.findUnique({
       where: { id: loginSession.userId },
+      include: { contact: true },
     });
 
     if (!user || user.deletedAt) {
@@ -101,12 +103,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!user.phoneVerified) {
+    if (!user.contact?.phoneVerified) {
       await prisma.user.update({
         where: { id: user.id },
         data: {
-          phoneVerified: true,
-          phoneVerifiedAt: new Date(),
+          contact: {
+            upsert: {
+              create: {
+                phoneNumber: loginSession.phoneNumber,
+                phoneVerified: true,
+                phoneVerifiedAt: new Date(),
+              },
+              update: {
+                phoneVerified: true,
+                phoneVerifiedAt: new Date(),
+              },
+            },
+          },
         },
       });
     }
@@ -126,7 +139,7 @@ export async function POST(req: NextRequest) {
       maxAge: 60 * 60 * 24 * 30, // 30日間
     });
 
-    await onAuthLoginSuccess(user.id, req, { channel: "SMS_OTP" });
+    await onAuthLoginSuccess(user.id, req, { channel: AuthLoginChannel.SMS_OTP });
 
     return NextResponse.json({ 
       ok: true,

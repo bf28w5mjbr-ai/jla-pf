@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
           id: data.sessionId,
           purpose: LoginSessionPurpose.SMS_LOGIN,
         },
-        include: { user: true },
+        include: { user: { include: { contact: true } } },
       });
 
       if (!loginSession) {
@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: CREDENTIALS_ERROR }, { status: 404 });
       }
 
-      const phoneE164 = phoneToE164Loose(user.phoneNumber);
+      const phoneE164 = phoneToE164Loose(user.contact?.phoneNumber ?? "");
       if (!isValidJapaneseMobile(phoneE164)) {
         return NextResponse.json(
           {
@@ -179,10 +179,17 @@ export async function POST(req: NextRequest) {
         await sendOTPviaSMS(phoneE164, otp);
       }
 
-      if (user.phoneNumber !== phoneE164) {
+      if (user.contact?.phoneNumber !== phoneE164) {
         await prisma.user.update({
           where: { id: user.id },
-          data: { phoneNumber: phoneE164 },
+          data: {
+            contact: {
+              upsert: {
+                create: { phoneNumber: phoneE164 },
+                update: { phoneNumber: phoneE164 },
+              },
+            },
+          },
         });
       }
 
@@ -198,17 +205,18 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email: normalizedEmail },
+      include: { profile: true, contact: true },
     });
 
     if (!user || user.deletedAt) {
       return NextResponse.json({ error: CREDENTIALS_ERROR }, { status: 404 });
     }
 
-    if (user.familyName.trim() !== familyName || user.givenName.trim() !== givenName) {
+    if (user.profile?.familyName.trim() !== familyName || user.profile?.givenName.trim() !== givenName) {
       return NextResponse.json({ error: CREDENTIALS_ERROR }, { status: 404 });
     }
 
-    const phoneE164 = phoneToE164Loose(user.phoneNumber);
+    const phoneE164 = phoneToE164Loose(user.contact?.phoneNumber ?? "");
     if (!isValidJapaneseMobile(phoneE164)) {
       return NextResponse.json(
         {
@@ -275,10 +283,17 @@ export async function POST(req: NextRequest) {
       await sendOTPviaSMS(phoneE164, otp);
     }
 
-    if (user.phoneNumber !== phoneE164) {
+    if (user.contact?.phoneNumber !== phoneE164) {
       await prisma.user.update({
         where: { id: user.id },
-        data: { phoneNumber: phoneE164 },
+        data: {
+          contact: {
+            upsert: {
+              create: { phoneNumber: phoneE164 },
+              update: { phoneNumber: phoneE164 },
+            },
+          },
+        },
       });
     }
 

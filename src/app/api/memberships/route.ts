@@ -9,7 +9,10 @@ import type { MembershipRole, MembershipStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { z } from "zod";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
-import { applyForMembership } from "@/lib/membershipService";
+import {
+  applyForMembership,
+  membershipServiceErrorStatus,
+} from "@/lib/membershipService";
 
 // GET /api/memberships - メンバーシップ一覧取得
 export async function GET(req: NextRequest) {
@@ -56,9 +59,8 @@ export async function GET(req: NextRequest) {
             select: {
               id: true,
               email: true,
-              givenName: true,
-              familyName: true,
-              phoneNumber: true,
+              profile: { select: { familyName: true, givenName: true } },
+              contact: { select: { phoneNumber: true } },
             },
           },
           club: {
@@ -92,7 +94,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/memberships - メンバーシップ申請
+// POST /api/memberships - メンバーシップ申請（内部は join と同一。管理画面等向け）
 export async function POST(req: NextRequest) {
   try {
     const jar = await cookies();
@@ -115,18 +117,10 @@ export async function POST(req: NextRequest) {
     const result = await applyForMembership(sess.userId, data.clubId);
 
     if (!result.success || !result.membership) {
-      const msg = result.message ?? "参加に失敗しました";
-      const code = result.error;
-      if (code === "CLUB_NOT_FOUND") {
-        return NextResponse.json({ error: msg }, { status: 404 });
-      }
-      if (code === "ALREADY_MEMBER") {
-        return NextResponse.json({ error: msg }, { status: 400 });
-      }
-      if (code === "RATE_LIMIT_EXCEEDED" || code === "REJECTED_COOLDOWN") {
-        return NextResponse.json({ error: msg }, { status: 429 });
-      }
-      return NextResponse.json({ error: msg }, { status: 400 });
+      return NextResponse.json(
+        { error: result.message ?? "参加申請に失敗しました" },
+        { status: membershipServiceErrorStatus(result.error) }
+      );
     }
 
     return NextResponse.json(result.membership, { status: 201 });

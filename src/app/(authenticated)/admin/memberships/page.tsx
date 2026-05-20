@@ -58,9 +58,8 @@ export default async function AdminMembershipsPage() {
         select: {
           id: true,
           email: true,
-          givenName: true,
-          familyName: true,
-          phoneNumber: true,
+          profile: { select: { familyName: true, givenName: true } },
+          contact: { select: { phoneNumber: true } },
         },
       },
       club: {
@@ -78,6 +77,13 @@ export default async function AdminMembershipsPage() {
       <Card padding="none">
         <MembershipApprovalTable memberships={pendingMemberships.map(m => ({
           ...m,
+          user: {
+            id: m.user.id,
+            email: m.user.email,
+            familyName: m.user.profile?.familyName ?? null,
+            givenName: m.user.profile?.givenName ?? null,
+            phoneNumber: m.user.contact?.phoneNumber ?? null,
+          },
           createdAt: m.createdAt.toISOString(),
         }))} />
       </Card>

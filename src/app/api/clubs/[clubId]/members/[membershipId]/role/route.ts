@@ -45,8 +45,7 @@ export async function PUT(
       include: {
         user: {
           select: {
-            familyName: true,
-            givenName: true,
+            profile: { select: { familyName: true, givenName: true } },
           }
         }
       }
@@ -82,8 +81,10 @@ export async function PUT(
 
     const actionText = role === 'ADMIN' ? '管理者に昇格' : '一般メンバーに降格';
 
+    const memberName = `${targetMembership.user.profile?.familyName ?? ""} ${targetMembership.user.profile?.givenName ?? ""}`.trim();
+
     return NextResponse.json({
-      message: `${targetMembership.user.familyName} ${targetMembership.user.givenName}さんを${actionText}しました`,
+      message: `${memberName || "対象メンバー"}さんを${actionText}しました`,
       membership: {
         id: updatedMembership.id,
         role: updatedMembership.role,

@@ -1,4 +1,5 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { normalizeKana } from "@/lib/normalize-kana";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { verifySession } from "@/lib/auth";
@@ -33,39 +34,77 @@ export async function PUT(request: NextRequest) {
       emergencyContactPhone,
     } = body;
 
-    // カタカナ正規化（検索用）
-    const normalizedFamilyName = familyNameKana.replace(/[ァ-ヴ]/g, (c: string) => 
-      String.fromCharCode(c.charCodeAt(0) - 0x60)
-    );
-    const normalizedGivenName = givenNameKana.replace(/[ァ-ヴ]/g, (c: string) => 
-      String.fromCharCode(c.charCodeAt(0) - 0x60)
-    );
+    const normalizedFamilyName = normalizeKana(familyNameKana);
+    const normalizedGivenName = normalizeKana(givenNameKana);
 
-    // ユーザー情報を更新
     const updatedUser = await prisma.user.update({
       where: { id: session.userId },
       data: {
-        familyName,
-        givenName,
-        familyNameKana,
-        givenNameKana,
-        normalizedFamilyName,
-        normalizedGivenName,
-        dateOfBirth: new Date(dateOfBirth),
-        sex,
-        postalCode,
-        prefecture,
-        city,
-        addressLine1,
-        addressLine2: addressLine2 || null,
-        emergencyContactFamilyName: emergencyContactFamilyName || null,
-        emergencyContactGivenName: emergencyContactGivenName || null,
-        emergencyContactPhone: emergencyContactPhone || null,
+        profile: {
+          upsert: {
+            create: {
+              familyName,
+              givenName,
+              familyNameKana,
+              givenNameKana,
+              normalizedFamilyName,
+              normalizedGivenName,
+              dateOfBirth: new Date(dateOfBirth),
+              sex,
+            },
+            update: {
+              familyName,
+              givenName,
+              familyNameKana,
+              givenNameKana,
+              normalizedFamilyName,
+              normalizedGivenName,
+              dateOfBirth: new Date(dateOfBirth),
+              sex,
+            },
+          },
+        },
+        address: {
+          upsert: {
+            create: {
+              postalCode,
+              prefecture,
+              city,
+              addressLine1,
+              addressLine2: addressLine2 || null,
+            },
+            update: {
+              postalCode,
+              prefecture,
+              city,
+              addressLine1,
+              addressLine2: addressLine2 || null,
+            },
+          },
+        },
+        emergencyContact: {
+          upsert: {
+            create: {
+              familyName: emergencyContactFamilyName || null,
+              givenName: emergencyContactGivenName || null,
+              phoneNumber: emergencyContactPhone || null,
+            },
+            update: {
+              familyName: emergencyContactFamilyName || null,
+              givenName: emergencyContactGivenName || null,
+              phoneNumber: emergencyContactPhone || null,
+            },
+          },
+        },
       },
       select: {
         id: true,
-        familyName: true,
-        givenName: true,
+        profile: {
+          select: {
+            familyName: true,
+            givenName: true,
+          },
+        },
       },
     });
 

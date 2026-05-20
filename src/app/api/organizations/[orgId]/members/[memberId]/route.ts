@@ -4,6 +4,11 @@ import { prisma } from "@/server/db";
 import { verifySession } from "@/lib/auth";
 import { normalizeOrgRoleForWrite } from "@/lib/roleScopes";
 import { requireOrgAdmin } from "@/lib/accessControl";
+import {
+  assertNotLastOrgAdmin,
+  OrgAdminInvitationError,
+  orgAdminInvitationErrorStatus,
+} from "@/lib/orgAdminInvitationService";
 
 // 役割変更
 export async function PUT(
@@ -57,9 +62,14 @@ export async function PUT(
       );
     }
 
-    await prisma.orgAdmin.update({
-      where: { id: memberId },
-      data: { role: normalizeOrgRoleForWrite(role) },
+    const nextRole = normalizeOrgRoleForWrite(role);
+
+    await prisma.$transaction(async (tx) => {
+      await assertNotLastOrgAdmin(tx, organizationId, memberId, nextRole);
+      await tx.orgAdmin.update({
+        where: { id: memberId },
+        data: { role: nextRole },
+      });
     });
 
     const updatedMember = await prisma.orgAdmin.findUnique({
@@ -68,9 +78,8 @@ export async function PUT(
         user: {
           select: {
             id: true,
-            familyName: true,
-            givenName: true,
             email: true,
+            profile: { select: { familyName: true, givenName: true } },
           },
         },
       },
@@ -78,6 +87,12 @@ export async function PUT(
 
     return NextResponse.json(updatedMember);
   } catch (error) {
+    if (error instanceof OrgAdminInvitationError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: orgAdminInvitationErrorStatus(error.code) }
+      );
+    }
     return jsonInternalError500("PUT api/organizations/[orgId]/members/[memberId]/route.ts", error);
   }
 }
@@ -124,12 +139,19 @@ export async function DELETE(
       );
     }
 
-    await prisma.orgAdmin.delete({
-      where: { id: memberId },
+    await prisma.$transaction(async (tx) => {
+      await assertNotLastOrgAdmin(tx, organizationId, memberId);
+      await tx.orgAdmin.delete({ where: { id: memberId } });
     });
 
     return NextResponse.json({ message: "メンバーを削除しました" });
   } catch (error) {
+    if (error instanceof OrgAdminInvitationError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: orgAdminInvitationErrorStatus(error.code) }
+      );
+    }
     return jsonInternalError500("DELETE api/organizations/[orgId]/members/[memberId]/route.ts", error);
   }
 }

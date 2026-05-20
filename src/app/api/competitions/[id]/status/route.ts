@@ -11,7 +11,10 @@ import {
   isCompetitionStatus,
   validateCompetitionStatusTransition,
 } from "@/lib/competitionStatusRules";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import {
+  hostOrgAdminGateJsonError,
+  requireHostOrgAdminForCompetition,
+} from "@/lib/organizerAccess";
 
 export async function PUT(
   request: NextRequest,
@@ -42,18 +45,27 @@ export async function PUT(
       );
     }
 
-    // 大会を取得
+    try {
+      await requireHostOrgAdminForCompetition(id, session.userId);
+    } catch (e) {
+      const gated = hostOrgAdminGateJsonError(e);
+      if (gated) {
+        return NextResponse.json(
+          {
+            errorCode: gated.status === 404 ? "COMPETITION_NOT_FOUND" : "FORBIDDEN",
+            error: gated.error,
+          },
+          { status: gated.status }
+        );
+      }
+      throw e;
+    }
+
     const competition = await prisma.competition.findUnique({
       where: { id },
       include: {
         events: { select: { id: true } },
-        organization: {
-          include: {
-            admins: {
-              where: { userId: session.userId },
-            },
-          },
-        },
+        organization: { select: { status: true } },
       },
     });
 
@@ -61,14 +73,6 @@ export async function PUT(
       return NextResponse.json(
         { errorCode: "COMPETITION_NOT_FOUND", error: "Competition not found" },
         { status: 404 }
-      );
-    }
-
-    // 権限チェック（管理者のみ）
-    if (!hasOrgAdminAccess(competition.organization.admins)) {
-      return NextResponse.json(
-        { errorCode: "FORBIDDEN", error: "Forbidden" },
-        { status: 403 }
       );
     }
 

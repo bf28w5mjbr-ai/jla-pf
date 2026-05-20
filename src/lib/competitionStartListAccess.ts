@@ -1,13 +1,14 @@
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import { hasOrgAdminAccess, hostOrgAdminCanManageCompetition } from "@/lib/roleScopes";
 
 /**
  * 公開ページのタイムスケジュール（エリアタブ・種目の並び・開始日時・ラウンド数など）を編集できるか。
- * 主催団体の org 管理者（ADMIN）のみ。当日運用パスフレーズでは不可。
+ * 主催団体の org 管理者（ADMIN）かつ APPROVED のみ。当日運用パスフレーズでは不可。
  */
 export function canEditCompetitionPublishedSchedule(args: {
   orgAdminsForCurrentUser: ReadonlyArray<{ role?: string | null }>;
+  orgStatus?: string | null;
 }): boolean {
-  return hasOrgAdminAccess(args.orgAdminsForCurrentUser);
+  return hostOrgAdminCanManageCompetition(args.orgAdminsForCurrentUser, args.orgStatus);
 }
 
 /**
@@ -16,6 +17,7 @@ export function canEditCompetitionPublishedSchedule(args: {
  */
 export function canToggleCompetitionStartListVisibility(args: {
   orgAdminsForCurrentUser: ReadonlyArray<{ role?: string | null }>;
+  orgStatus?: string | null;
 }): boolean {
   return canEditCompetitionPublishedSchedule(args);
 }
@@ -28,8 +30,18 @@ export function canToggleCompetitionStartListVisibility(args: {
  */
 export function canManageCompetitionStartListSettings(args: {
   orgAdminsForCurrentUser: ReadonlyArray<{ role?: string | null }>;
+  orgStatus?: string | null;
   hasDayOpsUnlock?: boolean;
 }): boolean {
-  if (hasOrgAdminAccess(args.orgAdminsForCurrentUser)) return true;
+  if (hostOrgAdminCanManageCompetition(args.orgAdminsForCurrentUser, args.orgStatus)) {
+    return true;
+  }
   return Boolean(args.hasDayOpsUnlock);
+}
+
+/** DRAFT 大会を主催者として閲覧（PENDING でも可） */
+export function canViewCompetitionAsHostDraft(args: {
+  orgAdminsForCurrentUser: ReadonlyArray<{ role?: string | null }>;
+}): boolean {
+  return hasOrgAdminAccess(args.orgAdminsForCurrentUser);
 }

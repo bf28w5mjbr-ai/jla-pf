@@ -32,13 +32,13 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     const qualification = await prisma.qualification.findUnique({
       where: { id },
       include: {
+        template: true,
         user: {
           select: {
             id: true,
             email: true,
-            givenName: true,
-            familyName: true,
-            phoneNumber: true,
+            profile: { select: { familyName: true, givenName: true } },
+            contact: { select: { phoneNumber: true } },
           },
         },
       },
@@ -84,8 +84,13 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
         id: true,
         userId: true,
         kind: true,
+        templateId: true,
         status: true,
         certNumber: true,
+        issueDate: true,
+        expiryDate: true,
+        attachmentUrl: true,
+        recordOrigin: true,
       },
     });
 
@@ -105,6 +110,14 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
         .optional()
         .transform((value) => {
           if (typeof value !== "string") return undefined;
+          const normalized = value.trim();
+          return normalized === "" ? undefined : normalized;
+        }),
+      jlaMemberNumber: z
+        .string()
+        .optional()
+        .transform((value) => {
+          if (typeof value !== "string") return undefined;
           const normalized = normalizeJlaMemberNumber(value);
           return normalized === "" ? undefined : normalized;
         }),
@@ -114,19 +127,24 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     });
 
     const data = UpdateQualificationSchema.parse(body);
-    const nextCertNumber = data.certNumber ?? qualification.certNumber;
     const approvingPlayerRegistration =
       data.status === "APPROVED" && isPlayerRegistrationKind(qualification.kind);
 
     if (approvingPlayerRegistration) {
-      if (!nextCertNumber) {
+      const userJlaProfile = await prisma.userJlaProfile.findUnique({
+        where: { userId: qualification.userId },
+        select: { jlaMemberNumber: true },
+      });
+      const nextJlaMemberNumber = data.jlaMemberNumber ?? userJlaProfile?.jlaMemberNumber ?? null;
+
+      if (!nextJlaMemberNumber) {
         return NextResponse.json(
           { error: "選手登録の承認にはJLAメンバーIDが必要です" },
           { status: 400 }
         );
       }
 
-      if (!JLA_MEMBER_NUMBER_REGEX.test(nextCertNumber)) {
+      if (!JLA_MEMBER_NUMBER_REGEX.test(nextJlaMemberNumber)) {
         return NextResponse.json(
           { error: "JLAメンバーIDは500から始まる9桁の半角数字で入力してください" },
           { status: 400 }
@@ -135,7 +153,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
       const existingUser = await prisma.user.findFirst({
         where: {
-          jlaMemberNumber: nextCertNumber,
+          jlaProfile: { is: { jlaMemberNumber: nextJlaMemberNumber } },
           NOT: { id: qualification.userId },
         },
         select: { id: true },
@@ -147,32 +165,27 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
           { status: 400 }
         );
       }
-
-      const existingQualificationWithNumber = await prisma.qualification.findFirst({
-        where: {
-          certNumber: nextCertNumber,
-          status: { in: ["PENDING", "APPROVED"] },
-          NOT: {
-            id,
-            userId: qualification.userId,
-          },
-        },
-        select: {
-          id: true,
-          kind: true,
-        },
-      });
-
-      if (existingQualificationWithNumber) {
-        return NextResponse.json(
-          { error: "このJLAメンバーIDは既に別の会員の申請で使用されています" },
-          { status: 400 }
-        );
-      }
     }
 
     // 資格を更新
     const updated = await prisma.$transaction(async (tx) => {
+      await tx.qualificationHistory.create({
+        data: {
+          qualificationId: qualification.id,
+          sourceQualificationId: qualification.id,
+          userId: qualification.userId,
+          templateId: qualification.templateId,
+          kind: qualification.kind,
+          certNumber: qualification.certNumber,
+          issueDate: qualification.issueDate,
+          expiryDate: qualification.expiryDate,
+          status: qualification.status,
+          attachmentUrl: qualification.attachmentUrl,
+          recordOrigin: qualification.recordOrigin,
+          changeType: "STATUS_CHANGE",
+        },
+      });
+
       const updatedQualification = await tx.qualification.update({
         where: { id },
         data: {
@@ -186,17 +199,23 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
             select: {
               id: true,
               email: true,
-              givenName: true,
-              familyName: true,
+              profile: { select: { familyName: true, givenName: true } },
             },
           },
         },
       });
 
-      if (approvingPlayerRegistration && nextCertNumber) {
+      if (approvingPlayerRegistration && data.jlaMemberNumber) {
         await tx.user.update({
           where: { id: qualification.userId },
-          data: { jlaMemberNumber: nextCertNumber },
+          data: {
+            jlaProfile: {
+              upsert: {
+                create: { jlaMemberNumber: data.jlaMemberNumber },
+                update: { jlaMemberNumber: data.jlaMemberNumber },
+              },
+            },
+          },
         });
       }
 

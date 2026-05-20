@@ -43,9 +43,9 @@ export async function POST(
     } else if (inv.invitePhoneE164) {
       const user = await prisma.user.findUnique({
         where: { id: session.userId },
-        select: { phoneNumber: true },
+        select: { contact: { select: { phoneNumber: true } } },
       });
-      if (!user || user.phoneNumber !== inv.invitePhoneE164) {
+      if (!user || user.contact?.phoneNumber !== inv.invitePhoneE164) {
         return NextResponse.json(
           { error: "招待された電話番号でログインしている必要があります" },
           { status: 403 }

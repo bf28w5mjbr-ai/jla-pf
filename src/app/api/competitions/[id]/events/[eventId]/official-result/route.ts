@@ -64,7 +64,7 @@ export async function GET(
     let canViewUnpublished = false;
     if (session?.userId) {
       try {
-        await requireOrgAdmin(competition.organizationId, session.userId);
+        await requireOrgAdmin(competition.organizationId, session.userId, "operational");
         canViewUnpublished = true;
       } catch {
         canViewUnpublished = false;
@@ -129,7 +129,7 @@ export async function PUT(
     }
 
     try {
-      await requireOrgAdmin(competition.organizationId, session.userId);
+      await requireOrgAdmin(competition.organizationId, session.userId, "operational");
     } catch {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }

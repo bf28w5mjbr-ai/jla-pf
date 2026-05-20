@@ -2,7 +2,10 @@ import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import {
+  hostOrgAdminGateMessageError,
+  requireHostOrgAdminForCompetition,
+} from "@/lib/organizerAccess";
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 
 type RouteContext = { params: Promise<{ id: string; eventId: string }> };
@@ -19,29 +22,26 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ message: "認証または当日運用アクセスが必要です" }, { status: 401 });
     }
 
+    if (!sessionUserId) {
+      return NextResponse.json({ message: "権限がありません" }, { status: 403 });
+    }
+
+    try {
+      await requireHostOrgAdminForCompetition(competitionId, sessionUserId);
+    } catch (e) {
+      const gated = hostOrgAdminGateMessageError(e);
+      if (gated) {
+        return NextResponse.json({ message: gated.message }, { status: gated.status });
+      }
+      throw e;
+    }
+
     const event = await prisma.event.findFirst({
       where: { id: eventId, competitionId },
-      include: {
-        competition: {
-          include: {
-            organization: {
-              include: {
-                admins: {
-                  where: { userId: sessionUserId ?? "clinvalidnosessionuser0000" },
-                },
-              },
-            },
-          },
-        },
-      },
     });
 
     if (!event) {
       return NextResponse.json({ message: "種目が見つかりません" }, { status: 404 });
-    }
-
-    if (!hasOrgAdminAccess(event.competition.organization.admins)) {
-      return NextResponse.json({ message: "権限がありません" }, { status: 403 });
     }
 
     if (event.marshalStartedAt) {

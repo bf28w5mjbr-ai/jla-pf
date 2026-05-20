@@ -142,8 +142,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
         select: {
           id: true,
           email: true,
-          familyName: true,
-          givenName: true,
+          profile: { select: { familyName: true, givenName: true } },
         },
       }),
       prisma.membership.findMany({
@@ -163,7 +162,9 @@ export async function POST(req: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "アカウントにメールアドレスが登録されていません" }, { status: 400 });
     }
 
-    const senderName = `${sender.familyName} ${sender.givenName}`.trim() || "（氏名未設定）";
+    const senderName =
+      `${sender.profile?.familyName ?? ""} ${sender.profile?.givenName ?? ""}`.trim() ||
+      "（氏名未設定）";
     const affiliation =
       memberships.length > 0
         ? memberships.map((m) => m.club.name).join("、")

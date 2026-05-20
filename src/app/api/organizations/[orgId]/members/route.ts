@@ -2,10 +2,14 @@ import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { verifySession } from "@/lib/auth";
-import { normalizeOrgRoleForWrite } from "@/lib/roleScopes";
 import { requireOrgAdmin } from "@/lib/accessControl";
+import {
+  inviteOrgAdmin,
+  OrgAdminInvitationError,
+  orgAdminInvitationErrorStatus,
+} from "@/lib/orgAdminInvitationService";
 
-// メンバー追加
+/** @deprecated 互換のため残す。即時追加せず招待を作成する。 */
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ orgId: string }> }
@@ -24,12 +28,11 @@ export async function POST(
     const params = await context.params;
     const organizationId = params.orgId;
 
-    // 管理者権限チェック
     try {
       await requireOrgAdmin(organizationId, session.userId);
     } catch {
       return NextResponse.json(
-        { error: "メンバー追加権限がありません" },
+        { error: "メンバー招待の権限がありません" },
         { status: 403 }
       );
     }
@@ -44,7 +47,7 @@ export async function POST(
 
     if (!rawUserId && !emailFromBody) {
       return NextResponse.json(
-        { error: "追加するユーザーを指定してください（userId またはメールアドレス）" },
+        { error: "招待するユーザーを指定してください（userId またはメールアドレス）" },
         { status: 400 }
       );
     }
@@ -64,44 +67,24 @@ export async function POST(
       );
     }
 
-    // すでにメンバーかチェック
-    const existingAdmin = await prisma.orgAdmin.findUnique({
-      where: {
-        userId_organizationId: {
-          userId: user.id,
-          organizationId,
-        },
-      },
-    });
+    const result = await inviteOrgAdmin(
+      session.userId,
+      organizationId,
+      user.id,
+      typeof role === "string" ? role : undefined
+    );
 
-    if (existingAdmin) {
+    return NextResponse.json({
+      message: "招待を送信しました。相手の承諾後にメンバーとして表示されます。",
+      invitationId: result.invitationId,
+    });
+  } catch (error) {
+    if (error instanceof OrgAdminInvitationError) {
       return NextResponse.json(
-        { error: "このユーザーはすでにメンバーです" },
-        { status: 400 }
+        { error: error.message },
+        { status: orgAdminInvitationErrorStatus(error.code) }
       );
     }
-
-    // メンバーを追加
-    const newAdmin = await prisma.orgAdmin.create({
-      data: {
-        userId: user.id,
-        organizationId,
-        role: normalizeOrgRoleForWrite(role || "MEMBER"),
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            familyName: true,
-            givenName: true,
-            email: true,
-          },
-        },
-      },
-    });
-
-    return NextResponse.json(newAdmin);
-  } catch (error) {
     return jsonInternalError500("POST api/organizations/[orgId]/members/route.ts", error);
   }
 }

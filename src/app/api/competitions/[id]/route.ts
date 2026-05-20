@@ -44,7 +44,7 @@ export async function GET(
         );
       }
       try {
-        await requireOrgAdmin(competition.organizationId, session.userId);
+        await requireOrgAdmin(competition.organizationId, session.userId, "operational");
       } catch {
         return NextResponse.json(
           { error: "大会が見つかりません" },
@@ -88,7 +88,7 @@ export async function DELETE(
     }
 
     try {
-      await requireOrgAdmin(competition.organizationId, session.userId);
+      await requireOrgAdmin(competition.organizationId, session.userId, "operational");
     } catch {
       return NextResponse.json(
         { error: "大会を削除する権限がありません" },

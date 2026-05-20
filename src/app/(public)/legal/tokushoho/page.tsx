@@ -115,9 +115,9 @@ export default function TokushohoPage() {
               <dt className={dtClass}>メールアドレス</dt>
               <dd className={ddClass}>
                 {contactEmail ? (
-                  <a className="text-primary underline-offset-4 hover:underline" href={`mailto:${contactEmail}`}>
-                    {contactEmail}
-                  </a>
+                  <Button variant="outline" size="sm" asChild>
+                    <a href={`mailto:${contactEmail}`}>{contactEmail}</a>
+                  </Button>
                 ) : (
                   "登録済みの方はログインのうえアプリ内の案内に従ってご連絡ください。法人・大会主催者の方は契約・導入時の窓口までお願いいたします。"
                 )}

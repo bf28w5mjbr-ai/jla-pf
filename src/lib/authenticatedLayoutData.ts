@@ -8,15 +8,19 @@ const authenticatedAppUserSelect = {
   id: true,
   role: true,
   email: true,
-  familyName: true,
-  givenName: true,
-  familyNameKana: true,
-  givenNameKana: true,
-  phoneNumber: true,
-  dateOfBirth: true,
-  jlaMemberNumber: true,
-  nfcTagId: true,
-  profilePhotoUrl: true,
+  profile: {
+    select: {
+      familyName: true,
+      givenName: true,
+      familyNameKana: true,
+      givenNameKana: true,
+      dateOfBirth: true,
+      profilePhotoUrl: true,
+    },
+  },
+  contact: { select: { phoneNumber: true } },
+  jlaProfile: { select: { jlaMemberNumber: true } },
+  nfcTag: { select: { nfcTagId: true } },
   _count: { select: { passkeyCredentials: true } },
   memberships: {
     orderBy: { createdAt: "desc" as const },
@@ -68,18 +72,46 @@ const authenticatedAppUserSelect = {
   },
 } as const;
 
-export type AuthenticatedAppUser = Prisma.UserGetPayload<{
+type AuthenticatedAppUserRow = Prisma.UserGetPayload<{
   select: typeof authenticatedAppUserSelect;
 }>;
+
+export type AuthenticatedAppUser = Omit<
+  AuthenticatedAppUserRow,
+  "profile" | "contact" | "jlaProfile" | "nfcTag"
+> & {
+  familyName: string;
+  givenName: string;
+  familyNameKana: string;
+  givenNameKana: string;
+  phoneNumber: string;
+  dateOfBirth: Date;
+  jlaMemberNumber: string | null;
+  nfcTagId: string | null;
+  profilePhotoUrl: string | null;
+};
 
 /**
  * ダッシュボードと認証レイアウトで共有するユーザー行（同一リクエスト内は1回の DB 往復）。
  */
 export const getAuthenticatedAppUser = cache(async (userId: string) => {
-  return prisma.user.findUnique({
+  const u = await prisma.user.findUnique({
     where: { id: userId },
     select: authenticatedAppUserSelect,
   });
+  if (!u) return null;
+  return {
+    ...u,
+    familyName: u.profile?.familyName ?? "",
+    givenName: u.profile?.givenName ?? "",
+    familyNameKana: u.profile?.familyNameKana ?? "",
+    givenNameKana: u.profile?.givenNameKana ?? "",
+    phoneNumber: u.contact?.phoneNumber ?? "",
+    dateOfBirth: u.profile?.dateOfBirth ?? new Date(0),
+    jlaMemberNumber: u.jlaProfile?.jlaMemberNumber ?? null,
+    nfcTagId: u.nfcTag?.nfcTagId ?? null,
+    profilePhotoUrl: u.profile?.profilePhotoUrl ?? null,
+  } satisfies AuthenticatedAppUser;
 });
 
 /**

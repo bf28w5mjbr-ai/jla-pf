@@ -17,7 +17,7 @@ import {
 } from "@/lib/eventHeatPlanMarshal";
 import { competitionEntryPaidCheckoutWhere } from "@/lib/entryCheckoutSessionPaid";
 import { prisma } from "@/server/db";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import { hostOrgAdminCanManageCompetition } from "@/lib/roleScopes";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 import { replaceCompetitionStartListSnapshotWithAudit } from "@/lib/replaceStartListSnapshotWithAudit";
@@ -60,15 +60,13 @@ export async function PUT(
     }
 
     if (
-      !canManageCompetitionStartListSettings({
-        orgAdminsForCurrentUser: competition.organization.admins,
-        hasDayOpsUnlock,
+      !canManageCompetitionStartListSettings({ orgAdminsForCurrentUser: competition.organization.admins, orgStatus: competition.organization.status, hasDayOpsUnlock,
       })
     ) {
       return NextResponse.json({ message: "権限がありません" }, { status: 403 });
     }
 
-    const isAdmin = hasOrgAdminAccess(competition.organization.admins);
+    const isAdmin = hostOrgAdminCanManageCompetition(competition.organization.admins, competition.organization.status);
 
     const body = await request.json().catch(() => ({}));
     const { startListSettings, captureSnapshot } = body as {

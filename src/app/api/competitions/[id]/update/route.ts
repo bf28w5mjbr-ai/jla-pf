@@ -2,7 +2,10 @@ import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import {
+  hostOrgAdminGateJsonError,
+  requireHostOrgAdminForCompetition,
+} from "@/lib/organizerAccess";
 
 function isOwnProp(obj: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(obj, key);
@@ -23,32 +26,24 @@ export async function PUT(
       return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
     }
 
-    // 大会の取得と権限確認
+    try {
+      await requireHostOrgAdminForCompetition(competitionId, session.userId);
+    } catch (e) {
+      const gated = hostOrgAdminGateJsonError(e);
+      if (gated) {
+        return NextResponse.json({ error: gated.error }, { status: gated.status });
+      }
+      throw e;
+    }
+
     const competition = await prisma.competition.findUnique({
       where: { id: competitionId },
-      include: {
-        organization: {
-          include: {
-            admins: {
-              where: { userId: session.userId },
-            },
-          },
-        },
-      },
     });
 
     if (!competition) {
       return NextResponse.json(
         { error: "大会が見つかりません" },
         { status: 404 }
-      );
-    }
-
-    // 権限確認（管理者のみ）
-    if (!hasOrgAdminAccess(competition.organization.admins)) {
-      return NextResponse.json(
-        { error: "大会を編集する権限がありません" },
-        { status: 403 }
       );
     }
 

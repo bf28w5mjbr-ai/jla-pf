@@ -47,7 +47,7 @@ function parseArgs(): ParsedArgs {
 }
 
 async function resolveCompetition(exactName: string) {
-  let comp = await prisma.competition.findFirst({
+  const comp = await prisma.competition.findFirst({
     where: { name: exactName },
     select: { id: true, name: true },
   });
@@ -91,28 +91,38 @@ async function resolveTargetUsers(): Promise<
   const raw = await prisma.user.findMany({
     where: {
       OR: [
-        { familyName: "青木", givenName: "将展" },
-        { familyName: "葺本", givenName: "康隆" },
-        { familyName: "茸本", givenName: "康隆" },
+        { profile: { is: { familyName: "青木", givenName: "将展" } } },
+        { profile: { is: { familyName: "葺本", givenName: "康隆" } } },
+        { profile: { is: { familyName: "茸本", givenName: "康隆" } } },
       ],
     },
     select: {
       id: true,
       email: true,
-      familyName: true,
-      givenName: true,
+      profile: {
+        select: {
+          familyName: true,
+          givenName: true,
+        },
+      },
     },
   });
+  const matchedUsers = raw.map((u) => ({
+    id: u.id,
+    email: u.email,
+    familyName: u.profile?.familyName ?? "",
+    givenName: u.profile?.givenName ?? "",
+  }));
 
-  const aoki = raw.filter((u) => u.familyName === "青木" && u.givenName === "将展");
-  const fuki = raw.filter((u) => u.familyName === "葺本" && u.givenName === "康隆");
-  const shiba = raw.filter((u) => u.familyName === "茸本" && u.givenName === "康隆");
+  const aoki = matchedUsers.filter((u) => u.familyName === "青木" && u.givenName === "将展");
+  const fuki = matchedUsers.filter((u) => u.familyName === "葺本" && u.givenName === "康隆");
+  const shiba = matchedUsers.filter((u) => u.familyName === "茸本" && u.givenName === "康隆");
 
   if (aoki.length !== 1) {
     return {
       ok: false,
       message: `「青木将展」に一致するユーザーが ${aoki.length} 件です（1件である必要があります）。`,
-      raw,
+      raw: matchedUsers,
     };
   }
   if (fuki.length > 0 && shiba.length > 0) {
@@ -120,7 +130,7 @@ async function resolveTargetUsers(): Promise<
       ok: false,
       message:
         "「葺本康隆」と「茸本康隆」の両方がDBに存在します。どちらを対象にするか整理してから --competition-name とあわせて手動で userId を確定してください。",
-      raw,
+      raw: matchedUsers,
     };
   }
   const yasushi = fuki[0] ?? shiba[0];
@@ -129,16 +139,16 @@ async function resolveTargetUsers(): Promise<
       ok: false,
       message:
         "「葺本康隆」または「茸本康隆」に一致するユーザーが0件です。氏名の登録を確認してください。",
-      raw,
+      raw: matchedUsers,
     };
   }
 
-  const users: TargetUser[] = [aoki[0], yasushi];
-  if (users[0].id === users[1].id) {
-    return { ok: false, message: "同一ユーザーが二重に選ばれています。", raw };
+  const selectedUsers: TargetUser[] = [aoki[0], yasushi];
+  if (selectedUsers[0].id === selectedUsers[1].id) {
+    return { ok: false, message: "同一ユーザーが二重に選ばれています。", raw: matchedUsers };
   }
 
-  return { ok: true, users };
+  return { ok: true, users: selectedUsers };
 }
 
 async function main() {
@@ -179,7 +189,12 @@ async function main() {
       userId: { in: userIds },
     },
     include: {
-      user: { select: { email: true, familyName: true, givenName: true } },
+      user: {
+        select: {
+          email: true,
+          profile: { select: { familyName: true, givenName: true } },
+        },
+      },
       items: {
         include: {
           event: { select: { name: true, sex: true } },
@@ -206,7 +221,9 @@ async function main() {
     console.log(
       `  - entryId=${e.id} userId=${e.userId} status=${e.status} totalFee=${e.totalFee} createdAt=${e.createdAt.toISOString()}`
     );
-    console.log(`    user: ${e.user.familyName} ${e.user.givenName} <${e.user.email}>`);
+    console.log(
+      `    user: ${e.user.profile?.familyName ?? ""} ${e.user.profile?.givenName ?? ""} <${e.user.email}>`
+    );
     console.log(`    events: ${events || "(なし)"}`);
     if (e.checkoutSessions.length > 0) {
       const s = e.checkoutSessions[0];

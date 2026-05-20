@@ -18,7 +18,7 @@ import {
   evaluatePrerequisiteExpression,
   isQualificationExpired,
   normalizeQualificationKind,
-  parseQualificationTemplateMeta,
+  resolveQualificationTemplateMeta,
 } from "@/lib/qualificationTemplateRules";
 
 const DEFAULT_QUALIFICATION_PAGE_LIMIT = 20;
@@ -78,12 +78,12 @@ export async function GET(req: NextRequest) {
       prisma.qualification.findMany({
         where,
         include: {
+          template: true,
           user: {
             select: {
               id: true,
               email: true,
-              givenName: true,
-              familyName: true,
+              profile: { select: { familyName: true, givenName: true } },
             },
           },
         },
@@ -129,6 +129,14 @@ export async function POST(req: NextRequest) {
         .optional()
         .transform((value) => {
           if (typeof value !== "string") return undefined;
+          const normalized = value.trim();
+          return normalized === "" ? undefined : normalized;
+        }),
+      jlaMemberNumber: z
+        .string()
+        .optional()
+        .transform((value) => {
+          if (typeof value !== "string") return undefined;
           const normalized = normalizeJlaMemberNumber(value);
           return normalized === "" ? undefined : normalized;
         }),
@@ -143,8 +151,14 @@ export async function POST(req: NextRequest) {
     const templates = await prisma.qualificationTemplate.findMany({
       select: {
         kind: true,
+        id: true,
         name: true,
         description: true,
+        domain: true,
+        level: true,
+        minAge: true,
+        prerequisiteExpression: true,
+        nextKinds: true,
       },
     });
     const requestedTemplate =
@@ -157,13 +171,13 @@ export async function POST(req: NextRequest) {
       );
     }
     const requestedKind = requestedTemplate.kind;
-    const templateMeta = parseQualificationTemplateMeta(requestedTemplate.description);
+    const templateMeta = resolveQualificationTemplateMeta(requestedTemplate);
 
     const userForValidation = await prisma.user.findUnique({
       where: { id: sess.userId },
       select: {
-        jlaMemberNumber: true,
-        dateOfBirth: true,
+        profile: { select: { dateOfBirth: true } },
+        jlaProfile: { select: { jlaMemberNumber: true } },
         qualifications: {
           where: { status: "APPROVED" },
           select: {
@@ -180,12 +194,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "ユーザーが見つかりません" }, { status: 404 });
     }
 
-    const fromBody = data.certNumber;
-    const fromProfile = userForValidation.jlaMemberNumber?.trim()
-      ? normalizeJlaMemberNumber(userForValidation.jlaMemberNumber)
+    const fromBody = data.jlaMemberNumber;
+    const fromProfile = userForValidation.jlaProfile?.jlaMemberNumber?.trim()
+      ? normalizeJlaMemberNumber(userForValidation.jlaProfile.jlaMemberNumber)
       : "";
 
-    let effectiveCert: string;
+    let effectiveJlaMemberNumber: string;
     if (fromProfile && isValidJlaMemberNumber(fromProfile)) {
       if (fromBody && fromBody !== fromProfile) {
         return NextResponse.json(
@@ -196,7 +210,7 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
-      effectiveCert = fromProfile;
+      effectiveJlaMemberNumber = fromProfile;
     } else {
       if (!fromBody) {
         return NextResponse.json(
@@ -207,10 +221,10 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
-      effectiveCert = fromBody;
+      effectiveJlaMemberNumber = fromBody;
     }
 
-    if (!isValidJlaMemberNumber(effectiveCert)) {
+    if (!isValidJlaMemberNumber(effectiveJlaMemberNumber)) {
       return NextResponse.json(
         { error: "JLAメンバーIDは500から始まる9桁の半角数字で入力してください" },
         { status: 400 }
@@ -219,7 +233,7 @@ export async function POST(req: NextRequest) {
 
     if (!isProvisionalLink && typeof templateMeta.minAge === "number") {
       const today = new Date();
-      const dob = new Date(userForValidation.dateOfBirth);
+      const dob = new Date(userForValidation.profile?.dateOfBirth ?? 0);
       let age = today.getFullYear() - dob.getFullYear();
       const monthDiff = today.getMonth() - dob.getMonth();
       if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) age -= 1;
@@ -239,12 +253,18 @@ export async function POST(req: NextRequest) {
       select: {
         id: true,
         kind: true,
+        templateId: true,
+        certNumber: true,
+        issueDate: true,
         status: true,
         expiryDate: true,
+        attachmentUrl: true,
+        recordOrigin: true,
       },
     });
 
     const existingMatch = existingQualifications.find((qualification) =>
+      qualification.templateId === requestedTemplate.id ||
       matchesQualificationKeywords(qualification.kind, [
         requestedTemplate.kind,
         requestedTemplate.name,
@@ -286,7 +306,7 @@ export async function POST(req: NextRequest) {
 
     const existingUser = await prisma.user.findFirst({
       where: {
-        jlaMemberNumber: effectiveCert,
+        jlaProfile: { is: { jlaMemberNumber: effectiveJlaMemberNumber } },
         NOT: { id: sess.userId },
       },
       select: { id: true },
@@ -295,25 +315,6 @@ export async function POST(req: NextRequest) {
     if (existingUser) {
       return NextResponse.json(
         { error: "このJLAメンバーIDは既に別の会員に紐づいています" },
-        { status: 400 }
-      );
-    }
-
-    const existingQualificationWithNumber = await prisma.qualification.findFirst({
-      where: {
-        certNumber: effectiveCert,
-        status: { in: ["PENDING", "APPROVED"] },
-        NOT: { userId: sess.userId },
-      },
-      select: {
-        id: true,
-        kind: true,
-      },
-    });
-
-    if (existingQualificationWithNumber) {
-      return NextResponse.json(
-        { error: "このJLAメンバーIDは既に別の会員の申請で使用されています" },
         { status: 400 }
       );
     }
@@ -392,53 +393,78 @@ export async function POST(req: NextRequest) {
 
     // 資格の即時紐づけ（APPROVED）+ アカウント（User）への JLA メンバーIDの紐付け
     const qualification = await prisma.$transaction(async (tx) => {
-      const row =
-        existingMatch?.status === "PENDING"
-          ? await tx.qualification.update({
-              where: { id: existingMatch.id },
-              data: {
-                kind: requestedKind,
-                certNumber: effectiveCert,
-                issueDate: data.issueDate ? new Date(data.issueDate) : null,
-                expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
-                status: "APPROVED",
+      let row;
+      if (existingMatch?.status === "PENDING") {
+        await tx.qualificationHistory.create({
+          data: {
+            qualificationId: existingMatch.id,
+            sourceQualificationId: existingMatch.id,
+            userId: sess.userId,
+            templateId: existingMatch.templateId,
+            kind: existingMatch.kind,
+            certNumber: existingMatch.certNumber,
+            issueDate: existingMatch.issueDate,
+            expiryDate: existingMatch.expiryDate,
+            status: existingMatch.status,
+            attachmentUrl: existingMatch.attachmentUrl,
+            recordOrigin: existingMatch.recordOrigin,
+            changeType: "STATUS_CHANGE",
+          },
+        });
+        row = await tx.qualification.update({
+          where: { id: existingMatch.id },
+          data: {
+            kind: requestedKind,
+            templateId: requestedTemplate.id,
+            certNumber: data.certNumber ?? null,
+            issueDate: data.issueDate ? new Date(data.issueDate) : null,
+            expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
+            status: "APPROVED",
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                profile: { select: { familyName: true, givenName: true } },
               },
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    email: true,
-                    givenName: true,
-                    familyName: true,
-                  },
-                },
+            },
+          },
+        });
+      } else {
+        row = await tx.qualification.create({
+          data: {
+            userId: sess.userId,
+            templateId: requestedTemplate.id,
+            kind: requestedKind,
+            certNumber: data.certNumber ?? null,
+            issueDate: data.issueDate ? new Date(data.issueDate) : null,
+            expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
+            status: "APPROVED",
+            recordOrigin: QualificationRecordOrigin.USER_APPLICATION,
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                profile: { select: { familyName: true, givenName: true } },
               },
-            })
-          : await tx.qualification.create({
-              data: {
-                userId: sess.userId,
-                kind: requestedKind,
-                certNumber: effectiveCert,
-                issueDate: data.issueDate ? new Date(data.issueDate) : null,
-                expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
-                status: "APPROVED",
-                recordOrigin: QualificationRecordOrigin.USER_APPLICATION,
-              },
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    email: true,
-                    givenName: true,
-                    familyName: true,
-                  },
-                },
-              },
-            });
+            },
+          },
+        });
+      }
 
       await tx.user.update({
         where: { id: sess.userId },
-        data: { jlaMemberNumber: effectiveCert },
+        data: {
+          jlaProfile: {
+            upsert: {
+              create: { jlaMemberNumber: effectiveJlaMemberNumber },
+              update: { jlaMemberNumber: effectiveJlaMemberNumber },
+            },
+          },
+        },
       });
 
       return row;
@@ -449,7 +475,13 @@ export async function POST(req: NextRequest) {
         actorUserId: sess.userId,
         action: "QUALIFICATION_LINK",
         target: `qualification:${qualification.id}`,
-        meta: { kind: requestedKind, certNumber: effectiveCert, provisionalLink: isProvisionalLink },
+        meta: {
+          kind: requestedKind,
+          templateId: requestedTemplate.id,
+          certNumber: data.certNumber ?? null,
+          jlaMemberNumber: effectiveJlaMemberNumber,
+          provisionalLink: isProvisionalLink,
+        },
       },
     });
 

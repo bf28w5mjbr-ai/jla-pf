@@ -21,14 +21,18 @@ export async function POST(request: NextRequest) {
     const user = await prisma.user.findUnique({
       where: { id: session.userId },
       select: {
-        familyName: true,
-        givenName: true,
-        familyNameKana: true,
-        givenNameKana: true,
+        profile: {
+          select: {
+            familyName: true,
+            givenName: true,
+            familyNameKana: true,
+            givenNameKana: true,
+          },
+        },
       },
     });
 
-    if (!user) {
+    if (!user?.profile) {
       return NextResponse.json({ error: "ユーザーが見つかりません" }, { status: 404 });
     }
 
@@ -74,10 +78,10 @@ export async function POST(request: NextRequest) {
         websiteUrl: websiteUrlParsed.value,
         email: email?.trim() || null,
         phoneNumber: phoneNumber?.trim() || null,
-        representativeFamilyName: user.familyName,
-        representativeGivenName: user.givenName,
-        representativeFamilyNameKana: user.familyNameKana,
-        representativeGivenNameKana: user.givenNameKana,
+        representativeFamilyName: user.profile.familyName,
+        representativeGivenName: user.profile.givenName,
+        representativeFamilyNameKana: user.profile.familyNameKana,
+        representativeGivenNameKana: user.profile.givenNameKana,
         representativeUserId: session.userId,
         postalCode: postalCode?.trim() || null,
         prefecture: prefecture?.trim() || null,

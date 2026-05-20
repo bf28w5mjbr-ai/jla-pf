@@ -39,9 +39,7 @@ export async function PUT(
     }
 
     if (
-      !canEditCompetitionPublishedSchedule({
-        orgAdminsForCurrentUser: competition.organization.admins,
-      })
+      !canEditCompetitionPublishedSchedule({ orgAdminsForCurrentUser: competition.organization.admins, orgStatus: competition.organization.status })
     ) {
       return NextResponse.json({ message: "権限がありません" }, { status: 403 });
     }

@@ -4,15 +4,17 @@ import { prisma } from "@/server/db";
 import { requireAccAdmin } from "@/lib/accessControl";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 
-// POST /api/admin/association/clubs/[id]/approve - 協会承認（APPLYING → JLA_APPROVED）
+/**
+ * POST /api/admin/association/clubs/[id]/approve
+ * [id] = ClubTypeApplication ID（クラブ種別申請の承認。クラブ status は変更しない）
+ */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: clubId } = await params;
+    const { id: applicationId } = await params;
 
-    // 認証確認
     const token = req.cookies.get("session")?.value;
     if (!token) {
       return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
@@ -27,79 +29,33 @@ export async function POST(
       await requireAccAdmin(session.userId);
     } catch {
       return NextResponse.json(
-        { error: "協会管理者のみがクラブを承認できます" },
+        { error: "協会管理者のみが種別申請を承認できます" },
         { status: 403 }
       );
     }
 
-    // クラブ取得
-    const club = await prisma.club.findUnique({
-      where: { id: clubId },
-      select: {
-        id: true,
-        name: true,
-        status: true,
-        type: true,
-      },
-    });
-
-    if (!club) {
-      return NextResponse.json(
-        { error: "クラブが見つかりません" },
-        { status: 404 }
-      );
-    }
-
-    // APPLYING状態のみ承認可能
-    if (club.status !== "APPLYING") {
-      return NextResponse.json(
-        { error: `このクラブは現在${club.status}状態のため、承認できません` },
-        { status: 400 }
-      );
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const body = await req.json().catch(() => ({}));
-
-    // トランザクションで承認処理
     const result = await prisma.$transaction(async (tx) => {
-      const pendingTypeApplication = await tx.clubTypeApplication.findFirst({
-        where: {
-          clubId,
-          status: "PENDING",
-          kind: "INITIAL",
-        },
-        orderBy: { createdAt: "desc" },
-      });
-
-      if (!pendingTypeApplication) {
-        throw new Error("TYPE_APPLICATION_REQUIRED");
-      }
-
-      // クラブを JLA_APPROVED に変更
-      const updated = await tx.club.updateMany({
-        where: { id: clubId, status: "APPLYING" },
-        data: {
-          status: "JLA_APPROVED",
-        },
-      });
-
-      if (updated.count === 0) {
-        return null;
-      }
-
-      const updatedClub = await tx.club.findUnique({
-        where: { id: clubId },
+      const application = await tx.clubTypeApplication.findUnique({
+        where: { id: applicationId },
         select: {
           id: true,
-          name: true,
+          clubId: true,
           status: true,
-          type: true,
+          requestedType: true,
+          kind: true,
         },
       });
 
-      await tx.clubTypeApplication.update({
-        where: { id: pendingTypeApplication.id },
+      if (!application) {
+        throw new Error("APPLICATION_NOT_FOUND");
+      }
+
+      if (application.status !== "PENDING") {
+        throw new Error("INVALID_APPLICATION_STATUS");
+      }
+
+      const updatedApplication = await tx.clubTypeApplication.update({
+        where: { id: applicationId },
         data: {
           status: "APPROVED",
           approvedById: session.userId,
@@ -107,39 +63,39 @@ export async function POST(
         },
       });
 
-      // 監査ログ記録
+      await tx.club.update({
+        where: { id: application.clubId },
+        data: { type: application.requestedType },
+      });
+
       await tx.auditLog.create({
         data: {
           actorUserId: session.userId,
-          action: "ACC_CLUB_APPROVE",
-          target: clubId,
+          action: "CLUB_TYPE_APPROVE",
+          target: applicationId,
           meta: {
-            previousStatus: "APPLYING",
-            newStatus: "JLA_APPROVED",
+            clubId: application.clubId,
+            requestedType: application.requestedType,
+            kind: application.kind,
           },
         },
       });
 
-      return updatedClub;
+      return updatedApplication;
     });
-
-    if (!result) {
-      return NextResponse.json(
-        { error: "このクラブは現在APPLYING状態のためのみ承認できます" },
-        { status: 409 }
-      );
-    }
 
     return NextResponse.json({
-      message: "クラブを協会承認しました",
-      club: result,
+      message: "クラブ種別申請を承認しました",
+      application: result,
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "TYPE_APPLICATION_REQUIRED") {
-      return NextResponse.json(
-        { error: "クラブ種別の申請が提出されていません" },
-        { status: 400 }
-      );
+    if (error instanceof Error) {
+      if (error.message === "APPLICATION_NOT_FOUND") {
+        return NextResponse.json({ error: "申請が見つかりません" }, { status: 404 });
+      }
+      if (error.message === "INVALID_APPLICATION_STATUS") {
+        return NextResponse.json({ error: "審査待ちの申請のみ承認できます" }, { status: 400 });
+      }
     }
     return jsonInternalError500(
       "POST api/admin/association/clubs/[id]/approve/route.ts",

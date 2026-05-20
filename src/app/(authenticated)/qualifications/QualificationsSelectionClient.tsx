@@ -17,7 +17,6 @@ import {
   qualificationJapaneseLabel,
   qualificationJapaneseList,
 } from "@/lib/qualificationLabels";
-import { normalizeQualificationKind } from "@/lib/qualificationTemplateRules";
 import { appRoutes } from "@/lib/appRoutes";
 import { userFacingApiErrorMessage } from "@/lib/userFacingApiError";
 
@@ -32,12 +31,14 @@ type TemplateRow = {
   level: string | null;
   minAge: number | null;
   prerequisiteExpression: string | null;
+  prerequisiteKinds: string[];
   nextKinds: string[];
 };
 
 type Props = {
   templates: TemplateRow[];
-  linkedKinds: string[];
+  linkedTemplateIds: string[];
+  lockedTemplateIds?: string[];
   /** プロフィールで登録済みの JLA メンバーID（ダイアログ初期値） */
   initialJlaMemberNumber?: string | null;
 };
@@ -69,13 +70,12 @@ const domainLabelMap: Record<string, string> = {
   Other: "その他",
 };
 
-function checkedSetFromServer(templates: TemplateRow[], linkedKinds: string[]): Set<string> {
-  const linkedNorm = linkedKinds.map((k) => normalizeQualificationKind(k));
+function checkedSetFromServer(templates: TemplateRow[], linkedTemplateIds: string[]): Set<string> {
+  const linkedIdSet = new Set(linkedTemplateIds);
   const next = new Set<string>();
   for (const t of templates) {
-    const tk = normalizeQualificationKind(t.kind);
-    if (linkedNorm.some((ln) => ln === tk)) {
-      next.add(t.kind);
+    if (linkedIdSet.has(t.id)) {
+      next.add(t.id);
     }
   }
   return next;
@@ -83,12 +83,13 @@ function checkedSetFromServer(templates: TemplateRow[], linkedKinds: string[]): 
 
 export default function QualificationsSelectionClient({
   templates,
-  linkedKinds,
+  linkedTemplateIds,
+  lockedTemplateIds = [],
   initialJlaMemberNumber = null,
 }: Props) {
   const router = useRouter();
-  const [checkedKinds, setCheckedKinds] = useState<Set<string>>(() =>
-    checkedSetFromServer(templates, linkedKinds)
+  const [checkedTemplateIds, setCheckedTemplateIds] = useState<Set<string>>(() =>
+    checkedSetFromServer(templates, linkedTemplateIds)
   );
   const [submitting, setSubmitting] = useState(false);
   const [jlaMemberNumber, setJlaMemberNumber] = useState(() =>
@@ -107,13 +108,20 @@ export default function QualificationsSelectionClient({
   }, [initialJlaMemberNumber]);
 
   useEffect(() => {
-    setCheckedKinds(checkedSetFromServer(templates, linkedKinds));
-  }, [linkedKinds, templates]);
+    setCheckedTemplateIds(checkedSetFromServer(templates, linkedTemplateIds));
+  }, [linkedTemplateIds, templates]);
 
-  const linkedNormalized = useMemo(
-    () => new Set(linkedKinds.map((k) => normalizeQualificationKind(k))),
-    [linkedKinds]
-  );
+  const linkedTemplateIdSet = useMemo(() => new Set(linkedTemplateIds), [linkedTemplateIds]);
+  const lockedTemplateIdSet = useMemo(() => new Set(lockedTemplateIds), [lockedTemplateIds]);
+  const lockedTemplateIdSetForUi = useMemo(() => {
+    const next = new Set<string>();
+    for (const template of templates) {
+      if (lockedTemplateIdSet.has(template.id)) {
+        next.add(template.id);
+      }
+    }
+    return next;
+  }, [lockedTemplateIdSet, templates]);
 
   const grouped = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -155,36 +163,39 @@ export default function QualificationsSelectionClient({
     return { map, domains, total: filteredRows.length };
   }, [search, templates]);
 
-  const toggle = (kind: string) => {
-    setCheckedKinds((prev) => {
+  const toggle = (templateId: string) => {
+    if (lockedTemplateIdSetForUi.has(templateId)) return;
+    setCheckedTemplateIds((prev) => {
       const next = new Set(prev);
-      if (next.has(kind)) next.delete(kind);
-      else next.add(kind);
+      if (next.has(templateId)) next.delete(templateId);
+      else next.add(templateId);
       return next;
     });
   };
 
   const selectAll = () => {
-    setCheckedKinds(new Set(templates.map((t) => t.kind)));
+    setCheckedTemplateIds(new Set(templates.map((t) => t.id)));
   };
-  const clearAll = () => setCheckedKinds(new Set());
+  const clearAll = () => setCheckedTemplateIds(new Set(lockedTemplateIdSetForUi));
   const selectDomain = (domain: string) => {
     const rows = grouped.map.get(domain) ?? [];
-    setCheckedKinds((prev) => new Set([...prev, ...rows.map((r) => r.kind)]));
+    setCheckedTemplateIds((prev) => new Set([...prev, ...rows.map((r) => r.id)]));
   };
   const clearDomain = (domain: string) => {
     const rows = grouped.map.get(domain) ?? [];
-    const domainSet = new Set(rows.map((r) => r.kind));
-    setCheckedKinds((prev) => {
+    const domainSet = new Set(rows.map((r) => r.id));
+    setCheckedTemplateIds((prev) => {
       const next = new Set([...prev]);
-      for (const kind of domainSet) next.delete(kind);
+      for (const templateId of domainSet) {
+        if (!lockedTemplateIdSetForUi.has(templateId)) next.delete(templateId);
+      }
       return next;
     });
   };
 
   const persist = useCallback(async () => {
-    const kinds = [...checkedKinds];
-    if (kinds.length > 0 && !accountJlaLinked) {
+    const templateIds = [...checkedTemplateIds];
+    if (templateIds.length > 0 && !accountJlaLinked) {
       const c = normalizeJlaMemberNumber(jlaMemberNumber);
       if (!isValidJlaMemberNumber(c)) {
         toast.error("JLAメンバーIDは500から始まる半角9桁の数字で入力してください");
@@ -194,9 +205,9 @@ export default function QualificationsSelectionClient({
 
     setSubmitting(true);
     try {
-      const body: { kinds: string[]; certNumber?: string } = { kinds };
-      if (kinds.length > 0 && !accountJlaLinked) {
-        body.certNumber = normalizeJlaMemberNumber(jlaMemberNumber);
+      const body: { templateIds: string[]; jlaMemberNumber?: string } = { templateIds };
+      if (templateIds.length > 0 && !accountJlaLinked) {
+        body.jlaMemberNumber = normalizeJlaMemberNumber(jlaMemberNumber);
       }
       const res = await fetch("/api/users/me/qualifications", {
         method: "PUT",
@@ -215,9 +226,9 @@ export default function QualificationsSelectionClient({
     } finally {
       setSubmitting(false);
     }
-  }, [accountJlaLinked, checkedKinds, jlaMemberNumber, router]);
+  }, [accountJlaLinked, checkedTemplateIds, jlaMemberNumber, router]);
 
-  const checkedCount = checkedKinds.size;
+  const checkedCount = checkedTemplateIds.size;
 
   return (
     <div className="space-y-6" id="qual-checklist">
@@ -298,8 +309,9 @@ export default function QualificationsSelectionClient({
                 <ul className="grid gap-3">
                   {rows.map((template) => {
                     const label = qualificationJapaneseLabel(template.kind, template.name);
-                    const linked = linkedNormalized.has(normalizeQualificationKind(template.kind));
-                    const checked = checkedKinds.has(template.kind);
+                    const linked = linkedTemplateIdSet.has(template.id);
+                    const locked = lockedTemplateIdSetForUi.has(template.id);
+                    const checked = checkedTemplateIds.has(template.id);
                     return (
                       <li
                         key={template.id}
@@ -316,7 +328,8 @@ export default function QualificationsSelectionClient({
                           <input
                             type="checkbox"
                             checked={checked}
-                            onChange={() => toggle(template.kind)}
+                            disabled={locked}
+                            onChange={() => toggle(template.id)}
                             className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
                           />
                           <span className="min-w-0 flex-1">
@@ -339,13 +352,17 @@ export default function QualificationsSelectionClient({
                               </span>
                               {linked ? (
                                 <span className="rounded border border-emerald-300/80 bg-emerald-100/70 px-1.5 py-0.5 text-emerald-800 dark:border-emerald-700/70 dark:bg-emerald-900/40 dark:text-emerald-200">
-                                  保存済み
+                                  {locked ? "公式資格" : "保存済み"}
                                 </span>
                               ) : null}
                             </span>
                             {template.prerequisiteExpression ? (
                               <span className="mt-1 block text-xs text-muted-foreground">
                                 前提条件: {qualificationJapaneseExpression(template.prerequisiteExpression)}
+                              </span>
+                            ) : template.prerequisiteKinds.length > 0 ? (
+                              <span className="mt-1 block text-xs text-muted-foreground">
+                                前提条件: {qualificationJapaneseList(template.prerequisiteKinds).join(" / ")}
                               </span>
                             ) : null}
                             {template.nextKinds.length > 0 ? (

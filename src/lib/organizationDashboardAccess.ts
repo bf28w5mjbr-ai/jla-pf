@@ -1,9 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { isOrgAdminRole } from "@/lib/roleScopes";
 
 /**
- * 大会主催者ダッシュボード（/organizations/[id]）の閲覧可否。
- * 本体ページと同じく、団体内ロールが ADMIN の主催者のみ。
+ * 主催団体ダッシュボード（/organizations/[id]）の閲覧可否。
+ * OrgAdmin（ADMIN / MEMBER）であれば閲覧可。編集操作は ADMIN のみ。
  */
 export async function canViewOrganizationDashboardPage(
   organizationId: string,
@@ -11,7 +10,7 @@ export async function canViewOrganizationDashboardPage(
 ): Promise<boolean> {
   const row = await prisma.orgAdmin.findFirst({
     where: { organizationId, userId },
-    select: { role: true },
+    select: { id: true },
   });
-  return !!row && isOrgAdminRole(row.role);
+  return !!row;
 }

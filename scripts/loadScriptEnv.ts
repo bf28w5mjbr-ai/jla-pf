@@ -9,7 +9,7 @@ import { resolve } from "node:path";
 function loadEnvFromFile(absPath: string) {
   if (!existsSync(absPath)) return;
   const content = readFileSync(absPath, "utf8");
-  for (let raw of content.split(/\r?\n/)) {
+  for (const raw of content.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith("#")) continue;
     const eq = line.indexOf("=");

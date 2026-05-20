@@ -26,7 +26,7 @@ import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
 import { ENTRY_CHECKOUT_PAID_STATUSES } from "@/lib/entryCheckoutSessionPaid";
 import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
 import { clearIndividualWithdrawalParticipantStatusesForEvents } from "@/lib/entryWithdrawalReinstatement";
-import { hasOrgAdminAccess, isClubAdminRole } from "@/lib/roleScopes";
+import { hostOrgAdminCanManageCompetition, isClubAdminRole } from "@/lib/roleScopes";
 import {
   billingCountsForPersonalEntryPost,
   calculateCompetitionEntryFee,
@@ -268,7 +268,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const isAdmin = hasOrgAdminAccess(competition.organization.admins);
+    const isAdmin = hostOrgAdminCanManageCompetition(competition.organization.admins, competition.organization.status);
 
     const now = new Date();
     const pledgeAcceptedAt = entryPledgeEnabled ? now : null;
@@ -289,8 +289,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const user = await prisma.user.findUnique({
       where: { id: session.userId },
       select: {
-        sex: true,
-        dateOfBirth: true,
+        profile: { select: { sex: true, dateOfBirth: true } },
         qualifications: {
           where: { status: "APPROVED" },
           select: { kind: true },
@@ -315,15 +314,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     };
 
-    const userAge = user?.dateOfBirth
+    const userDateOfBirth = user?.profile?.dateOfBirth ?? null;
+    const userAge = userDateOfBirth
       ? getCompetitionEligibilityAgeYears(
-          new Date(user.dateOfBirth),
+          new Date(userDateOfBirth),
           new Date(competition.startDate)
         )
       : null;
-    const userSex = user?.sex ?? "OTHER";
+    const userSex = user?.profile?.sex ?? "OTHER";
     const userQualifications = user?.qualifications?.map((q) => q.kind) ?? [];
-    const userDobForCat = user?.dateOfBirth ? new Date(user.dateOfBirth) : null;
+    const userDobForCat = userDateOfBirth ? new Date(userDateOfBirth) : null;
 
     const hasAgeCategoryQual =
       parseAgeCategoryQualificationTiers(competition.requiredQualifications) !== null;
@@ -339,7 +339,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (rq.tierMissing && isTieredRequiredQualifications(competition.requiredQualifications)) {
       return NextResponse.json(
         {
-          message: user?.dateOfBirth
+          message: userDateOfBirth
             ? hasAgeCategoryQual
               ? "出場資格の AGEカテゴリに、あなたの生年月日が該当するものがありません。主催者へお問い合わせください。"
               : "出場資格の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
@@ -463,7 +463,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       if (
         !meetsCompetitionEventAgeEligibility({
           event,
-          userDateOfBirth: user?.dateOfBirth ? new Date(user.dateOfBirth) : null,
+          userDateOfBirth: userDateOfBirth ? new Date(userDateOfBirth) : null,
           seasonalAgeYears: userAge,
         })
       ) {
@@ -564,7 +564,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         teamEntriesCount: teamEntriesData.length,
       });
 
-    const userDob = user?.dateOfBirth ? new Date(user.dateOfBirth) : null;
+    const userDob = userDateOfBirth ? new Date(userDateOfBirth) : null;
     const feeUnits = resolveEntryFeeUnits(competition.entryFee, userAge, {
       userDateOfBirth: userDob,
       competitionAgeCategories: competition.ageCategories,
@@ -586,10 +586,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json(
         {
           message: isCat
-            ? user?.dateOfBirth
+            ? userDateOfBirth
               ? "参加費の年齢カテゴリに、あなたの生年月日が該当する区分がありません。主催者へお問い合わせください。"
               : "この大会は年齢カテゴリ別の参加費です。プロフィールに生年月日を登録してください。"
-            : user?.dateOfBirth
+            : userDateOfBirth
               ? "参加費の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"
               : "この大会は年齢帯別の参加費です。プロフィールに生年月日を登録してください。",
         },

@@ -28,7 +28,7 @@ export async function GET(
         canViewUnpublished = true;
       } else {
         try {
-          await requireOrgAdmin(event.competition.organizationId, session.userId);
+          await requireOrgAdmin(event.competition.organizationId, session.userId, "operational");
           canViewUnpublished = true;
         } catch {
           canViewUnpublished = false;

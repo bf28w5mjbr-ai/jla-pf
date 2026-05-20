@@ -20,12 +20,9 @@ export default function PublicCompetitionsChrome({ isLoggedIn }: Props) {
     <header className="sticky top-0 z-40 border-b border-border/80 bg-background/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
         <div className="min-w-0">
-          <Link
-            href="/"
-            className="text-sm font-semibold tracking-tight text-foreground transition-colors hover:text-primary"
-          >
-            Bluvium
-          </Link>
+          <Button variant="ghost" size="sm" className="h-auto px-0 text-sm font-semibold tracking-tight" asChild>
+            <Link href="/">Bluvium</Link>
+          </Button>
           <p className="truncate text-[10px] text-muted-foreground sm:text-[11px]">大会情報（公開）</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">

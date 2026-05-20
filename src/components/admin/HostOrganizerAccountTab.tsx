@@ -17,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import HostOrganizerStatusActions from "@/components/admin/HostOrganizerStatusActions";
 
 const orgStatusLabel: Record<string, string> = {
   PENDING: "登録中",
@@ -69,7 +70,7 @@ export default function HostOrganizerAccountTab({
               <CardTitle className="text-base font-semibold">大会種別申請の承認</CardTitle>
             </div>
             <CardDescription className="text-xs sm:text-sm">
-              大会主催者から届いた大会種別（A級/B級）の申請を承認すると、対象大会へ種別が付与されます。
+              主催団体から届いた大会種別（A級/B級）の申請を承認すると、対象大会へ種別が付与されます。
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-4 sm:pt-5">
@@ -98,7 +99,7 @@ export default function HostOrganizerAccountTab({
       <div className="space-y-2">
         <div className="flex items-center gap-2 text-primary">
           <Trophy className="h-5 w-5 shrink-0" strokeWidth={1.75} aria-hidden />
-          <span className="text-sm font-medium">大会主催者</span>
+          <span className="text-sm font-medium">主催団体</span>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0 space-y-1">
@@ -160,12 +161,17 @@ export default function HostOrganizerAccountTab({
                       </span>
                     </CardDescription>
                   </div>
-                  <Button variant="outline" size="sm" className="shrink-0 gap-1" asChild>
-                    <Link href={`/organizations/${org.id}`}>
-                      団体の詳細
-                      <ChevronRight className="h-4 w-4 opacity-70" aria-hidden />
-                    </Link>
-                  </Button>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    {isPfAdmin ? (
+                      <HostOrganizerStatusActions organizationId={org.id} status={org.status} />
+                    ) : null}
+                    <Button variant="outline" size="sm" className="gap-1" asChild>
+                      <Link href={`/organizations/${org.id}`}>
+                        団体の詳細
+                        <ChevronRight className="h-4 w-4 opacity-70" aria-hidden />
+                      </Link>
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {org.admins.length === 0 ? (

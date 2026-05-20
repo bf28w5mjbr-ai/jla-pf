@@ -64,6 +64,18 @@ export async function POST(request: NextRequest) {
               where: { id: { in: uniqueIds } },
               select: { id: true },
             });
+    } else if (data.role === "ORG_ADMIN") {
+      const orgAdmins = await prisma.orgAdmin.findMany({
+        select: { userId: true },
+      });
+      const uniqueIds = [...new Set(orgAdmins.map((a) => a.userId))];
+      users =
+        uniqueIds.length === 0
+          ? []
+          : await prisma.user.findMany({
+              where: { id: { in: uniqueIds } },
+              select: { id: true },
+            });
     } else {
       users = await prisma.user.findMany({
         where: { role: data.role },

@@ -53,8 +53,7 @@ export async function POST(
         select: {
           id: true,
           email: true,
-          familyName: true,
-          givenName: true,
+          profile: { select: { familyName: true, givenName: true } },
           role: true,
         },
       }),
@@ -93,8 +92,7 @@ export async function POST(
             select: {
               id: true,
               email: true,
-              familyName: true,
-              givenName: true,
+              profile: { select: { familyName: true, givenName: true } },
             },
           },
           association: {

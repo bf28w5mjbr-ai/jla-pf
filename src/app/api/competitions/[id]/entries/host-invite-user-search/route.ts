@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import {
+  hostOrgAdminGateJsonError,
+  requireHostOrgAdminForCompetition,
+} from "@/lib/organizerAccess";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -18,56 +21,42 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "検索語は2文字以上で入力してください" }, { status: 400 });
   }
 
-  const competition = await prisma.competition.findUnique({
-    where: { id: competitionId },
-    select: {
-      organization: {
-        select: {
-          admins: {
-            where: { userId: session.userId },
-            select: { role: true },
-          },
-        },
-      },
-    },
-  });
-
-  if (!competition) {
-    return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });
-  }
-
-  if (!hasOrgAdminAccess(competition.organization.admins)) {
-    return NextResponse.json({ error: "権限がありません" }, { status: 403 });
+  try {
+    await requireHostOrgAdminForCompetition(competitionId, session.userId);
+  } catch (e) {
+    const gated = hostOrgAdminGateJsonError(e);
+    if (gated) {
+      return NextResponse.json({ error: gated.error }, { status: gated.status });
+    }
+    throw e;
   }
 
   const users = await prisma.user.findMany({
     where: {
       OR: [
         { email: { contains: q, mode: "insensitive" } },
-        { phoneNumber: { contains: q } },
-        { familyName: { contains: q } },
-        { givenName: { contains: q } },
+        { contact: { is: { phoneNumber: { contains: q } } } },
+        { profile: { is: { familyName: { contains: q } } } },
+        { profile: { is: { givenName: { contains: q } } } },
       ],
     },
     select: {
       id: true,
-      familyName: true,
-      givenName: true,
       email: true,
-      phoneNumber: true,
-      sex: true,
+      profile: { select: { familyName: true, givenName: true, sex: true } },
+      contact: { select: { phoneNumber: true } },
     },
     take: 20,
-    orderBy: [{ familyName: "asc" }, { givenName: "asc" }],
+    orderBy: [{ profile: { familyName: "asc" } }, { profile: { givenName: "asc" } }],
   });
 
   return NextResponse.json({
     users: users.map((u) => ({
       id: u.id,
-      displayName: `${u.familyName} ${u.givenName}`,
+      displayName: `${u.profile?.familyName ?? ""} ${u.profile?.givenName ?? ""}`.trim(),
       email: u.email,
-      phoneNumber: u.phoneNumber,
-      sex: u.sex,
+      phoneNumber: u.contact?.phoneNumber ?? "",
+      sex: u.profile?.sex ?? "OTHER",
     })),
   });
 }

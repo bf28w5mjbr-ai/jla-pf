@@ -15,16 +15,16 @@ export default async function PhoneChangePage() {
   const user = await prisma.user.findUnique({
     where: { id: sess.userId },
     select: {
-      phoneNumber: true,
+      contact: { select: { phoneNumber: true } },
       email: true,
-      passwordHash: true,
+      security: { select: { passwordHash: true } },
     },
   });
 
   if (!user) redirect("/login");
 
   const hasEmail = user.email && !user.email.includes("@temp.jla.local");
-  const hasPassword = !!user.passwordHash;
+  const hasPassword = !!user.security?.passwordHash;
   const isSecure = hasEmail && hasPassword;
 
   // セキュリティ設定が完了していない場合はリダイレクト
@@ -44,7 +44,7 @@ export default async function PhoneChangePage() {
         </p>
       </div>
 
-      <PhoneChangeForm currentPhone={user.phoneNumber} />
+      <PhoneChangeForm currentPhone={user.contact?.phoneNumber ?? ""} />
     </div>
   );
 }

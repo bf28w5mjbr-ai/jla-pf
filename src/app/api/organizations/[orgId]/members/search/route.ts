@@ -41,21 +41,27 @@ export async function GET(request: NextRequest, context: RouteContext) {
         deletedAt: null,
         OR: [
           { email: { contains: q, mode: "insensitive" } },
-          { familyName: { contains: q, mode: "insensitive" } },
-          { givenName: { contains: q, mode: "insensitive" } },
+          { profile: { is: { familyName: { contains: q, mode: "insensitive" } } } },
+          { profile: { is: { givenName: { contains: q, mode: "insensitive" } } } },
         ],
       },
       select: {
         id: true,
-        familyName: true,
-        givenName: true,
+        profile: { select: { familyName: true, givenName: true } },
         email: true,
       },
-      orderBy: [{ familyName: "asc" }, { givenName: "asc" }],
+      orderBy: [{ profile: { familyName: "asc" } }, { profile: { givenName: "asc" } }],
       take: MAX_RESULTS,
     });
 
-    return NextResponse.json({ users });
+    return NextResponse.json({
+      users: users.map((u) => ({
+        id: u.id,
+        familyName: u.profile?.familyName ?? "",
+        givenName: u.profile?.givenName ?? "",
+        email: u.email,
+      })),
+    });
   } catch (error) {
     return jsonInternalError500("GET api/organizations/[orgId]/members/search/route.ts", error);
   }

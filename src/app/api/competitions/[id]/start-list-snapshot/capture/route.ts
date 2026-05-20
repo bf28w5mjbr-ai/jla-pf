@@ -27,6 +27,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         organizationId: true,
         organization: {
           select: {
+            status: true,
             admins: {
               where: { userId: sessionUserId ?? "clinvalidnosessionuser0000" },
               select: { role: true },
@@ -40,9 +41,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     if (
-      !canManageCompetitionStartListSettings({
-        orgAdminsForCurrentUser: competition.organization.admins,
-        hasDayOpsUnlock,
+      !canManageCompetitionStartListSettings({ orgAdminsForCurrentUser: competition.organization.admins, orgStatus: competition.organization.status, hasDayOpsUnlock,
       })
     ) {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });

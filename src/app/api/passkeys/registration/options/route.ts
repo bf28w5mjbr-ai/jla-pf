@@ -33,7 +33,11 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { id: session.userId },
-      select: { id: true, email: true, familyName: true, givenName: true },
+      select: {
+        id: true,
+        email: true,
+        profile: { select: { familyName: true, givenName: true } },
+      },
     });
 
     if (!user) {
@@ -53,7 +57,7 @@ export async function POST(req: NextRequest) {
       rpID,
       userID: new TextEncoder().encode(user.id),
       userName: user.email,
-      userDisplayName: `${user.familyName}${user.givenName}`,
+      userDisplayName: `${user.profile?.familyName ?? ""}${user.profile?.givenName ?? ""}`,
       attestationType: "none",
       excludeCredentials: existingCredentials.map((credential) => ({
         id: isoBase64URL.fromBuffer(Buffer.from(credential.credentialId)),

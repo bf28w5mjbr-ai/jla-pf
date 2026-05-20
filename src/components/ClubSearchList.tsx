@@ -113,10 +113,8 @@ export default function ClubSearchList({ excludeClubIds }: ClubSearchListProps) 
     setApplyingClubId(clubId);
 
     try {
-      const res = await fetch("/api/clubs/apply", {
+      const res = await fetch(`/api/clubs/${clubId}/join`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clubId }),
       });
 
       const data = await res.json();
@@ -149,7 +147,7 @@ export default function ClubSearchList({ excludeClubIds }: ClubSearchListProps) 
   const filteredClubs = useMemo(() => {
     return clubs.filter((club) => {
       if (excludeClubIds.includes(club.id)) return false;
-      if (club.status !== "APPROVED" && club.status !== "JLA_APPROVED") return false;
+      if (club.status !== "APPROVED") return false;
 
       const q = searchQuery.trim().toLowerCase();
       if (!q) return true;

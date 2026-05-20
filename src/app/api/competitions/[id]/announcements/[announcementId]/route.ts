@@ -3,7 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import {
+  hostOrgAdminGateJsonError,
+  requireHostOrgAdminForCompetition,
+} from "@/lib/organizerAccess";
 import { notifyCompetitionAnnouncementPublished } from "@/lib/announcementNotification";
 
 export async function PUT(
@@ -11,7 +14,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; announcementId: string }> }
 ) {
   try {
-    const { announcementId } = await params;
+    const { id: competitionId, announcementId } = await params;
     const cookieStore = await cookies();
     const token = cookieStore.get("session")?.value;
     const session = token ? await verifySession(token) : null;
@@ -20,21 +23,18 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    try {
+      await requireHostOrgAdminForCompetition(competitionId, session.userId);
+    } catch (e) {
+      const gated = hostOrgAdminGateJsonError(e);
+      if (gated) {
+        return NextResponse.json({ error: gated.error }, { status: gated.status });
+      }
+      throw e;
+    }
+
     const announcement = await prisma.competitionAnnouncement.findUnique({
-      where: { id: announcementId },
-      include: {
-        competition: {
-          include: {
-            organization: {
-              include: {
-                admins: {
-                  where: { userId: session.userId },
-                },
-              },
-            },
-          },
-        },
-      },
+      where: { id: announcementId, competitionId },
     });
 
     if (!announcement) {
@@ -42,10 +42,6 @@ export async function PUT(
         { error: "Announcement not found" },
         { status: 404 }
       );
-    }
-
-    if (!hasOrgAdminAccess(announcement.competition.organization.admins)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const body = (await request.json().catch(() => ({}))) as {
@@ -98,7 +94,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; announcementId: string }> }
 ) {
   try {
-    const { announcementId } = await params;
+    const { id: competitionId, announcementId } = await params;
     const cookieStore = await cookies();
     const token = cookieStore.get("session")?.value;
     const session = token ? await verifySession(token) : null;
@@ -107,22 +103,18 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // お知らせを取得
+    try {
+      await requireHostOrgAdminForCompetition(competitionId, session.userId);
+    } catch (e) {
+      const gated = hostOrgAdminGateJsonError(e);
+      if (gated) {
+        return NextResponse.json({ error: gated.error }, { status: gated.status });
+      }
+      throw e;
+    }
+
     const announcement = await prisma.competitionAnnouncement.findUnique({
-      where: { id: announcementId },
-      include: {
-        competition: {
-          include: {
-            organization: {
-              include: {
-                admins: {
-                  where: { userId: session.userId },
-                },
-              },
-            },
-          },
-        },
-      },
+      where: { id: announcementId, competitionId },
     });
 
     if (!announcement) {
@@ -130,11 +122,6 @@ export async function DELETE(
         { error: "Announcement not found" },
         { status: 404 }
       );
-    }
-
-    // 権限チェック
-    if (!hasOrgAdminAccess(announcement.competition.organization.admins)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     // 削除

@@ -5,7 +5,10 @@ import { unlink } from "fs/promises";
 import path from "path";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import {
+  hostOrgAdminGateJsonError,
+  requireHostOrgAdminForCompetition,
+} from "@/lib/organizerAccess";
 import { deletePublicAssetByUrl } from "@/lib/supabase/storage";
 
 export async function DELETE(
@@ -13,7 +16,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; attachmentId: string }> }
 ) {
   try {
-    const { attachmentId } = await params;
+    const { id: competitionId, attachmentId } = await params;
     const cookieStore = await cookies();
     const token = cookieStore.get("session")?.value;
     const session = token ? await verifySession(token) : null;
@@ -22,22 +25,18 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // 添付ファイルを取得
+    try {
+      await requireHostOrgAdminForCompetition(competitionId, session.userId);
+    } catch (e) {
+      const gated = hostOrgAdminGateJsonError(e);
+      if (gated) {
+        return NextResponse.json({ error: gated.error }, { status: gated.status });
+      }
+      throw e;
+    }
+
     const attachment = await prisma.competitionAttachment.findUnique({
-      where: { id: attachmentId },
-      include: {
-        competition: {
-          include: {
-            organization: {
-              include: {
-                admins: {
-                  where: { userId: session.userId },
-                },
-              },
-            },
-          },
-        },
-      },
+      where: { id: attachmentId, competitionId },
     });
 
     if (!attachment) {
@@ -45,11 +44,6 @@ export async function DELETE(
         { error: "Attachment not found" },
         { status: 404 }
       );
-    }
-
-    // 権限チェック
-    if (!hasOrgAdminAccess(attachment.competition.organization.admins)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     // ファイルを削除

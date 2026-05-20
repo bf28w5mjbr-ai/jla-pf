@@ -92,6 +92,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         startListSettings: true,
         organization: {
           select: {
+            status: true,
             admins: {
               where: { userId: sessionUserId ?? "clinvalidnosessionuser0000" },
               select: { role: true },
@@ -114,9 +115,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });
     }
     if (
-      !canManageCompetitionStartListSettings({
-        orgAdminsForCurrentUser: competition.organization.admins,
-        hasDayOpsUnlock,
+      !canManageCompetitionStartListSettings({ orgAdminsForCurrentUser: competition.organization.admins, orgStatus: competition.organization.status, hasDayOpsUnlock,
       })
     ) {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
@@ -163,7 +162,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             competitionEntry: {
               include: {
                 user: {
-                  select: { id: true, familyName: true, givenName: true },
+                  select: { id: true, profile: { select: { familyName: true, givenName: true } } },
                 },
                 club: {
                   select: { id: true, name: true },
@@ -176,7 +175,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 members: {
                   include: {
                     user: {
-                      select: { familyName: true, givenName: true },
+                      select: { profile: { select: { familyName: true, givenName: true } } },
                     },
                   },
                   orderBy: { order: "asc" },
@@ -274,7 +273,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           kind: "INDIVIDUAL",
           entryId: row.competitionEntry.id,
           userId: row.competitionEntry.userId,
-          name: `${row.competitionEntry.user.familyName} ${row.competitionEntry.user.givenName}`,
+          name: `${row.competitionEntry.user.profile?.familyName ?? ""} ${row.competitionEntry.user.profile?.givenName ?? ""}`.trim(),
           clubId: row.competitionEntry.club?.id ?? null,
           clubName: row.competitionEntry.club?.name ?? null,
           sourceRank: row.rank,
@@ -290,7 +289,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           clubId: row.teamEntry.club?.id ?? null,
           clubName: row.teamEntry.club?.name ?? null,
           members: row.teamEntry.members
-            .map((member) => `${member.user.familyName} ${member.user.givenName}`)
+            .map((member) => `${member.user.profile?.familyName ?? ""} ${member.user.profile?.givenName ?? ""}`.trim())
             .filter(Boolean),
           sourceRank: row.rank,
           sourceHeat,

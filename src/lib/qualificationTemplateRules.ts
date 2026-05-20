@@ -6,6 +6,29 @@ type ParsedTemplateMeta = {
   nextKinds: string[];
 };
 
+type QualificationTemplateMetaSource = {
+  description?: string | null;
+  domain?: string | null;
+  level?: string | null;
+  minAge?: number | null;
+  prerequisiteExpression?: string | null;
+  nextKinds?: string[] | readonly string[] | null;
+};
+
+const LEGACY_TEMPLATE_META_LINE_PREFIXES = [
+  "Domain:",
+  "Level:",
+  "MinAge:",
+  "Prerequisites:",
+  "Next:",
+  "GlobalMinAge:",
+  "GlobalConditions:",
+  "CertificationRules:",
+  "Evaluation:",
+  "NonCertificationRequirements:",
+  "TrainingHours:",
+];
+
 export function normalizeQualificationKind(value: string | null | undefined): string {
   return (value ?? "")
     .normalize("NFKC")
@@ -13,6 +36,7 @@ export function normalizeQualificationKind(value: string | null | undefined): st
     .replace(/[\s_\-./()（）・]+/g, "");
 }
 
+/** @deprecated QualificationTemplate の構造化カラムを正とする。旧 description メタ移行用のみ。 */
 export function parseQualificationTemplateMeta(
   description: string | null | undefined
 ): ParsedTemplateMeta {
@@ -55,6 +79,43 @@ export function parseQualificationTemplateMeta(
       : [];
 
   return { domain, level, minAge, prerequisiteExpression, nextKinds };
+}
+
+function nonEmptyString(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+export function resolveQualificationTemplateMeta(
+  template: QualificationTemplateMetaSource
+): ParsedTemplateMeta {
+  const nextKinds = Array.isArray(template.nextKinds)
+    ? template.nextKinds.map((value) => value.trim()).filter((value) => value.length > 0)
+    : [];
+
+  return {
+    domain: nonEmptyString(template.domain),
+    level: nonEmptyString(template.level),
+    minAge: typeof template.minAge === "number" ? template.minAge : null,
+    prerequisiteExpression: nonEmptyString(template.prerequisiteExpression),
+    nextKinds,
+  };
+}
+
+export function stripLegacyQualificationTemplateMetaLines(
+  description: string | null | undefined
+): string | null {
+  if (!description) return null;
+  const lines = description
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line) return false;
+      return !LEGACY_TEMPLATE_META_LINE_PREFIXES.some((prefix) =>
+        line.toLowerCase().startsWith(prefix.toLowerCase())
+      );
+    });
+  return lines.length > 0 ? lines.join("\n") : null;
 }
 
 export function isQualificationExpired(expiryDate: Date | null | undefined): boolean {

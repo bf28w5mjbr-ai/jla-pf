@@ -47,15 +47,19 @@ export async function POST(req: NextRequest) {
     // 現在のユーザー情報取得
     const user = await prisma.user.findUnique({
       where: { id: sess.userId },
-      select: { email: true, passwordHash: true, phoneNumber: true },
+      select: {
+        email: true,
+        security: { select: { passwordHash: true } },
+        contact: { select: { phoneNumber: true } },
+      },
     });
 
     if (!user) {
       return NextResponse.json({ error: "ユーザーが見つかりません" }, { status: 404 });
     }
 
-    // 更新データ準備
-    const updateData: Prisma.UserUpdateInput = {};
+    const userUpdate: Prisma.UserUpdateInput = {};
+    const securityUpdate: Prisma.UserSecurityUpdateInput = {};
 
     if (data.email) {
       // メールアドレス重複チェック
@@ -70,28 +74,47 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      updateData.email = data.email;
-      updateData.emailVerified = false; // メールアドレス変更時は再確認必要
+      userUpdate.email = data.email;
+      securityUpdate.emailVerified = false; // メールアドレス変更時は再確認必要
     }
 
     if (data.password) {
-      if (user.passwordHash) {
+      if (user.security?.passwordHash) {
         return NextResponse.json(
           { error: "パスワードは既に設定されています。変更する場合は別の機能を使用してください。" },
           { status: 400 }
         );
       }
 
-      updateData.passwordHash = await bcrypt.hash(data.password, 10);
+      securityUpdate.passwordHash = await bcrypt.hash(data.password, 10);
     }
 
-    // 更新実行
-    await prisma.user.update({
-      where: { id: sess.userId },
-      data: updateData,
+    await prisma.$transaction(async (tx) => {
+      if (Object.keys(userUpdate).length > 0) {
+        await tx.user.update({
+          where: { id: sess.userId },
+          data: userUpdate,
+        });
+      }
+      if (Object.keys(securityUpdate).length > 0) {
+        const securityCreate: Prisma.UserSecurityUncheckedCreateInput = {
+          userId: sess.userId,
+        };
+        if (securityUpdate.emailVerified !== undefined) {
+          securityCreate.emailVerified = securityUpdate.emailVerified as boolean;
+        }
+        if (securityUpdate.passwordHash !== undefined) {
+          securityCreate.passwordHash = securityUpdate.passwordHash as string;
+        }
+        await tx.userSecurity.upsert({
+          where: { userId: sess.userId },
+          create: securityCreate,
+          update: securityUpdate,
+        });
+      }
     });
 
-    const smsTo = user.phoneNumber ? phoneToE164Loose(user.phoneNumber) : null;
+    const smsTo = user.contact?.phoneNumber ? phoneToE164Loose(user.contact.phoneNumber) : null;
     if (smsTo) {
       try {
         if (data.password) {

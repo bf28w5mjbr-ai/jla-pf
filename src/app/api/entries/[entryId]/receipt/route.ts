@@ -224,14 +224,17 @@ export async function GET(request: NextRequest, context: RouteContext) {
         snapshot: { select: { data: true } },
         user: {
           select: {
-            familyName: true,
-            givenName: true,
             email: true,
-            postalCode: true,
-            prefecture: true,
-            city: true,
-            addressLine1: true,
-            addressLine2: true,
+            profile: { select: { familyName: true, givenName: true } },
+            address: {
+              select: {
+                postalCode: true,
+                prefecture: true,
+                city: true,
+                addressLine1: true,
+                addressLine2: true,
+              },
+            },
           },
         },
         checkoutSessions: {
@@ -271,7 +274,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       entry.updatedAt;
     const issuedDate = coercePdfIssuedDate(issuedDateRaw, entry.updatedAt, entry.createdAt);
     const receiptNumber = buildReceiptNumber(entry.id, issuedDate);
-    const recipientName = `${entry.user.familyName} ${entry.user.givenName}`.trim();
+    const recipientName = `${entry.user.profile?.familyName} ${entry.user.profile?.givenName ?? ""}`.trim();
 
     await logAuditAction({
       action: "COMPETITION_ENTRY_RECEIPT_VIEW",
@@ -392,11 +395,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
           name: recipientName || "参加者",
           email: entry.user.email ?? "",
           address: formatAddress({
-            postalCode: entry.user.postalCode,
-            prefecture: entry.user.prefecture,
-            city: entry.user.city,
-            addressLine1: entry.user.addressLine1,
-            addressLine2: entry.user.addressLine2,
+            postalCode: entry.user.address?.postalCode ?? "",
+            prefecture: entry.user.address?.prefecture ?? "",
+            city: entry.user.address?.city ?? "",
+            addressLine1: entry.user.address?.addressLine1 ?? "",
+            addressLine2: entry.user.address?.addressLine2 ?? null,
           }),
         },
         items: receiptItems,

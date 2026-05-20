@@ -49,8 +49,7 @@ export async function GET(
         author: {
           select: {
             id: true,
-            familyName: true,
-            givenName: true,
+            profile: { select: { familyName: true, givenName: true } },
           },
         },
       },
@@ -119,8 +118,7 @@ export async function POST(
         author: {
           select: {
             id: true,
-            familyName: true,
-            givenName: true,
+            profile: { select: { familyName: true, givenName: true } },
           },
         },
       },

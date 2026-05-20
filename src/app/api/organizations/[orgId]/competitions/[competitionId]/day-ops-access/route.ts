@@ -24,7 +24,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "未認証" }, { status: 401 });
     }
     try {
-      await requireOrgAdmin(orgId, session.userId);
+      await requireOrgAdmin(orgId, session.userId, "operational");
     } catch {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }

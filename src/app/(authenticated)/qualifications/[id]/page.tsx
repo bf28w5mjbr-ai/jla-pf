@@ -26,6 +26,7 @@ export default async function QualificationDetailPage({ params }: RouteParams) {
 
   const qualification = await prisma.qualification.findUnique({
     where: { id },
+    include: { template: true },
   });
 
   if (!qualification || qualification.userId !== sess.userId) {
@@ -44,7 +45,7 @@ export default async function QualificationDetailPage({ params }: RouteParams) {
     
       <Card>
         <CardHeader>
-          <CardTitle>{qualification.kind}</CardTitle>
+          <CardTitle>{qualification.template.name || qualification.kind}</CardTitle>
         </CardHeader>
         <CardContent>
           <dl className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2">

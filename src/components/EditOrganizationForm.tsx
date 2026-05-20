@@ -19,10 +19,6 @@ type Organization = {
   websiteUrl: string | null;
   email: string | null;
   phoneNumber: string | null;
-  representativeFamilyName: string | null;
-  representativeGivenName: string | null;
-  representativeFamilyNameKana: string | null;
-  representativeGivenNameKana: string | null;
   postalCode: string | null;
   prefecture: string | null;
   city: string | null;
@@ -49,20 +45,6 @@ export default function EditOrganizationForm({
   const [websiteUrl, setWebsiteUrl] = useState(organization.websiteUrl || "");
   const [email, setEmail] = useState(organization.email || "");
   const [phoneNumber, setPhoneNumber] = useState(organization.phoneNumber || "");
-
-  // 代表者情報
-  const [representativeFamilyName, setRepresentativeFamilyName] = useState(
-    organization.representativeFamilyName || ""
-  );
-  const [representativeGivenName, setRepresentativeGivenName] = useState(
-    organization.representativeGivenName || ""
-  );
-  const [representativeFamilyNameKana, setRepresentativeFamilyNameKana] = useState(
-    organization.representativeFamilyNameKana || ""
-  );
-  const [representativeGivenNameKana, setRepresentativeGivenNameKana] = useState(
-    organization.representativeGivenNameKana || ""
-  );
 
   // 事務局住所
   const [postalCode, setPostalCode] = useState(organization.postalCode || "");
@@ -120,10 +102,6 @@ export default function EditOrganizationForm({
           websiteUrl,
           email,
           phoneNumber,
-          representativeFamilyName,
-          representativeGivenName,
-          representativeFamilyNameKana,
-          representativeGivenNameKana,
           postalCode,
           prefecture,
           city,
@@ -254,55 +232,6 @@ export default function EditOrganizationForm({
         </div>
       </Card>
 
-      {/* 代表者情報 */}
-      <Card className="p-6">
-        <h2 className="text-xl font-bold mb-4">代表者情報</h2>
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="representativeFamilyName">代表者姓</Label>
-              <Input
-                id="representativeFamilyName"
-                value={representativeFamilyName}
-                onChange={(e) => setRepresentativeFamilyName(e.target.value)}
-                placeholder="山田"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="representativeGivenName">代表者名</Label>
-              <Input
-                id="representativeGivenName"
-                value={representativeGivenName}
-                onChange={(e) => setRepresentativeGivenName(e.target.value)}
-                placeholder="太郎"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="representativeFamilyNameKana">代表者姓（カナ）</Label>
-              <Input
-                id="representativeFamilyNameKana"
-                value={representativeFamilyNameKana}
-                onChange={(e) => setRepresentativeFamilyNameKana(e.target.value)}
-                placeholder="ヤマダ"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="representativeGivenNameKana">代表者名（カナ）</Label>
-              <Input
-                id="representativeGivenNameKana"
-                value={representativeGivenNameKana}
-                onChange={(e) => setRepresentativeGivenNameKana(e.target.value)}
-                placeholder="タロウ"
-              />
-            </div>
-          </div>
-        </div>
-      </Card>
 
       {/* 事務局住所 */}
       <Card className="p-6">

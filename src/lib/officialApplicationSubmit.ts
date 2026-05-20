@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import { hasOrgAdminAccess, hostOrgAdminCanManageCompetition } from "@/lib/roleScopes";
 import {
   isQualificationExpired,
   normalizeQualificationKind,
@@ -17,6 +17,7 @@ export type OfficialApplicationCompetitionForSubmit = {
   officialQualificationFilterEnabled: boolean;
   technicalOfficialRecruitmentEnabled: boolean;
   organization: {
+    status: string;
     admins: { role: string }[];
   };
 };
@@ -42,6 +43,7 @@ export async function loadOfficialApplicationCompetition(
       technicalOfficialRecruitmentEnabled: true,
       organization: {
         select: {
+          status: true,
           admins: {
             where: { userId: sessionUserId },
             select: { role: true },
@@ -55,7 +57,7 @@ export async function loadOfficialApplicationCompetition(
     return { ok: false, status: 404, error: "大会が見つかりません" };
   }
 
-  const isHostAdmin = hasOrgAdminAccess(competition.organization.admins);
+  const isHostAdmin = hostOrgAdminCanManageCompetition(competition.organization.admins, competition.organization.status);
   if (competition.status === "DRAFT" && !isHostAdmin) {
     return { ok: false, status: 404, error: "大会が見つかりません" };
   }

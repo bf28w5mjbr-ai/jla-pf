@@ -53,16 +53,28 @@ async function main(): Promise<number> {
       where: { email: REP_EMAIL },
       select: {
         id: true,
-        familyName: true,
-        givenName: true,
-        familyNameKana: true,
-        givenNameKana: true,
-        postalCode: true,
-        prefecture: true,
-        city: true,
-        addressLine1: true,
-        addressLine2: true,
-        phoneNumber: true,
+        profile: {
+          select: {
+            familyName: true,
+            givenName: true,
+            familyNameKana: true,
+            givenNameKana: true,
+          },
+        },
+        address: {
+          select: {
+            postalCode: true,
+            prefecture: true,
+            city: true,
+            addressLine1: true,
+            addressLine2: true,
+          },
+        },
+        contact: {
+          select: {
+            phoneNumber: true,
+          },
+        },
       },
     });
 
@@ -79,16 +91,16 @@ async function main(): Promise<number> {
 
     const repData = {
       representativeUserId: user.id,
-      representativeFamilyName: user.familyName,
-      representativeGivenName: user.givenName,
-      representativeFamilyNameKana: user.familyNameKana,
-      representativeGivenNameKana: user.givenNameKana,
-      representativePostalCode: user.postalCode,
-      representativePrefecture: user.prefecture,
-      representativeCity: user.city,
-      representativeAddressLine1: user.addressLine1,
-      representativeAddressLine2: user.addressLine2,
-      representativePhone: user.phoneNumber,
+      representativeFamilyName: user.profile?.familyName ?? null,
+      representativeGivenName: user.profile?.givenName ?? null,
+      representativeFamilyNameKana: user.profile?.familyNameKana ?? null,
+      representativeGivenNameKana: user.profile?.givenNameKana ?? null,
+      representativePostalCode: user.address?.postalCode ?? null,
+      representativePrefecture: user.address?.prefecture ?? null,
+      representativeCity: user.address?.city ?? null,
+      representativeAddressLine1: user.address?.addressLine1 ?? null,
+      representativeAddressLine2: user.address?.addressLine2 ?? null,
+      representativePhone: user.contact?.phoneNumber ?? null,
     };
 
     let created = 0;

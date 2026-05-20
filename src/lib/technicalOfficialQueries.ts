@@ -84,8 +84,7 @@ export async function countValidTechnicalOfficialAssignmentsDetailed(
       user: {
         select: {
           id: true,
-          familyName: true,
-          givenName: true,
+          profile: { select: { familyName: true, givenName: true } },
           qualifications: {
             select: { kind: true, status: true, expiryDate: true },
           },
@@ -122,8 +121,8 @@ export async function countValidTechnicalOfficialAssignmentsDetailed(
       countedUserIds.add(a.userId);
       fulfillers.push({
         userId: a.userId,
-        familyName: a.user.familyName,
-        givenName: a.user.givenName,
+        familyName: a.user.profile?.familyName ?? "",
+        givenName: a.user.profile?.givenName ?? "",
       });
     } else {
       qualificationFilteredOutCount += 1;
@@ -165,8 +164,7 @@ export async function countValidTechnicalOfficialAssignmentsDetailed(
       positionName: true,
       user: {
         select: {
-          familyName: true,
-          givenName: true,
+          profile: { select: { familyName: true, givenName: true } },
           qualifications: {
             select: { kind: true, status: true, expiryDate: true },
           },
@@ -246,8 +244,8 @@ export async function countValidTechnicalOfficialAssignmentsDetailed(
     countedUserIds.add(app.userId);
     fulfillers.push({
       userId: app.userId,
-      familyName: app.user.familyName,
-      givenName: app.user.givenName,
+      familyName: app.user.profile?.familyName ?? "",
+      givenName: app.user.profile?.givenName ?? "",
     });
   }
   return {

@@ -84,27 +84,21 @@ export default async function SettingsPage() {
     select: {
       id: true,
       email: true,
-      passwordHash: true,
-      familyName: true,
-      givenName: true,
-      familyNameKana: true,
-      givenNameKana: true,
-      phoneNumber: true,
+      security: { select: { passwordHash: true } },
+      profile: true,
+      contact: true,
       role: true,
-      dateOfBirth: true,
-      sex: true,
-      postalCode: true,
-      prefecture: true,
-      city: true,
-      addressLine1: true,
-      addressLine2: true,
-      jlaMemberNumber: true,
-      profilePhotoUrl: true,
+      address: true,
+      jlaProfile: true,
       createdAt: true,
     },
   });
 
   if (!user) redirect("/login");
+  const profile = user.profile;
+  const contact = user.contact;
+  const address = user.address;
+  const jlaProfile = user.jlaProfile;
 
   const isSecure = true;
 
@@ -174,7 +168,7 @@ export default async function SettingsPage() {
                 title="電話番号の変更"
                 description={
                   <span className="font-mono text-[11px] text-muted-foreground sm:text-xs">
-                    現在: {user.phoneNumber}
+                    現在: {contact?.phoneNumber ?? "未登録"}
                   </span>
                 }
               />
@@ -203,31 +197,31 @@ export default async function SettingsPage() {
               <div className="rounded-xl border border-border/60 bg-muted/15 p-4">
                 <dt className="text-xs font-medium text-muted-foreground">氏名</dt>
                 <dd className="mt-1.5 text-sm font-medium text-foreground">
-                  {user.familyName} {user.givenName}
+                  {profile?.familyName} {profile?.givenName}
                 </dd>
                 <dd className="mt-1 text-sm text-muted-foreground">
-                  {user.familyNameKana} {user.givenNameKana}
+                  {profile?.familyNameKana} {profile?.givenNameKana}
                 </dd>
               </div>
               <div className="rounded-xl border border-border/60 bg-muted/15 p-4">
                 <dt className="text-xs font-medium text-muted-foreground">生年月日</dt>
                 <dd className="mt-1.5 text-sm font-medium text-foreground">
-                  {new Date(user.dateOfBirth).toLocaleDateString("ja-JP", {
+                  {profile?.dateOfBirth ? new Date(profile.dateOfBirth).toLocaleDateString("ja-JP", {
                     year: "numeric",
                     month: "long",
                     day: "numeric",
-                  })}
+                  }) : "未登録"}
                 </dd>
               </div>
               <div className="rounded-xl border border-border/60 bg-muted/15 p-4">
                 <dt className="text-xs font-medium text-muted-foreground">性別</dt>
-                <dd className="mt-1.5 text-sm font-medium text-foreground">{sexLabel(user.sex)}</dd>
+                <dd className="mt-1.5 text-sm font-medium text-foreground">{sexLabel(profile?.sex ?? "")}</dd>
               </div>
-              {user.jlaMemberNumber ? (
+              {jlaProfile?.jlaMemberNumber ? (
                 <div className="rounded-xl border border-border/60 bg-muted/15 p-4">
                   <dt className="text-xs font-medium text-muted-foreground">JLA会員番号</dt>
                   <dd className="mt-1.5 font-mono text-sm font-medium text-foreground">
-                    {user.jlaMemberNumber}
+                    {jlaProfile.jlaMemberNumber}
                   </dd>
                 </div>
               ) : null}
@@ -238,26 +232,26 @@ export default async function SettingsPage() {
               </div>
               <div className="rounded-xl border border-border/60 bg-muted/15 p-4">
                 <dt className="text-xs font-medium text-muted-foreground">電話番号</dt>
-                <dd className="mt-1.5 font-mono text-sm font-medium text-foreground">{user.phoneNumber}</dd>
+                <dd className="mt-1.5 font-mono text-sm font-medium text-foreground">{contact?.phoneNumber ?? "未登録"}</dd>
               </div>
 
-              {user.postalCode ? (
+              {address?.postalCode ? (
                 <div className="rounded-xl border border-border/60 bg-muted/15 p-4">
                   <dt className="text-xs font-medium text-muted-foreground">郵便番号</dt>
-                  <dd className="mt-1.5 font-mono text-sm font-medium text-foreground">〒{user.postalCode}</dd>
+                  <dd className="mt-1.5 font-mono text-sm font-medium text-foreground">〒{address.postalCode}</dd>
                 </div>
               ) : null}
-              {user.prefecture || user.city || user.addressLine1 ? (
+              {address?.prefecture || address?.city || address?.addressLine1 ? (
                 <div className="rounded-xl border border-border/60 bg-muted/15 p-4 md:col-span-2">
                   <dt className="text-xs font-medium text-muted-foreground">住所</dt>
                   <dd className="mt-1.5 text-sm font-medium leading-relaxed text-foreground">
-                    {user.prefecture}
-                    {user.city}
-                    {user.addressLine1}
-                    {user.addressLine2 ? (
+                    {address?.prefecture}
+                    {address?.city}
+                    {address?.addressLine1}
+                    {address?.addressLine2 ? (
                       <>
                         <br />
-                        {user.addressLine2}
+                        {address.addressLine2}
                       </>
                     ) : null}
                   </dd>

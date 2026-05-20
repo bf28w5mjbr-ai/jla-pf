@@ -11,8 +11,10 @@ import { Prisma } from "@prisma/client";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 
 const PutBodySchema = z.object({
-  kinds: z.array(z.string()).max(200),
-  certNumber: z
+  templateIds: z.array(z.string()).max(200).optional().default([]),
+  // 後方互換: 旧クライアントは資格テンプレートの kind を送っていた。
+  kinds: z.array(z.string()).max(200).optional().default([]),
+  jlaMemberNumber: z
     .string()
     .optional()
     .transform((value) => {
@@ -20,6 +22,8 @@ const PutBodySchema = z.object({
       const normalized = normalizeJlaMemberNumber(value);
       return normalized === "" ? undefined : normalized;
     }),
+  // 後方互換: 旧クライアントはJLAメンバーIDをcertNumberとして送っていた。
+  certNumber: z.string().optional(),
 });
 
 /** PUT — 申請資格（ユーザー選択）をチェック内容どおりに同期（審査なし・即時 APPROVED） */
@@ -36,7 +40,12 @@ export async function PUT(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const data = PutBodySchema.parse(body);
 
-    const result = await syncUserHeldQualifications(sess.userId, data.kinds, data.certNumber);
+    const result = await syncUserHeldQualifications(
+      sess.userId,
+      data.kinds,
+      data.jlaMemberNumber ?? data.certNumber,
+      data.templateIds
+    );
 
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import { hostOrgAdminCanManageOnboarding } from "@/lib/roleScopes";
 
 const LOGO_FILENAME_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif", "svg"]);
 
@@ -53,7 +53,7 @@ export async function requireOrgAdminForLogoUpload(
     };
   }
 
-  if (!hasOrgAdminAccess(organization.admins)) {
+  if (!hostOrgAdminCanManageOnboarding(organization.admins, organization.status)) {
     return {
       ok: false,
       response: NextResponse.json(

@@ -72,14 +72,17 @@ export async function GET(
             user: {
               select: {
                 id: true,
-                familyName: true,
-                givenName: true,
                 email: true,
-                postalCode: true,
-                prefecture: true,
-                city: true,
-                addressLine1: true,
-                addressLine2: true,
+                profile: { select: { familyName: true, givenName: true } },
+                address: {
+                  select: {
+                    postalCode: true,
+                    prefecture: true,
+                    city: true,
+                    addressLine1: true,
+                    addressLine2: true,
+                  },
+                },
               },
             },
           },
@@ -95,7 +98,7 @@ export async function GET(
     const issueDate = new Date();
 
     const issuerName = dues.club.mailingName || dues.club.name;
-    const recipientName = `${dues.member.user?.familyName ?? ""} ${dues.member.user?.givenName ?? ""}`.trim();
+    const recipientName = `${dues.member.user?.profile?.familyName ?? ""} ${dues.member.user?.profile?.givenName ?? ""}`.trim();
 
     await logAuditAction({
       action: "CLUB_DUES_INVOICE_VIEW",
@@ -130,11 +133,11 @@ export async function GET(
           name: recipientName || "会員",
           email: dues.member.user?.email ?? "",
           address: formatAddress({
-            postalCode: dues.member.user?.postalCode,
-            prefecture: dues.member.user?.prefecture,
-            city: dues.member.user?.city,
-            addressLine1: dues.member.user?.addressLine1,
-            addressLine2: dues.member.user?.addressLine2,
+            postalCode: dues.member.user?.address?.postalCode,
+            prefecture: dues.member.user?.address?.prefecture,
+            city: dues.member.user?.address?.city,
+            addressLine1: dues.member.user?.address?.addressLine1,
+            addressLine2: dues.member.user?.address?.addressLine2,
           }),
         },
         items: [

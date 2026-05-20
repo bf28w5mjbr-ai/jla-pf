@@ -87,7 +87,7 @@ async function main() {
         },
       },
       user: {
-        select: { dateOfBirth: true },
+        select: { profile: { select: { dateOfBirth: true } } },
       },
     },
   });
@@ -107,7 +107,7 @@ async function main() {
 
     teamOnlyIntentRows += 1;
 
-    const userDob = row.user?.dateOfBirth ? new Date(row.user.dateOfBirth) : null;
+    const userDob = row.user?.profile?.dateOfBirth ? new Date(row.user.profile.dateOfBirth) : null;
 
     const nextFee = computeTeamOnlyIntentPersonalEntryFee({
       competitionStartDate: new Date(row.competition.startDate),

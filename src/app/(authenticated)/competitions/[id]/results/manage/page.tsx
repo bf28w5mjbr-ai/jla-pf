@@ -4,8 +4,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { getRequiredAuthenticatedUserId } from "@/lib/auth";
-import { prisma } from "@/server/db";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import { getCompetitionManagementAccessByCompetitionId } from "@/lib/competitionManagementAccess";
 import { OfficialResultManager } from "@/components/OfficialResultManager";
 import { Button } from "@/components/ui/button";
 
@@ -17,13 +16,18 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const competition = await prisma.competition.findUnique({
-    where: { id },
-    select: { name: true },
-  });
-  return {
-    title: `結果管理 | ${competition?.name || "大会"} | Bluvium`,
-  };
+  try {
+    const userId = await getRequiredAuthenticatedUserId();
+    const access = await getCompetitionManagementAccessByCompetitionId(id, userId);
+    if (access.kind === "ok") {
+      return {
+        title: `結果管理 | ${access.name || "大会"} | Bluvium`,
+      };
+    }
+  } catch {
+    // unauthenticated metadata
+  }
+  return { title: "結果管理 | 大会 | Bluvium" };
 }
 
 export default async function CompetitionResultManagePage({
@@ -34,24 +38,11 @@ export default async function CompetitionResultManagePage({
   const { id } = await params;
   const userId = await getRequiredAuthenticatedUserId();
 
-  const competition = await prisma.competition.findUnique({
-    where: { id },
-    include: {
-      organization: {
-        include: {
-          admins: {
-            where: { userId: userId },
-          },
-        },
-      },
-    },
-  });
-
-  if (!competition) {
+  const access = await getCompetitionManagementAccessByCompetitionId(id, userId);
+  if (access.kind === "not_found") {
     notFound();
   }
-
-  if (!hasOrgAdminAccess(competition.organization.admins)) {
+  if (access.kind === "forbidden" || access.kind === "wrong_org") {
     redirect(`/competitions/${id}`);
   }
 
@@ -65,7 +56,7 @@ export default async function CompetitionResultManagePage({
           </Link>
         </Button>
       </div>
-      <OfficialResultManager competitionId={competition.id} canEdit />
+      <OfficialResultManager competitionId={id} canEdit />
     </div>
   );
 }

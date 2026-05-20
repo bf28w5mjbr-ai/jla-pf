@@ -6,29 +6,98 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 // ========== CORE MODELS ==========
 
 model User {
-  id               String  @id @default(cuid())
-  email            String  @unique
-  emailVerified    Boolean @default(false)
-  emailVerifyToken String?
-  passwordHash     String? // SMS登録時はnull許可
-  role             Role    @default(USER)
-  primaryClubId    String?
-  preferredLanguage String?
-  mfaEnabled       Boolean @default(false)
-  mfaEnforced      Boolean @default(false)
-  nfcTagId         String?
-  deletedAt        DateTime?
+  id                  String    @id @default(cuid())
+  email               String    @unique
+  role                Role      @default(USER)
+  primaryClubId       String?
+  preferredLanguage   String?
+  deletedAt           DateTime?
   deletionScheduledAt DateTime?
 
-  // Profile fields
+  // Relations
+  profile                              UserProfile?
+  contact                              UserContact?
+  address                              UserAddress?
+  emergencyContact                     UserEmergencyContact?
+  jlaProfile                           UserJlaProfile?
+  nfcTag                               UserNfcTag?
+  security                             UserSecurity?
+  loginEvents                          UserLoginEvent[]
+  memberships                          Membership[]
+  qualifications                       Qualification[]
+  qualificationHistories               QualificationHistory[]
+  clubsOwned                           Club[]                                   @relation("ClubCreator")
+  representativeClubs                  Club[]                                   @relation("ClubRepresentative")
+  primaryClub                          Club?                                    @relation("PrimaryClub", fields: [primaryClubId], references: [id])
+  auditLogs                            AuditLog[]
+  clubAnnouncements                    ClubAnnouncement[]
+  clubActivityRecords                  ClubActivityRecord[]
+  organizationsOwned                   Organization[]                           @relation("OrgCreator")
+  representativeOrganizations          Organization[]                           @relation("OrganizationRepresentative")
+  orgAdminRoles                        OrgAdmin[]
+  associationAdminRoles                AssociationAdmin[]
+  notifications                        Notification[] // P2: 通知受信
+  deviceTokens                         DeviceToken[]
+  expensesCreated                      Expense[]                                @relation("ExpenseCreator")
+  expensesApproved                     Expense[]                                @relation("ExpenseApprover")
+  expensesRejected                     Expense[]                                @relation("ExpenseRejector")
+  expensesPaid                         Expense[]                                @relation("ExpensePayer")
+  expenseAttachments                   ExpenseAttachment[]                      @relation("ExpenseAttachmentUploader")
+  publicApiKeys                        PublicApiKey[]
+  clubTypeApplicationsRequested        ClubTypeApplication[]                    @relation("ClubTypeApplicationRequester")
+  clubTypeApplicationsApproved         ClubTypeApplication[]                    @relation("ClubTypeApplicationApprover")
+  bankAccount                          BankAccount?
+  associationLicenses                  AssociationLicense[]
+  notificationJobs                     NotificationJob[]
+  delegationsGiven                     Delegation[]                             @relation("DelegationFrom")
+  delegationsReceived                  Delegation[]                             @relation("DelegationTo")
+  subscriptions                        Subscription[]
+  entryCheckoutSessions                EntryCheckoutSession[]
+  competitionEntries                   CompetitionEntry[]
+  teamEntryMembers                     TeamEntryMember[]
+  passkeyCredentials                   PasskeyCredential[]
+  passkeyChallenges                    PasskeyChallenge[]
+  loginSessions                        LoginSession[]
+  passwordResetTokens                  PasswordResetToken[]
+  recorderAssignments                  CompetitionRecorderAssignment[]          @relation("CompetitionRecorder")
+  recorderAssignmentsGranted           CompetitionRecorderAssignment[]          @relation("CompetitionRecorderGrantor")
+  dayCheckins                          CompetitionDayCheckin[]                  @relation("CompetitionCheckinUser")
+  dayCheckinsHandled                   CompetitionDayCheckin[]                  @relation("CompetitionCheckinOperator")
+  dayParticipantStatusesUpdated        CompetitionParticipantStatus[]           @relation("CompetitionParticipantStatusUpdater")
+  teamMarshalParticipantStatuses       CompetitionParticipantStatus[]           @relation("TeamMarshalMember")
+  resultDraftsUpdated                  CompetitionResultDraft[]                 @relation("CompetitionResultDraftUpdater")
+  dayOpsHeatOperationDraftsUpdated     DayOpsHeatOperationDraft[]               @relation("DayOpsHeatOperationDraftUpdater")
+  startListSnapshotsCaptured           CompetitionStartListSnapshot[]           @relation("CompetitionStartListSnapshotCreator")
+  competitionBalanceLinesCreated       CompetitionBalanceLine[]
+  officialApplications                 CompetitionOfficialApplication[]         @relation("OfficialApplicationApplicant")
+  officialApplicationsReviewed         CompetitionOfficialApplication[]         @relation("OfficialApplicationReviewer")
+  csvExportRequestsRequested           CompetitionEntryCsvExportRequest[]       @relation("CompetitionEntryCsvExportRequester")
+  csvExportRequestsReviewed            CompetitionEntryCsvExportRequest[]       @relation("CompetitionEntryCsvExportReviewer")
+  competitionTypeApplicationsRequested CompetitionTypeApplication[]             @relation("CompetitionTypeApplicationRequester")
+  competitionTypeApplicationsReviewed  CompetitionTypeApplication[]             @relation("CompetitionTypeApplicationReviewer")
+  officialAttendances                  CompetitionOfficialAttendance[]          @relation("CompetitionOfficialAttendanceUser")
+  officialAttendanceRecords            CompetitionOfficialAttendance[]          @relation("CompetitionOfficialAttendanceRecorder")
+  technicalOfficialInvitesSent         CompetitionTechnicalOfficialInvitation[] @relation("TechnicalOfficialInviter")
+  technicalOfficialInvitesReceived     CompetitionTechnicalOfficialInvitation[] @relation("TechnicalOfficialInvitee")
+  orgAdminInvitesSent                  OrganizationAdminInvitation[]            @relation("OrgAdminInviter")
+  orgAdminInvitesReceived              OrganizationAdminInvitation[]            @relation("OrgAdminInvitee")
+  technicalOfficialAssignments         CompetitionTechnicalOfficialAssignment[]
+  clubPrepaidIndividualSlotsCovered    ClubCompetitionPrepaidIndividualSlot[]   @relation("ClubPrepaidSlotCoveredUser")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserProfile {
+  userId               String   @id
   familyName           String
   givenName            String
   familyNameKana       String // カタカナ（入力用）
@@ -37,91 +106,9 @@ model User {
   normalizedGivenName  String // 正規化済み（検索用）
   dateOfBirth          DateTime // 生年月日
   sex                  Sex // 性別（必須）
-  phoneNumber          String // E.164形式 +81... 必須（同一番号の複数アカウント可）
-  phoneVerified        Boolean   @default(false)
-  phoneVerifiedAt      DateTime?
-  /// 最終ログイン（成功時更新・セキュリティ通知の判定に使用）
-  lastLoginAt          DateTime?
-  lastLoginIp          String?
-  lastLoginUa          String?   @db.VarChar(512)
   profilePhotoUrl      String? // プロフィール写真URL
 
-  // 住所情報
-  postalCode   String // 郵便番号（ハイフンなし）
-  prefecture   String // 都道府県
-  city         String // 市区町村
-  addressLine1 String // 町名・番地
-  addressLine2 String? // 建物名・部屋番号（任意）
-
-  // 緊急連絡先
-  emergencyContactFamilyName     String? // 緊急連絡先姓
-  emergencyContactGivenName      String? // 緊急連絡先名
-  emergencyContactFamilyNameKana String? // 緊急連絡先姓（カナ）
-  emergencyContactGivenNameKana  String? // 緊急連絡先名（カナ）
-  emergencyContactPhone          String? // 緊急連絡先電話番号
-
-  // JLA関連
-  jlaMemberNumber       String? @unique // JLA会員番号
-  legacyJlaMemberNumber String? @unique // 旧JLA会員番号
-
-  // Relations
-  memberships         Membership[]
-  qualifications      Qualification[]
-  clubsOwned          Club[]               @relation("ClubCreator")
-  representativeClubs Club[]               @relation("ClubRepresentative")
-  primaryClub         Club?                @relation("PrimaryClub", fields: [primaryClubId], references: [id])
-  auditLogs           AuditLog[]
-  clubAnnouncements   ClubAnnouncement[]
-  clubActivityRecords ClubActivityRecord[]
-  organizationsOwned  Organization[]       @relation("OrgCreator")
-  representativeOrganizations Organization[] @relation("OrganizationRepresentative")
-  orgAdminRoles       OrgAdmin[]
-  associationAdminRoles AssociationAdmin[]
-  notifications       Notification[]       // P2: 通知受信
-  deviceTokens        DeviceToken[]
-  expensesCreated     Expense[]            @relation("ExpenseCreator")
-  expensesApproved    Expense[]            @relation("ExpenseApprover")
-  expensesRejected    Expense[]            @relation("ExpenseRejector")
-  expensesPaid        Expense[]            @relation("ExpensePayer")
-  expenseAttachments  ExpenseAttachment[]  @relation("ExpenseAttachmentUploader")
-  publicApiKeys       PublicApiKey[]
-  clubTypeApplicationsRequested ClubTypeApplication[] @relation("ClubTypeApplicationRequester")
-  clubTypeApplicationsApproved  ClubTypeApplication[] @relation("ClubTypeApplicationApprover")
-  bankAccount        BankAccount?
-  associationLicenses AssociationLicense[]
-  notificationJobs   NotificationJob[]
-  delegationsGiven   Delegation[] @relation("DelegationFrom")
-  delegationsReceived Delegation[] @relation("DelegationTo")
-  subscriptions      Subscription[]
-  entryCheckoutSessions EntryCheckoutSession[]
-  competitionEntries   CompetitionEntry[]
-  teamEntryMembers     TeamEntryMember[]
-  passkeyCredentials   PasskeyCredential[]
-  passkeyChallenges    PasskeyChallenge[]
-  loginSessions        LoginSession[]
-  passwordResetTokens  PasswordResetToken[]
-  recorderAssignments  CompetitionRecorderAssignment[] @relation("CompetitionRecorder")
-  recorderAssignmentsGranted CompetitionRecorderAssignment[] @relation("CompetitionRecorderGrantor")
-  dayCheckins          CompetitionDayCheckin[] @relation("CompetitionCheckinUser")
-  dayCheckinsHandled   CompetitionDayCheckin[] @relation("CompetitionCheckinOperator")
-  dayParticipantStatusesUpdated CompetitionParticipantStatus[] @relation("CompetitionParticipantStatusUpdater")
-  teamMarshalParticipantStatuses CompetitionParticipantStatus[] @relation("TeamMarshalMember")
-  resultDraftsUpdated  CompetitionResultDraft[] @relation("CompetitionResultDraftUpdater")
-  dayOpsHeatOperationDraftsUpdated DayOpsHeatOperationDraft[] @relation("DayOpsHeatOperationDraftUpdater")
-  startListSnapshotsCaptured CompetitionStartListSnapshot[] @relation("CompetitionStartListSnapshotCreator")
-  competitionBalanceLinesCreated CompetitionBalanceLine[]
-  officialApplications              CompetitionOfficialApplication[] @relation("OfficialApplicationApplicant")
-  officialApplicationsReviewed      CompetitionOfficialApplication[] @relation("OfficialApplicationReviewer")
-  csvExportRequestsRequested CompetitionEntryCsvExportRequest[] @relation("CompetitionEntryCsvExportRequester")
-  csvExportRequestsReviewed  CompetitionEntryCsvExportRequest[] @relation("CompetitionEntryCsvExportReviewer")
-  competitionTypeApplicationsRequested CompetitionTypeApplication[] @relation("CompetitionTypeApplicationRequester")
-  competitionTypeApplicationsReviewed  CompetitionTypeApplication[] @relation("CompetitionTypeApplicationReviewer")
-  officialAttendances            CompetitionOfficialAttendance[] @relation("CompetitionOfficialAttendanceUser")
-  officialAttendanceRecords      CompetitionOfficialAttendance[] @relation("CompetitionOfficialAttendanceRecorder")
-  technicalOfficialInvitesSent      CompetitionTechnicalOfficialInvitation[] @relation("TechnicalOfficialInviter")
-  technicalOfficialInvitesReceived  CompetitionTechnicalOfficialInvitation[] @relation("TechnicalOfficialInvitee")
-  technicalOfficialAssignments      CompetitionTechnicalOfficialAssignment[]
-  clubPrepaidIndividualSlotsCovered ClubCompetitionPrepaidIndividualSlot[] @relation("ClubPrepaidSlotCoveredUser")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -129,15 +116,109 @@ model User {
   // 複合ユニーク制約: 同姓同名でも生年月日で区別
   @@unique([normalizedFamilyName, normalizedGivenName, dateOfBirth])
   @@index([dateOfBirth, normalizedFamilyName, normalizedGivenName])
-  @@index([nfcTagId])
+}
+
+model UserContact {
+  userId          String    @id
+  phoneNumber     String // E.164形式 +81... 必須（同一番号の複数アカウント可）
+  phoneVerified   Boolean   @default(false)
+  phoneVerifiedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([phoneNumber])
 }
 
+model UserAddress {
+  userId       String  @id
+  postalCode   String // 郵便番号（ハイフンなし）
+  prefecture   String // 都道府県
+  city         String // 市区町村
+  addressLine1 String // 町名・番地
+  addressLine2 String? // 建物名・部屋番号（任意）
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserEmergencyContact {
+  userId         String  @id
+  familyName     String? // 緊急連絡先姓
+  givenName      String? // 緊急連絡先名
+  familyNameKana String? // 緊急連絡先姓（カナ）
+  givenNameKana  String? // 緊急連絡先名（カナ）
+  phoneNumber    String? // 緊急連絡先電話番号
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserJlaProfile {
+  userId          String  @id
+  jlaMemberNumber String? @unique // JLA会員番号
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserNfcTag {
+  userId   String  @id
+  nfcTagId String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([nfcTagId])
+}
+
+model UserSecurity {
+  userId           String    @id
+  emailVerified    Boolean   @default(false)
+  emailVerifyToken String?
+  passwordHash     String? // SMS登録時はnull許可
+  mfaEnabled       Boolean   @default(false)
+  mfaEnforced      Boolean   @default(false)
+  /// 最終ログイン（成功時更新・セキュリティ通知の判定に使用）
+  lastLoginAt      DateTime?
+  lastLoginIp      String?
+  lastLoginUa      String?   @db.VarChar(512)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserLoginEvent {
+  id        String           @id @default(cuid())
+  userId    String
+  channel   AuthLoginChannel
+  ipAddress String?
+  userAgent String?          @db.VarChar(512)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+}
+
 model PublicApiKey {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
   name      String
-  key       String   @unique
+  key       String    @unique
   revokedAt DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -149,8 +230,8 @@ model PublicApiKey {
 }
 
 model BankAccount {
-  id                String   @id @default(cuid())
-  userId            String   @unique
+  id                String @id @default(cuid())
+  userId            String @unique
   bankName          String
   branchName        String
   accountType       String
@@ -164,7 +245,7 @@ model BankAccount {
 }
 
 model AssociationLicense {
-  id            String   @id @default(cuid())
+  id            String                   @id @default(cuid())
   userId        String
   status        AssociationLicenseStatus @default(PENDING)
   licenseNumber String?
@@ -180,7 +261,7 @@ model AssociationLicense {
 }
 
 model QualificationCategory {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   name        String
   description String? @db.Text
 
@@ -195,17 +276,21 @@ model QualificationTemplate {
   categoryId             String?
   kind                   String
   name                   String
-  description            String? @db.Text
-  requiresExpiry         Boolean @default(true)
+  description            String?  @db.Text
+  requiresExpiry         Boolean  @default(true)
   validityMonths         Int?
   domain                 String?
   level                  String?
   minAge                 Int?
-  prerequisiteExpression String? @db.Text
+  /// 判定用の前提資格式。AND / OR / parentheses を evaluatePrerequisiteExpression で評価する。
+  prerequisiteExpression String?  @db.Text
+  /// 表示・一覧用の前提資格 kind 配列。判定の正は prerequisiteExpression。
   prerequisiteKinds      String[] @default([])
   nextKinds              String[] @default([])
 
-  category QualificationCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  category                        QualificationCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  qualifications                  Qualification[]
+  qualificationHistories          QualificationHistory[]
   competitionsAsTechnicalOfficial Competition[]
 
   createdAt DateTime @default(now())
@@ -217,11 +302,11 @@ model QualificationTemplate {
 }
 
 model NotificationTemplate {
-  id            String                @id @default(cuid())
+  id            String               @id @default(cuid())
   type          String
-  category      NotificationCategory  @default(GENERAL)
+  category      NotificationCategory @default(GENERAL)
   titleTemplate String
-  bodyTemplate  String @db.Text
+  bodyTemplate  String               @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -230,13 +315,13 @@ model NotificationTemplate {
 }
 
 model NotificationJob {
-  id            String                 @id @default(cuid())
-  status        NotificationJobStatus  @default(PENDING)
-  createdById   String
-  payload       Json?
-  totalCount    Int?    @default(0)
-  successCount  Int?    @default(0)
-  failureCount  Int?    @default(0)
+  id           String                @id @default(cuid())
+  status       NotificationJobStatus @default(PENDING)
+  createdById  String
+  payload      Json?
+  totalCount   Int?                  @default(0)
+  successCount Int?                  @default(0)
+  failureCount Int?                  @default(0)
 
   createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
 
@@ -245,11 +330,11 @@ model NotificationJob {
 }
 
 model Delegation {
-  id          String   @id @default(cuid())
-  fromUserId  String
-  toUserId    String
-  status      DelegationStatus @default(ACTIVE)
-  expiresAt   DateTime?
+  id         String           @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  status     DelegationStatus @default(ACTIVE)
+  expiresAt  DateTime?
 
   fromUser User @relation("DelegationFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
   toUser   User @relation("DelegationTo", fields: [toUserId], references: [id], onDelete: Cascade)
@@ -262,11 +347,11 @@ model Delegation {
 }
 
 model Subscription {
-  id        String   @id @default(cuid())
+  id        String             @id @default(cuid())
   userId    String
   plan      String
   status    SubscriptionStatus @default(ACTIVE)
-  startedAt DateTime @default(now())
+  startedAt DateTime           @default(now())
   endsAt    DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -278,14 +363,14 @@ model Subscription {
 }
 
 model Club {
-  id               String     @id @default(cuid())
-  name             String
-  nameKana         String?
-  abbreviation     String? // 略称
-  websiteUrl       String?
-  status           ClubStatus @default(APPLYING)
-  suspendedReason  String? // SUSPENDED/INACTIVE理由: "ANNUAL_FEE_UNPAID" | "NO_ADMIN" | "JLA_FREEZE" | "REJECTED"
-  type             ClubType? // クラブ種別（JLAが付与、null=未確定）
+  id              String     @id @default(cuid())
+  name            String
+  nameKana        String?
+  abbreviation    String? // 略称
+  websiteUrl      String?
+  status          ClubStatus @default(APPLYING)
+  suspendedReason String? // SUSPENDED/INACTIVE理由: "ANNUAL_FEE_UNPAID" | "NO_ADMIN" | "JLA_FREEZE" | "REJECTED"
+  type            ClubType? // クラブ種別（JLAが付与、null=未確定）
 
   // 代表者情報
   representativeFamilyName     String?
@@ -317,23 +402,23 @@ model Club {
   logoUrl String?
 
   // Relations
-  creatorId           String?
-  creator             User?                    @relation("ClubCreator", fields: [creatorId], references: [id])
-  representativeUser  User?                    @relation("ClubRepresentative", fields: [representativeUserId], references: [id])
-  primaryUsers        User[]                   @relation("PrimaryClub")
-  memberships         Membership[]
-  announcements       ClubAnnouncement[]
-  activityRecords     ClubActivityRecord[]
-  annualRegistrations ClubAnnualRegistration[]
-  typeApplications    ClubTypeApplication[]
-  fiscalYears         ClubFiscalYear[]
-  dues                ClubDues[]
-  entryCheckoutSessions EntryCheckoutSession[]
-  competitionEntries   CompetitionEntry[]
-  teamEntries          TeamEntry[]
+  creatorId                    String?
+  creator                      User?                                    @relation("ClubCreator", fields: [creatorId], references: [id])
+  representativeUser           User?                                    @relation("ClubRepresentative", fields: [representativeUserId], references: [id])
+  primaryUsers                 User[]                                   @relation("PrimaryClub")
+  memberships                  Membership[]
+  announcements                ClubAnnouncement[]
+  activityRecords              ClubActivityRecord[]
+  annualRegistrations          ClubAnnualRegistration[]
+  typeApplications             ClubTypeApplication[]
+  fiscalYears                  ClubFiscalYear[]
+  dues                         ClubDues[]
+  entryCheckoutSessions        EntryCheckoutSession[]
+  competitionEntries           CompetitionEntry[]
+  teamEntries                  TeamEntry[]
   technicalOfficialInvitations CompetitionTechnicalOfficialInvitation[]
   technicalOfficialAssignments CompetitionTechnicalOfficialAssignment[]
-  clubPrepaidIndividualSlots ClubCompetitionPrepaidIndividualSlot[]
+  clubPrepaidIndividualSlots   ClubCompetitionPrepaidIndividualSlot[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -370,34 +455,36 @@ model Organization {
   logoUrl         String? // ロゴURL
 
   // 登録料（オンボーディング）
-  onboardingFeeStatus  OnboardingFeeStatus @default(NOT_PAID)
-  onboardingFeePaidAt  DateTime?
+  onboardingFeeStatus OnboardingFeeStatus @default(NOT_PAID)
+  onboardingFeePaidAt DateTime?
 
   /// Stripe Connect（エントリー代の送金先）
-  stripeConnectAccountId        String?
-  stripeConnectChargesEnabled   Boolean @default(false)
+  stripeConnectAccountId                String?
+  stripeConnectChargesEnabled           Boolean                     @default(false)
   /// PF 年額課金用 Stripe Customer（プラットフォーム側）
-  stripeCustomerId              String?
-  organizerSubscriptionId       String?
-  organizerSubscriptionStatus   OrganizerSubscriptionStatus @default(NONE)
+  stripeCustomerId                      String?
+  organizerSubscriptionId               String?
+  organizerSubscriptionStatus           OrganizerSubscriptionStatus @default(NONE)
   organizerSubscriptionCurrentPeriodEnd DateTime?
 
   // ステータス
-  status OrgStatus @default(PENDING)
+  status          OrgStatus @default(PENDING)
+  suspendedReason String? // SUSPENDED 時の理由コード（例: PF_SUSPEND, LEGACY_INACTIVE）
 
   // Relations
-  createdById  String?
-  createdBy    User?         @relation("OrgCreator", fields: [createdById], references: [id])
-  representativeUser User?   @relation("OrganizationRepresentative", fields: [representativeUserId], references: [id])
-  admins       OrgAdmin[]
-  competitions Competition[] // 団体が主催する大会
+  createdById        String?
+  createdBy          User?         @relation("OrgCreator", fields: [createdById], references: [id])
+  representativeUser User?         @relation("OrganizationRepresentative", fields: [representativeUserId], references: [id])
+  admins             OrgAdmin[]
+  adminInvitations   OrganizationAdminInvitation[]
+  competitions       Competition[] // 団体が主催する大会
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Association {
-  id           String @id @default(cuid())
+  id           String            @id @default(cuid())
   name         String // DB migration enforces case-insensitive uniqueness on lower(name)
   abbreviation String? // DB migration enforces case-insensitive uniqueness on lower(abbreviation)
   status       AssociationStatus @default(PENDING)
@@ -440,6 +527,36 @@ model OrgAdmin {
   @@index([organizationId])
 }
 
+/// 主催団体管理メンバーへの招待（本人承諾後に OrgAdmin 作成）
+model OrganizationAdminInvitation {
+  id              String                            @id @default(cuid())
+  token           String                            @unique
+  organizationId  String
+  invitedByUserId String
+  invitedUserId   String
+  role            OrgAdminRole                      @default(MEMBER)
+  status          OrganizationAdminInvitationStatus @default(PENDING)
+  expiresAt       DateTime
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("OrgAdminInviter", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  invitedUser  User         @relation("OrgAdminInvitee", fields: [invitedUserId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, status])
+  @@index([invitedUserId, status])
+}
+
+enum OrganizationAdminInvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+  EXPIRED
+}
+
 model Membership {
   id     String           @id @default(cuid())
   userId String
@@ -448,8 +565,8 @@ model Membership {
   status MembershipStatus @default(PENDING)
 
   // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  club Club       @relation(fields: [clubId], references: [id], onDelete: Cascade)
   dues ClubDues[]
 
   createdAt DateTime @default(now())
@@ -463,8 +580,9 @@ model Membership {
 model Qualification {
   id            String                    @id @default(cuid())
   userId        String
+  templateId    String
   kind          String // e.g., "BLS", "ILS", etc.
-  certNumber    String?
+  certNumber    String? // 資格ごとの認定番号（JLAメンバーIDではない）
   issueDate     DateTime?
   expiryDate    DateTime?
   status        QualificationStatus       @default(PENDING)
@@ -472,15 +590,48 @@ model Qualification {
   recordOrigin  QualificationRecordOrigin @default(USER_APPLICATION)
 
   // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template  QualificationTemplate  @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  histories QualificationHistory[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([userId, templateId])
   @@index([userId, createdAt(sort: Desc)])
   @@index([userId, recordOrigin])
+  @@index([templateId])
   @@index([status, createdAt(sort: Asc)])
   @@index([status, expiryDate])
+}
+
+model QualificationHistory {
+  id                    String                         @id @default(cuid())
+  qualificationId       String?
+  sourceQualificationId String?
+  userId                String
+  templateId            String?
+  kind                  String
+  certNumber            String?
+  issueDate             DateTime?
+  expiryDate            DateTime?
+  status                QualificationStatus
+  attachmentUrl         String?
+  recordOrigin          QualificationRecordOrigin
+  changeType            QualificationHistoryChangeType @default(SNAPSHOT)
+  changedAt             DateTime                       @default(now())
+
+  qualification Qualification?         @relation(fields: [qualificationId], references: [id], onDelete: SetNull)
+  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template      QualificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([qualificationId])
+  @@index([sourceQualificationId])
+  @@index([userId, changedAt(sort: Desc)])
+  @@index([templateId])
+  @@index([recordOrigin, changedAt])
 }
 
 model RegistrationSession {
@@ -508,9 +659,9 @@ model RegistrationSession {
   password                       String? // パスワード（bcryptハッシュ化済み、任意）
 
   // OTP情報
-  otpHash      String // bcryptハッシュ
-  otpAttempts  Int      @default(0) // 失敗回数
-  otpExpiresAt DateTime // OTP有効期限（5分）
+  otpHash                 String // bcryptハッシュ
+  otpAttempts             Int      @default(0) // 失敗回数
+  otpExpiresAt            DateTime // OTP有効期限（5分）
   /// SMS / メールのどちらで OTP を届けたか（EMAIL 時は登録完了時に電話未検証扱い）
   registrationOtpDelivery String?
 
@@ -530,13 +681,13 @@ model RegistrationSession {
 }
 
 model PasskeyCredential {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   userId       String
-  credentialId Bytes    @unique
+  credentialId Bytes     @unique
   publicKey    Bytes
-  counter      Int      @default(0)
+  counter      Int       @default(0)
   transports   Json?
-  label        String   @default("パスキー")
+  label        String    @default("パスキー")
   lastUsedAt   DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -572,6 +723,13 @@ model LoginThrottleBucket {
 }
 
 /// SMSログインまたは電話番号変更の OTP セッション（同一ユーザーは purpose ごとに1件まで）
+enum AuthLoginChannel {
+  PASSWORD
+  SMS_OTP
+  PASSKEY
+  REGISTRATION
+}
+
 enum LoginSessionPurpose {
   SMS_LOGIN
   PHONE_CHANGE
@@ -635,29 +793,29 @@ model AuditLog {
 
 // P2: アプリ内通知（即時・ユーザー制限不可）
 model Notification {
-  id       String             @id @default(cuid())
-  userId   String             // 受信者
-  category NotificationCategory @default(GENERAL)
-  type     String             // 通知種別（例: "CLUB_APPLICATION", "CLUB_APPROVED"）
-  title    String             // 通知タイトル
-  body     String             @db.Text // 通知本文
-  read     Boolean            @default(false) // 既読フラグ
-  relatedId String?           // 関連ID（clubId, membershipId等）
-  linkUrl  String?            // リンク先URL
-  
+  id        String               @id @default(cuid())
+  userId    String // 受信者
+  category  NotificationCategory @default(GENERAL)
+  type      String // 通知種別（例: "CLUB_APPLICATION", "CLUB_APPROVED"）
+  title     String // 通知タイトル
+  body      String               @db.Text // 通知本文
+  read      Boolean              @default(false) // 既読フラグ
+  relatedId String? // 関連ID（clubId, membershipId等）
+  linkUrl   String? // リンク先URL
+
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   createdAt DateTime @default(now())
-  
+
   @@index([userId, read])
   @@index([userId, createdAt])
 }
 
 model DeviceToken {
-  id       String @id @default(cuid())
+  id       String  @id @default(cuid())
   userId   String
-  token    String @unique
+  token    String  @unique
   platform String // ios | android | web
   active   Boolean @default(true)
 
@@ -671,12 +829,12 @@ model DeviceToken {
 }
 
 model ClubAnnouncement {
-  id       String  @id @default(cuid())
-  clubId   String
-  authorId String
-  title    String
-  content  String  @db.Text
-  isPinned Boolean @default(false)
+  id          String    @id @default(cuid())
+  clubId      String
+  authorId    String
+  title       String
+  content     String    @db.Text
+  isPinned    Boolean   @default(false)
   /// null=下書き、値あり=公開済み
   publishedAt DateTime?
 
@@ -739,19 +897,19 @@ model ClubAnnualRegistration {
 }
 
 model ClubTypeApplication {
-  id              String                    @id @default(cuid())
-  clubId          String
-  requestedType   ClubType
-  status          ClubTypeApplicationStatus @default(PENDING)
-  kind            ClubTypeApplicationKind   @default(INITIAL)
+  id               String                    @id @default(cuid())
+  clubId           String
+  requestedType    ClubType
+  status           ClubTypeApplicationStatus @default(PENDING)
+  kind             ClubTypeApplicationKind   @default(INITIAL)
   targetFiscalYear Int?
-  requestedById   String
-  approvedById    String?
-  rejectionReason String?
-  approvedAt      DateTime?
+  requestedById    String
+  approvedById     String?
+  rejectionReason  String?
+  approvedAt       DateTime?
 
-  club        Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  requestedBy User @relation("ClubTypeApplicationRequester", fields: [requestedById], references: [id])
+  club        Club  @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  requestedBy User  @relation("ClubTypeApplicationRequester", fields: [requestedById], references: [id])
   approvedBy  User? @relation("ClubTypeApplicationApprover", fields: [approvedById], references: [id])
 
   createdAt DateTime @default(now())
@@ -762,16 +920,16 @@ model ClubTypeApplication {
 }
 
 model ClubFiscalYear {
-  id                     String             @id @default(cuid())
+  id                     String            @id @default(cuid())
   clubId                 String
   fiscalYear             Int
   startDate              DateTime
   endDate                DateTime
-  membershipFee          Int                @default(0)
-  membershipFeeAppliesTo ClubDuesAppliesTo  @default(ALL_MEMBERS)
-  description            String?            @db.Text
+  membershipFee          Int               @default(0)
+  membershipFeeAppliesTo ClubDuesAppliesTo @default(ALL_MEMBERS)
+  description            String?           @db.Text
 
-  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  club Club       @relation(fields: [clubId], references: [id], onDelete: Cascade)
   dues ClubDues[]
 
   createdAt DateTime @default(now())
@@ -782,20 +940,20 @@ model ClubFiscalYear {
 }
 
 model ClubDues {
-  id           String          @id @default(cuid())
-  clubId       String
-  fiscalYearId String
-  memberId     String
-  amount       Int
-  status       ClubDuesStatus  @default(UNPAID)
-  dueDate      DateTime?
-  paidDate     DateTime?
-  invoiceNumber String?
+  id              String         @id @default(cuid())
+  clubId          String
+  fiscalYearId    String
+  memberId        String
+  amount          Int
+  status          ClubDuesStatus @default(UNPAID)
+  dueDate         DateTime?
+  paidDate        DateTime?
+  invoiceNumber   String?
   invoiceIssuedAt DateTime?
-  invoiceUrl   String?
-  receiptNumber String?
-  receiptUrl   String?
-  notes        String?         @db.Text
+  invoiceUrl      String?
+  receiptNumber   String?
+  receiptUrl      String?
+  notes           String?        @db.Text
 
   club       Club           @relation(fields: [clubId], references: [id], onDelete: Cascade)
   fiscalYear ClubFiscalYear @relation(fields: [fiscalYearId], references: [id], onDelete: Cascade)
@@ -811,18 +969,18 @@ model ClubDues {
 }
 
 model Expense {
-  id             String          @id @default(cuid())
-  ownerType      ExpenseOwnerType
-  ownerId        String
+  id        String           @id @default(cuid())
+  ownerType ExpenseOwnerType
+  ownerId   String
 
-  amount       Int
-  taxRate      Int?
-  taxAmount    Int?
-  totalAmount  Int
+  amount      Int
+  taxRate     Int?
+  taxAmount   Int?
+  totalAmount Int
 
-  category     ExpenseCategory
-  description  String?
-  status       ExpenseStatus     @default(DRAFT)
+  category    ExpenseCategory
+  description String?
+  status      ExpenseStatus   @default(DRAFT)
 
   submittedAt    DateTime?
   approvedAt     DateTime?
@@ -833,16 +991,16 @@ model Expense {
   paidAt         DateTime?
   paidById       String?
 
-  createdById  String
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  attachments  ExpenseAttachment[]
+  attachments ExpenseAttachment[]
 
-  createdBy    User              @relation("ExpenseCreator", fields: [createdById], references: [id])
-  approvedBy   User?             @relation("ExpenseApprover", fields: [approvedById], references: [id])
-  rejectedBy   User?             @relation("ExpenseRejector", fields: [rejectedById], references: [id])
-  paidBy       User?             @relation("ExpensePayer", fields: [paidById], references: [id])
+  createdBy  User  @relation("ExpenseCreator", fields: [createdById], references: [id])
+  approvedBy User? @relation("ExpenseApprover", fields: [approvedById], references: [id])
+  rejectedBy User? @relation("ExpenseRejector", fields: [rejectedById], references: [id])
+  paidBy     User? @relation("ExpensePayer", fields: [paidById], references: [id])
 
   @@index([ownerType, ownerId])
   @@index([status])
@@ -850,44 +1008,44 @@ model Expense {
 }
 
 model ExpenseAttachment {
-  id            String   @id @default(cuid())
-  expenseId     String
-  url           String
-  filename      String?
-  mimeType      String?
-  size          Int?
-  uploadedById  String
-  createdAt     DateTime @default(now())
+  id           String   @id @default(cuid())
+  expenseId    String
+  url          String
+  filename     String?
+  mimeType     String?
+  size         Int?
+  uploadedById String
+  createdAt    DateTime @default(now())
 
-  expense     Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
-  uploadedBy  User    @relation("ExpenseAttachmentUploader", fields: [uploadedById], references: [id])
+  expense    Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  uploadedBy User    @relation("ExpenseAttachmentUploader", fields: [uploadedById], references: [id])
 
   @@index([expenseId])
 }
 
 model Budget {
-  id         String          @id @default(cuid())
+  id         String           @id @default(cuid())
   ownerType  ExpenseOwnerType
   ownerId    String
   fiscalYear Int
   limit      Int
-  used       Int             @default(0)
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  used       Int              @default(0)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
 
   @@unique([ownerType, ownerId, fiscalYear])
 }
 
 model Payment {
-  id                      String        @id @default(cuid())
+  id                      String           @id @default(cuid())
   type                    PaymentType
   ownerType               PaymentOwnerType
   ownerId                 String
   userId                  String
-  status                  PaymentStatus @default(PENDING)
+  status                  PaymentStatus    @default(PENDING)
   amount                  Int
-  currency                String        @default("jpy")
-  stripeCheckoutSessionId String?       @unique
+  currency                String           @default("jpy")
+  stripeCheckoutSessionId String?          @unique
   stripePaymentIntentId   String?
   /// 進行中の Stripe Dispute ID（charge.dispute.created で設定）
   stripeDisputeId         String?
@@ -904,16 +1062,16 @@ model Payment {
 }
 
 model StripeEvent {
-  id        String            @id @default(cuid())
-  eventId   String            @unique
-  type      String
-  accountId String?
-  livemode  Boolean
-  data      Json
-  status    StripeEventStatus @default(RECEIVED)
+  id           String            @id @default(cuid())
+  eventId      String            @unique
+  type         String
+  accountId    String?
+  livemode     Boolean
+  data         Json
+  status       StripeEventStatus @default(RECEIVED)
   errorMessage String?
 
-  receivedAt  DateTime @default(now())
+  receivedAt  DateTime  @default(now())
   processedAt DateTime?
 
   @@index([type])
@@ -940,9 +1098,9 @@ model EntryCheckoutSession {
   expiredAt               DateTime?
   entryId                 String?
 
-  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  club        Club        @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  competition Competition       @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  club        Club              @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   entry       CompetitionEntry? @relation(fields: [entryId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
@@ -966,19 +1124,19 @@ enum ClubPrepaidIndividualSlotStatus {
 }
 
 model ClubCompetitionPrepaidIndividualSlot {
-  id            String @id @default(cuid())
-  competitionId String
-  clubId        String
-  coveredUserId String
-  status        ClubPrepaidIndividualSlotStatus @default(PENDING_CLUB_CHECKOUT)
+  id                String                          @id @default(cuid())
+  competitionId     String
+  clubId            String
+  coveredUserId     String
+  status            ClubPrepaidIndividualSlotStatus @default(PENDING_CLUB_CHECKOUT)
   /// チームエントリー費の Payment.id（Checkout metadata と突合）
-  clubPaymentId String?
-  consumedAt    DateTime?
-  consumedByEntryId String? @unique
+  clubPaymentId     String?
+  consumedAt        DateTime?
+  consumedByEntryId String?                         @unique
 
-  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  club        Club        @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  coveredUser User        @relation("ClubPrepaidSlotCoveredUser", fields: [coveredUserId], references: [id], onDelete: Cascade)
+  competition     Competition       @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  club            Club              @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  coveredUser     User              @relation("ClubPrepaidSlotCoveredUser", fields: [coveredUserId], references: [id], onDelete: Cascade)
   consumedByEntry CompetitionEntry? @relation("ClubPrepaidSlotConsumedEntry", fields: [consumedByEntryId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
@@ -989,30 +1147,30 @@ model ClubCompetitionPrepaidIndividualSlot {
 }
 
 model CompetitionEntry {
-  id            String                 @id @default(cuid())
-  competitionId String
-  clubId        String?
-  userId        String
-  status        CompetitionEntryStatus @default(SUBMITTED)
-  totalFee      Int
-  paymentId     String?
+  id                      String                 @id @default(cuid())
+  competitionId           String
+  clubId                  String?
+  userId                  String
+  status                  CompetitionEntryStatus @default(SUBMITTED)
+  totalFee                Int
+  paymentId               String?
   /// クラブ一括（締切後請求含む）で個人参加費が清算された日時
   clubIndividualFeePaidAt DateTime?
   /// 誓約に同意した日時（エントリー送信日時と同一運用）
-  pledgeAcceptedAt   DateTime?
+  pledgeAcceptedAt        DateTime?
   /// 同意時点の誓約文（Markdown）
-  pledgeTextSnapshot String? @db.Text
+  pledgeTextSnapshot      String?                @db.Text
 
-  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  club        Club?       @relation(fields: [clubId], references: [id], onDelete: SetNull)
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  snapshot    EntrySnapshot?
-  items       EntryItem[]
-  checkoutSessions EntryCheckoutSession[]
+  competition             Competition                           @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  club                    Club?                                 @relation(fields: [clubId], references: [id], onDelete: SetNull)
+  user                    User                                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  snapshot                EntrySnapshot?
+  items                   EntryItem[]
+  checkoutSessions        EntryCheckoutSession[]
   clubPrepaidSlotConsumed ClubCompetitionPrepaidIndividualSlot? @relation("ClubPrepaidSlotConsumedEntry")
-  officialResultRows OfficialResultRow[]
-  participantStatuses CompetitionParticipantStatus[]
-  resultDraftRows     CompetitionResultDraftRow[]
+  officialResultRows      OfficialResultRow[]
+  participantStatuses     CompetitionParticipantStatus[]
+  resultDraftRows         CompetitionResultDraftRow[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1031,13 +1189,13 @@ model EntrySnapshot {
 }
 
 model EntryItem {
-  id        String @id @default(cuid())
+  id        String  @id @default(cuid())
   entryId   String
   eventId   String
   entryTime String?
 
   entry CompetitionEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
@@ -1046,17 +1204,17 @@ model EntryItem {
 }
 
 model TeamEntry {
-  id            String   @id @default(cuid())
+  id            String @id @default(cuid())
   competitionId String
   eventId       String
   clubId        String
   teamName      String
 
-  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  event       Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  club        Club        @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  members     TeamEntryMember[]
-  officialResultRows OfficialResultRow[]
+  competition         Competition                    @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  event               Event                          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  club                Club                           @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  members             TeamEntryMember[]
+  officialResultRows  OfficialResultRow[]
   participantStatuses CompetitionParticipantStatus[]
   resultDraftRows     CompetitionResultDraftRow[]
 
@@ -1068,11 +1226,11 @@ model TeamEntry {
 }
 
 model TeamEntryMember {
-  id        String @id @default(cuid())
+  id          String  @id @default(cuid())
   teamEntryId String
-  userId    String
-  role      String?
-  order     Int?
+  userId      String
+  role        String?
+  order       Int?
 
   teamEntry TeamEntry @relation(fields: [teamEntryId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1090,23 +1248,25 @@ model OfficialResult {
   eventId       String
   round         ResultRound @default(FINAL)
 
-  publishedAt   DateTime?
-  lockedAt      DateTime?
-  note          String?     @db.Text
+  publishedAt DateTime?
+  lockedAt    DateTime?
+  note        String?   @db.Text
 
-  competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  event         Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  rows               OfficialResultRow[]
-  heatConfirmations  OfficialResultHeatConfirmed[]
+  competition       Competition                   @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  event             Event                         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  rows              OfficialResultRow[]
+  heatConfirmations OfficialResultHeatConfirmed[]
 
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([competitionId, eventId, round])
   @@index([competitionId, publishedAt])
 }
 
-/** スタートリスト／当日運用でヒート単位にリザルト入力を確定した記録（暫定入力の締め） */
+/**
+ * スタートリスト／当日運用でヒート単位にリザルト入力を確定した記録（暫定入力の締め）
+ */
 model OfficialResultHeatConfirmed {
   id                String   @id @default(cuid())
   officialResultId  String
@@ -1121,33 +1281,33 @@ model OfficialResultHeatConfirmed {
 }
 
 model OfficialResultRow {
-  id                String          @id @default(cuid())
-  officialResultId  String
+  id               String @id @default(cuid())
+  officialResultId String
 
-  entryType         ResultEntryType
+  entryType          ResultEntryType
   competitionEntryId String?
-  teamEntryId       String?
+  teamEntryId        String?
 
-  rank              Int?
-  status            ResultStatus    @default(OK)
+  rank   Int?
+  status ResultStatus @default(OK)
 
-  resultValue       Int?
-  unit              ResultUnit      @default(TIME_MS)
-  resultText        String?
+  resultValue Int?
+  unit        ResultUnit @default(TIME_MS)
+  resultText  String?
 
-  penaltyValue      Int?
-  remarks           String?         @db.Text
+  penaltyValue Int?
+  remarks      String? @db.Text
 
-  lane              Int?
-  heat              Int?
-  tieGroup          String?
+  lane     Int?
+  heat     Int?
+  tieGroup String?
 
-  officialResult    OfficialResult  @relation(fields: [officialResultId], references: [id], onDelete: Cascade)
+  officialResult   OfficialResult    @relation(fields: [officialResultId], references: [id], onDelete: Cascade)
   competitionEntry CompetitionEntry? @relation(fields: [competitionEntryId], references: [id], onDelete: SetNull)
-  teamEntry         TeamEntry?       @relation(fields: [teamEntryId], references: [id], onDelete: SetNull)
+  teamEntry        TeamEntry?        @relation(fields: [teamEntryId], references: [id], onDelete: SetNull)
 
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([officialResultId, rank])
   @@index([officialResultId, heat, tieGroup])
@@ -1155,9 +1315,11 @@ model OfficialResultRow {
   @@index([teamEntryId])
 }
 
-/** 当日運用リザルト入力の生イベント（append-only）。公式結果本体とは分離して保持する */
+/**
+ * 当日運用リザルト入力の生イベント（append-only）。公式結果本体とは分離して保持する
+ */
 model CompetitionHeatResultCaptureEvent {
-  id                 String                   @id
+  id                 String                     @id
   competitionId      String
   eventId            String
   round              ResultRound
@@ -1166,25 +1328,25 @@ model CompetitionHeatResultCaptureEvent {
   rank               Int?
   tieGroup           String?
   source             ResultCaptureEventSource
-  eventType          ResultCaptureEventType   @default(APPEND)
+  eventType          ResultCaptureEventType     @default(APPEND)
   participantType    CompetitionParticipantType
   competitionEntryId String?
   teamEntryId        String?
   capturedByUserId   String?
   errorCode          String?
-  errorMessage       String?                  @db.Text
-  createdAt          DateTime                 @default(now())
+  errorMessage       String?                    @db.Text
+  createdAt          DateTime                   @default(now())
 
   @@index([competitionId, eventId, round, heatIndex, createdAt])
   @@index([competitionId, createdAt])
 }
 
 model CompetitionRecorderAssignment {
-  id               String   @id @default(cuid())
+  id               String  @id @default(cuid())
   competitionId    String
   userId           String
   assignedByUserId String
-  isActive         Boolean  @default(true)
+  isActive         Boolean @default(true)
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
   user        User        @relation("CompetitionRecorder", fields: [userId], references: [id], onDelete: Cascade)
@@ -1198,15 +1360,15 @@ model CompetitionRecorderAssignment {
 }
 
 model CompetitionDayCheckin {
-  id               String           @id @default(cuid())
-  competitionId    String
-  userId           String
-  eventDate        DateTime
-  method           DayCheckinMethod
-  nfcTagId         String?
-  checkedInAt      DateTime         @default(now())
+  id                String           @id @default(cuid())
+  competitionId     String
+  userId            String
+  eventDate         DateTime
+  method            DayCheckinMethod
+  nfcTagId          String?
+  checkedInAt       DateTime         @default(now())
   checkedInByUserId String?
-  note             String?          @db.Text
+  note              String?          @db.Text
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
   user        User        @relation("CompetitionCheckinUser", fields: [userId], references: [id], onDelete: Cascade)
@@ -1220,27 +1382,31 @@ model CompetitionDayCheckin {
 }
 
 model CompetitionParticipantStatus {
-  id                String                    @id @default(cuid())
-  competitionId     String
-  eventId           String
-  participantType   CompetitionParticipantType
+  id                 String                     @id @default(cuid())
+  competitionId      String
+  eventId            String
+  participantType    CompetitionParticipantType
   competitionEntryId String?
-  teamEntryId       String?
-  /** チーム種目: 構成員（ユーザー）単位のマーシャル。TEAM 行で必須（個人種目は null） */
-  teamMemberUserId  String?
-  /** マーシャル・召集状態のスコープ。前ラの CALLED が次ラに引きずられないようにする */
-  marshalRound      ResultRound               @default(HEAT)
-  status            DayOpsParticipantStatus   @default(PENDING)
-  reason            String?                   @db.Text
-  calledAt          DateTime?
-  updatedByUserId   String?
+  teamEntryId        String?
+  /**
+   * チーム種目: 構成員（ユーザー）単位のマーシャル。TEAM 行で必須（個人種目は null）
+   */
+  teamMemberUserId   String?
+  /**
+   * マーシャル・召集状態のスコープ。前ラの CALLED が次ラに引きずられないようにする
+   */
+  marshalRound       ResultRound                @default(HEAT)
+  status             DayOpsParticipantStatus    @default(PENDING)
+  reason             String?                    @db.Text
+  calledAt           DateTime?
+  updatedByUserId    String?
 
-  competition Competition      @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  event       Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  competition      Competition       @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  event            Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
   competitionEntry CompetitionEntry? @relation(fields: [competitionEntryId], references: [id], onDelete: SetNull)
-  teamEntry   TeamEntry?       @relation(fields: [teamEntryId], references: [id], onDelete: SetNull)
-  teamMemberUser User?         @relation("TeamMarshalMember", fields: [teamMemberUserId], references: [id], onDelete: SetNull)
-  updatedBy   User?            @relation("CompetitionParticipantStatusUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  teamEntry        TeamEntry?        @relation(fields: [teamEntryId], references: [id], onDelete: SetNull)
+  teamMemberUser   User?             @relation("TeamMarshalMember", fields: [teamMemberUserId], references: [id], onDelete: SetNull)
+  updatedBy        User?             @relation("CompetitionParticipantStatusUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1254,20 +1420,20 @@ model CompetitionParticipantStatus {
 }
 
 model CompetitionResultDraft {
-  id                String             @id @default(cuid())
-  competitionId     String
-  eventId           String
-  round             ResultRound        @default(FINAL)
-  status            DraftResultStatus  @default(PROVISIONAL)
-  note              String?            @db.Text
-  publishedAt       DateTime?
-  finalizedAt       DateTime?
+  id                  String            @id @default(cuid())
+  competitionId       String
+  eventId             String
+  round               ResultRound       @default(FINAL)
+  status              DraftResultStatus @default(PROVISIONAL)
+  note                String?           @db.Text
+  publishedAt         DateTime?
+  finalizedAt         DateTime?
   lastUpdatedByUserId String?
 
-  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  event       Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  rows        CompetitionResultDraftRow[]
-  lastUpdatedBy User?     @relation("CompetitionResultDraftUpdater", fields: [lastUpdatedByUserId], references: [id], onDelete: SetNull)
+  competition   Competition                 @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  event         Event                       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  rows          CompetitionResultDraftRow[]
+  lastUpdatedBy User?                       @relation("CompetitionResultDraftUpdater", fields: [lastUpdatedByUserId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1293,8 +1459,8 @@ model CompetitionResultDraftRow {
   heat               Int?
 
   draft            CompetitionResultDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
-  competitionEntry CompetitionEntry? @relation(fields: [competitionEntryId], references: [id], onDelete: SetNull)
-  teamEntry        TeamEntry?        @relation(fields: [teamEntryId], references: [id], onDelete: SetNull)
+  competitionEntry CompetitionEntry?      @relation(fields: [competitionEntryId], references: [id], onDelete: SetNull)
+  teamEntry        TeamEntry?             @relation(fields: [teamEntryId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1305,8 +1471,8 @@ model CompetitionResultDraftRow {
 }
 
 model CompetitionStartListSnapshot {
-  id              String  @id @default(cuid())
-  competitionId   String  @unique
+  id              String   @id @default(cuid())
+  competitionId   String   @unique
   data            Json
   createdByUserId String?
   capturedAt      DateTime @default(now())
@@ -1321,15 +1487,15 @@ model Competition {
   organizationId String // 主催団体ID
 
   /// 大会作成時点の主催団体表示名（開催者プロフィールの名称変更と独立）
-  hostOrganizationName          String?
-  hostOrganizationNameKana      String?
-  hostOrganizationAbbreviation  String?
+  hostOrganizationName         String?
+  hostOrganizationNameKana     String?
+  hostOrganizationAbbreviation String?
 
   // 基本情報
-  name        String // 大会名
-  nameKana    String? // 大会名カナ
-  description String? @db.Text // 大会説明
-  category    String? // カテゴリ（例: "プール", "オープンウォーター", "ジュニア"）
+  name            String // 大会名
+  nameKana        String? // 大会名カナ
+  description     String?          @db.Text // 大会説明
+  category        String? // カテゴリ（例: "プール", "オープンウォーター", "ジュニア"）
   /// 大会種別（PF承認で大会単位に付与）
   competitionType CompetitionType?
 
@@ -1340,18 +1506,18 @@ model Competition {
   venueAddress String? // 会場住所
 
   // 参加情報
-  entryStartDate  DateTime? // エントリー開始日時
-  entryEndDate    DateTime? // エントリー終了日時
-  maxParticipants Int? // 最大参加者数
-  entryFee        Json? // 参加費設定（JSON: {individualEntryFee, teamEntryFeePerTeam}）
-  requiredQualifications Json? // 出場に必要な資格（文字列配列）
-  participantEligibilityText String? @db.Text // 参加対象者（自由記述）
-  allowMultipleEventEntries Boolean @default(true) // 種目の複数選択を許可
-  maxEventEntriesPerPerson Int? // 1人あたりのエントリー可能種目数上限（null = 無制限）
-  requireClubMembership Boolean @default(false) // 所属クラブ必須
-  startListSettings Json? // スタートリスト設定（JSON: {heatCount: number, heatSize: number, updatedAt?: string}）
-  minAge          Int? // 参加可能な最小年齢
-  maxAge          Int? // 参加可能な最大年齢
+  entryStartDate             DateTime? // エントリー開始日時
+  entryEndDate               DateTime? // エントリー終了日時
+  maxParticipants            Int? // 最大参加者数
+  entryFee                   Json? // 参加費設定（JSON: {individualEntryFee, teamEntryFeePerTeam}）
+  requiredQualifications     Json? // 出場に必要な資格（文字列配列）
+  participantEligibilityText String?   @db.Text // 参加対象者（自由記述）
+  allowMultipleEventEntries  Boolean   @default(true) // 種目の複数選択を許可
+  maxEventEntriesPerPerson   Int? // 1人あたりのエントリー可能種目数上限（null = 無制限）
+  requireClubMembership      Boolean   @default(false) // 所属クラブ必須
+  startListSettings          Json? // スタートリスト設定（JSON: {heatCount: number, heatSize: number, updatedAt?: string}）
+  minAge                     Int? // 参加可能な最小年齢
+  maxAge                     Int? // 参加可能な最大年齢
 
   /// AGEカテゴリ・テンプレ用フラグ。true のとき U/OPEN（年度年齢）テンプレを保存中。
   /// 種目の参加可否判定はすべて AGEカテゴリ（生年月日レンジ）に統一されている。
@@ -1373,15 +1539,15 @@ model Competition {
   allowedClubTypes ClubType[] // エントリー可能なクラブ種別（空配列 = 全種別可）
 
   // オフィシャル募集設定
-  officialRecruitmentEnabled Boolean @default(true) // オフィシャル募集の公開可否（公開ページの導線表示）
-  officialPositions Json? // オフィシャルポジション設定（JSON: [{positionName: string, count: number}]）
+  officialRecruitmentEnabled         Boolean @default(true) // オフィシャル募集の公開可否（公開ページの導線表示）
+  officialPositions                  Json? // オフィシャルポジション設定（JSON: [{positionName: string, count: number}]）
   officialQualificationFilterEnabled Boolean @default(false) // true: 資格要件を満たす応募者のみ許可
 
   // テクニカルオフィシャル機能の有効化設定
-  technicalOfficialRecruitmentEnabled Boolean @default(true) // true: この大会でTO機能を使用する
+  technicalOfficialRecruitmentEnabled      Boolean                                @default(true) // true: この大会でTO機能を使用する
   /// テクニカルオフィシャルに必要な資格テンプレート（大会ごとに主催が選択）
   technicalOfficialQualificationTemplateId String?
-  technicalOfficialQualificationTemplate     QualificationTemplate? @relation(fields: [technicalOfficialQualificationTemplateId], references: [id], onDelete: SetNull)
+  technicalOfficialQualificationTemplate   QualificationTemplate?                 @relation(fields: [technicalOfficialQualificationTemplateId], references: [id], onDelete: SetNull)
   /// [{ minEntries: number, requiredCount: number }] 昇順で保存。閾値の件数＝クラブの個人エントリー件数（キャンセル除く）。チームエントリー件数は含めない
   technicalOfficialTiers                   Json?
   /// 有料エントリーの決済で使うStripe口座
@@ -1396,35 +1562,35 @@ model Competition {
   grantsLogos      Json? // 助成ロゴ [{name: string, logoUrl: string}]
 
   // 公開設定
-  status      CompetitionStatus @default(DRAFT)
-  isPublished Boolean           @default(false)
-  publishedAt DateTime?
+  status                   CompetitionStatus @default(DRAFT)
+  isPublished              Boolean           @default(false)
+  publishedAt              DateTime?
   /// この大会の公開ページにおけるスタートリスト全体（タイムスケジュール・全種目のリスト）を一般閲覧者に表示するか。種目単位の設定ではない（主催管理者・当日運用アンロックは除く）
-  startListPubliclyVisible Boolean @default(true)
+  startListPubliclyVisible Boolean           @default(true)
 
   // Relations
-  organization  Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  announcements CompetitionAnnouncement[]
-  attachments   CompetitionAttachment[]
-  galleryPhotos CompetitionGalleryPhoto[]
-  events        Event[] // 大会種目
-  ageCategories CompetitionAgeCategory[]
-  scheduleTabs CompetitionScheduleTab[]
-  entries       CompetitionEntry[]
-  entryCheckoutSessions EntryCheckoutSession[]
-  teamEntries   TeamEntry[]
-  officialResults OfficialResult[]
-  recorderAssignments CompetitionRecorderAssignment[]
-  dayCheckins         CompetitionDayCheckin[]
-  participantStatuses CompetitionParticipantStatus[]
-  heatMarshalStates   CompetitionHeatMarshalState[]
-  resultDrafts        CompetitionResultDraft[]
-  dayOpsHeatOperationDrafts DayOpsHeatOperationDraft[]
-  startListSnapshot   CompetitionStartListSnapshot?
-  balanceLines        CompetitionBalanceLine[]
-  officialApplications CompetitionOfficialApplication[]
-  officialAttendances   CompetitionOfficialAttendance[]
-  entryCsvExportRequests CompetitionEntryCsvExportRequest[]
+  organization                 Organization                             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  announcements                CompetitionAnnouncement[]
+  attachments                  CompetitionAttachment[]
+  galleryPhotos                CompetitionGalleryPhoto[]
+  events                       Event[] // 大会種目
+  ageCategories                CompetitionAgeCategory[]
+  scheduleTabs                 CompetitionScheduleTab[]
+  entries                      CompetitionEntry[]
+  entryCheckoutSessions        EntryCheckoutSession[]
+  teamEntries                  TeamEntry[]
+  officialResults              OfficialResult[]
+  recorderAssignments          CompetitionRecorderAssignment[]
+  dayCheckins                  CompetitionDayCheckin[]
+  participantStatuses          CompetitionParticipantStatus[]
+  heatMarshalStates            CompetitionHeatMarshalState[]
+  resultDrafts                 CompetitionResultDraft[]
+  dayOpsHeatOperationDrafts    DayOpsHeatOperationDraft[]
+  startListSnapshot            CompetitionStartListSnapshot?
+  balanceLines                 CompetitionBalanceLine[]
+  officialApplications         CompetitionOfficialApplication[]
+  officialAttendances          CompetitionOfficialAttendance[]
+  entryCsvExportRequests       CompetitionEntryCsvExportRequest[]
   technicalOfficialInvitations CompetitionTechnicalOfficialInvitation[]
   technicalOfficialAssignments CompetitionTechnicalOfficialAssignment[]
   typeApplications             CompetitionTypeApplication[]
@@ -1456,15 +1622,15 @@ model CompetitionScheduleTab {
 
 /// 大会主催者からPFへ行う「大会種別（1種/2種）」申請
 model CompetitionTypeApplication {
-  id                 String                           @id @default(cuid())
-  competitionId      String
-  requestedType      CompetitionType
-  status             CompetitionTypeApplicationStatus @default(PENDING)
-  requestedByUserId  String
-  reviewedByUserId   String?
-  rejectionReason    String?                          @db.Text
-  reviewedAt         DateTime?
-  approvedAt         DateTime?
+  id                String                           @id @default(cuid())
+  competitionId     String
+  requestedType     CompetitionType
+  status            CompetitionTypeApplicationStatus @default(PENDING)
+  requestedByUserId String
+  reviewedByUserId  String?
+  rejectionReason   String?                          @db.Text
+  reviewedAt        DateTime?
+  approvedAt        DateTime?
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
   requestedBy User        @relation("CompetitionTypeApplicationRequester", fields: [requestedByUserId], references: [id], onDelete: Cascade)
@@ -1479,19 +1645,19 @@ model CompetitionTypeApplication {
 
 /// クラブからテクニカルオフィシャルへ送る依頼（メンバー指定 or SMS）
 model CompetitionTechnicalOfficialInvitation {
-  id                String                             @id @default(cuid())
-  token             String                             @unique
-  competitionId     String
-  clubId            String
-  invitedByUserId   String
-  invitedUserId     String?
-  invitePhoneE164   String?
-  status            TechnicalOfficialInvitationStatus @default(PENDING)
+  id              String                            @id @default(cuid())
+  token           String                            @unique
+  competitionId   String
+  clubId          String
+  invitedByUserId String
+  invitedUserId   String?
+  invitePhoneE164 String?
+  status          TechnicalOfficialInvitationStatus @default(PENDING)
 
-  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  club        Club        @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  invitedBy   User        @relation("TechnicalOfficialInviter", fields: [invitedByUserId], references: [id], onDelete: Cascade)
-  invitedUser User?       @relation("TechnicalOfficialInvitee", fields: [invitedUserId], references: [id], onDelete: SetNull)
+  competition Competition                             @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  club        Club                                    @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  invitedBy   User                                    @relation("TechnicalOfficialInviter", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  invitedUser User?                                   @relation("TechnicalOfficialInvitee", fields: [invitedUserId], references: [id], onDelete: SetNull)
   assignment  CompetitionTechnicalOfficialAssignment?
 
   createdAt DateTime @default(now())
@@ -1503,15 +1669,15 @@ model CompetitionTechnicalOfficialInvitation {
 
 /// 承認済みのテクニカルオフィシャル任命（クラブ×大会×ユーザーで一意）
 model CompetitionTechnicalOfficialAssignment {
-  id             String   @id @default(cuid())
-  competitionId  String
-  clubId         String
-  userId         String
-  invitationId   String?  @unique
+  id            String  @id @default(cuid())
+  competitionId String
+  clubId        String
+  userId        String
+  invitationId  String? @unique
 
-  competition Competition                        @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  club        Club                               @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  user        User                               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  competition Competition                             @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  club        Club                                    @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user        User                                    @relation(fields: [userId], references: [id], onDelete: Cascade)
   invitation  CompetitionTechnicalOfficialInvitation? @relation(fields: [invitationId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
@@ -1530,7 +1696,7 @@ enum TechnicalOfficialInvitationStatus {
 
 /// エントリー一覧CSV出力の依頼（PF承認後にダウンロード可能）
 model CompetitionEntryCsvExportRequest {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   competitionId     String
   /// INDIVIDUAL | TEAM
   scope             String
@@ -1541,7 +1707,7 @@ model CompetitionEntryCsvExportRequest {
   reviewedAt        DateTime?
   /// 承認後、CSVダウンロード可能な期限
   expiresAt         DateTime?
-  rejectReason      String?  @db.Text
+  rejectReason      String?   @db.Text
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
   requestedBy User        @relation("CompetitionEntryCsvExportRequester", fields: [requestedByUserId], references: [id], onDelete: Cascade)
@@ -1556,14 +1722,14 @@ model CompetitionEntryCsvExportRequest {
 
 /// 大会オフィシャル（スタッフ等）の応募
 model CompetitionOfficialApplication {
-  id                 String                    @id @default(cuid())
-  competitionId      String
-  userId             String
-  positionName       String
-  message            String?                   @db.Text
-  status             OfficialApplicationStatus @default(APPROVED)
-  reviewedAt         DateTime?
-  reviewedByUserId   String?
+  id               String                    @id @default(cuid())
+  competitionId    String
+  userId           String
+  positionName     String
+  message          String?                   @db.Text
+  status           OfficialApplicationStatus @default(APPROVED)
+  reviewedAt       DateTime?
+  reviewedByUserId String?
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
   user        User        @relation("OfficialApplicationApplicant", fields: [userId], references: [id], onDelete: Cascade)
@@ -1599,16 +1765,16 @@ model CompetitionOfficialAttendance {
 
 /// 大会の簡易バランスシート用（手動仕訳：日付・科目・収入/支出・金額・備考）
 model CompetitionBalanceLine {
-  id             String   @id @default(cuid())
+  id             String                     @id @default(cuid())
   competitionId  String
   /// 取引日（日付のみ）
-  lineDate       DateTime @db.Date
+  lineDate       DateTime                   @db.Date
   /// 科目（自由記述）
   accountSubject String
   kind           CompetitionBalanceLineKind
   /// 円・正の整数
   amount         Int
-  notes          String?  @db.Text
+  notes          String?                    @db.Text
 
   createdById String
   createdBy   User        @relation(fields: [createdById], references: [id], onDelete: Restrict)
@@ -1652,7 +1818,7 @@ model CompetitionAttachment {
 
 /// 大会公開ページに表示するフォトギャラリー
 model CompetitionGalleryPhoto {
-  id            String @id @default(cuid())
+  id            String  @id @default(cuid())
   competitionId String
   imageUrl      String
   fileName      String?
@@ -1666,10 +1832,10 @@ model CompetitionGalleryPhoto {
 
 /// 種目の年齢カテゴリ（生年月日の許容範囲）。種目は任意で1カテゴリに紐づけ、紐づいた場合は範囲が種目に同期される
 model CompetitionAgeCategory {
-  id             String   @id @default(cuid())
-  competitionId  String
-  name           String
-  displayOrder   Int      @default(0)
+  id                    String    @id @default(cuid())
+  competitionId         String
+  name                  String
+  displayOrder          Int       @default(0)
   eligibleBirthDateFrom DateTime? @db.Date
   eligibleBirthDateTo   DateTime? @db.Date
 
@@ -1680,57 +1846,57 @@ model CompetitionAgeCategory {
 }
 
 model Event {
-  id                String        @id @default(cuid())
-  competitionId     String
+  id                           String        @id @default(cuid())
+  competitionId                String
   /// 年齢カテゴリに連動する場合。手動で生年月日範囲を変えると解除される
-  ageCategoryId     String?
-  name              String // 種目名（例: "100m障害物"）
-  sex               Sex // 性別（MALE: 男子, FEMALE: 女子）
-  type              EventType     @default(INDIVIDUAL) // 種目タイプ（個人/チーム）
-  category          EventCategory @default(POOL) // 競技カテゴリ（プール/オーシャン）
-  requiresEntryTime Boolean       @default(true) // エントリータイム入力必須
-  displayOrder      Int           @default(0) // 表示順序
-  minAge            Int? // 種目の最小年齢（満年齢・eligible が未設定のときのみ使用）
-  maxAge            Int? // 種目の最大年齢（満年齢・eligible が未設定のときのみ使用）
+  ageCategoryId                String?
+  name                         String // 種目名（例: "100m障害物"）
+  sex                          Sex // 性別（MALE: 男子, FEMALE: 女子）
+  type                         EventType     @default(INDIVIDUAL) // 種目タイプ（個人/チーム）
+  category                     EventCategory @default(POOL) // 競技カテゴリ（プール/オーシャン）
+  requiresEntryTime            Boolean       @default(true) // エントリータイム入力必須
+  displayOrder                 Int           @default(0) // 表示順序
+  minAge                       Int? // 種目の最小年齢（満年齢・eligible が未設定のときのみ使用）
+  maxAge                       Int? // 種目の最大年齢（満年齢・eligible が未設定のときのみ使用）
   /// 参加可能な生年月日の下限（この日に生まれた人を含む。日本暦日で解釈）
-  eligibleBirthDateFrom DateTime? @db.Date
+  eligibleBirthDateFrom        DateTime?     @db.Date
   /// 参加可能な生年月日の上限（この日に生まれた人を含む）
-  eligibleBirthDateTo   DateTime? @db.Date
+  eligibleBirthDateTo          DateTime?     @db.Date
   /// 種目の想定開始日時（進行・表示用・第1ラウンドの既定。ラウンド別は roundScheduledStarts も参照）
-  scheduledStartAt  DateTime?
+  scheduledStartAt             DateTime?
   /// ラウンド別の想定開始日時（0 始まりインデックスのキー → ISO 文字列。未設定キーは scheduledStartAt や未入力を意味する）
-  roundScheduledStarts Json?
+  roundScheduledStarts         Json?
   /// 種目の想定終了日時（任意）
-  scheduledEndAt    DateTime?
+  scheduledEndAt               DateTime?
   /// 1レースあたりの最大レーン数（全ラウンド共通・プール／オーシャン共通、null は未設定）
-  preliminaryHeatLaneCount Int?
+  preliminaryHeatLaneCount     Int?
   /// スタートリストのラウンド数（初回レースを含む全タブ数。1〜32）
-  startListRoundCount      Int      @default(1)
+  startListRoundCount          Int           @default(1)
   /// スタートリスト「ステップ1」（ラウンド設定）確定日時。未確定の間は当日マーシャル操作不可
   startListHeatPlanConfirmedAt DateTime?
   /// マーシャル（召集・状態更新等）開始日時。設定後はラウンド別ヒート分割を変更不可
-  marshalStartedAt         DateTime?
+  marshalStartedAt             DateTime?
   /// チーム種目のみ: リレー等のポジション数（1〜32）。個人種目では常に null
-  teamRelayPositionCount   Int?
+  teamRelayPositionCount       Int?
   /// チーム種目のみ: ポジション名（先頭が第1ポジション）。JSON 文字列配列
-  teamRelayPositionNames   Json?
+  teamRelayPositionNames       Json?
   /// チーム種目のみ: 同一クラブがこの種目（性別行）に出せるチーム数の上限。null は制限なし
-  maxTeamEntriesPerClub    Int?
+  maxTeamEntriesPerClub        Int?
 
   /// タイムスケジュール（公開ページ）での所属タブ
   scheduleTabId        String?
   /// 同一タブ内の並び（小さいほど上）
   scheduleTabSortOrder Int     @default(0)
 
-  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  scheduleTab CompetitionScheduleTab? @relation(fields: [scheduleTabId], references: [id], onDelete: Restrict)
-  ageCategory CompetitionAgeCategory? @relation(fields: [ageCategoryId], references: [id], onDelete: Restrict)
-  entryItems  EntryItem[]
-  teamEntries TeamEntry[]
-  officialResults OfficialResult[]
-  participantStatuses CompetitionParticipantStatus[]
-  heatMarshalStates   CompetitionHeatMarshalState[]
-  resultDrafts        CompetitionResultDraft[]
+  competition               Competition                    @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  scheduleTab               CompetitionScheduleTab?        @relation(fields: [scheduleTabId], references: [id], onDelete: Restrict)
+  ageCategory               CompetitionAgeCategory?        @relation(fields: [ageCategoryId], references: [id], onDelete: Restrict)
+  entryItems                EntryItem[]
+  teamEntries               TeamEntry[]
+  officialResults           OfficialResult[]
+  participantStatuses       CompetitionParticipantStatus[]
+  heatMarshalStates         CompetitionHeatMarshalState[]
+  resultDrafts              CompetitionResultDraft[]
   dayOpsHeatOperationDrafts DayOpsHeatOperationDraft[]
 
   createdAt DateTime @default(now())
@@ -1766,12 +1932,12 @@ model DayOpsHeatOperationDraft {
 
 /// 当日運用: ラウンド・ヒート単位の召集締切（スタートリストスナップショットの heatIndex と対応）
 model CompetitionHeatMarshalState {
-  id             String       @id @default(cuid())
-  competitionId  String
-  eventId        String
-  round          ResultRound
-  heatIndex      Int
-  callClosedAt   DateTime?
+  id            String      @id @default(cuid())
+  competitionId String
+  eventId       String
+  round         ResultRound
+  heatIndex     Int
+  callClosedAt  DateTime?
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
   event       Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -1859,17 +2025,17 @@ enum AssociationStatus {
 }
 
 enum ClubStatus {
-  APPLYING      // 申請中
-  JLA_APPROVED  // JLA承認済（支払い前）
-  APPROVED      // 支払い完了＝正式クラブ
-  SUSPENDED     // 復旧前提の停止
-  INACTIVE      // 却下/終了/凍結
+  APPLYING // 申請中
+  JLA_APPROVED // JLA承認済（支払い前）
+  APPROVED // 支払い完了＝正式クラブ
+  SUSPENDED // 復旧前提の停止
+  INACTIVE // 却下/終了/凍結
 }
 
 enum ClubType {
-  FIRST  // 第１種
+  FIRST // 第１種
   SECOND // 第２種
-  THIRD  // 第３種
+  THIRD // 第３種
   FOURTH // 第４種
 }
 
@@ -1897,6 +2063,14 @@ enum QualificationRecordOrigin {
   ASSOCIATION_IMPORT
 }
 
+enum QualificationHistoryChangeType {
+  SNAPSHOT
+  RENEWAL
+  STATUS_CHANGE
+  IMPORT
+  DUPLICATE_ARCHIVE
+}
+
 enum Sex {
   MALE // 男性
   FEMALE // 女性
@@ -1904,10 +2078,10 @@ enum Sex {
 }
 
 enum OrgStatus {
-  PENDING       // 登録中（登録料未払い）
-  APPROVED      // 登録料支払い完了＝正式
-  SUSPENDED     // 復旧前提の停止
-  INACTIVE      // 終了/拒否/凍結
+  PENDING // 登録中（登録料未払い）
+  APPROVED // 登録料支払い完了＝正式
+  SUSPENDED // 復旧前提の停止
+  INACTIVE // 終了/拒否/凍結
 }
 
 enum OnboardingFeeStatus {

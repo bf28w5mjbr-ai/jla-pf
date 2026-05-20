@@ -11,7 +11,7 @@ export type ClubCompetitionRosterParticipant = {
 type IndividualRow = {
   competitionId: string;
   userId: string;
-  user: { familyName: string; givenName: string };
+  user: { profile: { familyName: string; givenName: string } | null };
   items: { event: { name: string; type: string } }[];
 };
 
@@ -21,7 +21,7 @@ type TeamRow = {
   event: { name: string } | null;
   members: {
     userId: string;
-    user: { familyName: string; givenName: string };
+    user: { profile: { familyName: string; givenName: string } | null };
   }[];
 };
 
@@ -49,7 +49,7 @@ export function buildClubCompetitionRosterMap(
   }
 
   for (const e of individualEntries) {
-    const displayName = `${e.user.familyName} ${e.user.givenName}`.trim() || "（氏名未設定）";
+    const displayName = `${e.user.profile?.familyName ?? ""} ${e.user.profile?.givenName ?? ""}`.trim() || "（氏名未設定）";
     const indEvents = e.items
       .filter((i) => i.event.type === "INDIVIDUAL")
       .map((i) => i.event.name.trim())
@@ -63,7 +63,7 @@ export function buildClubCompetitionRosterMap(
   for (const te of teamEntries) {
     const eventLabel = te.event?.name?.trim() ?? "";
     for (const mem of te.members) {
-      const displayName = `${mem.user.familyName} ${mem.user.givenName}`.trim() || "（氏名未設定）";
+      const displayName = `${mem.user.profile?.familyName ?? ""} ${mem.user.profile?.givenName ?? ""}`.trim() || "（氏名未設定）";
       const line = eventLabel
         ? `チーム「${te.teamName}」（${eventLabel}）`
         : `チーム「${te.teamName}」`;

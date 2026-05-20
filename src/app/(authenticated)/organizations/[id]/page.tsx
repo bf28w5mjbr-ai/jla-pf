@@ -181,9 +181,8 @@ export default async function OrganizationDetailPage({
             user: {
               select: {
                 id: true,
-                familyName: true,
-                givenName: true,
                 email: true,
+                profile: { select: { familyName: true, givenName: true } },
               },
             },
           },
@@ -194,8 +193,7 @@ export default async function OrganizationDetailPage({
         },
         createdBy: {
           select: {
-            familyName: true,
-            givenName: true,
+            profile: { select: { familyName: true, givenName: true } },
           },
         },
       },
@@ -222,8 +220,9 @@ export default async function OrganizationDetailPage({
   )?.role;
 
   const isOrgAdmin = isOrgAdminRole(userRole);
+  const isOperational = organization.status === "APPROVED";
 
-  if (!userRole || !isOrgAdmin) {
+  if (!userRole) {
     notFound();
   }
 
@@ -264,9 +263,8 @@ export default async function OrganizationDetailPage({
   const statusLabelMap = {
     PENDING: "仮登録",
     APPROVED: "有効",
-    INACTIVE: "停止中",
-    SUSPENDED: "凍結中",
-    REJECTED: "却下",
+    INACTIVE: "停止中（移行中）",
+    SUSPENDED: "停止中",
   } as const;
 
   const orgStatusBadgeClass = (status: string) => {
@@ -279,8 +277,6 @@ export default async function OrganizationDetailPage({
         return "border-border bg-muted text-muted-foreground";
       case "SUSPENDED":
         return "border-rose-500/35 bg-rose-500/[0.12] text-rose-900 dark:text-rose-100";
-      case "REJECTED":
-        return "border-destructive/35 bg-destructive/10 text-destructive";
       default:
         return "border-border bg-muted text-muted-foreground";
     }
@@ -331,19 +327,21 @@ export default async function OrganizationDetailPage({
                   <span className="sm:hidden">戻る</span>
                 </Link>
               </Button>
-              <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
-                <Button variant="outline" size="sm" className="h-8 gap-1 px-2.5 text-xs sm:gap-1.5 sm:px-3 sm:text-sm" asChild>
-                  <Link href={`/organizations/${organization.id}/edit`}>
-                    編集
-                    <ChevronRight className="h-3.5 w-3.5 opacity-70 sm:h-4 sm:w-4" aria-hidden />
-                  </Link>
-                </Button>
-              </div>
+              {isOrgAdmin ? (
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+                  <Button variant="outline" size="sm" className="h-8 gap-1 px-2.5 text-xs sm:gap-1.5 sm:px-3 sm:text-sm" asChild>
+                    <Link href={`/organizations/${organization.id}/edit`}>
+                      編集
+                      <ChevronRight className="h-3.5 w-3.5 opacity-70 sm:h-4 sm:w-4" aria-hidden />
+                    </Link>
+                  </Button>
+                </div>
+              ) : null}
             </div>
 
             <div className="flex items-center gap-1.5 text-primary">
               <Landmark className="h-4 w-4 shrink-0 sm:h-[1.125rem] sm:w-[1.125rem]" strokeWidth={1.75} aria-hidden />
-              <span className="text-xs font-medium sm:text-sm">大会主催者</span>
+              <span className="text-xs font-medium sm:text-sm">主催団体</span>
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
@@ -581,7 +579,7 @@ export default async function OrganizationDetailPage({
                   行をクリックで編集・公開・エントリーへ
                 </p>
               </div>
-              {isOrgAdmin ? (
+              {isOrgAdmin && isOperational ? (
                 <Button size="sm" className="h-8 shrink-0 gap-1.5 text-xs sm:h-9 sm:text-sm" asChild>
                   <Link href={`/organizations/${organization.id}/competitions/create`}>
                     <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
@@ -627,7 +625,7 @@ export default async function OrganizationDetailPage({
                     <p className="mt-1 max-w-sm text-xs text-muted-foreground sm:text-sm">
                       作成すると一覧に表示され、公開・エントリー設定に進めます。
                     </p>
-                    {isOrgAdmin ? (
+                    {isOrgAdmin && isOperational ? (
                       <Button size="sm" className="mt-4 gap-1.5" asChild>
                         <Link href={`/organizations/${organization.id}/competitions/create`}>
                           <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
@@ -661,7 +659,15 @@ export default async function OrganizationDetailPage({
               <CardContent className="p-3 sm:p-5">
                 <MemberManagementWrapper
                   organizationId={organization.id}
-                  members={organization.admins}
+                  members={organization.admins.map((admin) => ({
+                    ...admin,
+                    user: {
+                      id: admin.user.id,
+                      email: admin.user.email,
+                      familyName: admin.user.profile?.familyName ?? null,
+                      givenName: admin.user.profile?.givenName ?? null,
+                    },
+                  }))}
                   userRole={userRole}
                   currentUserId={userId}
                 />

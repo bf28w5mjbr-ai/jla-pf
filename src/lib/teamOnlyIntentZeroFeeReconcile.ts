@@ -129,7 +129,7 @@ export async function reconcileTeamOnlyIntentZeroTotalFeeEntry(entryId: string):
         },
       },
       user: {
-        select: { dateOfBirth: true },
+        select: { profile: { select: { dateOfBirth: true } } },
       },
     },
   });
@@ -141,7 +141,8 @@ export async function reconcileTeamOnlyIntentZeroTotalFeeEntry(entryId: string):
     return false;
   }
 
-  const userDob = row.user?.dateOfBirth ? new Date(row.user.dateOfBirth) : null;
+  const userDateOfBirth = row.user?.profile?.dateOfBirth ?? null;
+  const userDob = userDateOfBirth ? new Date(userDateOfBirth) : null;
   const nextFee = computeTeamOnlyIntentPersonalEntryFee({
     competitionStartDate: new Date(row.competition.startDate),
     entryFee: row.competition.entryFee as CompetitionEntryFeeConfig | number | null,

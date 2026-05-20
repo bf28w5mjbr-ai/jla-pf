@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { Card } from "@/components/ui/card";
 import { getRequiredAuthenticatedUserId } from "@/lib/auth";
+import { stripLegacyQualificationTemplateMetaLines } from "@/lib/qualificationTemplateRules";
 import { prisma } from "@/server/db";
 
 export const dynamic = "force-dynamic";
@@ -97,26 +98,29 @@ export default async function LessonsPage({
           </Card>
         ) : (
           <div className="grid gap-4">
-            {lessons.map((lesson) => (
-              <Card key={lesson.id} className="space-y-2 p-5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-base font-semibold text-gray-900">
-                    {lesson.name ?? lesson.kind}
-                  </h2>
-                  <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
-                    {lesson.kind}
-                  </span>
-                </div>
-                {lesson.description && (
-                  <p className="text-sm text-gray-600">{lesson.description}</p>
-                )}
-                <p className="text-xs text-gray-500">
-                  {lesson.requiresExpiry && lesson.validityMonths
-                    ? `有効期間: ${lesson.validityMonths}か月`
-                    : "有効期限なし"}
-                </p>
-              </Card>
-            ))}
+            {lessons.map((lesson) => {
+              const description = stripLegacyQualificationTemplateMetaLines(lesson.description);
+              return (
+                <Card key={lesson.id} className="space-y-2 p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="text-base font-semibold text-gray-900">
+                      {lesson.name ?? lesson.kind}
+                    </h2>
+                    <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
+                      {lesson.kind}
+                    </span>
+                  </div>
+                  {description && (
+                    <p className="text-sm text-gray-600">{description}</p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    {lesson.requiresExpiry && lesson.validityMonths
+                      ? `有効期間: ${lesson.validityMonths}か月`
+                      : "有効期限なし"}
+                  </p>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>

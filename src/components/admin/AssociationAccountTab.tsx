@@ -54,14 +54,14 @@ export default function AssociationAccountTab({
   pendingQualificationCount,
   userCount,
   clubCount,
-  applyingClubCount,
+  suspendedClubCount,
   associations,
 }: {
   isPfAdmin: boolean;
   pendingQualificationCount: number;
   userCount: number;
   clubCount: number;
-  applyingClubCount: number;
+  suspendedClubCount: number;
   associations: AssociationRow[];
 }) {
   return (
@@ -111,11 +111,11 @@ export default function AssociationAccountTab({
             accent="emerald"
           />
           <StatCard
-            title="クラブ申請"
-            value={applyingClubCount}
-            hint="申請中のクラブ件数"
+            title="停止中クラブ"
+            value={suspendedClubCount}
+            hint="運用停止中のクラブ"
             icon={Inbox}
-            href={isPfAdmin ? "/admin/club-applications" : undefined}
+            href={isPfAdmin ? "/admin/clubs?status=SUSPENDED" : undefined}
             accent="orange"
             emphasize={isPfAdmin}
           />
@@ -140,15 +140,15 @@ export default function AssociationAccountTab({
           />
           {isPfAdmin ? (
             <QuickLinkCard
-              title="クラブ申請の審査"
-              description="申請中のクラブを確認し、承認フローへ進めます。"
-              href="/admin/club-applications"
+              title="クラブ管理"
+              description="クラブの運用停止・再開、一覧検索を行います。"
+              href="/admin/clubs"
               icon={Building2}
             />
           ) : (
             <div className="flex flex-col justify-center rounded-2xl border border-dashed border-border/90 bg-muted/25 px-5 py-8 text-center text-sm leading-relaxed text-muted-foreground">
               <p>
-                クラブ申請の審査はプラットフォーム管理者のみ実行できます。ご不明な点は運営へお問い合わせください。
+                クラブの PF 管理操作はプラットフォーム管理者のみ実行できます。ご不明な点は運営へお問い合わせください。
               </p>
             </div>
           )}

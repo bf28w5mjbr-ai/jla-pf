@@ -21,20 +21,20 @@ export async function POST(request: NextRequest) {
     const user = await prisma.user.findUnique({
       where: { id: session.userId },
       select: {
-        familyName: true,
-        givenName: true,
-        familyNameKana: true,
-        givenNameKana: true,
-        postalCode: true,
-        prefecture: true,
-        city: true,
-        addressLine1: true,
-        addressLine2: true,
-        phoneNumber: true,
+        profile: {
+          select: {
+            familyName: true,
+            givenName: true,
+            familyNameKana: true,
+            givenNameKana: true,
+          },
+        },
+        address: true,
+        contact: { select: { phoneNumber: true } },
       },
     });
 
-    if (!user) {
+    if (!user?.profile || !user.address || !user.contact) {
       return NextResponse.json({ error: "ユーザーが見つかりません" }, { status: 404 });
     }
 
@@ -78,16 +78,16 @@ export async function POST(request: NextRequest) {
         abbreviation: abbreviation?.trim() || null,
         websiteUrl: websiteUrlParsed.value,
         isLifesavingClub: lifesaving,
-        representativeFamilyName: user.familyName,
-        representativeGivenName: user.givenName,
-        representativeFamilyNameKana: user.familyNameKana,
-        representativeGivenNameKana: user.givenNameKana,
-        representativePostalCode: user.postalCode,
-        representativePrefecture: user.prefecture,
-        representativeCity: user.city,
-        representativeAddressLine1: user.addressLine1,
-        representativeAddressLine2: user.addressLine2,
-        representativePhone: user.phoneNumber,
+        representativeFamilyName: user.profile.familyName,
+        representativeGivenName: user.profile.givenName,
+        representativeFamilyNameKana: user.profile.familyNameKana,
+        representativeGivenNameKana: user.profile.givenNameKana,
+        representativePostalCode: user.address.postalCode,
+        representativePrefecture: user.address.prefecture,
+        representativeCity: user.address.city,
+        representativeAddressLine1: user.address.addressLine1,
+        representativeAddressLine2: user.address.addressLine2,
+        representativePhone: user.contact.phoneNumber,
         representativeUserId: session.userId,
         patrolLocation: lifesaving ? patrolLocation?.trim() || null : null,
         establishedYear: establishedYear ? parseInt(establishedYear) : null,
@@ -98,7 +98,8 @@ export async function POST(request: NextRequest) {
         officeAddressLine2: officeAddressLine2?.trim() || null,
         officePhone: officePhone?.trim() || null,
         mailingName: mailingName?.trim() || null,
-        status: "APPLYING", // 申請中
+        status: "APPROVED",
+        type: null,
         creatorId: session.userId,
       },
     });
@@ -114,7 +115,7 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({
-      message: "クラブを作成しました",
+      message: "クラブを作成しました。メンバーの参加申請は管理者が承認してください。",
       club: {
         id: club.id,
         name: club.name,

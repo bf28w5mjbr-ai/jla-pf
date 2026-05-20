@@ -74,7 +74,7 @@ function parseArgs(): ParsedArgs {
 }
 
 async function resolveCompetition(exactName: string) {
-  let comp = await prisma.competition.findFirst({
+  const comp = await prisma.competition.findFirst({
     where: { name: exactName },
     select: { id: true, name: true },
   });
@@ -116,37 +116,72 @@ async function resolveTargetUser(email: string): Promise<
 > {
   const raw = await prisma.user.findMany({
     where: {
-      familyName: TARGET_FAMILY_NAME,
-      givenName: TARGET_GIVEN_NAME,
+      profile: {
+        is: {
+          familyName: TARGET_FAMILY_NAME,
+          givenName: TARGET_GIVEN_NAME,
+        },
+      },
       email,
     },
     select: {
       id: true,
       email: true,
-      familyName: true,
-      givenName: true,
+      profile: {
+        select: {
+          familyName: true,
+          givenName: true,
+        },
+      },
     },
   });
+  const users: TargetUser[] = raw.map((u) => ({
+    id: u.id,
+    email: u.email,
+    familyName: u.profile?.familyName ?? "",
+    givenName: u.profile?.givenName ?? "",
+  }));
 
-  if (raw.length === 0) {
+  if (users.length === 0) {
     const sameName = await prisma.user.findMany({
-      where: { familyName: TARGET_FAMILY_NAME, givenName: TARGET_GIVEN_NAME },
-      select: { id: true, email: true, familyName: true, givenName: true },
+      where: {
+        profile: {
+          is: {
+            familyName: TARGET_FAMILY_NAME,
+            givenName: TARGET_GIVEN_NAME,
+          },
+        },
+      },
+      select: {
+        id: true,
+        email: true,
+        profile: {
+          select: {
+            familyName: true,
+            givenName: true,
+          },
+        },
+      },
     });
     return {
       ok: false,
       message: `「${TARGET_FAMILY_NAME}${TARGET_GIVEN_NAME}」かつ email="${email}" のユーザーが見つかりません。`,
-      raw: sameName,
+      raw: sameName.map((u) => ({
+        id: u.id,
+        email: u.email,
+        familyName: u.profile?.familyName ?? "",
+        givenName: u.profile?.givenName ?? "",
+      })),
     };
   }
-  if (raw.length > 1) {
+  if (users.length > 1) {
     return {
       ok: false,
-      message: `「${TARGET_FAMILY_NAME}${TARGET_GIVEN_NAME}」かつ email="${email}" に一致するユーザーが ${raw.length} 件あります（1件である必要があります）。`,
-      raw,
+      message: `「${TARGET_FAMILY_NAME}${TARGET_GIVEN_NAME}」かつ email="${email}" に一致するユーザーが ${users.length} 件あります（1件である必要があります）。`,
+      raw: users,
     };
   }
-  return { ok: true, user: raw[0] };
+  return { ok: true, user: users[0] };
 }
 
 async function main() {

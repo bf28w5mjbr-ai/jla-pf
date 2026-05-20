@@ -16,6 +16,10 @@ type Qualification = {
   expiryDate: string | null;
   status: string;
   createdAt: string;
+  template?: {
+    name: string;
+    kind: string;
+  };
   user: {
     id: string;
     email: string;
@@ -136,7 +140,7 @@ export default function QualificationApprovalTable({ qualifications: initialQual
                 </TableCell>
                 <TableCell>{qual.user.email}</TableCell>
                 <TableCell>
-                  <Badge variant="outline">{qual.kind}</Badge>
+                  <Badge variant="outline">{qual.template?.name || qual.kind}</Badge>
                 </TableCell>
                 <TableCell>{qual.certNumber || '-'}</TableCell>
                 <TableCell>{formatDate(qual.issueDate)}</TableCell>

@@ -40,13 +40,18 @@ export default async function AdminQualificationsPage() {
       status: 'PENDING',
     },
     include: {
+      template: {
+        select: {
+          name: true,
+          kind: true,
+        },
+      },
       user: {
         select: {
           id: true,
           email: true,
-          givenName: true,
-          familyName: true,
-          phoneNumber: true,
+          profile: { select: { familyName: true, givenName: true } },
+          contact: { select: { phoneNumber: true } },
         },
       },
     },
@@ -58,10 +63,18 @@ export default async function AdminQualificationsPage() {
       <Card padding="none">
         <QualificationApprovalTable qualifications={pendingQualifications.map(q => ({
           ...q,
+          user: {
+            id: q.user.id,
+            email: q.user.email,
+            familyName: q.user.profile?.familyName ?? null,
+            givenName: q.user.profile?.givenName ?? null,
+            phoneNumber: q.user.contact?.phoneNumber ?? null,
+          },
           createdAt: q.createdAt.toISOString(),
           updatedAt: q.updatedAt.toISOString(),
           issueDate: q.issueDate?.toISOString() || null,
           expiryDate: q.expiryDate?.toISOString() || null,
+          template: q.template,
         }))} />
       </Card>
     

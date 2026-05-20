@@ -6,6 +6,7 @@ import { prisma } from '@/server/db';
 import SecuritySetupForm from './SecuritySetupForm';
 import PasskeyManager from './PasskeyManager';
 import RecentLoginEnvironment from '@/components/profile/RecentLoginEnvironment';
+import { loginEventListSelect } from '@/lib/userSecurity';
 
 export const metadata: Metadata = {
   title: 'セキュリティ設定 | Bluvium',
@@ -25,11 +26,19 @@ export default async function SecurityPage() {
     select: {
       id: true,
       email: true,
-      passwordHash: true,
-      phoneNumber: true,
-      lastLoginAt: true,
-      lastLoginIp: true,
-      lastLoginUa: true,
+      security: {
+        select: {
+          passwordHash: true,
+          lastLoginAt: true,
+          lastLoginIp: true,
+          lastLoginUa: true,
+        },
+      },
+      loginEvents: {
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: loginEventListSelect,
+      },
       _count: { select: { passkeyCredentials: true } },
     },
   });
@@ -38,8 +47,9 @@ export default async function SecurityPage() {
     redirect('/login');
   }
 
+  const security = user.security;
   const hasEmail = user.email && !user.email.includes('@temp.jla.local');
-  const hasPassword = !!user.passwordHash;
+  const hasPassword = !!security?.passwordHash;
 
   return (
     <div className="container mx-auto py-8 px-4 max-w-2xl">
@@ -54,9 +64,10 @@ export default async function SecurityPage() {
       />
 
       <RecentLoginEnvironment
-        lastLoginAt={user.lastLoginAt}
-        lastLoginIp={user.lastLoginIp}
-        lastLoginUa={user.lastLoginUa}
+        lastLoginAt={security?.lastLoginAt ?? null}
+        lastLoginIp={security?.lastLoginIp ?? null}
+        lastLoginUa={security?.lastLoginUa ?? null}
+        recentEvents={user.loginEvents}
       />
 
       <PasskeyManager

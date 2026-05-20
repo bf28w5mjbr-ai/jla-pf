@@ -24,24 +24,31 @@ export default async function EditProfilePage() {
     where: { id: sess.userId },
     select: {
       id: true,
-      familyName: true,
-      givenName: true,
-      familyNameKana: true,
-      givenNameKana: true,
-      dateOfBirth: true,
-      sex: true,
-      postalCode: true,
-      prefecture: true,
-      city: true,
-      addressLine1: true,
-      addressLine2: true,
-      emergencyContactFamilyName: true,
-      emergencyContactGivenName: true,
-      emergencyContactPhone: true,
+      profile: true,
+      address: true,
+      emergencyContact: true,
     },
   });
 
-  if (!user) redirect("/login");
+  if (!user?.profile || !user.address) redirect("/login");
+
+  const formUser = {
+    id: user.id,
+    familyName: user.profile.familyName,
+    givenName: user.profile.givenName,
+    familyNameKana: user.profile.familyNameKana,
+    givenNameKana: user.profile.givenNameKana,
+    dateOfBirth: user.profile.dateOfBirth,
+    sex: user.profile.sex,
+    postalCode: user.address.postalCode,
+    prefecture: user.address.prefecture,
+    city: user.address.city,
+    addressLine1: user.address.addressLine1,
+    addressLine2: user.address.addressLine2,
+    emergencyContactFamilyName: user.emergencyContact?.familyName ?? null,
+    emergencyContactGivenName: user.emergencyContact?.givenName ?? null,
+    emergencyContactPhone: user.emergencyContact?.phoneNumber ?? null,
+  };
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
@@ -69,7 +76,7 @@ export default async function EditProfilePage() {
         </div>
       </header>
 
-      <EditProfileForm user={user} />
+      <EditProfileForm user={formUser} />
     </div>
   );
 }

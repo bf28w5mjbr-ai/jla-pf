@@ -18,12 +18,16 @@ export function looksLikeUserIdQuery(q: string): boolean {
 /** 氏名・カナの部分一致用 where（PostgreSQL + mode insensitive） */
 export function buildNameContainsWhere(q: string): Prisma.UserWhereInput {
   return {
-    OR: [
-      { familyName: { contains: q, mode: "insensitive" } },
-      { givenName: { contains: q, mode: "insensitive" } },
-      { familyNameKana: { contains: q, mode: "insensitive" } },
-      { givenNameKana: { contains: q, mode: "insensitive" } },
-    ],
+    profile: {
+      is: {
+        OR: [
+          { familyName: { contains: q, mode: "insensitive" } },
+          { givenName: { contains: q, mode: "insensitive" } },
+          { familyNameKana: { contains: q, mode: "insensitive" } },
+          { givenNameKana: { contains: q, mode: "insensitive" } },
+        ],
+      },
+    },
   };
 }
 

@@ -38,12 +38,12 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    const conflict = await prisma.user.findFirst({
+    const conflict = await prisma.userJlaProfile.findFirst({
       where: {
         jlaMemberNumber: normalized,
-        NOT: { id: sess.userId },
+        NOT: { userId: sess.userId },
       },
-      select: { id: true },
+      select: { userId: true },
     });
 
     if (conflict) {
@@ -55,14 +55,14 @@ export async function PUT(req: NextRequest) {
 
     const previous = await prisma.user.findUnique({
       where: { id: sess.userId },
-      select: { jlaMemberNumber: true },
+      select: { jlaProfile: { select: { jlaMemberNumber: true } } },
     });
 
     if (!previous) {
       return NextResponse.json({ error: "ユーザーが見つかりません" }, { status: 404 });
     }
 
-    if (previous.jlaMemberNumber === normalized) {
+    if (previous.jlaProfile?.jlaMemberNumber === normalized) {
       return NextResponse.json({
         message: "登録済みのJLAメンバーIDです",
         jlaMemberNumber: normalized,
@@ -71,8 +71,15 @@ export async function PUT(req: NextRequest) {
 
     const updated = await prisma.user.update({
       where: { id: sess.userId },
-      data: { jlaMemberNumber: normalized },
-      select: { id: true, jlaMemberNumber: true },
+      data: {
+        jlaProfile: {
+          upsert: {
+            create: { jlaMemberNumber: normalized },
+            update: { jlaMemberNumber: normalized },
+          },
+        },
+      },
+      select: { jlaProfile: { select: { jlaMemberNumber: true } } },
     });
 
     await prisma.auditLog.create({
@@ -81,7 +88,7 @@ export async function PUT(req: NextRequest) {
         action: "JLA_MEMBER_NUMBER_SET",
         target: `user:${sess.userId}`,
         meta: {
-          previous: previous.jlaMemberNumber ?? null,
+          previous: previous.jlaProfile?.jlaMemberNumber ?? null,
           next: normalized,
         },
       },
@@ -89,7 +96,7 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json({
       message: "JLAメンバーIDを保存しました",
-      jlaMemberNumber: updated.jlaMemberNumber,
+      jlaMemberNumber: updated.jlaProfile?.jlaMemberNumber ?? normalized,
     });
   } catch (err) {
     if (err instanceof z.ZodError) {

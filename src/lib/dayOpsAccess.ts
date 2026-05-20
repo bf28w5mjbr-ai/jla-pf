@@ -1,3 +1,7 @@
+/**
+ * 当日運用アクセス。主催団体が SUSPENDED でも OrgAdmin(ADMIN) は day-ops 可（進行中大会の救済）。
+ * 仕様: docs/ORGANIZER_DOMAIN.md §当日運用（day-ops）の例外
+ */
 import type { NextRequest } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";

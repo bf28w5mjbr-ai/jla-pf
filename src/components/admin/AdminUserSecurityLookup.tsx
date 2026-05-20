@@ -49,6 +49,15 @@ type LoginAuditRow = {
   meta: unknown;
 };
 
+type LoginEventRow = {
+  id: string;
+  createdAt: string;
+  channel: string;
+  channelLabel: string;
+  ipMasked: string;
+  userAgent: string;
+};
+
 type CandidateRow = {
   id: string;
   familyName: string;
@@ -118,6 +127,7 @@ export default function AdminUserSecurityLookup() {
   const [profile, setProfile] = useState<ProfilePayload | null>(null);
   const [relations, setRelations] = useState<RelationsPayload | null>(null);
   const [audits, setAudits] = useState<LoginAuditRow[]>([]);
+  const [loginEvents, setLoginEvents] = useState<LoginEventRow[]>([]);
   const [passkeyCount, setPasskeyCount] = useState(0);
   const [membershipBusyId, setMembershipBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ membershipId: string; clubName: string } | null>(
@@ -131,12 +141,14 @@ export default function AdminUserSecurityLookup() {
     setProfile(null);
     setRelations(null);
     setAudits([]);
+    setLoginEvents([]);
     setPasskeyCount(0);
   };
 
   const applyDetailPayload = (data: {
     profile: ProfilePayload;
     relations: RelationsPayload;
+    loginEvents?: LoginEventRow[];
     loginAudits: LoginAuditRow[];
     passkeyCount: number;
   }) => {
@@ -145,6 +157,7 @@ export default function AdminUserSecurityLookup() {
     setCandidates([]);
     setProfile(data.profile);
     setRelations(data.relations);
+    setLoginEvents(data.loginEvents ?? []);
     setAudits(data.loginAudits ?? []);
     setPasskeyCount(data.passkeyCount ?? 0);
   };
@@ -163,6 +176,7 @@ export default function AdminUserSecurityLookup() {
       applyDetailPayload({
         profile: data.profile as ProfilePayload,
         relations: data.relations as RelationsPayload,
+        loginEvents: (data.loginEvents as LoginEventRow[]) ?? [],
         loginAudits: (data.loginAudits as LoginAuditRow[]) ?? [],
         passkeyCount: (data.passkeyCount as number) ?? 0,
       });
@@ -246,6 +260,7 @@ export default function AdminUserSecurityLookup() {
       applyDetailPayload({
         profile: data.profile as ProfilePayload,
         relations: data.relations as RelationsPayload,
+        loginEvents: (data.loginEvents as LoginEventRow[]) ?? [],
         loginAudits: (data.loginAudits as LoginAuditRow[]) ?? [],
         passkeyCount: (data.passkeyCount as number) ?? 0,
       });
@@ -315,7 +330,6 @@ export default function AdminUserSecurityLookup() {
   const jlaRows = profile
     ? [
         { label: "JLA 会員番号", value: formatCell(profile.jlaMemberNumber) },
-        { label: "旧 JLA 会員番号", value: formatCell(profile.legacyJlaMemberNumber) },
       ]
     : [];
 
@@ -822,17 +836,41 @@ export default function AdminUserSecurityLookup() {
             <CardHeader className="border-b border-border/80 bg-muted/25">
               <div className="flex items-center gap-2">
                 <ClipboardList className="h-5 w-5 text-primary" strokeWidth={1.75} aria-hidden />
-                <CardTitle className="text-lg">ログイン成功の監査ログ</CardTitle>
+                <CardTitle className="text-lg">ログイン履歴</CardTitle>
               </div>
               <CardDescription>
-                USER_LOGIN_SUCCESS（最新40件）。IP はマスク済みで記録されています。
+                ログイン成功の記録（最新40件）。IP はマスク済みで表示します。移行前のデータは監査ログにフォールバックします。
               </CardDescription>
             </CardHeader>
             <CardContent className="p-5 sm:p-6">
-              {audits.length === 0 ? (
+              {loginEvents.length === 0 && audits.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-border/90 bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
                   まだ記録がありません
                 </p>
+              ) : loginEvents.length > 0 ? (
+                <ul className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
+                  {loginEvents.map((e) => (
+                    <li
+                      key={e.id}
+                      className={cn(
+                        "rounded-xl border border-border/80 bg-card/60 p-4 shadow-sm",
+                        "border-l-4 border-l-primary/50"
+                      )}
+                    >
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(e.createdAt).toLocaleString("ja-JP")}
+                      </p>
+                      <p className="mt-2 text-sm">
+                        <span className="text-muted-foreground">経路: </span>
+                        <span className="font-medium text-foreground">{e.channelLabel}</span>
+                      </p>
+                      <p className="mt-1 font-mono text-xs text-foreground">IP: {e.ipMasked}</p>
+                      <p className="mt-2 break-all rounded-md bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">
+                        UA: {e.userAgent || "—"}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
               ) : (
                 <ul className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
                   {audits.map((a) => {
@@ -842,11 +880,12 @@ export default function AdminUserSecurityLookup() {
                         key={a.id}
                         className={cn(
                           "rounded-xl border border-border/80 bg-card/60 p-4 shadow-sm",
-                          "border-l-4 border-l-primary/50"
+                          "border-l-4 border-l-amber-500/50"
                         )}
                       >
                         <p className="text-xs text-muted-foreground">
                           {new Date(a.createdAt).toLocaleString("ja-JP")}
+                          <span className="ml-2 text-amber-700 dark:text-amber-400">（監査ログ）</span>
                         </p>
                         <p className="mt-2 text-sm">
                           <span className="text-muted-foreground">経路: </span>

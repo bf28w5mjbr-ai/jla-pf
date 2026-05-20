@@ -63,7 +63,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
               id: true,
               userId: true,
               user: {
-                select: { familyName: true, givenName: true },
+                select: { profile: { select: { familyName: true, givenName: true } } },
               },
             },
           })
@@ -80,7 +80,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
               members: {
                 select: {
                   userId: true,
-                  user: { select: { familyName: true, givenName: true } },
+                  user: { select: { profile: { select: { familyName: true, givenName: true } } } },
                 },
               },
             },
@@ -113,7 +113,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           participantType: "INDIVIDUAL" as const,
           competitionEntryId: entry.id,
           userId: entry.userId,
-          label: `${entry.user.familyName} ${entry.user.givenName}`,
+          label: `${entry.user.profile?.familyName ?? ""} ${entry.user.profile?.givenName ?? ""}`.trim(),
         })),
         teams: teamCandidates.map((entry) => ({
           participantType: "TEAM" as const,
@@ -121,7 +121,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           label: entry.teamName,
           memberUsers: entry.members.map((m) => ({
             userId: m.userId,
-            label: `${entry.teamName} / ${m.user.familyName} ${m.user.givenName}`,
+            label: `${entry.teamName} / ${`${m.user.profile?.familyName ?? ""} ${m.user.profile?.givenName ?? ""}`.trim()}`,
           })),
         })),
       },

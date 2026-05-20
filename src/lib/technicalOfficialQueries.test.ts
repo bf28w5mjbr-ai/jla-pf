@@ -75,8 +75,7 @@ describe("countValidTechnicalOfficialAssignments", () => {
         userId: "u1",
         positionName: "テクニカルオフィシャル（西浜）",
         user: {
-          familyName: "山田",
-          givenName: "一郎",
+          profile: { familyName: "山田", givenName: "一郎" },
           qualifications: [
             { kind: "BLS", status: "APPROVED", expiryDate: null },
             { kind: "RefereeC", status: "APPROVED", expiryDate: null },
@@ -116,8 +115,7 @@ describe("countValidTechnicalOfficialAssignments", () => {
       {
         userId: "u1",
         user: {
-          familyName: "山田",
-          givenName: "一郎",
+          profile: { familyName: "山田", givenName: "一郎" },
           qualifications: [{ kind: "BLS", status: "APPROVED", expiryDate: null }],
         },
       },
@@ -127,8 +125,7 @@ describe("countValidTechnicalOfficialAssignments", () => {
         userId: "u1",
         positionName: "テクニカルオフィシャル（西浜）",
         user: {
-          familyName: "山田",
-          givenName: "一郎",
+          profile: { familyName: "山田", givenName: "一郎" },
           qualifications: [{ kind: "BLS", status: "APPROVED", expiryDate: null }],
         },
       },
@@ -136,8 +133,7 @@ describe("countValidTechnicalOfficialAssignments", () => {
         userId: "u2",
         positionName: "テクニカルオフィシャル（西浜）",
         user: {
-          familyName: "佐藤",
-          givenName: "二郎",
+          profile: { familyName: "佐藤", givenName: "二郎" },
           qualifications: [{ kind: "BLS", status: "APPROVED", expiryDate: null }],
         },
       },

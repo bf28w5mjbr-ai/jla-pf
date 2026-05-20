@@ -41,7 +41,7 @@ export async function GET(
         return NextResponse.json({ message: "大会が見つかりません" }, { status: 404 });
       }
       try {
-        await requireOrgAdmin(competition.organizationId, session.userId);
+        await requireOrgAdmin(competition.organizationId, session.userId, "operational");
       } catch {
         return NextResponse.json({ message: "大会が見つかりません" }, { status: 404 });
       }

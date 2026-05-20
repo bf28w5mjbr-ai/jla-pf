@@ -11,7 +11,7 @@ import { ArrowLeft, AlertTriangle, CheckCircle2, ChevronDown, Clock } from "luci
 import StartListConfigurator from "@/components/admin/StartListConfigurator";
 import CompetitionTeamBillingManager from "@/components/admin/CompetitionTeamBillingManager";
 import CompetitionEntryAdminActions from "@/components/admin/CompetitionEntryAdminActions";
-import { hasOrgAdminAccess, isOrgAdminRole } from "@/lib/roleScopes";
+import { getCompetitionManagementAccess } from "@/lib/competitionManagementAccess";
 import {
   parseTeamEntryPaymentMetadata,
   buildClubPrepaidIndividualPaymentOwnerId,
@@ -45,32 +45,18 @@ export async function generateMetadata({
     return genericTitle;
   }
 
-  const competition = await prisma.competition.findUnique({
-    where: { id: competitionId },
-    select: {
-      name: true,
-      organizationId: true,
-      organization: {
-        select: {
-          admins: {
-            where: { userId: session.userId },
-            select: { role: true },
-          },
-        },
-      },
-    },
-  });
+  const access = await getCompetitionManagementAccess(
+    organizationId,
+    competitionId,
+    session.userId
+  );
 
-  if (
-    !competition ||
-    competition.organizationId !== organizationId ||
-    !hasOrgAdminAccess(competition.organization.admins)
-  ) {
+  if (access.kind !== "ok") {
     return genericTitle;
   }
 
   return {
-    title: `エントリー状況 | ${competition.name || "大会"} | Bluvium`,
+    title: `エントリー状況 | ${access.name || "大会"} | Bluvium`,
   };
 }
 
@@ -82,15 +68,15 @@ export default async function CompetitionEntriesPage({
   const { id: organizationId, competitionId } = await params;
   const userId = await getRequiredAuthenticatedUserId();
 
-  const orgAdmin = await prisma.orgAdmin.findFirst({
-    where: {
-      userId: userId,
-      organizationId,
-    },
-    select: { id: true, role: true },
-  });
-
-  if (!orgAdmin || !isOrgAdminRole(orgAdmin.role)) {
+  const access = await getCompetitionManagementAccess(
+    organizationId,
+    competitionId,
+    userId
+  );
+  if (access.kind === "not_found") {
+    notFound();
+  }
+  if (access.kind === "wrong_org" || access.kind === "forbidden") {
     redirect(`/organizations/${organizationId}`);
   }
 
@@ -146,10 +132,9 @@ export default async function CompetitionEntriesPage({
         user: {
           select: {
             id: true,
-            familyName: true,
-            givenName: true,
             email: true,
-            phoneNumber: true,
+            profile: { select: { familyName: true, givenName: true } },
+            contact: { select: { phoneNumber: true } },
           },
         },
         club: {
@@ -199,8 +184,7 @@ export default async function CompetitionEntriesPage({
           include: {
             user: {
               select: {
-                familyName: true,
-                givenName: true,
+                profile: { select: { familyName: true, givenName: true } },
               },
             },
           },
@@ -259,7 +243,7 @@ export default async function CompetitionEntriesPage({
       if (hasIndividualWithdrawalForEvent(entry.participantStatuses, eventId)) return;
       const list = individualByEvent.get(eventId) ?? [];
       list.push({
-        name: `${entry.user.familyName} ${entry.user.givenName}`,
+        name: `${entry.user.profile?.familyName ?? ""} ${entry.user.profile?.givenName ?? ""}`.trim(),
         clubName: entry.club?.name ?? null,
       });
       individualByEvent.set(eventId, list);
@@ -277,7 +261,7 @@ export default async function CompetitionEntriesPage({
       teamName: teamEntry.teamName,
       clubName: teamEntry.club?.name ?? null,
       members: teamEntry.members
-        .map((member) => `${member.user.familyName} ${member.user.givenName}`)
+        .map((member) => `${member.user.profile?.familyName ?? ""} ${member.user.profile?.givenName ?? ""}`.trim())
         .filter(Boolean),
     });
     teamByEvent.set(eventId, list);
@@ -453,7 +437,7 @@ export default async function CompetitionEntriesPage({
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div>
                           <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                            {entry.user.familyName} {entry.user.givenName}
+                            {entry.user.profile?.familyName ?? ""} {entry.user.profile?.givenName ?? ""}
                           </p>
                           <p className="text-sm text-gray-500">受付日: {new Date(entry.createdAt).toLocaleDateString("ja-JP")}</p>
                           <p className="text-sm text-gray-500">状態: {lifecycleState}</p>
@@ -523,7 +507,7 @@ export default async function CompetitionEntriesPage({
                             {entry.user.email}
                           </div>
                           <div className="text-xs text-gray-500">
-                            {entry.user.phoneNumber}
+                            {entry.user.contact?.phoneNumber}
                           </div>
                           <div className="mt-3">
                             <CompetitionEntryAdminActions

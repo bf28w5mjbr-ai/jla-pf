@@ -27,7 +27,7 @@ export async function GET(
     }
 
     try {
-      await requireOrgAdmin(orgId, session.userId);
+      await requireOrgAdmin(orgId, session.userId, "operational");
     } catch {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }
@@ -85,7 +85,7 @@ export async function POST(
     }
 
     try {
-      await requireOrgAdmin(orgId, session.userId);
+      await requireOrgAdmin(orgId, session.userId, "operational");
     } catch {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }

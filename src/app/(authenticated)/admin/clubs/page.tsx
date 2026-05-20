@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import type { ClubStatus, Prisma } from "@prisma/client";
-import { Building2, CheckCircle2, Clock3, Search, ShieldX } from "lucide-react";
+import { Building2, CheckCircle2, Search, ShieldX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,21 +19,24 @@ export const metadata: Metadata = {
 };
 
 const statusLabelMap: Record<string, string> = {
-  APPLYING: "申請中",
-  JLA_APPROVED: "一次承認済み",
-  APPROVED: "正式承認",
+  APPROVED: "運用中",
   SUSPENDED: "停止中",
+  APPLYING: "（旧）申請中",
+  JLA_APPROVED: "（旧）審査通過",
+  INACTIVE: "（旧）無効",
 };
 
 const statusBadgeClassMap: Record<string, string> = {
-  APPLYING:
-    "border-yellow-200 bg-yellow-50 text-yellow-800 dark:border-yellow-900/40 dark:bg-yellow-950/40 dark:text-yellow-300",
-  JLA_APPROVED:
-    "border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-900/40 dark:bg-orange-950/40 dark:text-orange-300",
   APPROVED:
     "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-300",
   SUSPENDED:
     "border-red-200 bg-red-50 text-red-800 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300",
+  APPLYING:
+    "border-yellow-200 bg-yellow-50 text-yellow-800 dark:border-yellow-900/40 dark:bg-yellow-950/40 dark:text-yellow-300",
+  JLA_APPROVED:
+    "border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-900/40 dark:bg-orange-950/40 dark:text-orange-300",
+  INACTIVE:
+    "border-gray-200 bg-gray-50 text-gray-800 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-300",
 };
 
 function formatDate(value: Date) {
@@ -53,10 +56,11 @@ export default async function AdminClubsPage({
   const searchKeyword = sp.q?.trim() ?? "";
   const statusFilter = (sp.status ?? "").trim().toUpperCase();
   const validStatusSet: ReadonlySet<ClubStatus> = new Set([
-    "APPLYING",
-    "JLA_APPROVED",
     "APPROVED",
     "SUSPENDED",
+    "APPLYING",
+    "JLA_APPROVED",
+    "INACTIVE",
   ]);
   const selectedStatus: ClubStatus | "" = validStatusSet.has(statusFilter as ClubStatus)
     ? (statusFilter as ClubStatus)
@@ -74,7 +78,7 @@ export default async function AdminClubsPage({
     select: { role: true }
   });
 
-  if (!user || (user.role !== 'ORG_ADMIN' && user.role !== 'PF_ADMIN')) {
+  if (!user || user.role !== "PF_ADMIN") {
     redirect("/dashboard");
   }
 
@@ -100,15 +104,13 @@ export default async function AdminClubsPage({
       include: {
         creator: {
           select: {
-            familyName: true,
-            givenName: true,
+            profile: { select: { familyName: true, givenName: true } },
             email: true,
           }
         },
         representativeUser: {
           select: {
-            familyName: true,
-            givenName: true,
+            profile: { select: { familyName: true, givenName: true } },
             email: true,
           },
         },
@@ -152,9 +154,7 @@ export default async function AdminClubsPage({
               className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2"
             >
               <option value="">すべてのステータス</option>
-              <option value="APPLYING">申請中</option>
-              <option value="JLA_APPROVED">一次承認済み</option>
-              <option value="APPROVED">正式承認</option>
+              <option value="APPROVED">運用中</option>
               <option value="SUSPENDED">停止中</option>
             </select>
             <Button type="submit">絞り込む</Button>
@@ -167,7 +167,7 @@ export default async function AdminClubsPage({
         </CardContent>
       </Card>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <Card className="border-primary/25 bg-primary/5">
           <CardContent className="flex items-center justify-between p-4 sm:p-5">
             <div className="space-y-1">
@@ -183,18 +183,7 @@ export default async function AdminClubsPage({
         <Card>
           <CardContent className="flex items-center justify-between p-4 sm:p-5">
             <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">申請・審査中</p>
-              <p className="text-2xl font-semibold text-foreground">
-                {(statusCount.APPLYING ?? 0) + (statusCount.JLA_APPROVED ?? 0)}
-              </p>
-            </div>
-            <Clock3 className="h-5 w-5 text-yellow-600 dark:text-yellow-300" aria-hidden />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center justify-between p-4 sm:p-5">
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">正式承認</p>
+              <p className="text-xs font-medium text-muted-foreground">運用中</p>
               <p className="text-2xl font-semibold text-foreground">{statusCount.APPROVED ?? 0}</p>
             </div>
             <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-300" aria-hidden />
@@ -267,7 +256,7 @@ export default async function AdminClubsPage({
                     <TableCell className="text-muted-foreground">
                       {club.representativeUser ? (
                         <div className="space-y-0.5">
-                          <p>{club.representativeUser.familyName} {club.representativeUser.givenName}</p>
+                          <p>{club.representativeUser.profile?.familyName ?? ""} {club.representativeUser.profile?.givenName ?? ""}</p>
                           <p className="font-mono text-xs text-muted-foreground">{club.representativeUser.email}</p>
                         </div>
                       ) : club.representativeFamilyName && club.representativeGivenName ? (
@@ -282,7 +271,7 @@ export default async function AdminClubsPage({
                     <TableCell className="text-muted-foreground">
                       {club.creator ? (
                         <div className="space-y-0.5">
-                          <p>{club.creator.familyName} {club.creator.givenName}</p>
+                          <p>{club.creator.profile?.familyName ?? ""} {club.creator.profile?.givenName ?? ""}</p>
                           <p className="font-mono text-xs text-muted-foreground">{club.creator.email}</p>
                         </div>
                       ) : (

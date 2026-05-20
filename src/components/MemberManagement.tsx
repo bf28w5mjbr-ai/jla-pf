@@ -78,6 +78,18 @@ export default function MemberManagement({
   const [searchLoading, setSearchLoading] = useState(false);
   const [addRole, setAddRole] = useState("MEMBER");
   const [addLoading, setAddLoading] = useState(false);
+  const [pendingInvitations, setPendingInvitations] = useState<
+    {
+      id: string;
+      role: string;
+      invitedUser: {
+        id: string;
+        email: string;
+        profile: { familyName: string | null; givenName: string | null } | null;
+      };
+    }[]
+  >([]);
+  const [cancelInviteLoading, setCancelInviteLoading] = useState<string | null>(null);
 
   const existingMemberUserIds = useMemo(
     () => new Set(members.map((m) => m.userId)),
@@ -140,6 +152,25 @@ export default function MemberManagement({
 
   const canAddMembers = isOrgAdminRole(userRole);
 
+  useEffect(() => {
+    if (!canAddMembers) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/organizations/${organizationId}/admin-invitations`);
+        const data = (await res.json()) as { invitations?: typeof pendingInvitations };
+        if (!cancelled && res.ok) {
+          setPendingInvitations(data.invitations ?? []);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId, canAddMembers, members.length, addDialogOpen]);
+
   // メンバー追加
   const handleAddMember = async () => {
     if (!selectedUser) {
@@ -159,12 +190,15 @@ export default function MemberManagement({
         }),
       });
 
+      const data = (await response.json()) as { message?: string; error?: string };
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "メンバーの追加に失敗しました");
+        throw new Error(data.error || "招待の送信に失敗しました");
       }
 
-      toast.success("メンバーを追加しました");
+      toast.success(data.message ?? "招待を送信しました");
+      const invRes = await fetch(`/api/organizations/${organizationId}/admin-invitations`);
+      const invData = (await invRes.json()) as { invitations?: typeof pendingInvitations };
+      if (invRes.ok) setPendingInvitations(invData.invitations ?? []);
       setAddDialogOpen(false);
       setAddQuery("");
       setCandidates([]);
@@ -260,14 +294,14 @@ export default function MemberManagement({
           <DialogTrigger asChild>
             <Button size="sm">
               <UserPlus className="h-4 w-4 mr-2" />
-              メンバーを追加
+              招待を送る
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>メンバーを追加</DialogTitle>
+              <DialogTitle>管理メンバーを招待</DialogTitle>
               <DialogDescription>
-                氏名またはメールの一部（2文字以上）で検索し、候補から選んでください。
+                氏名またはメールの一部（2文字以上）で検索し、候補を選ぶと招待が送られます。相手の承諾後にメンバーとして表示されます。
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
@@ -363,12 +397,61 @@ export default function MemberManagement({
                 onClick={handleAddMember}
                 disabled={addLoading || !selectedUser}
               >
-                {addLoading ? "追加中..." : "追加"}
+                {addLoading ? "送信中..." : "招待を送る"}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
+
+      {canAddMembers && pendingInvitations.length > 0 ? (
+        <div className="space-y-2 rounded-lg border border-dashed border-amber-500/40 bg-amber-500/5 p-3">
+          <p className="text-sm font-medium text-foreground">承諾待ちの招待</p>
+          <ul className="space-y-2">
+            {pendingInvitations.map((inv) => (
+              <li
+                key={inv.id}
+                className="flex flex-wrap items-center justify-between gap-2 text-sm"
+              >
+                <span>
+                  {inv.invitedUser.profile?.familyName} {inv.invitedUser.profile?.givenName}
+                  <span className="text-muted-foreground">（{inv.invitedUser.email}）</span>
+                  <Badge variant="outline" className="ml-2 font-normal">
+                    {membershipRoleLabelJa(inv.role)}
+                  </Badge>
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={cancelInviteLoading === inv.id}
+                  onClick={async () => {
+                    setCancelInviteLoading(inv.id);
+                    try {
+                      const res = await fetch(
+                        `/api/organizations/${organizationId}/admin-invitations/${inv.id}`,
+                        { method: "DELETE" }
+                      );
+                      if (!res.ok) {
+                        const j = (await res.json()) as { error?: string };
+                        throw new Error(j.error || "取消に失敗しました");
+                      }
+                      setPendingInvitations((prev) => prev.filter((x) => x.id !== inv.id));
+                      toast.success("招待を取り消しました");
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : "取消に失敗しました");
+                    } finally {
+                      setCancelInviteLoading(null);
+                    }
+                  }}
+                >
+                  取消
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {/* メンバー一覧 */}
       <div className="space-y-2">

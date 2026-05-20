@@ -34,11 +34,11 @@ export default function JoinClubForm({ club }: JoinClubFormProps) {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || "参加に失敗しました");
+        toast.error(data.error || "参加申請に失敗しました");
         return;
       }
 
-      toast.success(data.message || "クラブに参加しました。");
+      toast.success(data.message || "参加申請を送りました。");
       router.push(appRoutes.clubs.list());
       router.refresh();
     } catch (err) {

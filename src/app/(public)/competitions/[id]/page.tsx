@@ -175,7 +175,7 @@ export default async function CompetitionDetailPage({
       sessionUserId
         ? prisma.user.findUnique({
             where: { id: sessionUserId },
-            select: { familyName: true, givenName: true },
+            select: { profile: { select: { familyName: true, givenName: true } } },
           })
         : Promise.resolve(null),
     ]);
@@ -207,12 +207,8 @@ export default async function CompetitionDetailPage({
 
   const orgAdminsForCurrentUser = competition.organization.admins;
   const isOrgAdmin = hasOrgAdminAccess(orgAdminsForCurrentUser);
-  const canEditPublishedSchedule = canEditCompetitionPublishedSchedule({
-    orgAdminsForCurrentUser,
-  });
-  const canToggleStartListVisibility = canToggleCompetitionStartListVisibility({
-    orgAdminsForCurrentUser,
-  });
+  const canEditPublishedSchedule = canEditCompetitionPublishedSchedule({ orgAdminsForCurrentUser, orgStatus: competition.organization.status });
+  const canToggleStartListVisibility = canToggleCompetitionStartListVisibility({ orgAdminsForCurrentUser, orgStatus: competition.organization.status });
   const canViewStartListOnPublicPage =
     (competition.startListPubliclyVisible ?? true) || isOrgAdmin || hasDayOpsUnlock;
 
@@ -233,7 +229,7 @@ export default async function CompetitionDetailPage({
 
   const senderNamePreview =
     sessionUserId && sessionUserForInquiry
-      ? `${sessionUserForInquiry.familyName} ${sessionUserForInquiry.givenName}`.trim() ||
+      ? `${sessionUserForInquiry.profile?.familyName ?? ""} ${sessionUserForInquiry.profile?.givenName ?? ""}`.trim() ||
         "（氏名未設定）"
       : "";
 

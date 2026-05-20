@@ -461,15 +461,19 @@ export default async function CompetitionEntriesTabContent({
       club: { select: { name: true } },
       user: {
         select: {
-          familyName: true,
-          givenName: true,
-          familyNameKana: true,
-          givenNameKana: true,
-          sex: true,
-          dateOfBirth: true,
-          phoneNumber: true,
           email: true,
-          jlaMemberNumber: true,
+          profile: {
+            select: {
+              familyName: true,
+              givenName: true,
+              familyNameKana: true,
+              givenNameKana: true,
+              sex: true,
+              dateOfBirth: true,
+            },
+          },
+          contact: { select: { phoneNumber: true } },
+          jlaProfile: { select: { jlaMemberNumber: true } },
           qualifications: {
             select: { kind: true, status: true, expiryDate: true },
           },
@@ -504,14 +508,18 @@ export default async function CompetitionEntriesTabContent({
         include: {
           user: {
             select: {
-              familyName: true,
-              givenName: true,
-              familyNameKana: true,
-              givenNameKana: true,
-              sex: true,
-              dateOfBirth: true,
-              phoneNumber: true,
               email: true,
+              profile: {
+                select: {
+                  familyName: true,
+                  givenName: true,
+                  familyNameKana: true,
+                  givenNameKana: true,
+                  sex: true,
+                  dateOfBirth: true,
+                },
+              },
+              contact: { select: { phoneNumber: true } },
             },
           },
         },
@@ -575,11 +583,12 @@ export default async function CompetitionEntriesTabContent({
 
   entries.forEach((entry) => {
     const u = entry.user;
+    const profile = u.profile;
     const eventsLabel = buildIndividualEventInfo(entry);
 
     const baseRow = {
       key: entry.id,
-      fullName: `${u.familyName} ${u.givenName}`,
+      fullName: `${profile?.familyName ?? ""} ${profile?.givenName ?? ""}`.trim(),
       clubName: entry.club?.name ?? "—",
       eventsLabel,
     };
@@ -600,19 +609,21 @@ export default async function CompetitionEntriesTabContent({
     }
 
     const mergedEventIds = getMergedEventIdsFromEntry(entry);
-    const ageYears = getCompetitionEligibilityAgeYears(u.dateOfBirth, competition.startDate);
+    const ageYears = profile?.dateOfBirth
+      ? getCompetitionEligibilityAgeYears(profile.dateOfBirth, competition.startDate)
+      : 0;
     const playerRegLabel = hasApprovedActivePlayerRegistration(u.qualifications) ? "有" : "無";
-    const kanaParts = [u.familyNameKana, u.givenNameKana].filter(Boolean);
+    const kanaParts = [profile?.familyNameKana, profile?.givenNameKana].filter(Boolean);
     const kanaDisplay = kanaParts.length > 0 ? kanaParts.join(" ") : "";
 
     individualCsvRows.push([
       String(individualCsvRows.length + 1),
-      u.jlaMemberNumber ?? "",
-      `${u.familyName} ${u.givenName}`,
+      u.jlaProfile?.jlaMemberNumber ?? "",
+      `${profile?.familyName ?? ""} ${profile?.givenName ?? ""}`.trim(),
       kanaDisplay,
       entry.club?.name ?? "",
       String(ageYears),
-      formatBirthYmdJp(u.dateOfBirth),
+      profile?.dateOfBirth ? formatBirthYmdJp(profile.dateOfBirth) : "",
       playerRegLabel,
       ...individualCsvEvents.map((ev) => (mergedEventIds.has(ev.id) ? "○" : "")),
     ]);
@@ -732,13 +743,14 @@ export default async function CompetitionEntriesTabContent({
 
     for (const m of te.members) {
       const u = m.user;
+      const profile = u.profile;
       teamRowsForExport.push({
         statusLabel,
-        name: `${u.familyName} ${u.givenName}`,
-        nameKana: `${u.familyNameKana} ${u.givenNameKana}`,
-        sex: sexLabel(u.sex),
-        birth: formatBirthDate(u.dateOfBirth),
-        phone: u.phoneNumber,
+        name: `${profile?.familyName ?? ""} ${profile?.givenName ?? ""}`.trim(),
+        nameKana: `${profile?.familyNameKana ?? ""} ${profile?.givenNameKana ?? ""}`.trim(),
+        sex: sexLabel(profile?.sex ?? ""),
+        birth: profile?.dateOfBirth ? formatBirthDate(profile.dateOfBirth) : "",
+        phone: u.contact?.phoneNumber ?? "",
         email: u.email,
         eventInfo: eventInfoBase,
       });

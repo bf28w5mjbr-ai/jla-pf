@@ -31,7 +31,7 @@ async function collectReferencedLocalPaths() {
   const clubs = await prisma.club.findMany({ select: { logoUrl: true } });
   clubs.forEach((r) => keep(r.logoUrl));
 
-  const users = await prisma.user.findMany({ select: { profilePhotoUrl: true } });
+  const users = await prisma.userProfile.findMany({ select: { profilePhotoUrl: true } });
   users.forEach((r) => keep(r.profilePhotoUrl));
 
   const atts = await prisma.competitionAttachment.findMany({ select: { fileUrl: true } });

@@ -6,7 +6,7 @@ import { ArrowLeft, ListChecks } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { verifySessionCached } from "@/lib/auth";
-import { parseQualificationTemplateMeta } from "@/lib/qualificationTemplateRules";
+import { resolveQualificationTemplateMeta } from "@/lib/qualificationTemplateRules";
 import { prisma } from "@/server/db";
 import QualificationsSelectionClient from "./QualificationsSelectionClient";
 
@@ -36,6 +36,7 @@ export default async function QualificationsSelectPage() {
         level: true,
         minAge: true,
         prerequisiteExpression: true,
+        prerequisiteKinds: true,
         nextKinds: true,
       },
     }),
@@ -46,20 +47,25 @@ export default async function QualificationsSelectPage() {
       },
       select: {
         kind: true,
+        templateId: true,
+        recordOrigin: true,
       },
     }),
     prisma.user.findUnique({
       where: { id: sess.userId },
-      select: { jlaMemberNumber: true },
+      select: { jlaProfile: { select: { jlaMemberNumber: true } } },
     }),
   ]);
 
   const templates = rawTemplates.map((template) => ({
     ...template,
     name: template.name?.trim() || template.kind,
-    ...parseQualificationTemplateMeta(template.description),
+    ...resolveQualificationTemplateMeta(template),
   }));
-  const linkedKinds = linkedQualifications.map((q) => q.kind);
+  const linkedTemplateIds = linkedQualifications.map((q) => q.templateId);
+  const lockedTemplateIds = linkedQualifications
+    .filter((q) => q.recordOrigin === "ASSOCIATION_IMPORT")
+    .map((q) => q.templateId);
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-8 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
@@ -102,8 +108,9 @@ export default async function QualificationsSelectPage() {
           ) : (
             <QualificationsSelectionClient
               templates={templates}
-              linkedKinds={linkedKinds}
-              initialJlaMemberNumber={user?.jlaMemberNumber ?? null}
+              linkedTemplateIds={linkedTemplateIds}
+              lockedTemplateIds={lockedTemplateIds}
+              initialJlaMemberNumber={user?.jlaProfile?.jlaMemberNumber ?? null}
             />
           )}
         </CardContent>

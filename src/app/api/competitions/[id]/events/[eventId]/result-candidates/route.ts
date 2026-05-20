@@ -26,7 +26,7 @@ export async function GET(
     }
 
     try {
-      await requireOrgAdmin(competition.organizationId, session.userId);
+      await requireOrgAdmin(competition.organizationId, session.userId, "operational");
     } catch {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }
@@ -44,8 +44,7 @@ export async function GET(
           id: true,
           user: {
             select: {
-              familyName: true,
-              givenName: true,
+              profile: { select: { familyName: true, givenName: true } },
             },
           },
           club: {
@@ -77,7 +76,7 @@ export async function GET(
     return NextResponse.json({
       individualCandidates: individualCandidates.map((entry) => ({
         id: entry.id,
-        label: `${entry.user.familyName} ${entry.user.givenName}${
+        label: `${`${entry.user.profile?.familyName ?? ""} ${entry.user.profile?.givenName ?? ""}`.trim()}${
           entry.club?.name ? `（${entry.club.name}）` : ""
         }`,
       })),

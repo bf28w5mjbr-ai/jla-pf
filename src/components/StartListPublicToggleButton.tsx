@@ -20,12 +20,13 @@ export function StartListPublicToggleButton({
   initialVisible,
   canManage,
 }: Props) {
-  if (!canManage) {
-    return null;
-  }
   const router = useRouter();
   const [visible, setVisible] = useState(initialVisible);
   const [isPending, startTransition] = useTransition();
+
+  if (!canManage) {
+    return null;
+  }
 
   const onToggle = () => {
     const next = !visible;

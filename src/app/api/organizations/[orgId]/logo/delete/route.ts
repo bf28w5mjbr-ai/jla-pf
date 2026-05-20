@@ -5,7 +5,7 @@ import { prisma } from "@/server/db";
 import { unlink } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import { hostOrgAdminCanManageOnboarding } from "@/lib/roleScopes";
 
 export async function DELETE(
   request: NextRequest,
@@ -39,7 +39,7 @@ export async function DELETE(
       );
     }
 
-    if (!hasOrgAdminAccess(organization.admins)) {
+    if (!hostOrgAdminCanManageOnboarding(organization.admins, organization.status)) {
       return NextResponse.json(
         { error: "ロゴを削除する権限がありません" },
         { status: 403 }

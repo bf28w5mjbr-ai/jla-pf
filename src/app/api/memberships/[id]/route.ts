@@ -11,6 +11,11 @@ import { isClubAdminRole, normalizeClubRoleForWrite } from "@/lib/roleScopes";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 import { isPfAdminRole } from "@/lib/governancePolicy";
 import { shouldClearPrimaryClubAfterMembershipDelete } from "@/lib/membershipPrimaryClub";
+import {
+  approveMembership,
+  rejectMembership,
+  membershipServiceErrorStatus,
+} from "@/lib/membershipService";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -87,9 +92,8 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
           select: {
             id: true,
             email: true,
-            givenName: true,
-            familyName: true,
-            phoneNumber: true,
+            profile: { select: { familyName: true, givenName: true } },
+            contact: { select: { phoneNumber: true } },
           },
         },
         club: {
@@ -164,20 +168,47 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     const data = UpdateMembershipSchema.parse(body);
 
-    // ステータスまたはロールを更新
+    if (data.status === "APPROVED") {
+      const result = await approveMembership(id, sess.userId, membership.clubId, {
+        pfBypass: perm.pfBypass,
+      });
+      if (!result.success || !result.membership) {
+        return NextResponse.json(
+          { error: result.message },
+          { status: membershipServiceErrorStatus(result.error) }
+        );
+      }
+      return NextResponse.json(result.membership);
+    }
+
+    if (data.status === "REJECTED") {
+      const result = await rejectMembership(id, sess.userId, membership.clubId, undefined, {
+        pfBypass: perm.pfBypass,
+      });
+      if (!result.success || !result.membership) {
+        return NextResponse.json(
+          { error: result.message },
+          { status: membershipServiceErrorStatus(result.error) }
+        );
+      }
+      return NextResponse.json(result.membership);
+    }
+
+    if (!data.role) {
+      return NextResponse.json({ error: "更新内容がありません" }, { status: 400 });
+    }
+
     const updated = await prisma.membership.update({
       where: { id },
       data: {
-        status: data.status,
-        role: data.role ? normalizeClubRoleForWrite(data.role) : undefined,
+        role: normalizeClubRoleForWrite(data.role),
       },
       include: {
         user: {
           select: {
             id: true,
             email: true,
-            givenName: true,
-            familyName: true,
+            profile: { select: { familyName: true, givenName: true } },
           },
         },
         club: {
@@ -189,24 +220,15 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       },
     });
 
-    const auditMeta = {
-      ...data,
-      ...membershipAuditExtra(
-        perm.pfBypass,
-        membership.clubId,
-        membership.userId
-      ),
-    };
-
-    // AuditLog 記録
     await prisma.auditLog.create({
       data: {
         actorUserId: sess.userId,
-        action: data.status === 'APPROVED' ? 'MEMBERSHIP_APPROVE' : 
-                data.status === 'REJECTED' ? 'MEMBERSHIP_REJECT' : 
-                'MEMBERSHIP_UPDATE',
+        action: "MEMBERSHIP_UPDATE",
         target: `membership:${id}`,
-        meta: auditMeta,
+        meta: {
+          role: data.role,
+          ...membershipAuditExtra(perm.pfBypass, membership.clubId, membership.userId),
+        },
       },
     });
 

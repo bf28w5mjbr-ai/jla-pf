@@ -227,7 +227,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       assignedUserIds.size > 0
         ? await prisma.user.findMany({
             where: { id: { in: [...assignedUserIds] } },
-            select: { id: true, sex: true, dateOfBirth: true },
+            select: { id: true, profile: { select: { sex: true, dateOfBirth: true } } },
           })
         : [];
     const userById = new Map(assignedUsers.map((u) => [u.id, u]));
@@ -246,10 +246,10 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       return slotList.some((userId) => {
         if (!userId) return false;
         const u = userById.get(userId);
-        if (!u) return true;
+        if (!u?.profile) return true;
         return !isClubMemberEligibleForTeamAssignmentSlot({
-          memberSex: u.sex,
-          memberDateOfBirth: u.dateOfBirth,
+          memberSex: u.profile.sex,
+          memberDateOfBirth: u.profile.dateOfBirth,
           event: eventJson,
           competition: competitionJson,
         });

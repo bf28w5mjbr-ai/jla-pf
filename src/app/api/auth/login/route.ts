@@ -1,5 +1,6 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
+import { AuthLoginChannel } from "@prisma/client";
 import { cookies } from "next/headers";
 import { prisma } from "@/server/db";
 import bcrypt from "bcrypt";
@@ -80,8 +81,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const user = await prisma.user.findUnique({ where: { email: email.trim() } });
-    if (!user || !user.passwordHash) {
+    const user = await prisma.user.findUnique({
+      where: { email: email.trim() },
+      select: { id: true, security: { select: { passwordHash: true } } },
+    });
+    const passwordHash = user?.security?.passwordHash;
+    if (!user || !passwordHash) {
       if (!skipIpThrottle) {
         await recordThrottleFailure(
           ipKey,
@@ -92,7 +97,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "認証に失敗しました" }, { status: 401 });
     }
 
-    const ok = await bcrypt.compare(password, user.passwordHash);
+    const ok = await bcrypt.compare(password, passwordHash);
     if (!ok) {
       await recordThrottleFailure(
         emailKey,
@@ -124,7 +129,7 @@ export async function POST(req: NextRequest) {
       maxAge: 60 * 60 * 24 * 30,
     });
 
-    await onAuthLoginSuccess(user.id, req, { channel: "PASSWORD" });
+    await onAuthLoginSuccess(user.id, req, { channel: AuthLoginChannel.PASSWORD });
 
     return NextResponse.json({ ok: true });
   } catch (error) {

@@ -25,7 +25,7 @@ export async function DELETE(
     }
 
     try {
-      await requireOrgAdmin(organizationId, session.userId);
+      await requireOrgAdmin(organizationId, session.userId, "operational");
     } catch {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }

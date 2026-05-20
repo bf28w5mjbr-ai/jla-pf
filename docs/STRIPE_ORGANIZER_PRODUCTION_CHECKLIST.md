@@ -92,7 +92,14 @@
 - 主催団体ページの **「接続状態を確認」**（`OrganizationStripeConnectPanel`）で、Stripe 実態を `sync=1` 付きで取得し DB と突き合わせる。
 - API: `GET /api/organizations/{orgId}/stripe-connect/status?sync=1`（主催 `OrgAdmin` のみ）。JSON に `stripe`（`charges_enabled` 等）、`paidEntryBlockReason`、`issues`、`readyForPaidEntries` が含まれる。
 
-## 6. 関連コード（参照用）
+## 6. 主催団体ライフサイクル（追加確認）
+
+- `PENDING` の主催団体では **大会作成・Stripe Connect 本番設定** ができないこと。
+- 年額支払い完了後に `status=APPROVED` となり、大会作成が可能になること。
+- 管理メンバー追加は **招待→承諾** のみ（即時追加されないこと）。
+- 詳細: `docs/ORGANIZER_DOMAIN.md`
+
+## 7. 関連コード（参照用）
 
 - 正規オリジン: `src/lib/appBaseUrl.ts`（`stripeRedirectOrigin`）
 - 年額 Checkout: `src/app/api/organizations/[orgId]/onboarding/checkout/route.ts`

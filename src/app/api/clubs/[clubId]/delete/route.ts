@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { verifySession } from "@/lib/auth";
 import { requireClubAdmin } from "@/lib/accessControl";
+import {
+  getClubDeleteBlockers,
+  clubDeleteBlockersMessage,
+} from "@/lib/clubDeleteGuards";
 
 // クラブ削除
 export async function DELETE(
@@ -51,7 +55,15 @@ export async function DELETE(
 
     if (confirmName !== club.name) {
       return NextResponse.json(
-        { error: "Club name confirmation does not match" },
+        { error: "クラブ名が一致しません" },
+        { status: 400 }
+      );
+    }
+
+    const blockers = await getClubDeleteBlockers(clubId);
+    if (blockers.length > 0) {
+      return NextResponse.json(
+        { error: clubDeleteBlockersMessage(blockers) },
         { status: 400 }
       );
     }

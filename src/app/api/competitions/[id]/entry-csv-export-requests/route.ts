@@ -2,7 +2,10 @@ import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import {
+  hostOrgAdminGateJsonError,
+  requireHostOrgAdminForCompetition,
+} from "@/lib/organizerAccess";
 import { createNotification } from "@/lib/notificationService";
 import {
   CSV_EXPORT_SCOPE,
@@ -31,29 +34,27 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "scope が不正です" }, { status: 400 });
     }
 
+    try {
+      await requireHostOrgAdminForCompetition(competitionId, session.userId);
+    } catch (e) {
+      const gated = hostOrgAdminGateJsonError(e);
+      if (gated) {
+        return NextResponse.json({ error: gated.error }, { status: gated.status });
+      }
+      throw e;
+    }
+
     const competition = await prisma.competition.findUnique({
       where: { id: competitionId },
       select: {
         id: true,
         name: true,
         organizationId: true,
-        organization: {
-          select: {
-            admins: {
-              where: { userId: session.userId },
-              select: { role: true },
-            },
-          },
-        },
       },
     });
 
     if (!competition) {
       return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });
-    }
-
-    if (!hasOrgAdminAccess(competition.organization.admins)) {
-      return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }
 
     const active = await getActiveCsvExportApproval(competitionId, scope);

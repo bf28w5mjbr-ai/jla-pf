@@ -78,7 +78,7 @@ export async function resolveParticipantInHeatForDayOps(opts: {
         teamEntry: { competitionId, eventId },
       },
       select: {
-        user: { select: { familyName: true, givenName: true } },
+        user: { select: { profile: { select: { familyName: true, givenName: true } } } },
       },
     });
     if (!membership) {
@@ -94,7 +94,7 @@ export async function resolveParticipantInHeatForDayOps(opts: {
       competitionEntryId: null,
       teamEntryId,
       teamMemberUserId,
-      marshalDisplayLabel: `${membership.user.familyName} ${membership.user.givenName}`,
+      marshalDisplayLabel: `${membership.user.profile?.familyName ?? ""} ${membership.user.profile?.givenName ?? ""}`.trim(),
     };
     const resolved = resolveMarshalSlotInHeat(heat, target);
     if (!resolved) {
@@ -105,8 +105,8 @@ export async function resolveParticipantInHeatForDayOps(opts: {
 
   const nfcTagId = normalizeNfcTagId(body.nfcTagId);
   const user = await prisma.user.findFirst({
-    where: { nfcTagId },
-    select: { id: true, familyName: true, givenName: true },
+    where: { nfcTag: { is: { nfcTagId } } },
+    select: { id: true, profile: { select: { familyName: true, givenName: true } } },
   });
   if (!user) {
     return {
@@ -117,7 +117,7 @@ export async function resolveParticipantInHeatForDayOps(opts: {
     };
   }
 
-  const displayLabel = `${user.familyName} ${user.givenName}`;
+  const displayLabel = `${user.profile?.familyName ?? ""} ${user.profile?.givenName ?? ""}`.trim();
 
   const [individualEntries, teamMembership] = await Promise.all([
     prisma.competitionEntry.findMany({

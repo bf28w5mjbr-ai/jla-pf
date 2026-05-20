@@ -20,7 +20,7 @@ export type PlatformFeatureSegment =
 export const PLATFORM_ROLE_SEGMENT_LABELS: Record<PlatformRoleSegment, string> = {
   INDIVIDUAL: "個人",
   CLUB: "クラブ",
-  ORGANIZER: "大会開催者",
+  ORGANIZER: "主催団体",
   ASSOCIATION: "協会",
 };
 
@@ -59,7 +59,7 @@ export function derivePlatformRoleSegments(input: {
     segments.add(PLATFORM_ROLE_SEGMENTS.CLUB);
   }
 
-  if (organizationCount > 0 || userRole === "ORG_ADMIN") {
+  if (organizationCount > 0) {
     segments.add(PLATFORM_ROLE_SEGMENTS.ORGANIZER);
   }
 

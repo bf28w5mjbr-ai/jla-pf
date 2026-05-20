@@ -36,9 +36,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ message: "大会が見つかりません" }, { status: 404 });
     }
     if (
-      !canEditCompetitionPublishedSchedule({
-        orgAdminsForCurrentUser: competition.organization.admins,
-      })
+      !canEditCompetitionPublishedSchedule({ orgAdminsForCurrentUser: competition.organization.admins, orgStatus: competition.organization.status })
     ) {
       return NextResponse.json({ message: "権限がありません" }, { status: 403 });
     }

@@ -41,25 +41,24 @@ export async function GET(request: NextRequest, context: RouteContext) {
         deletedAt: null,
         OR: [
           { email: { contains: q, mode: "insensitive" } },
-          { phoneNumber: { contains: q } },
-          { familyName: { contains: q, mode: "insensitive" } },
-          { givenName: { contains: q, mode: "insensitive" } },
+          { contact: { is: { phoneNumber: { contains: q } } } },
+          { profile: { is: { familyName: { contains: q, mode: "insensitive" } } } },
+          { profile: { is: { givenName: { contains: q, mode: "insensitive" } } } },
         ],
       },
       select: {
         id: true,
-        familyName: true,
-        givenName: true,
+        profile: { select: { familyName: true, givenName: true } },
         email: true,
       },
-      orderBy: [{ familyName: "asc" }, { givenName: "asc" }],
+      orderBy: [{ profile: { familyName: "asc" } }, { profile: { givenName: "asc" } }],
       take: MAX_RESULTS,
     });
 
     return NextResponse.json({
       users: users.map((u) => ({
         id: u.id,
-        displayName: `${u.familyName} ${u.givenName}`,
+        displayName: `${u.profile?.familyName ?? ""} ${u.profile?.givenName ?? ""}`.trim(),
         email: u.email,
       })),
     });

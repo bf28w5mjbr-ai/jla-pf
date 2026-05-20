@@ -111,6 +111,7 @@ export default async function CompetitionEventStartListPage({
         startListSettings: true,
         organization: {
           select: {
+            status: true,
             admins: {
               where: { userId: sessionUserId ?? "clinvalidnosessionuser0000" },
               select: { role: true },
@@ -137,9 +138,7 @@ export default async function CompetitionEventStartListPage({
   const dayOpsUnlockConfigured = Boolean(competition.dayOpsAccessSecretHash);
 
   const isOrgAdmin = hasOrgAdminAccess(competition.organization.admins);
-  const canManageStartListOps = canManageCompetitionStartListSettings({
-    orgAdminsForCurrentUser: competition.organization.admins,
-    hasDayOpsUnlock,
+  const canManageStartListOps = canManageCompetitionStartListSettings({ orgAdminsForCurrentUser: competition.organization.admins, orgStatus: competition.organization.status, hasDayOpsUnlock,
   });
   const showUnifiedStartListCard = canManageStartListOps;
   const showVenueOps = isOrgAdmin || hasDayOpsUnlock;
@@ -197,7 +196,7 @@ export default async function CompetitionEventStartListPage({
         id: true,
         userId: true,
         club: { select: { id: true, name: true } },
-        user: { select: { familyName: true, givenName: true } },
+        user: { select: { profile: { select: { familyName: true, givenName: true } } } },
         items: { where: { eventId }, take: 1, select: { eventId: true } },
       },
       orderBy: { createdAt: "asc" },
@@ -211,7 +210,7 @@ export default async function CompetitionEventStartListPage({
         members: {
           orderBy: { order: "asc" },
           select: {
-            user: { select: { familyName: true, givenName: true } },
+            user: { select: { profile: { select: { familyName: true, givenName: true } } } },
           },
         },
       },
@@ -376,7 +375,7 @@ export default async function CompetitionEventStartListPage({
     individuals.push({
       entryId: entry.id,
       userId: entry.userId,
-      name: `${entry.user.familyName} ${entry.user.givenName}`,
+      name: `${entry.user.profile?.familyName ?? ""} ${entry.user.profile?.givenName ?? ""}`.trim(),
       clubId: entry.club?.id ?? null,
       clubName: entry.club?.name ?? null,
     });
@@ -400,7 +399,7 @@ export default async function CompetitionEventStartListPage({
       clubId: teamEntry.club?.id ?? null,
       clubName: teamEntry.club?.name ?? null,
       members: teamEntry.members
-        .map((member) => `${member.user.familyName} ${member.user.givenName}`)
+        .map((member) => `${member.user.profile?.familyName ?? ""} ${member.user.profile?.givenName ?? ""}`.trim())
         .filter(Boolean),
     });
   }

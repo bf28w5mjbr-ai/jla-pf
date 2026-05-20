@@ -15,13 +15,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
     }
 
-    // APPROVED または JLA_APPROVED のクラブを取得
     const clubs = await prisma.club.findMany({
       where: {
-        OR: [
-          { status: 'APPROVED' },
-          { status: 'JLA_APPROVED' }
-        ]
+        status: "APPROVED",
       },
       select: {
         id: true,

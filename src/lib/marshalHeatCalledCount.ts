@@ -95,14 +95,14 @@ export async function fetchTeamMembersMapForTeamIds(
     select: {
       teamEntryId: true,
       userId: true,
-      user: { select: { familyName: true, givenName: true } },
+      user: { select: { profile: { select: { familyName: true, givenName: true } } } },
     },
   });
   for (const m of memberRows) {
     const list = map.get(m.teamEntryId) ?? [];
     list.push({
       userId: m.userId,
-      label: `${m.user.familyName} ${m.user.givenName}`,
+      label: `${m.user.profile?.familyName ?? ""} ${m.user.profile?.givenName ?? ""}`.trim(),
     });
     map.set(m.teamEntryId, list);
   }

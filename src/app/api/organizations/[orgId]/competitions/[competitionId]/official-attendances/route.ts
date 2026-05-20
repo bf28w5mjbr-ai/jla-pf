@@ -58,7 +58,7 @@ export async function GET(
     }
 
     try {
-      await requireOrgAdmin(orgId, session.userId);
+      await requireOrgAdmin(orgId, session.userId, "operational");
     } catch {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }
@@ -77,9 +77,8 @@ export async function GET(
             positionName: true,
             user: {
               select: {
-                familyName: true,
-                givenName: true,
-                nfcTagId: true,
+                profile: { select: { familyName: true, givenName: true } },
+                nfcTag: { select: { nfcTagId: true } },
               },
             },
           },
@@ -115,9 +114,9 @@ export async function GET(
       const attended = attendanceByUserId.get(a.userId);
       return {
         userId: a.userId,
-        name: `${a.user.familyName} ${a.user.givenName}`,
+        name: `${a.user.profile?.familyName ?? ""} ${a.user.profile?.givenName ?? ""}`.trim(),
         positionName: a.positionName,
-        hasNfcTag: Boolean(a.user.nfcTagId),
+        hasNfcTag: Boolean(a.user.nfcTag?.nfcTagId),
         attended: Boolean(attended),
         method: attended?.method ?? null,
       };
@@ -155,7 +154,7 @@ export async function POST(
     }
 
     try {
-      await requireOrgAdmin(orgId, session.userId);
+      await requireOrgAdmin(orgId, session.userId, "operational");
     } catch {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }
@@ -216,8 +215,8 @@ export async function POST(
       }
 
       const user = await prisma.user.findFirst({
-        where: { nfcTagId },
-        select: { id: true, familyName: true, givenName: true },
+        where: { nfcTag: { is: { nfcTagId } } },
+        select: { id: true, profile: { select: { familyName: true, givenName: true } } },
       });
       if (!user) {
         return NextResponse.json({ error: "NFCタグに紐づくユーザーが見つかりません" }, { status: 404 });
@@ -250,7 +249,10 @@ export async function POST(
 
       return NextResponse.json({
         success: true,
-        scannedUser: { id: user.id, name: `${user.familyName} ${user.givenName}` },
+        scannedUser: {
+          id: user.id,
+          name: `${user.profile?.familyName ?? ""} ${user.profile?.givenName ?? ""}`.trim(),
+        },
       });
     }
 

@@ -44,9 +44,10 @@ export async function POST(req: NextRequest) {
     const passwordHash = await bcrypt.hash(password, 10);
 
     await prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: row.userId },
-        data: { passwordHash },
+      await tx.userSecurity.upsert({
+        where: { userId: row.userId },
+        create: { userId: row.userId, passwordHash },
+        update: { passwordHash },
       });
       await tx.passwordResetToken.update({
         where: { id: row.id },

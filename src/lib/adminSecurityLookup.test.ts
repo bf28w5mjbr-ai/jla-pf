@@ -36,7 +36,7 @@ describe("looksLikeUserIdQuery", () => {
 describe("buildNameContainsWhere", () => {
   it("builds OR across name fields", () => {
     const w = buildNameContainsWhere("ヤマダ");
-    expect(w.OR).toHaveLength(4);
+    expect(w.profile?.is?.OR).toHaveLength(4);
   });
 });
 

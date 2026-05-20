@@ -376,8 +376,7 @@ export default async function CompetitionEntryPage({
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
-      sex: true,
-      dateOfBirth: true,
+      profile: { select: { sex: true, dateOfBirth: true } },
       qualifications: {
         where: { status: "APPROVED" },
         select: { kind: true },
@@ -427,15 +426,16 @@ export default async function CompetitionEntryPage({
     );
   };
 
-  const userAge = user?.dateOfBirth
+  const userDateOfBirth = user?.profile?.dateOfBirth ?? null;
+  const userAge = userDateOfBirth
     ? getCompetitionEligibilityAgeYears(
-        new Date(user.dateOfBirth),
+        new Date(userDateOfBirth),
         new Date(competition.startDate)
       )
     : null;
-  const userSex = user?.sex ?? "OTHER";
+  const userSex = user?.profile?.sex ?? "OTHER";
   const userQualifications = user?.qualifications?.map((q) => q.kind) ?? [];
-  const userDob = user?.dateOfBirth ? new Date(user.dateOfBirth) : null;
+  const userDob = userDateOfBirth ? new Date(userDateOfBirth) : null;
 
   // AGEカテゴリ別資格があるときは ageCategoryId 経由で、なければ年齢ベースで解決
   const hasAgeCategoryQual =
@@ -487,7 +487,7 @@ export default async function CompetitionEntryPage({
     if (
       !meetsCompetitionEventAgeEligibility({
         event,
-        userDateOfBirth: user?.dateOfBirth ? new Date(user.dateOfBirth) : null,
+        userDateOfBirth: userDateOfBirth ? new Date(userDateOfBirth) : null,
         seasonalAgeYears: userAge,
       })
     ) {
@@ -1015,7 +1015,7 @@ export default async function CompetitionEntryPage({
         entryWindowOpen={isEntryWindowOpen}
         entryFee={competition.entryFee as unknown as CompetitionEntryFormProps["entryFee"]}
         userAgeYearsAtCompetitionStart={userAge}
-        userDateOfBirthISO={user?.dateOfBirth ? new Date(user.dateOfBirth).toISOString() : null}
+        userDateOfBirthISO={userDateOfBirth ? new Date(userDateOfBirth).toISOString() : null}
         feeAgeCategories={competition.ageCategories.map((c) => ({
           id: c.id,
           name: c.name,

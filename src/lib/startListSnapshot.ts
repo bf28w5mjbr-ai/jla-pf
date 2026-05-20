@@ -232,8 +232,7 @@ export async function buildStartListSnapshotPayload(
         user: {
           select: {
             id: true,
-            familyName: true,
-            givenName: true,
+            profile: { select: { familyName: true, givenName: true } },
           },
         },
         club: {
@@ -263,8 +262,7 @@ export async function buildStartListSnapshotPayload(
           include: {
             user: {
               select: {
-                familyName: true,
-                givenName: true,
+                profile: { select: { familyName: true, givenName: true } },
               },
             },
           },
@@ -289,7 +287,7 @@ export async function buildStartListSnapshotPayload(
         kind: "INDIVIDUAL",
         entryId: entry.id,
         userId: entry.user.id,
-        name: `${entry.user.familyName} ${entry.user.givenName}`,
+        name: `${entry.user.profile?.familyName ?? ""} ${entry.user.profile?.givenName ?? ""}`.trim(),
         clubId: entry.club?.id ?? null,
         clubName: entry.club?.name ?? null,
       });
@@ -308,7 +306,7 @@ export async function buildStartListSnapshotPayload(
       clubId: teamEntry.club?.id ?? null,
       clubName: teamEntry.club?.name ?? null,
       members: teamEntry.members
-        .map((member) => `${member.user.familyName} ${member.user.givenName}`)
+        .map((member) => `${member.user.profile?.familyName ?? ""} ${member.user.profile?.givenName ?? ""}`.trim())
         .filter(Boolean),
     });
     teamByEvent.set(teamEntry.eventId, list);

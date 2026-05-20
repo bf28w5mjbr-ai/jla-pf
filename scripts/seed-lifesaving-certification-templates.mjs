@@ -392,27 +392,20 @@ const categoryMeta = {
   WaterSafety: "ウォーターセーフティ指導者領域",
 };
 
-function buildDescription(cert) {
-  const lines = [
-    `Domain: ${cert.domain}`,
-    `Level: ${cert.level}`,
-    `MinAge: ${cert.minAge ?? "N/A"}`,
-    `Prerequisites: ${cert.prerequisiteExpression || "None"}`,
-    `Next: ${cert.next.length > 0 ? cert.next.join(", ") : "None"}`,
-  ];
+function buildHumanDescription(cert) {
+  const lines = [];
   if (cert.level === "AssistantInstructor" || cert.level === "Instructor") {
-    lines.push(`GlobalMinAge: 20`);
-    lines.push(`GlobalConditions: ${instructorGlobalConditions.join(" | ")}`);
-    lines.push(`CertificationRules: ${instructorCertificationRules.join(" | ")}`);
+    lines.push(`Instructor requirements include: ${instructorGlobalConditions.join(" | ")}`);
+    lines.push(`Certification rules: ${instructorCertificationRules.join(" | ")}`);
     lines.push(`Evaluation: ${instructorEvaluation.join(" | ")}`);
   }
   if (Array.isArray(cert.nonCertificationRequirements) && cert.nonCertificationRequirements.length > 0) {
-    lines.push(`NonCertificationRequirements: ${cert.nonCertificationRequirements.join(" | ")}`);
+    lines.push(`Additional requirements: ${cert.nonCertificationRequirements.join(" | ")}`);
   }
   if (typeof cert.trainingHours === "number") {
-    lines.push(`TrainingHours: ${cert.trainingHours}`);
+    lines.push(`Training hours: ${cert.trainingHours}`);
   }
-  return lines.join("\n");
+  return lines.length > 0 ? lines.join("\n") : null;
 }
 
 async function ensureCategoryMap() {
@@ -449,7 +442,7 @@ async function seedTemplates() {
       categoryId: categoryIdByName.get(cert.domain) ?? null,
       kind: cert.name,
       name: cert.name,
-      description: buildDescription(cert),
+      description: buildHumanDescription(cert),
       requiresExpiry: cert.requiresExpiry,
       validityMonths: cert.validityMonths,
       domain: cert.domain,

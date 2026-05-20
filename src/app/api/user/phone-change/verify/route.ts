@@ -83,13 +83,28 @@ export async function POST(req: NextRequest) {
 
     const before = await prisma.user.findUnique({
       where: { id: sess.userId },
-      select: { phoneNumber: true },
+      select: { contact: { select: { phoneNumber: true } } },
     });
-    const oldPhone = before?.phoneNumber;
+    const oldPhone = before?.contact?.phoneNumber;
 
     await prisma.user.update({
       where: { id: sess.userId },
-      data: { phoneNumber: data.phone },
+      data: {
+        contact: {
+          upsert: {
+            create: {
+              phoneNumber: data.phone,
+              phoneVerified: true,
+              phoneVerifiedAt: new Date(),
+            },
+            update: {
+              phoneNumber: data.phone,
+              phoneVerified: true,
+              phoneVerifiedAt: new Date(),
+            },
+          },
+        },
+      },
     });
 
     await prisma.loginSession.delete({ where: { id: session.id } });

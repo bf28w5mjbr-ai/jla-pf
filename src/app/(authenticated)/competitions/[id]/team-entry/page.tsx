@@ -206,9 +206,13 @@ export default async function LegacyCompetitionTeamEntryRedirect({
     prisma.membership.findMany({
       where: { clubId: { in: adminClubIds }, status: "APPROVED" },
       include: {
-        user: { select: { id: true, familyName: true, givenName: true } },
+        user: { select: { id: true, profile: { select: { familyName: true, givenName: true } } } },
       },
-      orderBy: [{ clubId: "asc" }, { user: { familyName: "asc" } }, { user: { givenName: "asc" } }],
+      orderBy: [
+        { clubId: "asc" },
+        { user: { profile: { familyName: "asc" } } },
+        { user: { profile: { givenName: "asc" } } },
+      ],
     }),
     prisma.competitionEntry.findMany({
       where: {
@@ -289,7 +293,7 @@ export default async function LegacyCompetitionTeamEntryRedirect({
           .filter((m) => m.clubId === cid && !paidSet.has(m.user.id))
           .map((m) => ({
             userId: m.user.id,
-            name: `${m.user.familyName} ${m.user.givenName}`,
+            name: `${m.user.profile?.familyName ?? ""} ${m.user.profile?.givenName ?? ""}`.trim(),
           })),
       ];
     })

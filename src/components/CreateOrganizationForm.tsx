@@ -70,7 +70,7 @@ export default function CreateOrganizationForm({
     e.preventDefault();
 
     if (!name.trim()) {
-      toast.error("大会主催団体名を入力してください");
+      toast.error("主催団体名を入力してください");
       return;
     }
 
@@ -99,16 +99,16 @@ export default function CreateOrganizationForm({
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.error || "大会主催団体の作成に失敗しました");
+        throw new Error(data.error || "主催団体の作成に失敗しました");
       }
 
       const organization = await response.json();
-      toast.success("大会主催団体を作成しました。支払い完了後に正式化されます");
+      toast.success("主催団体を作成しました。支払い完了後に正式化されます");
       router.push(`/organizations/${organization.id}`);
     } catch (error) {
       console.error("Create organization error:", error);
       toast.error(
-        error instanceof Error ? error.message : "大会主催団体の作成に失敗しました"
+        error instanceof Error ? error.message : "主催団体の作成に失敗しました"
       );
     } finally {
       setLoading(false);
@@ -118,9 +118,9 @@ export default function CreateOrganizationForm({
   return (
     <AutofillSyncForm onSubmit={handleSubmit} className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">大会主催団体を作成</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">主催団体を作成</h1>
         <p className={cn(pageIntroTextClass("guided"), "mt-1")}>
-          大会主催団体の基本情報と連絡先を登録します。作成後は支払い完了で正式に有効化されます。
+          主催団体の基本情報と連絡先を登録します。作成後は支払い完了で正式に有効化されます。
         </p>
       </div>
 
@@ -132,7 +132,7 @@ export default function CreateOrganizationForm({
             <p>
               開催者は作成直後に利用開始状態にはならず、まず
               <span className="font-semibold"> 仮状態 </span>
-              で作成されます。年額のプラットフォーム利用料の登録完了後に正式な大会開催者として扱われます。
+              で作成されます。年額のプラットフォーム利用料の登録完了後に正式な主催団体として扱われます。
             </p>
           </div>
 
@@ -160,7 +160,7 @@ export default function CreateOrganizationForm({
         <div className="space-y-4">
           <div>
             <Label htmlFor="name">
-              大会主催団体名 <span className="text-red-500">*</span>
+              主催団体名 <span className="text-red-500">*</span>
             </Label>
             <Input
               id="name"
@@ -173,7 +173,7 @@ export default function CreateOrganizationForm({
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <Label htmlFor="nameKana">大会主催団体名（カナ）</Label>
+              <Label htmlFor="nameKana">主催団体名（カナ）</Label>
               <Input
                 id="nameKana"
                 value={nameKana}
@@ -246,7 +246,7 @@ export default function CreateOrganizationForm({
               id="description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="大会主催団体の活動内容や目的を入力してください"
+              placeholder="主催団体の活動内容や目的を入力してください"
               rows={4}
             />
           </div>
@@ -324,7 +324,7 @@ export default function CreateOrganizationForm({
           キャンセル
         </Button>
         <Button type="submit" disabled={loading} className="w-full sm:w-auto sm:min-w-[160px]">
-          {loading ? "作成中..." : "大会主催団体を作成"}
+          {loading ? "作成中..." : "主催団体を作成"}
         </Button>
       </div>
     </AutofillSyncForm>

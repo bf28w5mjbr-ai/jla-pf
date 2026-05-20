@@ -9,7 +9,7 @@
 `Role` は次の3種類です。
 
 - `USER`: 基本ロール
-- `ORG_ADMIN`: 主催団体の運営者ロール（組織スコープは `OrgAdmin` で管理）
+- `ORG_ADMIN`: レガシー（コード上は未使用。主催団体スコープは `OrgAdmin` で管理）
 - `PF_ADMIN`: プラットフォーム全体管理者
 
 ## 2. スコープロール（テーブルで付与）
@@ -17,7 +17,7 @@
 ユーザーの実際の操作可能範囲は、以下のスコープロールで決まります。
 
 - クラブ: `Membership.role` (`ADMIN` / `MEMBER`)
-- 主催団体: `OrgAdmin.role` (`ADMIN` / `MEMBER`)
+- 主催団体: `OrgAdmin.role` (`ADMIN` / `MEMBER`)。追加は `OrganizationAdminInvitation` 経由の招待→承諾
 - 協会: `AssociationAdmin.role` (`ADMIN` / `MEMBER`)
 
 補足:
@@ -72,8 +72,11 @@
 - `POST /api/clubs/[clubId]/members/[membershipId]/reject`
 
 ### 大会・主催団体
-- `POST /api/competitions/create`
-- `PATCH /api/competitions/[id]/update`
+- `POST /api/competitions/create`（`APPROVED` 必須）
+- `PATCH /api/organizations/[orgId]/update`（`PENDING` 可）
+- `POST /api/organizations/[orgId]/admin-invitations`（招待）
+- `POST /api/org-admin-invitations/[token]/accept`（承諾）
+- `POST /api/admin/organizations/[orgId]/status`（PF: 停止/復旧）
 - `GET /api/organizations/[orgId]/members`
 - `PATCH /api/organizations/[orgId]/members/[memberId]`
 

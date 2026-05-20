@@ -2,7 +2,10 @@ import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { hasOrgAdminAccess } from "@/lib/roleScopes";
+import {
+  hostOrgAdminGateMessageError,
+  requireHostOrgAdminForCompetition,
+} from "@/lib/organizerAccess";
 import { logAuditAction, getRequestContext } from "@/lib/auditLog";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -34,6 +37,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
     );
   }
 
+  try {
+    await requireHostOrgAdminForCompetition(competitionId, session.userId);
+  } catch (e) {
+    const gated = hostOrgAdminGateMessageError(e);
+    if (gated) {
+      return NextResponse.json({ message: gated.message }, { status: gated.status });
+    }
+    throw e;
+  }
+
   const competition = await prisma.competition.findUnique({
     where: { id: competitionId },
     select: {
@@ -43,14 +56,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
       entryPledgeText: true,
       allowMultipleEventEntries: true,
       maxEventEntriesPerPerson: true,
-      organization: {
-        select: {
-          admins: {
-            where: { userId: session.userId },
-            select: { role: true },
-          },
-        },
-      },
       events: {
         select: {
           id: true,
@@ -67,10 +72,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   if (!competition) {
     return NextResponse.json({ message: "大会が見つかりません" }, { status: 404 });
-  }
-
-  if (!hasOrgAdminAccess(competition.organization.admins)) {
-    return NextResponse.json({ message: "権限がありません" }, { status: 403 });
   }
 
   if (competition.status === "CANCELLED" || competition.status === "COMPLETED") {

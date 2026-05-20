@@ -42,7 +42,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const [targetUser, entryCount, teamMemberCount] = await Promise.all([
       prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, familyName: true, givenName: true, nfcTagId: true },
+        select: {
+          id: true,
+          profile: { select: { familyName: true, givenName: true } },
+          nfcTag: { select: { nfcTagId: true } },
+        },
       }),
       prisma.competitionEntry.count({
         where: {
@@ -71,23 +75,23 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const conflictUser = await prisma.user.findFirst({
       where: {
-        nfcTagId,
+        nfcTag: { is: { nfcTagId } },
         id: { not: userId },
         deletedAt: null,
       },
-      select: { id: true, familyName: true, givenName: true },
+      select: { id: true, profile: { select: { familyName: true, givenName: true } } },
     });
 
     await prisma.$transaction(async (tx) => {
       if (conflictUser) {
         await tx.user.update({
           where: { id: conflictUser.id },
-          data: { nfcTagId: null },
+          data: { nfcTag: { upsert: { create: { nfcTagId: null }, update: { nfcTagId: null } } } },
         });
       }
       await tx.user.update({
         where: { id: userId },
-        data: { nfcTagId },
+        data: { nfcTag: { upsert: { create: { nfcTagId }, update: { nfcTagId } } } },
       });
     });
 
@@ -113,7 +117,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({
       ok: true,
       userId,
-      userName: `${targetUser.familyName} ${targetUser.givenName}`,
+      userName: `${targetUser.profile?.familyName ?? ""} ${targetUser.profile?.givenName ?? ""}`.trim(),
       replacedUserId: conflictUser?.id ?? null,
     });
   } catch (error) {

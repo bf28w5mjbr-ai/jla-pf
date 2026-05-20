@@ -11,6 +11,7 @@ describe("competitionStartListAccess", () => {
       expect(
         canToggleCompetitionStartListVisibility({
           orgAdminsForCurrentUser: [{ role: "ADMIN" }],
+          orgStatus: "APPROVED",
         })
       ).toBe(true);
     });
@@ -33,8 +34,8 @@ describe("competitionStartListAccess", () => {
 
     it("canEditCompetitionPublishedSchedule と同じ", () => {
       const admins = [{ role: "MEMBER" as const }];
-      expect(canToggleCompetitionStartListVisibility({ orgAdminsForCurrentUser: admins })).toBe(
-        canEditCompetitionPublishedSchedule({ orgAdminsForCurrentUser: admins })
+      expect(canToggleCompetitionStartListVisibility({ orgAdminsForCurrentUser: admins, orgStatus: "APPROVED" })).toBe(
+        canEditCompetitionPublishedSchedule({ orgAdminsForCurrentUser: admins, orgStatus: "APPROVED" })
       );
     });
   });
@@ -49,6 +50,7 @@ describe("competitionStartListAccess", () => {
       expect(
         canManageCompetitionStartListSettings({
           orgAdminsForCurrentUser: [],
+          orgStatus: "APPROVED",
           hasDayOpsUnlock: true,
         })
       ).toBe(true);

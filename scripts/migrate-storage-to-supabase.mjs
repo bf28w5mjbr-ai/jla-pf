@@ -88,11 +88,11 @@ async function updateDbUrls(mapping) {
     }
   }
 
-  const users = await prisma.user.findMany({ select: { id: true, profilePhotoUrl: true } });
+  const users = await prisma.userProfile.findMany({ select: { userId: true, profilePhotoUrl: true } });
   for (const row of users) {
     const next = convert(row.profilePhotoUrl);
     if (next && next !== row.profilePhotoUrl && !dryRun) {
-      await prisma.user.update({ where: { id: row.id }, data: { profilePhotoUrl: next } });
+      await prisma.userProfile.update({ where: { userId: row.userId }, data: { profilePhotoUrl: next } });
     }
   }
 

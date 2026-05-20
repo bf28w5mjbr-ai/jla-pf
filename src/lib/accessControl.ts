@@ -1,5 +1,14 @@
 import { MembershipRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import {
+  assertOrgOnboardingAllowed,
+  assertOrgOperational,
+  OrganizerLifecycleError,
+} from "@/lib/organizerLifecycle";
+
+export type RequireOrgAdminScope = "onboarding" | "operational";
+
+export { OrganizerLifecycleError };
 
 async function isAssociationAdminUser(userId: string): Promise<boolean> {
   const associationAdmin = await prisma.associationAdmin.findFirst({
@@ -79,7 +88,11 @@ export async function requireClubAdmin(clubId: string, userId: string): Promise<
   }
 }
 
-export async function requireOrgAdmin(organizationId: string, userId: string): Promise<void> {
+export async function requireOrgAdmin(
+  organizationId: string,
+  userId: string,
+  scope: RequireOrgAdminScope = "onboarding"
+): Promise<void> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { role: true },
@@ -88,6 +101,9 @@ export async function requireOrgAdmin(organizationId: string, userId: string): P
     throw new Error('USER_NOT_FOUND');
   }
   if (user.role === 'PF_ADMIN') {
+    if (scope === "operational") {
+      await assertOrgOperational(prisma, organizationId);
+    }
     return;
   }
   if (await isAssociationAdminUser(userId)) {
@@ -104,5 +120,11 @@ export async function requireOrgAdmin(organizationId: string, userId: string): P
   });
   if (!admin) {
     throw new Error('ORG_ADMIN_REQUIRED');
+  }
+
+  if (scope === "operational") {
+    await assertOrgOperational(prisma, organizationId);
+  } else {
+    await assertOrgOnboardingAllowed(prisma, organizationId);
   }
 }

@@ -15,6 +15,8 @@ import {
   maskBankAccountNumber,
   sliceNameSearchCandidates,
 } from "@/lib/adminSecurityLookup";
+import { authLoginChannelLabel, loginEventListSelect } from "@/lib/userSecurity";
+import { maskIpForDisplay, truncateUserAgent } from "@/lib/securityDisplay";
 
 const NAME_SEARCH_TAKE = 21;
 
@@ -28,42 +30,27 @@ async function buildDetailJson(userId: string) {
     select: {
       id: true,
       email: true,
-      emailVerified: true,
       role: true,
       primaryClubId: true,
       preferredLanguage: true,
-      mfaEnabled: true,
-      mfaEnforced: true,
-      nfcTagId: true,
       deletedAt: true,
       deletionScheduledAt: true,
-      familyName: true,
-      givenName: true,
-      familyNameKana: true,
-      givenNameKana: true,
-      normalizedFamilyName: true,
-      normalizedGivenName: true,
-      dateOfBirth: true,
-      sex: true,
-      phoneNumber: true,
-      phoneVerified: true,
-      phoneVerifiedAt: true,
-      lastLoginAt: true,
-      lastLoginIp: true,
-      lastLoginUa: true,
-      profilePhotoUrl: true,
-      postalCode: true,
-      prefecture: true,
-      city: true,
-      addressLine1: true,
-      addressLine2: true,
-      emergencyContactFamilyName: true,
-      emergencyContactGivenName: true,
-      emergencyContactFamilyNameKana: true,
-      emergencyContactGivenNameKana: true,
-      emergencyContactPhone: true,
-      jlaMemberNumber: true,
-      legacyJlaMemberNumber: true,
+      security: {
+        select: {
+          emailVerified: true,
+          mfaEnabled: true,
+          mfaEnforced: true,
+          lastLoginAt: true,
+          lastLoginIp: true,
+          lastLoginUa: true,
+        },
+      },
+      profile: true,
+      contact: true,
+      address: true,
+      emergencyContact: true,
+      jlaProfile: true,
+      nfcTag: true,
       createdAt: true,
       updatedAt: true,
       _count: { select: { passkeyCredentials: true } },
@@ -162,19 +149,29 @@ async function buildDetailJson(userId: string) {
 
   if (!user) return null;
 
-  const loginAudits = await prisma.auditLog.findMany({
-    where: {
-      actorUserId: userId,
-      action: "USER_LOGIN_SUCCESS",
-    },
+  const loginEvents = await prisma.userLoginEvent.findMany({
+    where: { userId },
     orderBy: { createdAt: "desc" },
     take: 40,
-    select: {
-      id: true,
-      createdAt: true,
-      meta: true,
-    },
+    select: loginEventListSelect,
   });
+
+  const loginAudits =
+    loginEvents.length === 0
+      ? await prisma.auditLog.findMany({
+          where: {
+            actorUserId: userId,
+            action: "USER_LOGIN_SUCCESS",
+          },
+          orderBy: { createdAt: "desc" },
+          take: 40,
+          select: {
+            id: true,
+            createdAt: true,
+            meta: true,
+          },
+        })
+      : [];
 
   const {
     memberships,
@@ -186,20 +183,53 @@ async function buildDetailJson(userId: string) {
     primaryClub,
     bankAccount,
     _count,
+    profile: userProfile,
+    contact,
+    address,
+    emergencyContact,
+    jlaProfile,
+    nfcTag,
+    security,
     ...scalarUser
   } = user;
 
   const profile = {
     ...scalarUser,
-    sex: scalarUser.sex as string,
-    dateOfBirth: iso(scalarUser.dateOfBirth),
+    emailVerified: security?.emailVerified ?? false,
+    mfaEnabled: security?.mfaEnabled ?? false,
+    mfaEnforced: security?.mfaEnforced ?? false,
+    lastLoginIp: security?.lastLoginIp ?? null,
+    lastLoginUa: security?.lastLoginUa ?? null,
+    familyName: userProfile?.familyName ?? null,
+    givenName: userProfile?.givenName ?? null,
+    familyNameKana: userProfile?.familyNameKana ?? null,
+    givenNameKana: userProfile?.givenNameKana ?? null,
+    normalizedFamilyName: userProfile?.normalizedFamilyName ?? null,
+    normalizedGivenName: userProfile?.normalizedGivenName ?? null,
+    sex: userProfile?.sex as string | undefined,
+    dateOfBirth: iso(userProfile?.dateOfBirth),
+    phoneNumber: contact?.phoneNumber ?? null,
+    phoneVerified: contact?.phoneVerified ?? false,
+    phoneVerifiedAt: iso(contact?.phoneVerifiedAt),
+    profilePhotoUrl: userProfile?.profilePhotoUrl ?? null,
+    postalCode: address?.postalCode ?? null,
+    prefecture: address?.prefecture ?? null,
+    city: address?.city ?? null,
+    addressLine1: address?.addressLine1 ?? null,
+    addressLine2: address?.addressLine2 ?? null,
+    emergencyContactFamilyName: emergencyContact?.familyName ?? null,
+    emergencyContactGivenName: emergencyContact?.givenName ?? null,
+    emergencyContactFamilyNameKana: emergencyContact?.familyNameKana ?? null,
+    emergencyContactGivenNameKana: emergencyContact?.givenNameKana ?? null,
+    emergencyContactPhone: emergencyContact?.phoneNumber ?? null,
+    jlaMemberNumber: jlaProfile?.jlaMemberNumber ?? null,
+    nfcTagId: nfcTag?.nfcTagId ?? null,
     deletedAt: iso(scalarUser.deletedAt),
     deletionScheduledAt: iso(scalarUser.deletionScheduledAt),
-    phoneVerifiedAt: iso(scalarUser.phoneVerifiedAt),
-    lastLoginAt: iso(scalarUser.lastLoginAt),
+    lastLoginAt: iso(security?.lastLoginAt),
     createdAt: iso(scalarUser.createdAt),
     updatedAt: iso(scalarUser.updatedAt),
-    phoneMasked: maskPhoneNumber(scalarUser.phoneNumber),
+    phoneMasked: contact?.phoneNumber ? maskPhoneNumber(contact.phoneNumber) : null,
   };
 
   const bankAccountMasked = bankAccount
@@ -265,6 +295,14 @@ async function buildDetailJson(userId: string) {
       primaryClub,
       bankAccount: bankAccountMasked,
     },
+    loginEvents: loginEvents.map((e) => ({
+      id: e.id,
+      createdAt: e.createdAt.toISOString(),
+      channel: e.channel,
+      channelLabel: authLoginChannelLabel(e.channel),
+      ipMasked: maskIpForDisplay(e.ipAddress),
+      userAgent: truncateUserAgent(e.userAgent, 160),
+    })),
     loginAudits: loginAudits.map((a) => ({
       id: a.id,
       createdAt: a.createdAt.toISOString(),
@@ -333,12 +371,16 @@ export async function GET(req: NextRequest) {
       where: buildNameContainsWhere(q),
       select: {
         id: true,
-        familyName: true,
-        givenName: true,
         email: true,
-        dateOfBirth: true,
+        profile: {
+          select: {
+            familyName: true,
+            givenName: true,
+            dateOfBirth: true,
+          },
+        },
       },
-      orderBy: [{ familyName: "asc" }, { givenName: "asc" }],
+      orderBy: [{ profile: { familyName: "asc" } }, { profile: { givenName: "asc" } }],
       take: NAME_SEARCH_TAKE,
     });
 
@@ -353,10 +395,10 @@ export async function GET(req: NextRequest) {
         truncated,
         candidates: candidates.map((r) => ({
           id: r.id,
-          familyName: r.familyName,
-          givenName: r.givenName,
+          familyName: r.profile?.familyName ?? "",
+          givenName: r.profile?.givenName ?? "",
           email: r.email,
-          dateOfBirth: r.dateOfBirth.toISOString(),
+          dateOfBirth: r.profile?.dateOfBirth.toISOString() ?? null,
         })),
       });
     }
