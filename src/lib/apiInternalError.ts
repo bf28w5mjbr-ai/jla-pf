@@ -6,15 +6,20 @@ import { safeServerErrorLog } from "@/lib/safeServerLog";
  * - 本番ではクライアントに内部詳細を返さない（自動スキャン・LLM による推論の材料を減らす）
  * - サーバー側は safeServerErrorLog（本番ではスタック抑制可）
  */
-export function logApiError(context: string, err: unknown): void {
-  safeServerErrorLog(context, err);
+export function logApiError(
+  context: string,
+  err: unknown,
+  options?: { requestId?: string }
+): void {
+  safeServerErrorLog(context, err, options);
 }
 
 export function jsonInternalError500(
   context: string,
-  err: unknown
+  err: unknown,
+  options?: { requestId?: string }
 ): NextResponse {
-  logApiError(context, err);
+  logApiError(context, err, options);
   const body: { error: string; message: string; details?: string } = {
     error: "internal_error",
     message: "サーバーでエラーが発生しました。時間をおいて再度お試しください。",

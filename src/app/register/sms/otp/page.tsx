@@ -12,6 +12,7 @@ import Link from "next/link";
 import { clearRegistrationFormDraft } from "@/lib/registrationFormDraft";
 import { appendRedirectQuery, safePostLoginPath } from "@/lib/postLoginRedirect";
 import { AuthShell, AuthPanel, AuthShellBrandedFallback } from "@/components/auth/AuthShell";
+import { userFacingApiErrorMessage } from "@/lib/userFacingApiError";
 import { Mail, Smartphone } from "lucide-react";
 
 function OTPVerifyContent() {
@@ -57,9 +58,22 @@ function OTPVerifyContent() {
       const data = await res.json();
 
       if (!res.ok) {
-        const message = data.error || "認証に失敗しました";
+        const message = userFacingApiErrorMessage(data, "認証に失敗しました");
         setError(message);
-        toast.error(message);
+        const suggestLogin =
+          data.existingUser === true ||
+          (typeof data.error === "string" && data.error.includes("既に登録"));
+        if (suggestLogin) {
+          toast.error(message, {
+            action: {
+              label: "ログインへ",
+              onClick: () => router.push(appendRedirectQuery("/login", redirectAfterRegister)),
+            },
+            duration: 12_000,
+          });
+        } else {
+          toast.error(message);
+        }
 
         if (data.maxAttemptsReached) {
           setTimeout(
@@ -114,7 +128,7 @@ function OTPVerifyContent() {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || "再送信に失敗しました");
+        toast.error(userFacingApiErrorMessage(data, "再送信に失敗しました"));
         if (data.cooldown) {
           setCooldown(data.cooldown);
         }

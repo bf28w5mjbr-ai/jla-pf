@@ -66,6 +66,14 @@
 - API 500 応答の `x-request-id` を控え、同じ ID をサーバーログで検索する。
 - 監査ログに `request.requestId` が残るため、操作追跡時は同一IDをキーに照合する。
 
+## 新規登録のメール認証で `internal_error` や 500 になる
+- ブラウザの Network で失敗した `POST /api/registration/verify` または `POST /api/registration/start` の **`x-request-id`** を控える（Vercel の Request ID と同一のことが多い）。
+- Vercel Runtime Logs で `POST api/registration/verify/route.ts` を検索し、同じ ID で **`[request_id=...]`** 付きの `console.error` 行（`Error.name` + `message`）を開く。スタックが足りないときは一時的に `LOG_FULL_ERROR_STACK=true`。
+- 所要時間が **3秒前後** で OTP 不一致（400）ではない場合、OTP 成功後の **`prisma.user.create`** または **`onAuthLoginSuccess`（`UserLoginEvent` / `AuthLoginChannel.REGISTRATION`）** で落ちている可能性が高い。後者は修正後は登録自体は成功し、ログイン履歴のみ失敗する。
+- `GET /api/health/ready` で `required.authSecret`・DB 接続・`registrationEmailOtp` / `resendApiKeyConfigured` を確認する。
+- ログに `Unique constraint` / `P2002` がある場合はメールまたは氏名+生年月日の重複。画面には日本語の 409 が出る想定（古いクライアントのみ `internal_error` 表示の可能性あり）。
+- ログに `AUTH_SECRET must be set` がある場合は本番の `AUTH_SECRET`（32文字以上）を設定する。
+
 ## ローカルでログインできない
 - `AUTH_SECRET` を含む必須環境変数を設定。
 - Cookie セッションが削除されていないか確認。

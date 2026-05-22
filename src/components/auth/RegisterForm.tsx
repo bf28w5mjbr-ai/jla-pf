@@ -15,6 +15,7 @@ import { AuthPanel } from "@/components/auth/AuthShell";
 import { FormSection } from "@/components/auth/FormSection";
 import { fieldHintClass, pageLeadClass } from "@/lib/explanation";
 import { appendRedirectQuery, safePostLoginPath } from "@/lib/postLoginRedirect";
+import { userFacingApiErrorMessage } from "@/lib/userFacingApiError";
 
 const INITIAL_FORM = {
   email: "",
@@ -162,7 +163,7 @@ function RegisterFormInner() {
       const data = await res.json();
 
       if (!res.ok) {
-        const baseMsg = data.error || "登録に失敗しました";
+        const baseMsg = userFacingApiErrorMessage(data, "登録に失敗しました");
         const detailMsg = firstZodIssueMessage(data.details);
         const message = detailMsg || baseMsg;
         const suggestLogin =

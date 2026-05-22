@@ -10,9 +10,9 @@ import { normalizeKana } from "@/lib/normalize-kana";
 import { isSupabaseSmsOtpChannelActive } from "@/lib/smsOtpSupabase";
 import { verifySmsOtpViaSupabase } from "@/lib/supabase/otp";
 import { findUserByNormalizedNameAndDob } from "@/lib/user-uniqueness";
-import { AuthLoginChannel } from "@prisma/client";
+import { AuthLoginChannel, Prisma } from "@prisma/client";
 import { onAuthLoginSuccess } from "@/lib/authLoginSuccess";
-import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { jsonInternalError500, logApiError } from "@/lib/apiInternalError";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 
 const VerifyOTPSchema = z.object({
@@ -21,10 +21,57 @@ const VerifyOTPSchema = z.object({
 });
 
 const MAX_OTP_ATTEMPTS = 5;
+
+function registrationUniqueConstraintResponse(
+  error: Prisma.PrismaClientKnownRequestError
+): NextResponse | null {
+  if (error.code !== "P2002") return null;
+  const target = error.meta?.target;
+  const fields = Array.isArray(target) ? target.map(String) : [];
+  const targetBlob = fields.join(" ").toLowerCase();
+
+  if (fields.includes("email") || targetBlob.includes("email")) {
+    return NextResponse.json(
+      {
+        error: "このメールアドレスは既に登録されています。最初からやり直してください。",
+        existingUser: true,
+      },
+      { status: 409 }
+    );
+  }
+
+  if (
+    fields.includes("normalizedFamilyName") ||
+    fields.includes("normalizedGivenName") ||
+    fields.includes("dateOfBirth") ||
+    targetBlob.includes("normalizedfamilyname") ||
+    targetBlob.includes("normalizedgivenname") ||
+    targetBlob.includes("dateofbirth") ||
+    targetBlob.includes("userprofile")
+  ) {
+    return NextResponse.json(
+      {
+        error: "同じ氏名・生年月日のアカウントが既に存在します。最初からやり直してください。",
+        existingUser: true,
+      },
+      { status: 409 }
+    );
+  }
+
+  return NextResponse.json(
+    { error: "登録情報が既に使用されています。最初からやり直してください。" },
+    { status: 409 }
+  );
+}
+
 export async function POST(req: NextRequest) {
+  let sessionIdForCleanup: string | undefined;
+  const requestId = req.headers.get("x-request-id") ?? undefined;
+
   try {
     const body = await req.json().catch(() => ({}));
     const data = VerifyOTPSchema.parse(body);
+    sessionIdForCleanup = data.sessionId;
 
     const session = await prisma.registrationSession.findUnique({
       where: { id: data.sessionId },
@@ -96,7 +143,10 @@ export async function POST(req: NextRequest) {
       if (existingEmail) {
         await prisma.registrationSession.delete({ where: { id: session.id } });
         return NextResponse.json(
-          { error: "このメールアドレスは既に登録されています。最初からやり直してください。" },
+          {
+            error: "このメールアドレスは既に登録されています。最初からやり直してください。",
+            existingUser: true,
+          },
           { status: 409 }
         );
       }
@@ -110,10 +160,13 @@ export async function POST(req: NextRequest) {
 
     if (duplicatePerson) {
       await prisma.registrationSession.delete({ where: { id: session.id } });
-      return NextResponse.json(
-        { error: "同じ氏名・生年月日のアカウントが既に存在します。最初からやり直してください。" },
-        { status: 409 }
-      );
+        return NextResponse.json(
+          {
+            error: "同じ氏名・生年月日のアカウントが既に存在します。最初からやり直してください。",
+            existingUser: true,
+          },
+          { status: 409 }
+        );
     }
 
     const verifiedPhoneBySms = session.registrationOtpDelivery !== "EMAIL";
@@ -184,7 +237,15 @@ export async function POST(req: NextRequest) {
       maxAge: 60 * 60 * 24 * 30,
     });
 
-    await onAuthLoginSuccess(user.id, req, { channel: AuthLoginChannel.REGISTRATION });
+    try {
+      await onAuthLoginSuccess(user.id, req, { channel: AuthLoginChannel.REGISTRATION });
+    } catch (loginTrackError) {
+      logApiError(
+        "POST api/registration/verify onAuthLoginSuccess (non-fatal)",
+        loginTrackError,
+        { requestId }
+      );
+    }
 
     return NextResponse.json({
       success: true,
@@ -195,6 +256,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(zodErrorJsonBody(error), { status: 400 });
     }
 
-    return jsonInternalError500("POST api/registration/verify/route.ts", error);
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      const conflict = registrationUniqueConstraintResponse(error);
+      if (conflict) {
+        if (sessionIdForCleanup) {
+          await prisma.registrationSession
+            .delete({ where: { id: sessionIdForCleanup } })
+            .catch(() => {});
+        }
+        return conflict;
+      }
+    }
+
+    return jsonInternalError500("POST api/registration/verify/route.ts", error, {
+      requestId,
+    });
   }
 }
