@@ -9,7 +9,7 @@ import { isClubAdminRole } from "@/lib/roleScopes";
 import { prisma } from "@/server/db";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { createNotification } from "@/lib/notificationService";
-import { isValidJapaneseMobile, toE164 } from "@/lib/phone";
+import { normalizeToE164, isValidMobileE164 } from "@/lib/phone";
 import {
   countClubIndividualEntryRows,
   countValidTechnicalOfficialAssignments,
@@ -215,18 +215,12 @@ export async function POST(
       });
     }
 
-    if (!isValidJapaneseMobile(smsPhone)) {
+    const phoneE164 = normalizeToE164(smsPhone, "JP");
+    if (!phoneE164 || !isValidMobileE164(phoneE164)) {
       return NextResponse.json(
-        { error: "SMS送信には有効な日本国内携帯番号を入力してください" },
+        { error: "SMS送信には有効な携帯電話番号を入力してください" },
         { status: 400 }
       );
-    }
-
-    let phoneE164: string;
-    try {
-      phoneE164 = toE164(smsPhone);
-    } catch {
-      return NextResponse.json({ error: "電話番号の形式が不正です" }, { status: 400 });
     }
 
     const dupPhone = await prisma.competitionTechnicalOfficialInvitation.findFirst({

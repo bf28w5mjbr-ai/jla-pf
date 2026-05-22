@@ -9,12 +9,13 @@ import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { hashOTP } from "@/lib/otp";
 import { sendOTPviaSMS } from "@/lib/sns";
+import { zE164Mobile } from "@/lib/zodPhone";
 import { isSmsOutboundHeld } from "@/lib/smsHoldPolicy";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { LoginSessionPurpose } from "@prisma/client";
 
 const PhoneChangeStartSchema = z.object({
-  phone: z.string().regex(/^0\d{9,10}$/),
+  phone: zE164Mobile(),
 });
 
 export async function POST(req: NextRequest) {

@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { toHalfWidthDigits } from "@/lib/numericInput";
+import { PhoneNumberField } from "@/components/ui/PhoneNumberField";
 
 type Organization = {
   id: string;
@@ -207,16 +208,12 @@ export default function EditOrganizationForm({
               />
             </div>
 
-            <div>
-              <Label htmlFor="phoneNumber">電話番号</Label>
-              <Input
-                id="phoneNumber"
-                type="tel"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(toHalfWidthDigits(e.target.value))}
-                placeholder="03-1234-5678"
-              />
-            </div>
+            <PhoneNumberField
+              id="phoneNumber"
+              label="電話番号"
+              value={phoneNumber}
+              onChange={setPhoneNumber}
+            />
           </div>
 
           <div>

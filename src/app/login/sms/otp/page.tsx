@@ -113,7 +113,7 @@ function OTPLoginContent() {
     return null;
   }
 
-  const subtitle = "登録の携帯番号宛に送信した6桁の認証コードを入力してください";
+  const subtitle = "登録の電話番号宛に送信した6桁の認証コードを入力してください";
 
   return (
     <AuthShell maxWidth="md" title="認証コード入力" subtitle={subtitle} subtitleDensity="balanced">

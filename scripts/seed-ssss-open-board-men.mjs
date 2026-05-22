@@ -142,7 +142,7 @@ async function main() {
 
   for (const { label, club } of teams) {
     for (let member = 1; member <= ENTRIES_PER_TEAM; member += 1) {
-      const email = `${SEED_EMAIL_MARKER}.team${label}.m${member}@seed.local`;
+      const email = `${SEED_EMAIL_MARKER}.team${label.toLowerCase()}.m${member}@seed.local`;
       const existed = await prisma.user.findUnique({ where: { email } });
       let userId = existed?.id ?? null;
 
@@ -170,6 +170,7 @@ async function main() {
               create: {
                 phoneNumber: phone,
                 phoneVerified: true,
+                phoneVerifiedAt: new Date(),
               },
             },
             address: {

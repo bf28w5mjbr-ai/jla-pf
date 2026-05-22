@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/server/db";
-import { isValidJapaneseMobile, phoneToE164Loose } from "@/lib/phone";
+import { isValidMobileE164, phoneToE164Loose } from "@/lib/phone";
 import {
   generateOTP,
   hashOTP,
@@ -145,11 +145,11 @@ export async function POST(req: NextRequest) {
       }
 
       const phoneE164 = phoneToE164Loose(user.contact?.phoneNumber ?? "");
-      if (!isValidJapaneseMobile(phoneE164)) {
+      if (!isValidMobileE164(phoneE164)) {
         return NextResponse.json(
           {
             error:
-              "登録されている電話番号がSMS認証に利用できません。プロフィールで携帯番号をご確認ください。",
+              "登録されている電話番号がSMS認証に利用できません。プロフィールで電話番号をご確認ください。",
           },
           { status: 400 }
         );
@@ -217,11 +217,11 @@ export async function POST(req: NextRequest) {
     }
 
     const phoneE164 = phoneToE164Loose(user.contact?.phoneNumber ?? "");
-    if (!isValidJapaneseMobile(phoneE164)) {
+    if (!isValidMobileE164(phoneE164)) {
       return NextResponse.json(
         {
           error:
-            "登録されている電話番号がSMS認証に利用できません。プロフィールで携帯番号をご確認ください。",
+            "登録されている電話番号がSMS認証に利用できません。プロフィールで電話番号をご確認ください。",
         },
         { status: 400 }
       );

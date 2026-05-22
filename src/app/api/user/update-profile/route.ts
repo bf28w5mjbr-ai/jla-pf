@@ -1,5 +1,9 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { normalizeKana } from "@/lib/normalize-kana";
+import {
+  isValidPhoneE164,
+  normalizeOptionalPhoneE164,
+} from "@/lib/phone";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { verifySession } from "@/lib/auth";
@@ -36,6 +40,20 @@ export async function PUT(request: NextRequest) {
 
     const normalizedFamilyName = normalizeKana(familyNameKana);
     const normalizedGivenName = normalizeKana(givenNameKana);
+
+    const emergencyPhoneE164 = normalizeOptionalPhoneE164(emergencyContactPhone);
+    if (emergencyContactPhone?.trim() && !emergencyPhoneE164) {
+      return NextResponse.json(
+        { error: "緊急連絡先の電話番号が正しくありません" },
+        { status: 400 }
+      );
+    }
+    if (emergencyPhoneE164 && !isValidPhoneE164(emergencyPhoneE164)) {
+      return NextResponse.json(
+        { error: "緊急連絡先の電話番号が正しくありません" },
+        { status: 400 }
+      );
+    }
 
     const updatedUser = await prisma.user.update({
       where: { id: session.userId },
@@ -87,12 +105,12 @@ export async function PUT(request: NextRequest) {
             create: {
               familyName: emergencyContactFamilyName || null,
               givenName: emergencyContactGivenName || null,
-              phoneNumber: emergencyContactPhone || null,
+              phoneNumber: emergencyPhoneE164,
             },
             update: {
               familyName: emergencyContactFamilyName || null,
               givenName: emergencyContactGivenName || null,
-              phoneNumber: emergencyContactPhone || null,
+              phoneNumber: emergencyPhoneE164,
             },
           },
         },

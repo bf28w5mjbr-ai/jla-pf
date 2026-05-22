@@ -8,6 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  PhoneNumberField,
+  validatePhoneFieldValue,
+} from "@/components/ui/PhoneNumberField";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -232,8 +236,9 @@ export default function ClubTechnicalOfficialRow({
   };
 
   const onSms = async () => {
-    if (!smsPhone.trim()) {
-      toast.error("携帯番号を入力してください");
+    const phoneErr = validatePhoneFieldValue(smsPhone, true);
+    if (phoneErr) {
+      toast.error(phoneErr);
       return;
     }
     setBusy(true);
@@ -243,7 +248,7 @@ export default function ClubTechnicalOfficialRow({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ smsPhone: smsPhone.trim() }),
+          body: JSON.stringify({ smsPhone }),
         }
       );
       const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -522,14 +527,14 @@ export default function ClubTechnicalOfficialRow({
             </p>
           ) : null}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <div className="min-w-0 flex-1 space-y-1">
-              <Label className="text-xs">SMS（携帯番号）</Label>
-              <Input
-                className="h-10"
-                placeholder="09012345678"
+            <div className="min-w-0 flex-1">
+              <PhoneNumberField
+                id="to-invite-sms-phone"
+                label="SMS（携帯番号）"
                 value={smsPhone}
-                onChange={(e) => setSmsPhone(e.target.value)}
-                inputMode="tel"
+                onChange={setSmsPhone}
+                mobileOnly
+                hint="SMSで招待できる携帯電話番号"
               />
             </div>
             <Button type="button" size="sm" variant="outline" disabled={busy} onClick={onSms}>

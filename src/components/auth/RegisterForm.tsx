@@ -14,6 +14,10 @@ import { REGISTRATION_FORM_DRAFT_KEY } from "@/lib/registrationFormDraft";
 import { AuthPanel } from "@/components/auth/AuthShell";
 import { FormSection } from "@/components/auth/FormSection";
 import { fieldHintClass, pageLeadClass } from "@/lib/explanation";
+import {
+  PhoneNumberField,
+  validatePhoneFieldValue,
+} from "@/components/ui/PhoneNumberField";
 import { appendRedirectQuery, safePostLoginPath } from "@/lib/postLoginRedirect";
 import { userFacingApiErrorMessage } from "@/lib/userFacingApiError";
 
@@ -128,6 +132,20 @@ function RegisterFormInner() {
     
     if (formData.password !== formData.confirmPassword) {
       toast.error("パスワードが一致しません");
+      return;
+    }
+
+    const phoneErr = validatePhoneFieldValue(formData.phoneNumber, true);
+    if (phoneErr) {
+      toast.error(phoneErr);
+      return;
+    }
+    const emergencyPhoneErr = validatePhoneFieldValue(
+      formData.emergencyContactPhone,
+      false
+    );
+    if (emergencyPhoneErr) {
+      toast.error(emergencyPhoneErr);
       return;
     }
 
@@ -323,20 +341,15 @@ function RegisterFormInner() {
             </RadioGroup>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="phoneNumber">電話番号 *</Label>
-            <Input
-              id="phoneNumber"
-              type="tel"
-              numericInput="integer"
-              placeholder="09012345678"
-              maxLength={11}
-              value={formData.phoneNumber}
-              onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
-              required
-            />
-            <p className={fieldHintClass("compact")}>携帯電話番号（ハイフンなし11桁）</p>
-          </div>
+          <PhoneNumberField
+            id="phoneNumber"
+            label="電話番号"
+            value={formData.phoneNumber}
+            onChange={(phoneNumber) => setFormData({ ...formData, phoneNumber })}
+            mobileOnly
+            required
+            hint="SMSで認証できる携帯電話番号"
+          />
         </FormSection>
 
         <FormSection
@@ -460,20 +473,15 @@ function RegisterFormInner() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="emergencyContactPhone">緊急連絡先電話番号 *</Label>
-                <Input
-                  id="emergencyContactPhone"
-                  type="tel"
-                  numericInput="integer"
-                  placeholder="09012345678"
-                  maxLength={11}
-                  value={formData.emergencyContactPhone}
-                  onChange={(e) => setFormData({ ...formData, emergencyContactPhone: e.target.value })}
-                  required
-                />
-                <p className={fieldHintClass("compact")}>ハイフンなし11桁</p>
-              </div>
+              <PhoneNumberField
+                id="emergencyContactPhone"
+                label="緊急連絡先電話番号"
+                value={formData.emergencyContactPhone}
+                onChange={(emergencyContactPhone) =>
+                  setFormData({ ...formData, emergencyContactPhone })
+                }
+                required
+              />
         </FormSection>
 
         <FormSection title="パスワード" descriptionDensity="compact">

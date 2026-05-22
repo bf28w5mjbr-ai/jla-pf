@@ -9,6 +9,7 @@ import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import { FormSection } from "@/components/auth/FormSection";
 import { fieldHintClass } from "@/lib/explanation";
+import { PhoneNumberField } from "@/components/ui/PhoneNumberField";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -256,24 +257,14 @@ export default function CreateClubForm() {
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="officePhone">事務局電話番号</Label>
-          <Input
-            id="officePhone"
-            type="tel"
-            numericInput="integer"
-            placeholder="0312345678"
-            maxLength={11}
-            value={formData.officePhone}
-            onChange={(e) =>
-              setFormData((prev) => ({
-                ...prev,
-                officePhone: e.target.value,
-              }))
-            }
-          />
-          <p className={fieldHintClass("compact")}>ハイフンなし10〜11桁で入力してください</p>
-        </div>
+        <PhoneNumberField
+          id="officePhone"
+          label="事務局電話番号"
+          value={formData.officePhone}
+          onChange={(officePhone) =>
+            setFormData((prev) => ({ ...prev, officePhone }))
+          }
+        />
 
         <div className="space-y-2">
           <Label htmlFor="mailingName">郵便物の宛名</Label>

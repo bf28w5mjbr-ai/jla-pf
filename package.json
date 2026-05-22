@@ -49,7 +49,18 @@
     "backfill:team-only-zero-fee:dry": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-team-only-intent-zero-total-fee.ts --dry-run",
     "backfill:team-only-zero-fee": "tsx --tsconfig tsconfig.json --env-file=.env.local scripts/backfill-team-only-intent-zero-total-fee.ts --apply",
     "backfill:team-entry-single-suffix:dry": "tsx --tsconfig tsconfig.json scripts/backfill-team-entry-single-suffix-names.ts --dry-run",
-    "backfill:team-entry-single-suffix": "tsx --tsconfig tsconfig.json scripts/backfill-team-entry-single-suffix-names.ts --apply"
+    "backfill:team-entry-single-suffix": "tsx --tsconfig tsconfig.json scripts/backfill-team-entry-single-suffix-names.ts --apply",
+    "audit:registration-data": "tsx --tsconfig tsconfig.json --env-file=.env scripts/audit-registration-data-consistency.ts",
+    "backfill:profile-normalized-kana:dry": "tsx --tsconfig tsconfig.json --env-file=.env scripts/backfill-user-profile-normalized-kana.ts --dry-run",
+    "backfill:profile-normalized-kana": "tsx --tsconfig tsconfig.json --env-file=.env scripts/backfill-user-profile-normalized-kana.ts --apply",
+    "backfill:seed-user-hygiene:dry": "tsx --tsconfig tsconfig.json --env-file=.env scripts/backfill-seed-user-hygiene.ts --dry-run",
+    "backfill:seed-user-hygiene": "tsx --tsconfig tsconfig.json --env-file=.env scripts/backfill-seed-user-hygiene.ts --apply",
+    "cleanup:registration-sessions:dry": "tsx --tsconfig tsconfig.json --env-file=.env scripts/cleanup-expired-registration-sessions.ts --dry-run",
+    "cleanup:registration-sessions": "tsx --tsconfig tsconfig.json --env-file=.env scripts/cleanup-expired-registration-sessions.ts --apply",
+    "report:duplicate-person-profiles": "tsx --tsconfig tsconfig.json --env-file=.env scripts/report-duplicate-person-profiles.ts",
+    "compare:user-footprint": "tsx --tsconfig tsconfig.json --env-file=.env scripts/compare-user-data-footprint.ts",
+    "merge:duplicate-users:dry": "tsx --tsconfig tsconfig.json --env-file=.env scripts/merge-duplicate-users.ts --dry-run",
+    "merge:duplicate-users": "tsx --tsconfig tsconfig.json --env-file=.env scripts/merge-duplicate-users.ts --apply"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1024.0",
@@ -90,6 +101,7 @@
     "firebase-admin": "^13.7.0",
     "jose": "^6.1.3",
     "js-yaml": "^4.1.1",
+    "libphonenumber-js": "^1.13.2",
     "lucide-react": "^0.469.0",
     "nanoid": "^5.1.6",
     "next": "16.2.2",

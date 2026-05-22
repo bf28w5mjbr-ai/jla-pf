@@ -56,7 +56,7 @@ function SMSLoginContent() {
       >
         <AuthPanel>
           <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
-            SMS送信を保留しているため、携帯番号への認証コード送信ができません。メールアドレスとパスワード、またはパスキーでログインしてください。
+            SMS送信を保留しているため、登録電話番号への認証コード送信ができません。メールアドレスとパスワード、またはパスキーでログインしてください。
           </p>
           <Button className="w-full" asChild>
             <Link href={appendRedirectQuery("/login", redirectAfterLogin)}>ログイン画面へ</Link>
@@ -131,7 +131,7 @@ function SMSLoginContent() {
     <AuthShell
       maxWidth="md"
       title="SMS認証ログイン"
-      subtitle="登録のメールアドレス・お名前で本人確認し、登録済みの携帯番号へ認証コードを送ります。"
+      subtitle="登録のメールアドレス・お名前で本人確認し、登録済みの電話番号へ認証コードを送ります。"
       subtitleDensity="balanced"
     >
       <AuthPanel>

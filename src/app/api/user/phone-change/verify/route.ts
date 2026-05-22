@@ -10,11 +10,12 @@ import { prisma } from "@/server/db";
 import { verifyOTP } from "@/lib/otp";
 import { sendSecurityNoticeSms } from "@/lib/sns";
 import { phoneToE164Loose } from "@/lib/phone";
+import { zE164Mobile } from "@/lib/zodPhone";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { LoginSessionPurpose } from "@prisma/client";
 
 const PhoneChangeVerifySchema = z.object({
-  phone: z.string().regex(/^0\d{9,10}$/),
+  phone: zE164Mobile(),
   otp: z.string().length(6),
 });
 

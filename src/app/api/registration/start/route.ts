@@ -14,7 +14,7 @@ import {
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 import { prisma } from "@/server/db";
-import { isValidJapaneseMobile, toE164 } from "@/lib/phone";
+import { zE164Mobile, zE164Phone } from "@/lib/zodPhone";
 import { normalizeKana } from "@/lib/normalize-kana";
 import { findUserByNormalizedNameAndDob } from "@/lib/user-uniqueness";
 import {
@@ -41,7 +41,7 @@ import {
 const MAX_HOURLY_SENDS = 5;
 const RESEND_COOLDOWN = 60;
 const InitialRegistrationSchema = z.object({
-  phoneNumber: z.string().min(10),
+  phoneNumber: zE164Mobile("有効な携帯電話番号を入力してください"),
   familyName: z.string().min(1),
   givenName: z.string().min(1),
   familyNameKana: z.string().min(1),
@@ -57,7 +57,7 @@ const InitialRegistrationSchema = z.object({
   emergencyContactGivenName: z.string().min(1, "緊急連絡先の名を入力してください"),
   emergencyContactFamilyNameKana: z.string().min(1, "緊急連絡先の姓（カナ）を入力してください"),
   emergencyContactGivenNameKana: z.string().min(1, "緊急連絡先の名（カナ）を入力してください"),
-  emergencyContactPhone: z.string().min(10, "緊急連絡先の電話番号を入力してください"),
+  emergencyContactPhone: zE164Phone("緊急連絡先の電話番号を入力してください"),
   email: z.string().email("有効なメールアドレスを入力してください"),
   password: z.string().min(8, "パスワードは8文字以上で入力してください"),
   resend: z.literal(false).optional(),
@@ -221,14 +221,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (!isValidJapaneseMobile(data.phoneNumber)) {
-      return NextResponse.json(
-        { error: "有効な日本国内の携帯電話番号を入力してください" },
-        { status: 400 }
-      );
-    }
-
-    const phoneE164 = toE164(data.phoneNumber);
+    const phoneE164 = data.phoneNumber;
 
     const normalizedEmail = data.email.trim().toLowerCase();
 

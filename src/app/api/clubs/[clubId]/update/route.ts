@@ -4,6 +4,10 @@ import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { requireClubAdmin } from "@/lib/accessControl";
 import { parseOptionalWebsiteUrlField } from "@/lib/safeExternalUrl";
+import {
+  isValidPhoneE164,
+  normalizeOptionalPhoneE164,
+} from "@/lib/phone";
 
 export async function PUT(
   req: NextRequest,
@@ -60,6 +64,14 @@ export async function PUT(
 
     const lifesaving = Boolean(isLifesavingClub);
 
+    const officePhoneE164 = normalizeOptionalPhoneE164(officePhone);
+    if (officePhone?.trim() && (!officePhoneE164 || !isValidPhoneE164(officePhoneE164))) {
+      return NextResponse.json(
+        { error: "事務局電話番号の形式が正しくありません" },
+        { status: 400 }
+      );
+    }
+
     // クラブ情報を更新
     const club = await prisma.club.update({
       where: { id: clubId },
@@ -76,7 +88,7 @@ export async function PUT(
         officeCity: officeCity?.trim() || null,
         officeAddressLine1: officeAddressLine1?.trim() || null,
         officeAddressLine2: officeAddressLine2?.trim() || null,
-        officePhone: officePhone?.trim() || null,
+        officePhone: officePhoneE164,
         mailingName: mailingName?.trim() || null,
       },
     });

@@ -192,6 +192,7 @@ async function main() {
           create: {
             phoneNumber: phone,
             phoneVerified: true,
+            phoneVerifiedAt: new Date(),
           },
         },
         address: {

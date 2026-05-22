@@ -12,6 +12,10 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
 import { fieldHintClass } from "@/lib/explanation";
 import { cn } from "@/lib/utils";
+import {
+  PhoneNumberField,
+  validatePhoneFieldValue,
+} from "@/components/ui/PhoneNumberField";
 
 interface EditProfileFormProps {
   user: {
@@ -113,6 +117,18 @@ export default function EditProfileForm({ user }: EditProfileFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (formData.emergencyContactPhone.trim()) {
+      const phoneErr = validatePhoneFieldValue(
+        formData.emergencyContactPhone,
+        false
+      );
+      if (phoneErr) {
+        toast.error(phoneErr);
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
@@ -356,22 +372,15 @@ export default function EditProfileForm({ user }: EditProfileFormProps) {
                 />
               </div>
             </div>
-            <div className="max-w-md space-y-2">
-              <Label htmlFor="emergencyContactPhone">電話番号</Label>
-              <Input
+            <div className="max-w-md">
+              <PhoneNumberField
                 id="emergencyContactPhone"
-                type="tel"
-                inputMode="numeric"
-                numericInput="integer"
-                placeholder="09012345678"
-                maxLength={11}
-                autoComplete="tel"
+                label="電話番号"
                 value={formData.emergencyContactPhone}
-                onChange={(e) =>
-                  setFormData({ ...formData, emergencyContactPhone: e.target.value })
+                onChange={(emergencyContactPhone) =>
+                  setFormData({ ...formData, emergencyContactPhone })
                 }
               />
-              <p className={fieldHintClass("compact")}>ハイフンなし11桁</p>
             </div>
           </FormSection>
 

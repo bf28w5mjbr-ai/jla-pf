@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Save, X } from "lucide-react";
 import { fieldHintClass, pageIntroTextClass } from "@/lib/explanation";
+import { PhoneNumberField } from "@/components/ui/PhoneNumberField";
 import { appRoutes } from "@/lib/appRoutes";
 import { cn } from "@/lib/utils";
 
@@ -299,19 +300,12 @@ export default function EditClubForm({ club }: EditClubFormProps) {
             </div>
 
             {/* 事務局電話番号 */}
-            <div className="space-y-2">
-              <Label htmlFor="officePhone">事務局電話番号</Label>
-              <Input
-                id="officePhone"
-                type="tel"
-                numericInput="integer"
-                placeholder="例: 0312345678"
-                maxLength={11}
-                value={formData.officePhone}
-                onChange={(e) => setFormData({ ...formData, officePhone: e.target.value })}
-              />
-              <p className={fieldHintClass("compact")}>ハイフンなし10〜11桁で入力してください</p>
-            </div>
+            <PhoneNumberField
+              id="officePhone"
+              label="事務局電話番号"
+              value={formData.officePhone}
+              onChange={(officePhone) => setFormData({ ...formData, officePhone })}
+            />
 
             {/* 郵便物の宛名 */}
             <div className="space-y-2">

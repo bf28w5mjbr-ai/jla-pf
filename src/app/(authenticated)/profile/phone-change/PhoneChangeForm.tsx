@@ -4,6 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { normalizeIntegerNumericInput } from "@/lib/numericInput";
 import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
+import {
+  PhoneNumberField,
+  validatePhoneFieldValue,
+} from "@/components/ui/PhoneNumberField";
+import { toNationalFormat } from "@/lib/phone";
 
 interface Props {
   currentPhone: string;
@@ -18,15 +23,13 @@ export default function PhoneChangeForm({ currentPhone }: Props) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setNewPhone(normalizeIntegerNumericInput(e.target.value));
-  };
+  const displayCurrent =
+    currentPhone.startsWith("+") ? toNationalFormat(currentPhone) : currentPhone;
 
   const handleOtpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setOtp(normalizeIntegerNumericInput(e.target.value));
   };
 
-  // ステップ1: パスワード認証
   const handleVerifyPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -54,10 +57,10 @@ export default function PhoneChangeForm({ currentPhone }: Props) {
     }
   };
 
-  // ステップ2: OTP送信
   const handleSendOTP = async () => {
-    if (!newPhone || !/^0\d{9,10}$/.test(newPhone)) {
-      setError("有効な電話番号を入力してください");
+    const phoneErr = validatePhoneFieldValue(newPhone, true);
+    if (phoneErr) {
+      setError(phoneErr);
       return;
     }
 
@@ -86,9 +89,14 @@ export default function PhoneChangeForm({ currentPhone }: Props) {
     }
   };
 
-  // ステップ3: OTP検証と電話番号変更
   const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
+    const phoneErr = validatePhoneFieldValue(newPhone, true);
+    if (phoneErr) {
+      setError(phoneErr);
+      return;
+    }
+
     setError("");
     setLoading(true);
 
@@ -123,7 +131,9 @@ export default function PhoneChangeForm({ currentPhone }: Props) {
           <label className="block text-sm font-semibold mb-3 text-gray-900 dark:text-gray-100">
             現在の電話番号
           </label>
-          <p className="text-3xl font-mono font-black text-black dark:text-white tracking-wide">{currentPhone}</p>
+          <p className="text-3xl font-mono font-black text-black dark:text-white tracking-wide">
+            {displayCurrent}
+          </p>
         </div>
 
         <div>
@@ -163,23 +173,15 @@ export default function PhoneChangeForm({ currentPhone }: Props) {
 
   return (
     <AutofillSyncForm onSubmit={handleVerifyOTP} className="space-y-6">
-      <div>
-        <label className="block text-sm font-semibold mb-3 text-gray-900 dark:text-gray-100">
-          新しい電話番号 <span className="text-red-600 dark:text-red-400">*</span>
-        </label>
-        <input
-          type="tel"
-          value={newPhone}
-          onChange={handlePhoneChange}
-          className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-3 text-base font-mono bg-white dark:bg-gray-900 text-black dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-          placeholder="09012345678"
-          inputMode="numeric"
-          required
-        />
-        <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-          ハイフンなしで入力してください
-        </p>
-      </div>
+      <PhoneNumberField
+        id="newPhone"
+        label="新しい電話番号"
+        value={newPhone}
+        onChange={setNewPhone}
+        mobileOnly
+        required
+        hint="SMSで認証できる携帯電話番号"
+      />
 
       <button
         type="button"

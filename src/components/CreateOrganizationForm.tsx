@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { toHalfWidthDigits } from "@/lib/numericInput";
 import { pageIntroTextClass } from "@/lib/explanation";
+import { PhoneNumberField } from "@/components/ui/PhoneNumberField";
 import { cn } from "@/lib/utils";
 
 type CreateOrganizationFormProps = {
@@ -228,16 +229,12 @@ export default function CreateOrganizationForm({
               />
             </div>
 
-            <div>
-              <Label htmlFor="phoneNumber">電話番号</Label>
-              <Input
-                id="phoneNumber"
-                type="tel"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(toHalfWidthDigits(e.target.value))}
-                placeholder="03-1234-5678"
-              />
-            </div>
+            <PhoneNumberField
+              id="phoneNumber"
+              label="電話番号"
+              value={phoneNumber}
+              onChange={setPhoneNumber}
+            />
           </div>
 
           <div>

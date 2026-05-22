@@ -4,6 +4,10 @@ import { prisma } from "@/server/db";
 import { verifySession } from "@/lib/auth";
 import { normalizeOrgRoleForWrite } from "@/lib/roleScopes";
 import { parseOptionalWebsiteUrlField } from "@/lib/safeExternalUrl";
+import {
+  isValidPhoneE164,
+  normalizeOptionalPhoneE164,
+} from "@/lib/phone";
 
 export async function POST(request: NextRequest) {
   try {
@@ -69,6 +73,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const phoneNumberE164 = normalizeOptionalPhoneE164(phoneNumber);
+    if (phoneNumber?.trim() && (!phoneNumberE164 || !isValidPhoneE164(phoneNumberE164))) {
+      return NextResponse.json(
+        { error: "電話番号の形式が正しくありません" },
+        { status: 400 }
+      );
+    }
+
     // 団体を作成（代表者情報は作成者の情報を使用）
     const organization = await prisma.organization.create({
       data: {
@@ -77,7 +89,7 @@ export async function POST(request: NextRequest) {
         abbreviation: abbreviation?.trim() || null,
         websiteUrl: websiteUrlParsed.value,
         email: email?.trim() || null,
-        phoneNumber: phoneNumber?.trim() || null,
+        phoneNumber: phoneNumberE164,
         representativeFamilyName: user.profile.familyName,
         representativeGivenName: user.profile.givenName,
         representativeFamilyNameKana: user.profile.familyNameKana,
