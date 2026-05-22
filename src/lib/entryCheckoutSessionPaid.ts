@@ -21,3 +21,15 @@ export const competitionEntryPaidCheckoutWhere: Prisma.CompetitionEntryWhereInpu
     some: { status: { in: [...ENTRY_CHECKOUT_PAID_STATUSES] } },
   },
 };
+
+/**
+ * スタートリスト掲載・スナップショット構築用の個人エントリー条件。
+ * {@link isEntryEstablished}（entryFinalization）と整合: 無料・クラブ一括払い済み・Checkout 成立のいずれか。
+ */
+export const competitionEntryEligibleForStartListWhere: Prisma.CompetitionEntryWhereInput = {
+  OR: [
+    { totalFee: { lte: 0 } },
+    { clubIndividualFeePaidAt: { not: null } },
+    competitionEntryPaidCheckoutWhere,
+  ],
+};

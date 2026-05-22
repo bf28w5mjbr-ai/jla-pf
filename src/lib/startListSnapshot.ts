@@ -1,5 +1,5 @@
 import { prisma } from "@/server/db";
-import { competitionEntryPaidCheckoutWhere } from "@/lib/entryCheckoutSessionPaid";
+import { competitionEntryEligibleForStartListWhere } from "@/lib/entryCheckoutSessionPaid";
 import { heatPlanSplitFingerprint } from "@/lib/eventHeatPlanMarshal";
 import { hasIndividualWithdrawalForEvent } from "@/lib/entryWithdrawalAdminLabel";
 import {
@@ -123,7 +123,7 @@ async function competitionHasEligibleParticipantsForSnapshot(competitionId: stri
       where: {
         competitionId,
         status: "SUBMITTED",
-        OR: [{ totalFee: { lte: 0 } }, competitionEntryPaidCheckoutWhere],
+        ...competitionEntryEligibleForStartListWhere,
       },
     }),
     prisma.teamEntry.count({ where: { competitionId } }),
@@ -212,7 +212,7 @@ export async function buildStartListSnapshotPayload(
   const entryWhere = {
     competitionId,
     status: "SUBMITTED" as const,
-    OR: [{ totalFee: { lte: 0 } }, competitionEntryPaidCheckoutWhere],
+    ...competitionEntryEligibleForStartListWhere,
     ...(onlyArray
       ? {
           items: { some: { eventId: { in: onlyArray } } },
@@ -560,7 +560,7 @@ export async function repairStartListSnapshotEmptyHeadHeatsWhenEntriesExist(para
       where: {
         competitionId,
         status: "SUBMITTED",
-        OR: [{ totalFee: { lte: 0 } }, competitionEntryPaidCheckoutWhere],
+        ...competitionEntryEligibleForStartListWhere,
       },
     }),
     prisma.teamEntry.count({ where: { competitionId } }),

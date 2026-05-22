@@ -1,5 +1,5 @@
 import type { EventType } from "@prisma/client";
-import { competitionEntryPaidCheckoutWhere } from "@/lib/entryCheckoutSessionPaid";
+import { competitionEntryEligibleForStartListWhere } from "@/lib/entryCheckoutSessionPaid";
 import { prisma } from "@/server/db";
 
 /**
@@ -21,7 +21,7 @@ export async function fetchPaidEntryCountByEventId(
         entry: {
           competitionId,
           status: "SUBMITTED",
-          OR: [{ totalFee: { lte: 0 } }, competitionEntryPaidCheckoutWhere],
+          ...competitionEntryEligibleForStartListWhere,
         },
       },
       _count: { id: true },

@@ -9,7 +9,7 @@
 
 import { PrismaClient } from "@prisma/client";
 import { afterAll, describe, expect, it } from "vitest";
-import { competitionEntryPaidCheckoutWhere } from "./entryCheckoutSessionPaid";
+import { competitionEntryEligibleForStartListWhere } from "./entryCheckoutSessionPaid";
 import { computeHeatCountFromMaxLanes } from "./startListRounds";
 
 const COMPETITION_NAME = "POTATO CHALLENGE Yuigahama IRON";
@@ -72,7 +72,7 @@ describe.skipIf(!integrationEnabled)("スタートリスト統合（DB: POTATO /
       where: {
         competitionId: competition.id,
         status: "SUBMITTED",
-        OR: [{ totalFee: { lte: 0 } }, competitionEntryPaidCheckoutWhere],
+        ...competitionEntryEligibleForStartListWhere,
         items: { some: { eventId: event.id } },
       },
     });
