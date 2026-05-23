@@ -18,6 +18,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint",
     "test": "vitest",
+    "test:registration": "vitest run src/lib/registration src/lib/otp/verifyChannelOtp.test.ts src/lib/smsHoldPolicy.test.ts",
+    "check:registration-otp": "node scripts/check-registration-otp-invariants.mjs",
     "migrate:storage:supabase": "node --env-file=.env.local scripts/migrate-storage-to-supabase.mjs",
     "migrate:storage:supabase:dry": "node --env-file=.env.local scripts/migrate-storage-to-supabase.mjs --dry-run",
     "cleanup:uploads:dry": "node scripts/cleanup-local-uploads.mjs --dry-run",

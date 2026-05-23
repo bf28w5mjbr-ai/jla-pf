@@ -73,6 +73,15 @@
 - `GET /api/health/ready` で `required.authSecret`・DB 接続・`registrationEmailOtp` / `resendApiKeyConfigured` を確認する。
 - ログに `Unique constraint` / `P2002` がある場合はメールまたは氏名+生年月日の重複。画面には日本語の 409 が出る想定（古いクライアントのみ `internal_error` 表示の可能性あり）。
 - ログに `AUTH_SECRET must be set` がある場合は本番の `AUTH_SECRET`（32文字以上）を設定する。
+- Runtime Logs の `[registration/verify]` で `phase` を確認する（`otp_ok` → `user_created` → `cookie_set` の順）。`user_created` 後に落ちる場合は Cookie / `AUTH_SECRET` を疑う。
+
+## 新規登録メール認証の再発防止
+
+- **デプロイ前**: `GET /api/health/ready` で `required.authSecret`・`registrationEmailOtp`・`resendApiKeyConfigured`・`warnings` が空であることを確認する。
+- **CI**: `node scripts/check-registration-otp-invariants.mjs` が登録 verify ルートの必須パターン（`verifyRegistrationOtp`・`$transaction` 等）を検査する。
+- **テスト**: `pnpm test:registration` で OTP 検証経路と P2002→409 変換を実行する。
+- **本番監視**: Vercel Logs で `POST api/registration/verify/route.ts` の 500 件数をウォッチし、`[registration/verify] phase=user_created` の直後のエラーをアラート対象にする。
+- **環境変数**: メール OTP 運用時は `SKIP_SMS=true`・`REGISTRATION_EMAIL_OTP=true`・`RESEND_API_KEY`・`AUTH_SECRET`（32文字以上）をセットで設定する。
 
 ## ローカルでログインできない
 - `AUTH_SECRET` を含む必須環境変数を設定。

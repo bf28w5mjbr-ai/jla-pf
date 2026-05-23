@@ -1,6 +1,4 @@
-import { verifyOTP } from "@/lib/otp";
-import { isSupabaseSmsOtpChannelActive } from "@/lib/smsOtpSupabase";
-import { verifySmsOtpViaSupabase } from "@/lib/supabase/otp";
+import { verifyChannelOtp } from "@/lib/otp/verifyChannelOtp";
 
 export type RegistrationOtpSession = {
   registrationOtpDelivery: string | null;
@@ -16,18 +14,11 @@ export async function verifyRegistrationOtp(
   session: RegistrationOtpSession,
   otp: string
 ): Promise<boolean> {
-  if (session.registrationOtpDelivery === "EMAIL") {
-    return verifyOTP(otp, session.otpHash);
-  }
-
-  if (isSupabaseSmsOtpChannelActive()) {
-    try {
-      return await verifySmsOtpViaSupabase(session.phoneNumber, otp);
-    } catch (error) {
-      console.error("[registration/verify] Supabase OTP verification failed:", error);
-      return false;
-    }
-  }
-
-  return verifyOTP(otp, session.otpHash);
+  return verifyChannelOtp({
+    otp,
+    otpHash: session.otpHash,
+    phoneNumber: session.phoneNumber,
+    useStoredOtp: session.registrationOtpDelivery === "EMAIL",
+    logContext: "registration/verify",
+  });
 }

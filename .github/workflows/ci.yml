@@ -28,6 +28,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Migration gate
         run: node scripts/check-prisma-migration-consistency.mjs
+      - name: Registration OTP invariants
+        run: node scripts/check-registration-otp-invariants.mjs
       - name: Typecheck
         run: pnpm typecheck
       - name: Lint

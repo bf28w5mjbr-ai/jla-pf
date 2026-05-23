@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/env";
-import { getSmsAuthPublicFlags } from "@/lib/smsHoldPolicy";
+import { getSmsAuthPublicFlags, getRegistrationEmailOtpConfigWarnings } from "@/lib/smsHoldPolicy";
 
 export async function GET(request: NextRequest) {
   const deepCheck = request.nextUrl.searchParams.get("deep") === "1";
@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
     firebaseServiceAccount: hasFirebaseServiceAccount,
     cronSecret: hasCronSecret,
   };
+  const registrationWarnings = getRegistrationEmailOtpConfigWarnings();
   if (!required.authSecret || !required.databaseUrl) {
     return NextResponse.json(
       {
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
         error: "required_env_missing",
         required,
         integrations,
+        warnings: registrationWarnings,
         ...getSmsAuthPublicFlags(),
       },
       { status: 503 }
@@ -54,13 +56,14 @@ export async function GET(request: NextRequest) {
     const deep = {
       stripeApi,
     };
-    const ok = stripeApi !== "failed";
+    const ok = stripeApi !== "failed" && registrationWarnings.length === 0;
     return NextResponse.json(
       {
         ok,
         mode: "ready",
         required,
         integrations,
+        warnings: registrationWarnings,
         deep,
         ...getSmsAuthPublicFlags(),
       },
@@ -75,6 +78,7 @@ export async function GET(request: NextRequest) {
         error: "database_connection_failed",
         required,
         integrations,
+        warnings: registrationWarnings,
         ...getSmsAuthPublicFlags(),
       },
       { status: 503 }

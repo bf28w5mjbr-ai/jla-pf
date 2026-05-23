@@ -29,3 +29,24 @@ export function getSmsAuthPublicFlags() {
     resendApiKeyConfigured: Boolean(process.env.RESEND_API_KEY?.trim()),
   };
 }
+
+/**
+ * メール登録 OTP 有効時に不足しがちな設定を列挙（503 ではなく warnings として返す想定）。
+ */
+export function getRegistrationEmailOtpConfigWarnings(): string[] {
+  const warnings: string[] = [];
+  const flags = getSmsAuthPublicFlags();
+
+  if (!flags.registrationEmailOtp) return warnings;
+
+  if (!flags.resendApiKeyConfigured) {
+    warnings.push("registration_email_otp_enabled_but_resend_api_key_missing");
+  }
+
+  const authSecret = process.env.AUTH_SECRET;
+  if (!authSecret || authSecret.length < 32) {
+    warnings.push("auth_secret_missing_or_too_short_for_session_issue");
+  }
+
+  return warnings;
+}

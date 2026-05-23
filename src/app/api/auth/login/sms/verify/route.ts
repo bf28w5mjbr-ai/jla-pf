@@ -5,14 +5,12 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/server/db";
-import { verifyOTP, isOTPValid } from "@/lib/otp";
-import { signSession } from "@/lib/auth";
-import { cookies } from "next/headers";
-import { isSupabaseSmsOtpChannelActive } from "@/lib/smsOtpSupabase";
-import { verifySmsOtpViaSupabase } from "@/lib/supabase/otp";
+import { isOTPValid } from "@/lib/otp";
+import { verifyChannelOtp } from "@/lib/otp/verifyChannelOtp";
+import { issueSessionCookie } from "@/lib/auth/issueSessionCookie";
 import { AuthLoginChannel } from "@prisma/client";
 import { onAuthLoginSuccess } from "@/lib/authLoginSuccess";
-import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { jsonInternalError500, logApiError } from "@/lib/apiInternalError";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 import { LoginSessionPurpose } from "@prisma/client";
 
@@ -67,9 +65,13 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. OTP検証
-    const isValid = isSupabaseSmsOtpChannelActive()
-      ? await verifySmsOtpViaSupabase(loginSession.phoneNumber, data.otp)
-      : await verifyOTP(data.otp, loginSession.otpHash);
+    const isValid = await verifyChannelOtp({
+      otp: data.otp,
+      otpHash: loginSession.otpHash,
+      phoneNumber: loginSession.phoneNumber,
+      useStoredOtp: false,
+      logContext: "auth/login/sms/verify",
+    });
 
     if (!isValid) {
       // 失敗回数を増やす
@@ -128,20 +130,18 @@ export async function POST(req: NextRequest) {
     await prisma.loginSession.delete({ where: { id: loginSession.id } });
 
     // 7. JWTセッション作成
-    const token = await signSession({ userId: user.id });
+    await issueSessionCookie(user.id);
 
-    const jar = await cookies();
-    jar.set("session", token, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 30, // 30日間
-    });
+    try {
+      await onAuthLoginSuccess(user.id, req, { channel: AuthLoginChannel.SMS_OTP });
+    } catch (loginTrackError) {
+      logApiError(
+        "POST api/auth/login/sms/verify onAuthLoginSuccess (non-fatal)",
+        loginTrackError
+      );
+    }
 
-    await onAuthLoginSuccess(user.id, req, { channel: AuthLoginChannel.SMS_OTP });
-
-    return NextResponse.json({ 
+    return NextResponse.json({
       ok: true,
       message: "ログインしました"
     });

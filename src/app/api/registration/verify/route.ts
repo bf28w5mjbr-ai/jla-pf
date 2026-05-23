@@ -9,8 +9,9 @@ import { isOTPValid } from "@/lib/otp";
 import { normalizeKana } from "@/lib/normalize-kana";
 import { findUserByNormalizedNameAndDob } from "@/lib/user-uniqueness";
 import { verifyRegistrationOtp } from "@/lib/registration/verifyRegistrationOtp";
-import { issueRegistrationSessionCookie } from "@/lib/registration/issueRegistrationSessionCookie";
+import { issueSessionCookie } from "@/lib/auth/issueSessionCookie";
 import { logRegistrationVerifyPhase } from "@/lib/registration/logRegistrationVerifyPhase";
+import { registrationUniqueConstraintResponse } from "@/lib/registration/registrationUniqueConstraintResponse";
 import { AuthLoginChannel, Prisma, RegistrationSession } from "@prisma/client";
 import { onAuthLoginSuccess } from "@/lib/authLoginSuccess";
 import { jsonInternalError500, logApiError } from "@/lib/apiInternalError";
@@ -22,48 +23,6 @@ const VerifyOTPSchema = z.object({
 });
 
 const MAX_OTP_ATTEMPTS = 5;
-
-function registrationUniqueConstraintResponse(
-  error: Prisma.PrismaClientKnownRequestError
-): NextResponse | null {
-  if (error.code !== "P2002") return null;
-  const target = error.meta?.target;
-  const fields = Array.isArray(target) ? target.map(String) : [];
-  const targetBlob = fields.join(" ").toLowerCase();
-
-  if (fields.includes("email") || targetBlob.includes("email")) {
-    return NextResponse.json(
-      {
-        error: "このメールアドレスは既に登録されています。最初からやり直してください。",
-        existingUser: true,
-      },
-      { status: 409 }
-    );
-  }
-
-  if (
-    fields.includes("normalizedFamilyName") ||
-    fields.includes("normalizedGivenName") ||
-    fields.includes("dateOfBirth") ||
-    targetBlob.includes("normalizedfamilyname") ||
-    targetBlob.includes("normalizedgivenname") ||
-    targetBlob.includes("dateofbirth") ||
-    targetBlob.includes("userprofile")
-  ) {
-    return NextResponse.json(
-      {
-        error: "同じ氏名・生年月日のアカウントが既に存在します。最初からやり直してください。",
-        existingUser: true,
-      },
-      { status: 409 }
-    );
-  }
-
-  return NextResponse.json(
-    { error: "登録情報が既に使用されています。最初からやり直してください。" },
-    { status: 409 }
-  );
-}
 
 function buildUserCreateData(
   session: RegistrationSession,
@@ -142,7 +101,7 @@ async function issueSessionCookieWithRecovery(
   requestId?: string
 ): Promise<{ ok: true; userId: string } | { ok: false }> {
   try {
-    await issueRegistrationSessionCookie(userId);
+    await issueSessionCookie(userId);
     logRegistrationVerifyPhase("cookie_set", requestId, { userId });
     return { ok: true, userId };
   } catch (cookieError) {
@@ -156,7 +115,7 @@ async function issueSessionCookieWithRecovery(
 
       if (existing && existing.id !== userId) {
         try {
-          await issueRegistrationSessionCookie(existing.id);
+          await issueSessionCookie(existing.id);
           logRegistrationVerifyPhase("cookie_set_recovered", requestId, {
             userId: existing.id,
           });
@@ -170,7 +129,7 @@ async function issueSessionCookieWithRecovery(
     }
 
     try {
-      await issueRegistrationSessionCookie(userId);
+      await issueSessionCookie(userId);
       logRegistrationVerifyPhase("cookie_set_retry", requestId, { userId });
       return { ok: true, userId };
     } catch (retryError) {
