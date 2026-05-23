@@ -62,9 +62,16 @@ function OTPVerifyContent() {
         setError(message);
         const suggestLogin =
           data.existingUser === true ||
+          res.status === 500 ||
+          data.error === "internal_error" ||
+          data.code === "SESSION_ISSUE_FAILED" ||
           (typeof data.error === "string" && data.error.includes("既に登録"));
         if (suggestLogin) {
-          toast.error(message, {
+          const loginHint =
+            res.status === 500 || data.error === "internal_error"
+              ? "登録は完了している可能性があります。ログインページからお試しください。"
+              : message;
+          toast.error(loginHint, {
             action: {
               label: "ログインへ",
               onClick: () => router.push(appendRedirectQuery("/login", redirectAfterRegister)),
@@ -151,6 +158,7 @@ function OTPVerifyContent() {
         toast.success(resendTitle);
       }
       setCooldown(60);
+      setOtp("");
       if (viaEmail) {
         const base = `/register/sms/otp?sessionId=${sessionId}&phone=${encodeURIComponent(phone || "")}&delivery=email`;
         router.replace(appendRedirectQuery(base, redirectAfterRegister));
@@ -162,6 +170,10 @@ function OTPVerifyContent() {
       setResending(false);
     }
   };
+
+  if (!sessionId) {
+    return null;
+  }
 
   return (
     <AuthShell
@@ -239,7 +251,7 @@ function OTPVerifyContent() {
           <Button
             type="submit"
             className="h-11 w-full rounded-lg text-base font-semibold"
-            disabled={loading || otp.length !== 6}
+            disabled={loading || otp.length !== 6 || !sessionId}
           >
             {loading ? "確認中..." : "認証する"}
           </Button>
