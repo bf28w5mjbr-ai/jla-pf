@@ -8,19 +8,42 @@ import {
 
 describe("startListAgeCategoryTabs", () => {
   const events = [
-    { id: "e1", ageCategoryId: "c1", ageCategoryName: "U-12" },
-    { id: "e2", ageCategoryId: "c1", ageCategoryName: "U-12" },
-    { id: "e3", ageCategoryId: "c2", ageCategoryName: "OPEN" },
+    {
+      id: "e1",
+      ageCategoryId: "c1",
+      ageCategoryName: "U-12",
+      ageCategoryDisplayOrder: 10,
+    },
+    {
+      id: "e2",
+      ageCategoryId: "c1",
+      ageCategoryName: "U-12",
+      ageCategoryDisplayOrder: 10,
+    },
+    {
+      id: "e3",
+      ageCategoryId: "c2",
+      ageCategoryName: "OPEN",
+      ageCategoryDisplayOrder: 0,
+    },
     { id: "e4", ageCategoryId: null, ageCategoryName: null },
   ];
 
-  it("buildStartListAgeCategoryTabs groups by category and appends uncategorized", () => {
+  it("buildStartListAgeCategoryTabs groups by category, sorts by displayOrder, uncategorized last", () => {
     const tabs = buildStartListAgeCategoryTabs(events);
     expect(tabs).toEqual([
       { key: "c2", label: "OPEN", count: 1 },
       { key: "c1", label: "U-12", count: 2 },
       { key: START_LIST_UNCATEGORIZED_KEY, label: "未分類", count: 1 },
     ]);
+  });
+
+  it("falls back to label order when displayOrder is missing on all tabs", () => {
+    const tabs = buildStartListAgeCategoryTabs([
+      { id: "e1", ageCategoryId: "c1", ageCategoryName: "U-12" },
+      { id: "e3", ageCategoryId: "c2", ageCategoryName: "OPEN" },
+    ]);
+    expect(tabs.map((t) => t.key)).toEqual(["c2", "c1"]);
   });
 
   it("filterEventsByStartListAgeCategory returns scoped events only", () => {

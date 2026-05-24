@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,15 +11,15 @@ import {
 } from "@/lib/eventScheduleWithinCompetition";
 import { effectiveRoundStartIso, roundStartKey } from "@/lib/eventRoundScheduledStarts";
 import {
+  buildScheduleRoundRowsFromKeys,
   buildScheduleTabListItems,
-  expandEventsToScheduleRoundRows,
-  filterEventsByScheduleTabId,
+  parseScheduleRoundCountDraft,
   type CompetitionScheduleTabLite,
+  type ScheduleRoundRow,
 } from "@/lib/competitionScheduleTabDisplay";
 import {
   buildStartListAgeCategoryTabs,
   filterEventsByStartListAgeCategory,
-  mergeReorderedEventsByIds,
 } from "@/lib/startListAgeCategoryTabs";
 import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
 import { serverEventsSyncKeyFromSorted } from "@/lib/startListEventBarServerSyncKey";
@@ -32,11 +32,24 @@ import { StartListRoundSettingsCard } from "@/components/StartListRoundSettingsC
 import { StartListScheduleCard } from "@/components/StartListScheduleCard";
 
 import {
+  buildScheduleDayAreaPartition,
+  buildPublicScheduleSections,
+  findDayTabForRowKey,
+  formatScheduleRowKey,
+  moveRowKeyInDayAreaPartition,
+  partitionsDeepEqual,
+  rowOrderByTabForDay,
+  roundCountForEvent,
+  type ScheduleDayAreaPartition,
+} from "@/lib/scheduleRowOrder";
+import {
+  enumerateCompetitionScheduleDays,
+  firstCompetitionScheduleDayKey,
+  dayKeyFromInstant,
+} from "@/lib/competitionScheduleDays";
+import {
   compareStartListEvents,
-  effectiveStartMsForSort,
-  sortByStartTimeOrder,
-  sortEventsWithinScheduleTab,
-  START_LIST_AUTO_SORT_STORAGE_KEY,
+  sortRowsByStartTimeOrder,
 } from "@/lib/startListScheduleUtils";
 
 export type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
@@ -98,6 +111,30 @@ function applyScheduleEventsPatchToOrder(
   });
 }
 
+function computeServerDayAreaPartition(
+  scheduleTabs: readonly CompetitionScheduleTabLite[],
+  order: readonly StartListEventBarItem[],
+  roundCounts: Record<string, string>,
+  parseRoundCountDraft: (raw: string | undefined, fallback: number) => number,
+  competitionDayKeys: readonly string[],
+  defaultDayKey: string
+): ScheduleDayAreaPartition {
+  const roundCountByEventId: Record<string, number> = {};
+  for (const ev of order) {
+    roundCountByEventId[ev.id] = roundCountForEvent(ev, roundCounts, parseRoundCountDraft);
+  }
+  return buildScheduleDayAreaPartition({
+    tabs: scheduleTabs.map((t) => ({
+      id: t.id,
+      scheduleRowOrder: t.scheduleRowOrder ?? null,
+    })),
+    events: order,
+    roundCountByEventId,
+    competitionDayKeys,
+    defaultDayKey,
+  });
+}
+
 export default function StartListEventIndexBars({
   competitionId,
   competitionName,
@@ -113,6 +150,19 @@ export default function StartListEventIndexBars({
   const router = useRouter();
   const compStart = useMemo(() => new Date(competitionStartDate), [competitionStartDate]);
   const compEnd = useMemo(() => new Date(competitionEndDate), [competitionEndDate]);
+  const competitionDays = useMemo(
+    () => enumerateCompetitionScheduleDays(compStart, compEnd),
+    [compStart, compEnd]
+  );
+  const competitionDayKeys = useMemo(
+    () => competitionDays.map((d) => d.key),
+    [competitionDays]
+  );
+  const defaultDayKey = useMemo(
+    () => firstCompetitionScheduleDayKey(compStart, compEnd),
+    [compStart, compEnd]
+  );
+  const scheduleDayTabs = competitionDays;
   const scheduleMinMax = useMemo(
     () => competitionScheduleDatetimeLocalMinMax(compStart, compEnd),
     [compStart, compEnd]
@@ -122,22 +172,31 @@ export default function StartListEventIndexBars({
   const [reorderSaving, setReorderSaving] = useState(false);
   const [roundStarts, setRoundStarts] = useState<Record<string, string>>({});
   const [timeSavingId, setTimeSavingId] = useState<string | null>(null);
-  const [autoSortAfterSaveStart, setAutoSortAfterSaveStart] = useState(true);
   const [staggerBase, setStaggerBase] = useState("");
   const [staggerMinutes, setStaggerMinutes] = useState("15");
   const [bulkApplying, setBulkApplying] = useState(false);
   /** ラウンド設定カードの年齢（未分類）タブ */
   const [activeRoundSettingsAgeTab, setActiveRoundSettingsAgeTab] = useState<string>("");
+  /** タイムスケジュールで表示・並べ替え対象にする開催日 */
+  const [activeScheduleDayKey, setActiveScheduleDayKey] = useState<string>("");
   /** タイムスケジュールで表示・並べ替え対象にするエリア（スケジュールタブ） */
   const [activeAreaTabId, setActiveAreaTabId] = useState<string>("");
   const [newTabNameDraft, setNewTabNameDraft] = useState("");
-  const [renameOpen, setRenameOpen] = useState(false);
-  const [renameTargetTabId, setRenameTargetTabId] = useState<string | null>(null);
-  const [renameDraft, setRenameDraft] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTargetTabId, setDeleteTargetTabId] = useState<string | null>(null);
   const [deleteMigrateToTabId, setDeleteMigrateToTabId] = useState<string>("");
   const [tabMutationSaving, setTabMutationSaving] = useState(false);
+  const [rowOrderByDayAndTab, setRowOrderByDayAndTab] = useState<ScheduleDayAreaPartition>({});
+  const [assignDirty, setAssignDirty] = useState(false);
+  const [assignSaving, setAssignSaving] = useState(false);
+  const savedPartitionRef = useRef<ScheduleDayAreaPartition>({});
+  const lastAssignSaveSyncKeyRef = useRef<string | null>(null);
+  const assignStateRef = useRef({
+    partition: {} as ScheduleDayAreaPartition,
+    dirty: false,
+    competitionId,
+  });
+  const savedRoundStartsRef = useRef<Record<string, string>>({});
 
   const { sortedFromServer, serverSyncKey } = useMemo(() => {
     const sorted = [...events].sort(compareStartListEvents);
@@ -147,19 +206,7 @@ export default function StartListEventIndexBars({
     };
   }, [events]);
 
-  const {
-    roundCounts,
-    setRoundCounts,
-    heatDraftByEvent,
-    roundSavingId,
-    heatSavingEventId,
-    heatPlanConfirmingId,
-    parseRoundCountDraft,
-    savedRoundCount,
-    saveRoundCount,
-    updateHeatTab,
-    saveHeatPlanForEvent,
-  } = useStartListRoundHeatDrafts({
+  const roundHeatDraft = useStartListRoundHeatDrafts({
     competitionId,
     mergeOrderedBarItems: order,
     roundCountResetBarItems: sortedFromServer,
@@ -167,6 +214,12 @@ export default function StartListEventIndexBars({
     serverSyncKey,
     syncHeatDraftsFromSettings: canEditRoundCount,
   });
+  const {
+    roundCounts,
+    bulkSaving: roundSetupBulkSaving,
+    heatDraftByEvent,
+  } = roundHeatDraft;
+  const parseRoundCountDraft = parseScheduleRoundCountDraft;
 
   const heatDraftSyncKey = useMemo(() => {
     const s =
@@ -177,21 +230,83 @@ export default function StartListEventIndexBars({
   }, [serverSyncKey, initialStartListSettings]);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.localStorage.getItem(START_LIST_AUTO_SORT_STORAGE_KEY) === "0") {
-      setAutoSortAfterSaveStart(false);
-    }
-  }, []);
-
-  useEffect(() => {
     setOrder(sortedFromServer);
-    setRoundStarts(roundStartsDraftFromBarItems(sortedFromServer));
+    const rs = roundStartsDraftFromBarItems(sortedFromServer);
+    setRoundStarts(rs);
+    savedRoundStartsRef.current = rs;
     // 配列参照を依存にすると React 19 で依存配列の長さが種目数に連動することがあるため、文字列キーのみ使う
     // eslint-disable-next-line react-hooks/exhaustive-deps -- serverSyncKey に表示順・開始時刻の実体が含まれる
   }, [serverSyncKey]);
 
+  const rowOrderSyncKey = useMemo(() => {
+    const tabPart = scheduleTabs
+      .map((t) => `${t.id}:${JSON.stringify(t.scheduleRowOrder ?? null)}`)
+      .join("|");
+    return `${serverSyncKey}|${tabPart}|${JSON.stringify(roundCounts)}`;
+  }, [scheduleTabs, serverSyncKey, roundCounts]);
+
+  useEffect(() => {
+    if (assignDirty) return;
+    if (
+      lastAssignSaveSyncKeyRef.current === rowOrderSyncKey &&
+      partitionsDeepEqual(rowOrderByDayAndTab, savedPartitionRef.current)
+    ) {
+      return;
+    }
+    const serverPartition = computeServerDayAreaPartition(
+      scheduleTabs,
+      sortedFromServer,
+      roundCounts,
+      parseRoundCountDraft,
+      competitionDayKeys,
+      defaultDayKey
+    );
+    setRowOrderByDayAndTab(serverPartition);
+    savedPartitionRef.current = JSON.parse(
+      JSON.stringify(serverPartition)
+    ) as ScheduleDayAreaPartition;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rowOrderSyncKey に実体が含まれる
+  }, [rowOrderSyncKey, assignDirty]);
+
+  useEffect(() => {
+    assignStateRef.current = {
+      partition: rowOrderByDayAndTab,
+      dirty: assignDirty,
+      competitionId,
+    };
+  }, [rowOrderByDayAndTab, assignDirty, competitionId]);
+
+  const tabIds = useMemo(() => scheduleTabs.map((t) => t.id), [scheduleTabs]);
+
+  const resolvedActiveScheduleDayKey = useMemo(() => {
+    if (
+      activeScheduleDayKey &&
+      scheduleDayTabs.some((d) => d.key === activeScheduleDayKey)
+    ) {
+      return activeScheduleDayKey;
+    }
+    return scheduleDayTabs[0]?.key ?? defaultDayKey;
+  }, [activeScheduleDayKey, scheduleDayTabs, defaultDayKey]);
+
+  useEffect(() => {
+    const first = scheduleDayTabs[0]?.key ?? defaultDayKey;
+    if (!first) return;
+    if (
+      !activeScheduleDayKey ||
+      !scheduleDayTabs.some((d) => d.key === activeScheduleDayKey)
+    ) {
+      setActiveScheduleDayKey(first);
+    }
+  }, [activeScheduleDayKey, scheduleDayTabs, defaultDayKey]);
+
+  const rowOrderByTabId = useMemo(
+    () => rowOrderByTabForDay(rowOrderByDayAndTab, resolvedActiveScheduleDayKey, tabIds),
+    [rowOrderByDayAndTab, resolvedActiveScheduleDayKey, tabIds]
+  );
+
   const scheduleTabBarItems = useMemo(
-    () => buildScheduleTabListItems(scheduleTabs, order),
-    [scheduleTabs, order]
+    () => buildScheduleTabListItems(scheduleTabs, rowOrderByTabId),
+    [scheduleTabs, rowOrderByTabId]
   );
 
   const ageCategoryTabsForRoundSettings = useMemo(
@@ -227,17 +342,6 @@ export default function StartListEventIndexBars({
     return scheduleTabs[0]?.id ?? "";
   }, [activeAreaTabId, scheduleTabs]);
 
-  const visibleEventsInArea = useMemo(() => {
-    const soleTabId = scheduleTabs.length === 1 ? scheduleTabs[0]?.id : undefined;
-    const filtered =
-      soleTabId !== undefined
-        ? order.filter(
-            (e) => e.scheduleTabId === soleTabId || e.scheduleTabId == null
-          )
-        : filterEventsByScheduleTabId(order, resolvedActiveAreaTabId);
-    return sortEventsWithinScheduleTab(filtered);
-  }, [order, resolvedActiveAreaTabId, scheduleTabs]);
-
   const heatSettingForExpandedRow = useCallback(
     (eventId: string): HeatSetting => {
       const baseline = parseStartListSettings(initialStartListSettings ?? null);
@@ -249,13 +353,64 @@ export default function StartListEventIndexBars({
     [initialStartListSettings, heatDraftByEvent]
   );
 
-  const visibleRoundRows = useMemo(
-    () =>
-      expandEventsToScheduleRoundRows(visibleEventsInArea, roundCounts, (eventId) =>
-        heatSettingForExpandedRow(eventId)
-      ),
-    [visibleEventsInArea, roundCounts, heatSettingForExpandedRow]
-  );
+  const visibleRoundRows = useMemo(() => {
+    const keys = rowOrderByTabId[resolvedActiveAreaTabId] ?? [];
+    return buildScheduleRoundRowsFromKeys(
+      keys,
+      order,
+      roundCounts,
+      (eventId) => heatSettingForExpandedRow(eventId),
+      parseRoundCountDraft
+    );
+  }, [
+    rowOrderByTabId,
+    resolvedActiveAreaTabId,
+    order,
+    roundCounts,
+    heatSettingForExpandedRow,
+    parseRoundCountDraft,
+  ]);
+
+  const rowsByTabId = useMemo(() => {
+    const result: Record<string, ScheduleRoundRow<StartListEventBarItem>[]> = {};
+    for (const tab of scheduleTabs) {
+      const keys = rowOrderByTabId[tab.id] ?? [];
+      result[tab.id] = buildScheduleRoundRowsFromKeys(
+        keys,
+        order,
+        roundCounts,
+        (eventId) => heatSettingForExpandedRow(eventId),
+        parseRoundCountDraft
+      );
+    }
+    return result;
+  }, [scheduleTabs, rowOrderByTabId, order, roundCounts, heatSettingForExpandedRow, parseRoundCountDraft]);
+
+  const rowsByTabIdAndDay = useMemo(() => {
+    const result: Record<string, Record<string, ScheduleRoundRow<StartListEventBarItem>[]>> = {};
+    for (const tab of scheduleTabs) {
+      result[tab.id] = {};
+      for (const day of competitionDays) {
+        const keys = rowOrderByDayAndTab[day.key]?.[tab.id] ?? [];
+        result[tab.id]![day.key] = buildScheduleRoundRowsFromKeys(
+          keys,
+          order,
+          roundCounts,
+          (eventId) => heatSettingForExpandedRow(eventId),
+          parseRoundCountDraft
+        );
+      }
+    }
+    return result;
+  }, [
+    scheduleTabs,
+    competitionDays,
+    rowOrderByDayAndTab,
+    order,
+    roundCounts,
+    heatSettingForExpandedRow,
+    parseRoundCountDraft,
+  ]);
 
   useEffect(() => {
     const first = scheduleTabs[0]?.id ?? "";
@@ -265,33 +420,21 @@ export default function StartListEventIndexBars({
     }
   }, [activeAreaTabId, scheduleTabs]);
 
-  const persistTabEventOrder = async (
+  const persistTabRowOrder = async (
     tabId: string,
-    nextVisibleOrderedEvents: StartListEventBarItem[],
+    dayKey: string,
+    orderedRowKeys: string[],
     successMessage?: string
   ) => {
-    if (!tabId) return;
+    if (!tabId || !dayKey) return;
     setReorderSaving(true);
     try {
-      for (const e of nextVisibleOrderedEvents) {
-        if ((e.scheduleTabId ?? "") === tabId) continue;
-        const res = await fetch(`/api/competitions/${competitionId}/events/${e.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scheduleTabId: tabId }),
-        });
-        const data = (await res.json().catch(() => ({}))) as { message?: string };
-        if (!res.ok) {
-          throw new Error(data.message || "種目のエリア割当に失敗しました");
-        }
-      }
-
       const res = await fetch(
-        `/api/competitions/${competitionId}/schedule-tabs/${encodeURIComponent(tabId)}/events/order`,
+        `/api/competitions/${competitionId}/schedule-tabs/${encodeURIComponent(tabId)}/rows/order`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderedEventIds: nextVisibleOrderedEvents.map((e) => e.id) }),
+          body: JSON.stringify({ orderedRowKeys, dayKey }),
         }
       );
       const data = (await res.json().catch(() => ({}))) as { message?: string };
@@ -300,34 +443,143 @@ export default function StartListEventIndexBars({
       router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "並べ替えの保存に失敗しました");
-      setOrder([...events].sort(compareStartListEvents));
+      setRowOrderByDayAndTab(
+        computeServerDayAreaPartition(
+          scheduleTabs,
+          sortedFromServer,
+          roundCounts,
+          parseRoundCountDraft,
+          competitionDayKeys,
+          defaultDayKey
+        )
+      );
     } finally {
       setReorderSaving(false);
     }
   };
 
-  const setAutoSortPreference = (enabled: boolean) => {
-    setAutoSortAfterSaveStart(enabled);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(START_LIST_AUTO_SORT_STORAGE_KEY, enabled ? "1" : "0");
-    }
-  };
+  const saveAssignPartition = useCallback(
+    async (options?: {
+      silent?: boolean;
+      keepalive?: boolean;
+      partition?: ScheduleDayAreaPartition;
+    }): Promise<boolean> => {
+      const partition = options?.partition ?? assignStateRef.current.partition;
+      if (!assignStateRef.current.dirty && !options?.partition) {
+        return true;
+      }
+      if (assignSaving && !options?.keepalive) {
+        return false;
+      }
 
-  const moveEventToScheduleTab = async (eventId: string, nextTabId: string) => {
-    const ev = order.find((e) => e.id === eventId);
-    if (!ev || (ev.scheduleTabId ?? "") === nextTabId) return;
-    try {
-      const res = await fetch(`/api/competitions/${competitionId}/events/${eventId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scheduleTabId: nextTabId }),
+      if (!options?.keepalive) {
+        setAssignSaving(true);
+      }
+
+      try {
+        const res = await fetch(
+          `/api/competitions/${competitionId}/schedule-tabs/partition`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ partitionByDay: partition }),
+            keepalive: options?.keepalive ?? false,
+          }
+        );
+        const data = (await res.json().catch(() => ({}))) as { message?: string };
+        if (!res.ok) {
+          throw new Error(data.message || "振分の保存に失敗しました");
+        }
+
+        const saved = JSON.parse(JSON.stringify(partition)) as ScheduleDayAreaPartition;
+        savedPartitionRef.current = saved;
+        if (!options?.keepalive) {
+          lastAssignSaveSyncKeyRef.current = rowOrderSyncKey;
+          setAssignDirty(false);
+          setRowOrderByDayAndTab(saved);
+          if (!options?.silent) {
+            toast.success(data.message || "振分を保存しました");
+          }
+        } else if (!options?.silent) {
+          toast.success(data.message || "振分を保存しました");
+        }
+        return true;
+      } catch (e) {
+        if (!options?.silent && !options?.keepalive) {
+          toast.error(e instanceof Error ? e.message : "振分の保存に失敗しました");
+        }
+        return false;
+      } finally {
+        if (!options?.keepalive) {
+          setAssignSaving(false);
+        }
+      }
+    },
+    [assignSaving, competitionId, rowOrderSyncKey]
+  );
+
+  const discardAssignPartition = useCallback(() => {
+    const snapshot = savedPartitionRef.current;
+    setRowOrderByDayAndTab(JSON.parse(JSON.stringify(snapshot)) as ScheduleDayAreaPartition);
+    setAssignDirty(false);
+    lastAssignSaveSyncKeyRef.current = rowOrderSyncKey;
+    setDragId(null);
+  }, [rowOrderSyncKey]);
+
+  const onBeforeLeaveAssignMode = useCallback(async () => {
+    if (!assignDirty) return true;
+    return saveAssignPartition({ silent: true });
+  }, [assignDirty, saveAssignPartition]);
+
+  useEffect(() => {
+    const saveOnLeave = () => {
+      const { partition, dirty } = assignStateRef.current;
+      if (!dirty) return;
+      void saveAssignPartition({
+        silent: true,
+        keepalive: true,
+        partition,
       });
-      const data = (await res.json().catch(() => ({}))) as { message?: string };
-      if (!res.ok) throw new Error(data.message || "エリアへの移動に失敗しました");
-      toast.success(data.message || "エリアを変更しました");
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "エリアへの移動に失敗しました");
+    };
+    const onPageHide = () => saveOnLeave();
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      saveOnLeave();
+    };
+  }, [saveAssignPartition]);
+
+  const handleAssignDropOn = (tabId: string, dayKey: string, targetRowKey: string | null) => {
+    if (!canReorder || !dragId || assignSaving) {
+      setDragId(null);
+      return;
+    }
+    if (targetRowKey && dragId === targetRowKey) {
+      setDragId(null);
+      return;
+    }
+    const keys = rowOrderByDayAndTab[dayKey]?.[tabId] ?? [];
+    let insertIndex: number | undefined;
+    if (targetRowKey) {
+      const ti = keys.indexOf(targetRowKey);
+      if (ti < 0) {
+        setDragId(null);
+        return;
+      }
+      insertIndex = ti;
+    }
+    const next = moveRowKeyInDayAreaPartition(
+      rowOrderByDayAndTab,
+      dragId,
+      dayKey,
+      tabId,
+      tabIds,
+      insertIndex
+    );
+    setDragId(null);
+    if (next) {
+      setRowOrderByDayAndTab(next);
+      setAssignDirty(true);
     }
   };
 
@@ -336,6 +588,10 @@ export default function StartListEventIndexBars({
     if (!name) {
       toast.error("エリア名を入力してください");
       return;
+    }
+    if (assignDirty) {
+      const saved = await saveAssignPartition({ silent: true });
+      if (!saved) return;
     }
     setTabMutationSaving(true);
     try {
@@ -360,46 +616,24 @@ export default function StartListEventIndexBars({
     }
   };
 
-  const submitRenameTab = async () => {
-    if (!renameTargetTabId) return;
-    const name = renameDraft.trim();
-    if (!name) {
-      toast.error("エリア名を入力してください");
-      return;
-    }
-    setTabMutationSaving(true);
-    try {
-      const res = await fetch(
-        `/api/competitions/${competitionId}/schedule-tabs/${encodeURIComponent(renameTargetTabId)}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name }),
-        }
-      );
-      const data = (await res.json().catch(() => ({}))) as { message?: string };
-      if (!res.ok) throw new Error(data.message || "エリア名の更新に失敗しました");
-      toast.success(data.message || "エリア名を更新しました");
-      setRenameOpen(false);
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "エリア名の更新に失敗しました");
-    } finally {
-      setTabMutationSaving(false);
-    }
-  };
-
   const submitDeleteTab = async () => {
     if (!deleteTargetTabId) return;
-    const src = scheduleTabBarItems.find((t) => t.id === deleteTargetTabId);
-    if (src && src.eventCount > 0 && !deleteMigrateToTabId.trim()) {
-      toast.error("種目を移す先のエリアを選んでください");
+    if (assignDirty) {
+      const saved = await saveAssignPartition({ silent: true });
+      if (!saved) return;
+    }
+    const rowsInTab = Object.values(rowOrderByDayAndTab).reduce(
+      (sum, tabMap) => sum + (tabMap[deleteTargetTabId]?.length ?? 0),
+      0
+    );
+    if (rowsInTab > 0 && !deleteMigrateToTabId.trim()) {
+      toast.error("行を移す先のエリアを選んでください");
       return;
     }
     setTabMutationSaving(true);
     try {
       const qs =
-        src && src.eventCount > 0
+        rowsInTab > 0
           ? `?migrateToTabId=${encodeURIComponent(deleteMigrateToTabId.trim())}`
           : "";
       const res = await fetch(
@@ -419,47 +653,22 @@ export default function StartListEventIndexBars({
     }
   };
 
-  const shiftActiveScheduleTab = async (dir: -1 | 1) => {
-    const ids = scheduleTabs.map((t) => t.id);
-    const i = ids.indexOf(resolvedActiveAreaTabId);
-    const j = i + dir;
-    if (i < 0 || j < 0 || j >= ids.length) return;
-    const next = [...ids];
-    const a = next[i]!;
-    const b = next[j]!;
-    next[i] = b;
-    next[j] = a;
-    setTabMutationSaving(true);
-    try {
-      const res = await fetch(`/api/competitions/${competitionId}/schedule-tabs/reorder`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderedTabIds: next }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { message?: string };
-      if (!res.ok) throw new Error(data.message || "エリアの並び替えに失敗しました");
-      toast.success(data.message || "エリアの並びを更新しました");
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "エリアの並び替えに失敗しました");
-    } finally {
-      setTabMutationSaving(false);
-    }
-  };
-
-  const saveRoundStart = async (eventId: string, roundIndex: number) => {
+  const saveRoundStart = async (eventId: string, roundIndex: number, options?: { silent?: boolean }) => {
     const rk = roundStartKey(eventId, roundIndex);
     const raw = roundStarts[rk] ?? "";
     if (raw.trim() !== "") {
       const parsed = new Date(raw);
       if (Number.isNaN(parsed.getTime())) {
-        toast.error("日時の形式が不正です");
-        return;
+        if (!options?.silent) toast.error("日時の形式が不正です");
+        return false;
       }
       if (!isInstantWithinCompetitionEventSchedule(parsed, compStart, compEnd)) {
-        toast.error("開始日時は大会の開催期間内にしてください");
-        return;
+        if (!options?.silent) toast.error("開始日時は大会の開催期間内にしてください");
+        return false;
       }
+    }
+    if (raw.trim() === (savedRoundStartsRef.current[rk] ?? "").trim()) {
+      return true;
     }
     setTimeSavingId(`${eventId}:${roundIndex}`);
     try {
@@ -506,41 +715,60 @@ export default function StartListEventIndexBars({
               : "";
           }
           setRoundStarts(mergedRoundStarts);
+          savedRoundStartsRef.current = mergedRoundStarts;
         }
       }
 
-      if (canReorder && autoSortAfterSaveStart && apiEvents?.length) {
+      if (canReorder && apiEvents?.length) {
         const areaId = resolvedActiveAreaTabId;
-        if (areaId) {
-          const inArea = sortEventsWithinScheduleTab(
-            filterEventsByScheduleTabId(mergedOrder, areaId)
+        const dayKey = resolvedActiveScheduleDayKey;
+        if (areaId && dayKey) {
+          const currentKeys = rowOrderByTabId[areaId] ?? [];
+          const expanded = buildScheduleRoundRowsFromKeys(
+            currentKeys,
+            mergedOrder,
+            roundCounts,
+            (id) => heatSettingForExpandedRow(id),
+            parseRoundCountDraft
           );
-          const sortedInArea = sortByStartTimeOrder(inArea, mergedRoundStarts);
-          const prevIds = inArea.map((e) => e.id).join(",");
-          const nextIds = sortedInArea.map((e) => e.id).join(",");
-          if (prevIds !== nextIds) {
-            const nextFull = mergeReorderedEventsByIds(mergedOrder, sortedInArea.map((e) => e.id));
-            const withSort = nextFull.map((e) => {
-              if (e.scheduleTabId !== areaId) return e;
-              const idx = sortedInArea.findIndex((v) => v.id === e.id);
-              if (idx < 0) return e;
-              return { ...e, scheduleTabSortOrder: idx + 1 };
+          const sortedRows = sortRowsByStartTimeOrder(expanded, mergedRoundStarts);
+          const nextKeys = sortedRows.map((r) => formatScheduleRowKey(r.event.id, r.roundIndex));
+          if (nextKeys.join(",") !== currentKeys.join(",")) {
+            setRowOrderByDayAndTab((prev) => {
+              const next = { ...prev };
+              const shell = { ...(next[dayKey] ?? {}) };
+              shell[areaId] = nextKeys;
+              next[dayKey] = shell;
+              return next;
             });
-            setOrder(withSort);
-            await persistTabEventOrder(
+            await persistTabRowOrder(
               areaId,
-              sortedInArea,
+              dayKey,
+              nextKeys,
               "開始時刻を保存し、時刻順に並べ替えました"
             );
-            return;
+            return true;
           }
         }
       }
 
-      toast.success(data.message || "開始時刻を保存しました");
+      const rowKey = formatScheduleRowKey(eventId, roundIndex);
+      const assigned = findDayTabForRowKey(rowKey, rowOrderByDayAndTab);
+      if (raw.trim() !== "" && assigned) {
+        const savedDayKey = dayKeyFromInstant(new Date(raw));
+        if (savedDayKey && savedDayKey !== assigned.dayKey) {
+          toast.warning(
+            "開始時刻の日付と、振り分けた開催日が一致していません。割当は変更していません。"
+          );
+        }
+      }
+
+      if (!options?.silent) toast.success(data.message || "開始時刻を保存しました");
       router.refresh();
+      return true;
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "開始時刻の保存に失敗しました");
+      if (!options?.silent) toast.error(e instanceof Error ? e.message : "開始時刻の保存に失敗しました");
+      return false;
     } finally {
       setTimeSavingId(null);
     }
@@ -626,25 +854,31 @@ export default function StartListEventIndexBars({
       setRoundStarts(nextRoundStarts);
       setOrder(mergedOrder);
 
-      if (canReorder && autoSortAfterSaveStart) {
-        const inAreaAfter = sortEventsWithinScheduleTab(
-          filterEventsByScheduleTabId(mergedOrder, areaId)
+      if (canReorder) {
+        const currentKeys = visibleRoundRows.map((r) =>
+          formatScheduleRowKey(r.event.id, r.roundIndex)
         );
-        const sortedInArea = sortByStartTimeOrder(inAreaAfter, nextRoundStarts);
-        const prevOrder = inAreaAfter.map((e) => e.id).join(",");
-        const nextOrderIds = sortedInArea.map((e) => e.id).join(",");
-        if (prevOrder !== nextOrderIds) {
-          const nextFull = mergeReorderedEventsByIds(mergedOrder, sortedInArea.map((e) => e.id));
-          const withSort = nextFull.map((e) => {
-            if (e.scheduleTabId !== areaId) return e;
-            const idx = sortedInArea.findIndex((v) => v.id === e.id);
-            if (idx < 0) return e;
-            return { ...e, scheduleTabSortOrder: idx + 1 };
+        const expanded = buildScheduleRoundRowsFromKeys(
+          currentKeys,
+          mergedOrder,
+          roundCounts,
+          (id) => heatSettingForExpandedRow(id),
+          parseRoundCountDraft
+        );
+        const sortedRows = sortRowsByStartTimeOrder(expanded, nextRoundStarts);
+        const nextKeys = sortedRows.map((r) => formatScheduleRowKey(r.event.id, r.roundIndex));
+        if (nextKeys.join(",") !== currentKeys.join(",")) {
+          setRowOrderByDayAndTab((prev) => {
+            const next = { ...prev };
+            const shell = { ...(next[resolvedActiveScheduleDayKey] ?? {}) };
+            shell[areaId] = nextKeys;
+            next[resolvedActiveScheduleDayKey] = shell;
+            return next;
           });
-          setOrder(withSort);
-          await persistTabEventOrder(
+          await persistTabRowOrder(
             areaId,
-            sortedInArea,
+            resolvedActiveScheduleDayKey,
+            nextKeys,
             "一括で開始時刻を保存し、時刻順に並べ替えました"
           );
           return;
@@ -660,8 +894,8 @@ export default function StartListEventIndexBars({
     }
   };
 
-  const handleDropOn = (targetId: string) => {
-    if (!canReorder || !dragId || dragId === targetId) {
+  const handleDropOn = (targetRowKey: string) => {
+    if (!canReorder || !dragId || dragId === targetRowKey) {
       setDragId(null);
       return;
     }
@@ -670,51 +904,27 @@ export default function StartListEventIndexBars({
       setDragId(null);
       return;
     }
-    const nextVisible = [...visibleEventsInArea];
-    const fi = nextVisible.findIndex((x) => x.id === dragId);
-    const ti = nextVisible.findIndex((x) => x.id === targetId);
+    const currentKeys = visibleRoundRows.map((r) =>
+      formatScheduleRowKey(r.event.id, r.roundIndex)
+    );
+    const fi = currentKeys.indexOf(dragId);
+    const ti = currentKeys.indexOf(targetRowKey);
     if (fi < 0 || ti < 0) {
       setDragId(null);
       return;
     }
-    const [item] = nextVisible.splice(fi, 1);
-    nextVisible.splice(ti, 0, item!);
-    const next = mergeReorderedEventsByIds(order, nextVisible.map((event) => event.id));
-    const withSort = next.map((e) => {
-      if (e.scheduleTabId !== areaId) return e;
-      const idx = nextVisible.findIndex((v) => v.id === e.id);
-      if (idx < 0) return e;
-      return { ...e, scheduleTabSortOrder: idx + 1 };
+    const nextKeys = [...currentKeys];
+    const [item] = nextKeys.splice(fi, 1);
+    nextKeys.splice(ti, 0, item!);
+    setRowOrderByDayAndTab((prev) => {
+      const next = { ...prev };
+      const shell = { ...(next[resolvedActiveScheduleDayKey] ?? {}) };
+      shell[areaId] = nextKeys;
+      next[resolvedActiveScheduleDayKey] = shell;
+      return next;
     });
-    setOrder(withSort);
     setDragId(null);
-    void persistTabEventOrder(areaId, nextVisible);
-  };
-
-  const handleSortByStartTime = () => {
-    const areaId = resolvedActiveAreaTabId;
-    if (!areaId) return;
-    const inArea = visibleEventsInArea;
-    const hasComparable = inArea.some((e) => Number.isFinite(effectiveStartMsForSort(e, roundStarts)));
-    if (!hasComparable) {
-      toast.info("このエリアで開始時刻が入力または保存されている種目がありません");
-      return;
-    }
-    const sortedInArea = sortByStartTimeOrder(inArea, roundStarts);
-    const unchanged = sortedInArea.every((e, i) => e.id === inArea[i]?.id);
-    if (unchanged) {
-      toast.info("すでに開始時刻順です");
-      return;
-    }
-    const next = mergeReorderedEventsByIds(order, sortedInArea.map((event) => event.id));
-    const withSort = next.map((e) => {
-      if (e.scheduleTabId !== areaId) return e;
-      const idx = sortedInArea.findIndex((v) => v.id === e.id);
-      if (idx < 0) return e;
-      return { ...e, scheduleTabSortOrder: idx + 1 };
-    });
-    setOrder(withSort);
-    void persistTabEventOrder(areaId, sortedInArea, "開始時刻の早い順に並べ替えました");
+    void persistTabRowOrder(areaId, resolvedActiveScheduleDayKey, nextKeys);
   };
 
   const publicScheduleBarsOnly =
@@ -724,29 +934,61 @@ export default function StartListEventIndexBars({
 
   const hintRoundSettingsCard = (() => {
     if (publicScheduleBarsOnly) return "";
-    return "ラウンド数を「保存」で確定してから「ヒート・レーンを保存」で記録まで完了してください（保存と同時に当日運用向けの確定が記録されます）。種目のスタートリストは下の一覧から。";
+    return "ラウンド数・ヒート数・最大レーンを入力し、下部の「一括保存」で確定してください（初回保存時に当日運用向けの確定も記録されます）。種目のスタートリストは下の一覧から。";
   })();
 
-  const hintEventListCard = (() => {
+  const hintAssignCard = (() => {
+    if (publicScheduleBarsOnly) return "";
+    return "エリア内の日付列へドラッグして配置。「保存」またはスケジュール切替で確定します。";
+  })();
+
+  const hintScheduleCard = (() => {
     if (publicScheduleBarsOnly) {
-      return "一覧の上から表示順です。行をタップでスタートリストを表示します。";
+      return "開催日ごとにタイムスケジュールを表示しています。行をタップでスタートリストを表示します。";
     }
     const parts: string[] = [];
     if (canReorder) {
-      parts.push("表示中のエリア内で握りをドラッグして並べ替え（自動保存）");
+      parts.push("表示中の日・エリア内で各行（ラウンド）をドラッグして並べ替え（自動保存）");
     }
     parts.push("行をタップで詳細");
     if (canEditSchedule) {
+      parts.push("時刻を保存すると自動で時刻順に並びます");
       parts.push("開始は開催期内・終了は種目ページ");
     }
     return parts.join(" · ");
   })();
 
-  const baselineForHeatUi = useMemo(
-    () => parseStartListSettings(initialStartListSettings ?? null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- heatDraftSyncKey に settings の実体が含まれる
-    [heatDraftSyncKey]
-  );
+  const publicScheduleViewSections = useMemo(() => {
+    const raw = buildPublicScheduleSections({
+      partition: rowOrderByDayAndTab,
+      competitionDays,
+      tabs: scheduleTabs,
+    });
+    return raw.map((section) => ({
+      dayKey: section.dayKey,
+      dayLabel: section.dayLabel,
+      isEmpty: section.isEmpty,
+      areas: section.areas.map((area) => ({
+        tabId: area.tabId,
+        tabName: area.tabName,
+        rows: buildScheduleRoundRowsFromKeys(
+          area.rowKeys,
+          order,
+          roundCounts,
+          (eventId) => heatSettingForExpandedRow(eventId),
+          parseRoundCountDraft
+        ),
+      })),
+    }));
+  }, [
+    rowOrderByDayAndTab,
+    competitionDays,
+    scheduleTabs,
+    order,
+    roundCounts,
+    heatSettingForExpandedRow,
+    parseRoundCountDraft,
+  ]);
 
   if (order.length === 0) {
     return (
@@ -768,38 +1010,46 @@ export default function StartListEventIndexBars({
     <StartListRoundSettingsCard
       competitionName={competitionName}
       events={order}
-      draft={{
-        roundCounts,
-        setRoundCounts,
-        heatDraftByEvent,
-        roundSavingId,
-        heatSavingEventId,
-        heatPlanConfirmingId,
-        parseRoundCountDraft,
-        savedRoundCount,
-        saveRoundCount,
-        updateHeatTab,
-        saveHeatPlanForEvent,
-      }}
-      baselineForHeatUi={baselineForHeatUi}
+      draft={roundHeatDraft}
       hintText={hintRoundSettingsCard}
       canEditSchedule={canEditSchedule}
       ageCategoryTabs={ageCategoryTabsForRoundSettings}
       activeAgeCategoryTab={resolvedRoundSettingsAgeTab}
       onAgeCategoryTabChange={setActiveRoundSettingsAgeTab}
-      extraHeatUiLocked={bulkApplying || timeSavingId !== null || reorderSaving}
+      extraHeatUiLocked={
+        bulkApplying || timeSavingId !== null || reorderSaving || roundSetupBulkSaving
+      }
     />
   ) : null;
+
+  const tabRowCountsAllDays = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const tab of scheduleTabs) counts[tab.id] = 0;
+    for (const tabMap of Object.values(rowOrderByDayAndTab)) {
+      for (const [tabId, keys] of Object.entries(tabMap)) {
+        counts[tabId] = (counts[tabId] ?? 0) + keys.length;
+      }
+    }
+    return counts;
+  }, [rowOrderByDayAndTab, scheduleTabs]);
 
   const scheduleCard = (
     <StartListScheduleCard
       competitionId={competitionId}
       competitionName={competitionName}
-      hintEventListCard={hintEventListCard}
+      hintAssignCard={hintAssignCard}
+      hintScheduleCard={hintScheduleCard}
       canReorder={canReorder}
       canEditSchedule={canEditSchedule}
+      publicScheduleBarsOnly={publicScheduleBarsOnly}
+      publicScheduleSections={publicScheduleViewSections}
+      scheduleDayTabs={scheduleDayTabs}
+      competitionDays={competitionDays}
+      resolvedActiveScheduleDayKey={resolvedActiveScheduleDayKey}
+      setActiveScheduleDayKey={setActiveScheduleDayKey}
       scheduleTabs={scheduleTabs}
       scheduleTabBarItems={scheduleTabBarItems}
+      tabRowCountsAllDays={tabRowCountsAllDays}
       resolvedActiveAreaTabId={resolvedActiveAreaTabId}
       setActiveAreaTabId={setActiveAreaTabId}
       newTabNameDraft={newTabNameDraft}
@@ -808,20 +1058,11 @@ export default function StartListEventIndexBars({
       reorderSaving={reorderSaving}
       bulkApplying={bulkApplying}
       timeSavingId={timeSavingId}
-      roundSavingId={roundSavingId}
-      heatSavingEventId={heatSavingEventId}
-      heatPlanConfirmingId={heatPlanConfirmingId}
-      autoSortAfterSaveStart={autoSortAfterSaveStart}
-      setAutoSortPreference={setAutoSortPreference}
-      handleSortByStartTime={handleSortByStartTime}
+      roundSetupBulkSaving={roundSetupBulkSaving}
       addScheduleTab={addScheduleTab}
-      setRenameTargetTabId={setRenameTargetTabId}
-      setRenameDraft={setRenameDraft}
-      setRenameOpen={setRenameOpen}
       setDeleteTargetTabId={setDeleteTargetTabId}
       setDeleteMigrateToTabId={setDeleteMigrateToTabId}
       setDeleteOpen={setDeleteOpen}
-      shiftActiveScheduleTab={shiftActiveScheduleTab}
       scheduleMinMax={scheduleMinMax}
       staggerBase={staggerBase}
       setStaggerBase={setStaggerBase}
@@ -837,10 +1078,15 @@ export default function StartListEventIndexBars({
       roundStarts={roundStarts}
       setRoundStarts={setRoundStarts}
       saveRoundStart={saveRoundStart}
-      moveEventToScheduleTab={moveEventToScheduleTab}
-      renameOpen={renameOpen}
-      renameDraft={renameDraft}
-      submitRenameTab={submitRenameTab}
+      saveRoundStartOnBlur={(eventId, roundIndex) => void saveRoundStart(eventId, roundIndex, { silent: true })}
+      rowsByTabId={rowsByTabId}
+      rowsByTabIdAndDay={rowsByTabIdAndDay}
+      assignDirty={assignDirty}
+      assignSaving={assignSaving}
+      onSaveAssign={() => saveAssignPartition()}
+      onDiscardAssign={discardAssignPartition}
+      onBeforeLeaveAssignMode={onBeforeLeaveAssignMode}
+      onAssignDropOn={handleAssignDropOn}
       deleteOpen={deleteOpen}
       deleteTargetTabId={deleteTargetTabId}
       deleteMigrateToTabId={deleteMigrateToTabId}

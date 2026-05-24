@@ -1,5 +1,6 @@
 import { effectiveRoundStartIso, roundStartKey } from "@/lib/eventRoundScheduledStarts";
 import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
+import type { ScheduleRoundRow } from "@/lib/competitionScheduleTabDisplay";
 
 /** 男子→女子→その他（同一種目名の行順を固定） */
 function sexSortKey(sex: string): number {
@@ -32,19 +33,20 @@ export function sortEventsWithinScheduleTab(
   });
 }
 
-export function effectiveStartMsForSort(
-  e: StartListEventBarItem,
+export function effectiveStartMsForRow(
+  event: StartListEventBarItem,
+  roundIndex: number,
   roundStartsDraft: Record<string, string>
 ): number {
-  const draft = roundStartsDraft[roundStartKey(e.id, 0)]?.trim();
+  const draft = roundStartsDraft[roundStartKey(event.id, roundIndex)]?.trim();
   if (draft) {
     const d = new Date(draft);
     return Number.isNaN(d.getTime()) ? Number.POSITIVE_INFINITY : d.getTime();
   }
   const iso = effectiveRoundStartIso({
-    scheduledStartAt: e.scheduledStartAt,
-    roundScheduledStarts: e.roundScheduledStarts,
-    roundIndex: 0,
+    scheduledStartAt: event.scheduledStartAt,
+    roundScheduledStarts: event.roundScheduledStarts,
+    roundIndex,
   });
   if (iso) {
     const t = new Date(iso).getTime();
@@ -53,6 +55,27 @@ export function effectiveStartMsForSort(
   return Number.POSITIVE_INFINITY;
 }
 
+/** @deprecated 種目単位。行単位は effectiveStartMsForRow を使用 */
+export function effectiveStartMsForSort(
+  e: StartListEventBarItem,
+  roundStartsDraft: Record<string, string>
+): number {
+  return effectiveStartMsForRow(e, 0, roundStartsDraft);
+}
+
+export function sortRowsByStartTimeOrder<T extends ScheduleRoundRow<StartListEventBarItem>>(
+  rows: readonly T[],
+  roundStartsDraft: Record<string, string>
+): T[] {
+  return [...rows].sort((a, b) => {
+    const da = effectiveStartMsForRow(a.event, a.roundIndex, roundStartsDraft);
+    const db = effectiveStartMsForRow(b.event, b.roundIndex, roundStartsDraft);
+    if (da !== db) return da - db;
+    return compareStartListEvents(a.event, b.event) || a.roundIndex - b.roundIndex;
+  });
+}
+
+/** @deprecated 種目単位。行単位は sortRowsByStartTimeOrder を使用 */
 export function sortByStartTimeOrder(
   list: StartListEventBarItem[],
   roundStartsDraft: Record<string, string>
@@ -64,5 +87,3 @@ export function sortByStartTimeOrder(
     return compareStartListEvents(a, b);
   });
 }
-
-export const START_LIST_AUTO_SORT_STORAGE_KEY = "bluvium:start-list:auto-sort-after-save";

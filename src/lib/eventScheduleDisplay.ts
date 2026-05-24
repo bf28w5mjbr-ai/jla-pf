@@ -10,6 +10,40 @@ export function formatEventStartJa(start: Date | string | null | undefined): str
   });
 }
 
+/** タイムスケジュール左カラム用（時刻のみ） */
+export function formatEventStartTimeColumnJa(start: Date | string | null | undefined): string | null {
+  if (!start) return null;
+  const s = new Date(start);
+  if (Number.isNaN(s.getTime())) return null;
+  return s.toLocaleString("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** 日付見出し用（5/24（土）） */
+export function formatScheduleDateHeadingJa(start: Date | string | null | undefined): string | null {
+  if (!start) return null;
+  const s = new Date(start);
+  if (Number.isNaN(s.getTime())) return null;
+  const datePart = s.toLocaleDateString("ja-JP", {
+    month: "numeric",
+    day: "numeric",
+  });
+  const weekday = s.toLocaleDateString("ja-JP", { weekday: "short" });
+  return `${datePart}（${weekday}）`;
+}
+
+export function scheduleDateKeyFromIso(iso: Date | string | null | undefined): string | null {
+  if (!iso) return null;
+  const s = new Date(iso);
+  if (Number.isNaN(s.getTime())) return null;
+  const y = s.getFullYear();
+  const m = s.getMonth();
+  const d = s.getDate();
+  return `${y}-${m}-${d}`;
+}
+
 /** 種目の進行日時（表示用・JST ローカル表記） */
 export function formatEventScheduleJa(
   start: Date | string | null | undefined,

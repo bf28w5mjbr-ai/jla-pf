@@ -18,13 +18,10 @@ function CompetitionPublicPageTabsInner({
   competitionId,
   overview,
   startList,
-  tabsTrailing,
 }: {
   competitionId: string;
   overview: ReactNode;
   startList: ReactNode;
-  /** タブ行の右（主催向けの操作など）。未指定なら表示しない */
-  tabsTrailing?: ReactNode;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -52,32 +49,25 @@ function CompetitionPublicPageTabsInner({
         タブを切り替えるとアドレスバーの URL が更新されます。共有やブックマークに利用できます。
       </p>
       <Tabs value={value} onValueChange={onValueChange} className="w-full">
-        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-          <TabsList
-            className={cn(
-              "grid h-auto w-full grid-cols-2 gap-1 rounded-xl border border-border/80 bg-muted/30 p-1 sm:inline-flex sm:w-auto sm:grid-cols-none sm:flex-wrap sm:justify-start"
-            )}
-            aria-label="大会ページの表示切替"
+        <TabsList
+          className={cn(
+            "grid h-auto w-full grid-cols-2 gap-1 rounded-xl border border-border/80 bg-muted/30 p-1 sm:inline-flex sm:w-auto sm:grid-cols-none sm:flex-wrap sm:justify-start"
+          )}
+          aria-label="大会ページの表示切替"
+        >
+          <TabsTrigger
+            value="overview"
+            className="h-9 rounded-lg px-3 text-xs font-medium data-[state=active]:shadow-sm sm:h-8"
           >
-            <TabsTrigger
-              value="overview"
-              className="h-9 rounded-lg px-3 text-xs font-medium data-[state=active]:shadow-sm sm:h-8"
-            >
-              大会ページ
-            </TabsTrigger>
-            <TabsTrigger
-              value="start-list"
-              className="h-9 rounded-lg px-3 text-xs font-medium data-[state=active]:shadow-sm sm:h-8"
-            >
-              スタートリスト
-            </TabsTrigger>
-          </TabsList>
-          {tabsTrailing ? (
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:justify-end">
-              {tabsTrailing}
-            </div>
-          ) : null}
-        </div>
+            大会ページ
+          </TabsTrigger>
+          <TabsTrigger
+            value="start-list"
+            className="h-9 rounded-lg px-3 text-xs font-medium data-[state=active]:shadow-sm sm:h-8"
+          >
+            スタートリスト
+          </TabsTrigger>
+        </TabsList>
 
         <TabsContent value="overview" className="mt-4 space-y-3 sm:space-y-4">
           {overview}
@@ -116,12 +106,10 @@ export default function CompetitionPublicPageTabs({
   competitionId,
   overview,
   startList,
-  tabsTrailing,
 }: {
   competitionId: string;
   overview: ReactNode;
   startList: ReactNode;
-  tabsTrailing?: ReactNode;
 }) {
   return (
     <Suspense fallback={<TabsFallback competitionId={competitionId} />}>
@@ -129,7 +117,6 @@ export default function CompetitionPublicPageTabs({
         competitionId={competitionId}
         overview={overview}
         startList={startList}
-        tabsTrailing={tabsTrailing}
       />
     </Suspense>
   );

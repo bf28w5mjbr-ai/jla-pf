@@ -5,6 +5,10 @@ import { prisma } from "@/server/db";
 import { canEditCompetitionPublishedSchedule } from "@/lib/competitionStartListAccess";
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 import { ensureCompetitionScheduleTabs } from "@/lib/ensureCompetitionScheduleTabs";
+import {
+  loadScheduleRowPartitionForCompetition,
+  persistScheduleDayAreaPartition,
+} from "@/lib/scheduleRowOrderServer";
 
 type RouteContext = { params: Promise<{ id: string; tabId: string }> };
 
@@ -108,10 +112,21 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ message: "最後の1つのタブは削除できません" }, { status: 400 });
     }
 
-    if (tab._count.events > 0) {
+    const { events, partitionByDay, tabs, competitionDayKeys } =
+      await loadScheduleRowPartitionForCompetition(competitionId);
+    const rowKeysOnTab = Object.values(partitionByDay).reduce(
+      (sum, tabMap) => sum + (tabMap[tabId]?.length ?? 0),
+      0
+    );
+    const needsMigrate = rowKeysOnTab > 0 || tab._count.events > 0;
+
+    if (needsMigrate) {
       if (!migrateToTabId) {
         return NextResponse.json(
-          { message: "このタブに種目があるため、削除前に migrateToTabId で移動先タブを指定してください" },
+          {
+            message:
+              "このタブに種目またはスケジュール行があるため、削除前に migrateToTabId で移動先タブを指定してください",
+          },
           { status: 400 }
         );
       }
@@ -121,6 +136,17 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       if (!target || target.id === tabId) {
         return NextResponse.json({ message: "移動先タブが無効です" }, { status: 400 });
       }
+
+      for (const dayKey of Object.keys(partitionByDay)) {
+        const tabMap = partitionByDay[dayKey];
+        if (!tabMap) continue;
+        const keysToMove = tabMap[tabId] ?? [];
+        if (keysToMove.length > 0) {
+          tabMap[migrateToTabId] = [...(tabMap[migrateToTabId] ?? []), ...keysToMove];
+          delete tabMap[tabId];
+        }
+      }
+
       const maxOrd = await prisma.event.aggregate({
         where: { competitionId, scheduleTabId: migrateToTabId },
         _max: { scheduleTabSortOrder: true },
@@ -138,6 +164,13 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
         });
         ord += 1;
       }
+
+      await persistScheduleDayAreaPartition(
+        partitionByDay,
+        tabs.map((t) => t.id),
+        events,
+        competitionDayKeys
+      );
     }
 
     await prisma.competitionScheduleTab.delete({ where: { id: tabId } });

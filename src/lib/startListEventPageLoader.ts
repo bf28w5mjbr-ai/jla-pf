@@ -44,7 +44,7 @@ export const getStartListEventDetail = cache(async (competitionId: string, event
       scheduledStartAt: true,
       scheduledEndAt: true,
       ageCategory: {
-        select: { id: true, name: true },
+        select: { id: true, name: true, displayOrder: true },
       },
     },
   });
@@ -272,7 +272,7 @@ export async function loadStartListEventPage(input: {
                 preliminaryHeatLaneCount: true,
                 startListHeatPlanConfirmedAt: true,
                 marshalStartedAt: true,
-                ageCategory: { select: { id: true, name: true } },
+                ageCategory: { select: { id: true, name: true, displayOrder: true } },
               },
               orderBy: [{ displayOrder: "asc" }, { sex: "asc" }, { id: "asc" }],
             }),
@@ -292,6 +292,7 @@ export async function loadStartListEventPage(input: {
             displayOrder: e.displayOrder,
             ageCategoryId: e.ageCategory?.id ?? null,
             ageCategoryName: e.ageCategory?.name ?? null,
+            ageCategoryDisplayOrder: e.ageCategory?.displayOrder ?? null,
             scheduledStartAt: e.scheduledStartAt,
             roundScheduledStarts: e.roundScheduledStarts,
             scheduledEndAt: e.scheduledEndAt,

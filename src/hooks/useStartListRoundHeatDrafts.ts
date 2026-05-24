@@ -5,12 +5,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
 import { clampRoundTabsToNonIncreasingHeatCounts } from "@/lib/startListEventHeatValidation";
-import { captureStartListSnapshotAfterHeatSave } from "@/lib/startListHeatSaveClient";
 import {
-  buildRoundTabsForRoundCount,
-  buildStartListSettingsPayload,
-  normalizeRoundTabs,
   parseStartListSettings,
+  resolveRoundTabsForEvent,
   type HeatSetting,
   type StartListRoundTab,
 } from "@/lib/startListSettings";
@@ -36,18 +33,44 @@ function initialHeatDraftByEvent(
   return { ...eventSettings };
 }
 
+function mergedHeatSettingForEvent(
+  baseline: Record<string, HeatSetting>,
+  draft: Record<string, HeatSetting>,
+  eventId: string
+): HeatSetting {
+  return {
+    ...(baseline[eventId] ?? {}),
+    ...(draft[eventId] ?? {}),
+  };
+}
+
+function roundTabsDraftFingerprint(tabs: StartListRoundTab[]): string {
+  return JSON.stringify(
+    tabs.map((t) => ({
+      mode: t.mode,
+      heatCount: String(t.heatCount ?? "").trim(),
+      heatSize: String(t.heatSize ?? "").trim(),
+      maxLanesPerHeat: t.maxLanesPerHeat ?? null,
+    }))
+  );
+}
+
+export type RoundSettingsDirtyState = {
+  roundDirty: StartListEventBarItem[];
+  heatDirty: StartListEventBarItem[];
+  needsConfirm: StartListEventBarItem[];
+  marshalRoundBlocked: StartListEventBarItem[];
+  totalDirty: number;
+};
+
 export type UseStartListRoundHeatDraftsArgs = {
   competitionId: string;
-  /** ヒート PUT でマージする種目一覧（並べ替え中は IndexBars の `order`） */
+  /** 保存時に items を構築する種目一覧 */
   mergeOrderedBarItems: StartListEventBarItem[];
-  /**
-   * サーバー同期時にラウンド数入力を初期化する基準一覧（IndexBars ではソート済みサーバー行）
-   */
+  /** サーバー同期時にラウンド数入力を初期化する基準一覧 */
   roundCountResetBarItems: StartListEventBarItem[];
   initialStartListSettings: unknown;
-  /** サーバー再配列・設定更新のたびに下書きとラウンド数入力をリセットするキー */
   serverSyncKey: string;
-  /** false のとき heatDraft は initialSettings から同期しない */
   syncHeatDraftsFromSettings: boolean;
 };
 
@@ -63,12 +86,10 @@ export function useStartListRoundHeatDrafts({
   const [roundCounts, setRoundCounts] = useState(() =>
     initialRoundCountsFromBarItems(roundCountResetBarItems)
   );
-  const [roundSavingId, setRoundSavingId] = useState<string | null>(null);
+  const [bulkSaving, setBulkSaving] = useState(false);
   const [heatDraftByEvent, setHeatDraftByEvent] = useState(() =>
     initialHeatDraftByEvent(syncHeatDraftsFromSettings, initialStartListSettings)
   );
-  const [heatSavingEventId, setHeatSavingEventId] = useState<string | null>(null);
-  const [heatPlanConfirmingId, setHeatPlanConfirmingId] = useState<string | null>(null);
 
   const baselineParsed = useMemo(
     () => parseStartListSettings(initialStartListSettings ?? null),
@@ -113,159 +134,219 @@ export function useStartListRoundHeatDrafts({
     return 1;
   }, []);
 
-  const saveRoundCount = useCallback(
-    async (eventId: string) => {
-      const raw = (roundCounts[eventId] ?? "1").trim();
-      const n = Number(raw);
-      if (!Number.isInteger(n) || n < 1 || n > 32) {
-        toast.error("ラウンド数は1〜32の整数にしてください");
-        return;
-      }
-      setRoundSavingId(eventId);
-      try {
-        const res = await fetch(`/api/competitions/${competitionId}/events/${eventId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ startListRoundCount: n }),
-        });
-        const data = (await res.json().catch(() => ({}))) as { message?: string };
-        if (!res.ok) throw new Error(data.message || "ラウンド数の保存に失敗しました");
-        toast.success(data.message || "ラウンド数を保存しました");
-        router.refresh();
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : "ラウンド数の保存に失敗しました");
-      } finally {
-        setRoundSavingId(null);
-      }
+  const buildRoundTabsForEvent = useCallback(
+    (event: StartListEventBarItem): StartListRoundTab[] => {
+      const merged = mergedHeatSettingForEvent(
+        baselineParsed.eventSettings,
+        heatDraftByEvent,
+        event.id
+      );
+      const n = parseRoundCountDraft(roundCounts[event.id]);
+      return clampRoundTabsToNonIncreasingHeatCounts(
+        resolveRoundTabsForEvent({
+          heatSetting: merged,
+          roundCount: n,
+        }),
+        event.entryCount ?? 0,
+        event.preliminaryHeatLaneCount ?? null
+      );
     },
-    [competitionId, roundCounts, router]
+    [baselineParsed.eventSettings, heatDraftByEvent, parseRoundCountDraft, roundCounts]
+  );
+
+  const getDirtyState = useCallback(
+    (visibleEvents: readonly StartListEventBarItem[]): RoundSettingsDirtyState => {
+      const roundDirty: StartListEventBarItem[] = [];
+      const heatDirty: StartListEventBarItem[] = [];
+      const needsConfirm: StartListEventBarItem[] = [];
+      const marshalRoundBlocked: StartListEventBarItem[] = [];
+
+      for (const e of visibleEvents) {
+        const draftN = parseRoundCountDraft(roundCounts[e.id]);
+        const savedN = savedRoundCount(e);
+        if (draftN !== savedN) {
+          roundDirty.push(e);
+          if (e.marshalStartedAt) {
+            marshalRoundBlocked.push(e);
+          }
+        }
+
+        const savedSetting = baselineParsed.eventSettings[e.id];
+        const draftSetting = mergedHeatSettingForEvent(
+          baselineParsed.eventSettings,
+          heatDraftByEvent,
+          e.id
+        );
+        const savedTabs = resolveRoundTabsForEvent({
+          heatSetting: savedSetting,
+          roundCount: savedN,
+        });
+        const draftTabs = resolveRoundTabsForEvent({
+          heatSetting: draftSetting,
+          roundCount: draftN,
+        });
+        const savedFp = roundTabsDraftFingerprint(savedTabs);
+        const draftFp = roundTabsDraftFingerprint(draftTabs);
+        if (savedFp !== draftFp || draftN !== savedN) {
+          if (!heatDirty.some((x) => x.id === e.id)) {
+            heatDirty.push(e);
+          }
+        }
+
+        if (!e.startListHeatPlanConfirmedAt && !e.marshalStartedAt) {
+          needsConfirm.push(e);
+        }
+      }
+
+      const dirtyIds = new Set([
+        ...roundDirty.map((e) => e.id),
+        ...heatDirty.map((e) => e.id),
+      ]);
+
+      return {
+        roundDirty,
+        heatDirty,
+        needsConfirm,
+        marshalRoundBlocked,
+        totalDirty: dirtyIds.size,
+      };
+    },
+    [
+      baselineParsed.eventSettings,
+      heatDraftByEvent,
+      parseRoundCountDraft,
+      roundCounts,
+      savedRoundCount,
+    ]
   );
 
   const updateHeatTab = useCallback(
     (eventId: string, tabIndex: number, patch: Partial<StartListRoundTab>) => {
       setHeatDraftByEvent((prev) => {
-        const mergedBase: HeatSetting = {
-          ...(baselineParsed.eventSettings[eventId] ?? {}),
-          ...(prev[eventId] ?? {}),
-        };
-        const n = parseRoundCountDraft(roundCounts[eventId]);
-        const tabs = buildRoundTabsForRoundCount(n, normalizeRoundTabs(mergedBase)).map((t, i) =>
-          i === tabIndex ? { ...t, ...patch } : t
+        const event = mergeOrderedBarItems.find((e) => e.id === eventId);
+        const mergedBase = mergedHeatSettingForEvent(
+          baselineParsed.eventSettings,
+          prev,
+          eventId
         );
+        const n = parseRoundCountDraft(roundCounts[eventId]);
+        const tabs = resolveRoundTabsForEvent({
+          heatSetting: mergedBase,
+          roundCount: n,
+        }).map((t, i) => (i === tabIndex ? { ...t, ...patch } : t));
+        const clamped = event
+          ? clampRoundTabsToNonIncreasingHeatCounts(
+              tabs,
+              event.entryCount ?? 0,
+              event.preliminaryHeatLaneCount ?? null
+            )
+          : tabs;
         return {
           ...prev,
           [eventId]: {
             ...mergedBase,
-            roundTabs: tabs,
-            mode: tabs[0]?.mode === "size" ? "size" : "count",
-            heatCount: tabs[0]?.heatCount ?? "1",
-            heatSize: tabs[0]?.heatSize ?? "",
+            roundTabs: clamped,
           },
         };
       });
     },
-    [baselineParsed, parseRoundCountDraft, roundCounts]
+    [baselineParsed, mergeOrderedBarItems, parseRoundCountDraft, roundCounts]
   );
 
-  const saveHeatPlanForEvent = useCallback(
-    async (eventId: string) => {
-      const ev = mergeOrderedBarItems.find((e) => e.id === eventId);
-      if (!ev) return;
-      const draftN = parseRoundCountDraft(roundCounts[eventId]);
-      if (draftN !== savedRoundCount(ev)) {
-        toast.error("先に「ラウンド」の保存でラウンド数を確定してください");
+  const saveAllRoundSettings = useCallback(
+    async (visibleEvents: readonly StartListEventBarItem[]) => {
+      const dirty = getDirtyState(visibleEvents);
+      if (dirty.totalDirty === 0) {
+        toast.message("変更はありません");
         return;
       }
-      setHeatSavingEventId(eventId);
-      try {
-        const full: Record<string, HeatSetting> = {};
-        for (const e of mergeOrderedBarItems) {
-          const mergedBase: HeatSetting = {
-            ...(baselineParsed.eventSettings[e.id] ?? {}),
-            ...(heatDraftByEvent[e.id] ?? {}),
-          };
-          const n = savedRoundCount(e);
-          const tabs = clampRoundTabsToNonIncreasingHeatCounts(
-            buildRoundTabsForRoundCount(n, normalizeRoundTabs(mergedBase)),
-            e.entryCount ?? 0,
-            e.preliminaryHeatLaneCount ?? null
-          );
-          full[e.id] = {
-            ...mergedBase,
-            roundTabs: tabs,
-            mode: tabs[0]?.mode === "size" ? "size" : "count",
-            heatCount: tabs[0]?.heatCount ?? "1",
-            heatSize: tabs[0]?.heatSize ?? "",
-          };
+      if (dirty.marshalRoundBlocked.length > 0) {
+        toast.error("マーシャル開始後はラウンド数を変更できません");
+        return;
+      }
+
+      for (const e of [...dirty.roundDirty, ...dirty.heatDirty]) {
+        const n = parseRoundCountDraft(roundCounts[e.id]);
+        if (!Number.isInteger(n) || n < 1 || n > 32) {
+          toast.error(`${e.name} のラウンド数は1〜32の整数にしてください`);
+          return;
         }
-        const payload = buildStartListSettingsPayload({
-          eventSettings: full,
-          teamAssignmentDeadline: baselineParsed.teamAssignmentDeadline,
-        });
-        const res = await fetch(`/api/competitions/${competitionId}/start-list-settings`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ startListSettings: payload, captureSnapshot: true }),
-        });
+      }
+
+      const dirtyEvents = [...new Map(
+        [...dirty.roundDirty, ...dirty.heatDirty].map((e) => [e.id, e] as const)
+      ).values()];
+
+      const items = dirtyEvents.map((e) => {
+        const roundTabs = buildRoundTabsForEvent(e);
+        return {
+          eventId: e.id,
+          startListRoundCount: parseRoundCountDraft(roundCounts[e.id]),
+          roundTabs,
+        };
+      });
+
+      const confirmEventIds = dirtyEvents
+        .filter((e) => !e.startListHeatPlanConfirmedAt && !e.marshalStartedAt)
+        .map((e) => e.id);
+
+      setBulkSaving(true);
+      try {
+        const res = await fetch(
+          `/api/competitions/${competitionId}/round-setup/bulk-save`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              items,
+              captureSnapshot: true,
+              confirmEventIds,
+            }),
+          }
+        );
         const data = (await res.json().catch(() => ({}))) as {
           message?: string;
           snapshotCapture?:
             | { ok: true; snapshotId: string; wasUpdate: boolean }
             | { ok: false; error: string };
+          confirmResults?: Array<{ eventId: string; ok: boolean; message?: string }>;
         };
-        if (!res.ok) throw new Error(data.message || "ヒート・レーン設定の保存に失敗しました");
-
-        let snapOk: boolean;
-        if (data.snapshotCapture !== undefined) {
-          snapOk = data.snapshotCapture.ok === true;
-          if (data.snapshotCapture.ok === false) {
-            toast.error(
-              data.snapshotCapture.error ||
-                "スタートリスト記録の更新に失敗しました（ヒート設定は保存済みです）。もう一度保存してください。"
-            );
-          }
-        } else {
-          snapOk = await captureStartListSnapshotAfterHeatSave(competitionId);
+        if (!res.ok) {
+          throw new Error(data.message || "ラウンド設定の一括保存に失敗しました");
         }
-        if (!snapOk) {
+
+        if (data.snapshotCapture?.ok === false) {
+          toast.error(
+            data.snapshotCapture.error ||
+              "スタートリスト記録の更新に失敗しました（設定は保存済みです）。もう一度保存してください。"
+          );
           router.refresh();
           return;
         }
-        if (!ev.startListHeatPlanConfirmedAt && !ev.marshalStartedAt) {
-          setHeatPlanConfirmingId(eventId);
-          try {
-            const cres = await fetch(
-              `/api/competitions/${competitionId}/events/${encodeURIComponent(eventId)}/heat-plan/confirm`,
-              { method: "POST" }
-            );
-            const cdata = (await cres.json().catch(() => ({}))) as { message?: string };
-            if (!cres.ok) {
-              throw new Error(
-                cdata.message ||
-                  "ヒート設定は保存済みですが、確定の記録に失敗しました。もう一度「ヒート・レーンを保存」してください。"
-              );
-            }
-          } finally {
-            setHeatPlanConfirmingId(null);
-          }
+
+        const confirmFailed = (data.confirmResults ?? []).filter((r) => !r.ok);
+        if (confirmFailed.length > 0) {
+          toast.error(
+            confirmFailed[0]?.message ||
+              "設定は保存済みですが、確定の記録に一部失敗しました。"
+          );
+        } else {
+          toast.success(data.message || "ラウンド設定を一括保存しました");
         }
-        toast.success(data.message || "ヒート・レーンを保存し確定しました");
         router.refresh();
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "ヒート・レーン設定の保存に失敗しました");
+        toast.error(e instanceof Error ? e.message : "ラウンド設定の一括保存に失敗しました");
       } finally {
-        setHeatSavingEventId(null);
+        setBulkSaving(false);
       }
     },
     [
-      baselineParsed,
+      buildRoundTabsForEvent,
       competitionId,
-      heatDraftByEvent,
-      mergeOrderedBarItems,
+      getDirtyState,
       parseRoundCountDraft,
       roundCounts,
       router,
-      savedRoundCount,
     ]
   );
 
@@ -273,14 +354,13 @@ export function useStartListRoundHeatDrafts({
     roundCounts,
     setRoundCounts,
     heatDraftByEvent,
-    roundSavingId,
-    heatSavingEventId,
-    heatPlanConfirmingId,
+    bulkSaving,
     parseRoundCountDraft,
     savedRoundCount,
-    saveRoundCount,
+    buildRoundTabsForEvent,
+    getDirtyState,
     updateHeatTab,
-    saveHeatPlanForEvent,
+    saveAllRoundSettings,
   };
 }
 

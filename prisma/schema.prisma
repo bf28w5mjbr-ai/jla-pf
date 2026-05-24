@@ -1610,6 +1610,8 @@ model CompetitionScheduleTab {
   competitionId String
   name          String
   displayOrder  Int    @default(0)
+  /// タブ内の表示行順 { "YYYY-MM-DD": ["eventId:roundIndex", ...] }
+  scheduleRowOrder Json?
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
   events      Event[]

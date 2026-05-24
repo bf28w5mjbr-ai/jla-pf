@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StartListEventRoundSettingsRow } from "@/components/StartListEventRoundSettingsRow";
@@ -15,12 +16,7 @@ import {
   buildStartListAgeCategoryTabs,
   filterEventsByStartListAgeCategory,
 } from "@/lib/startListAgeCategoryTabs";
-import {
-  buildRoundTabsForRoundCount,
-  normalizeRoundTabs,
-  parseStartListSettings,
-  type HeatSetting,
-} from "@/lib/startListSettings";
+import { parseStartListSettings } from "@/lib/startListSettings";
 
 type AgeCategoryTab = { key: string; label: string; count: number };
 
@@ -28,7 +24,6 @@ type StartListRoundSettingsCardProps = {
   competitionName?: string;
   events: StartListEventBarItem[];
   draft: StartListRoundHeatDraftControls;
-  baselineForHeatUi: ReturnType<typeof parseStartListSettings>;
   focusEventId?: string;
   scheduleLabel?: string | null;
   hintText?: string;
@@ -45,7 +40,6 @@ export function StartListRoundSettingsCard({
   competitionName,
   events,
   draft,
-  baselineForHeatUi,
   focusEventId,
   scheduleLabel,
   hintText,
@@ -60,15 +54,11 @@ export function StartListRoundSettingsCard({
   const {
     roundCounts,
     setRoundCounts,
-    heatDraftByEvent,
-    roundSavingId,
-    heatSavingEventId,
-    heatPlanConfirmingId,
-    parseRoundCountDraft,
-    savedRoundCount,
-    saveRoundCount,
+    bulkSaving,
+    buildRoundTabsForEvent,
+    getDirtyState,
     updateHeatTab,
-    saveHeatPlanForEvent,
+    saveAllRoundSettings,
   } = draft;
 
   const visibleEvents = useMemo(() => {
@@ -82,10 +72,24 @@ export function StartListRoundSettingsCard({
     return events;
   }, [events, focusEventId, ageCategoryTabs, activeAgeCategoryTab]);
 
+  const dirtyState = useMemo(
+    () => getDirtyState(visibleEvents),
+    [getDirtyState, visibleEvents]
+  );
+
   if (visibleEvents.length === 0) return null;
 
   const defaultHint =
-    "ラウンド数を保存してから、ヒート数・最大レーンを入力して「ヒート・レーンを保存」で確定します。ラウンドごとの最大レーンはここで編集でき、空欄のときは種目の既定レーン数が使われます。";
+    "ラウンド数・ヒート数・最大レーンを入力し、下部の「一括保存」で確定します。空欄の最大レーンは種目の既定レーン数が使われます。";
+
+  const heatUiLocked = extraHeatUiLocked || bulkSaving;
+  const bulkSaveDisabled =
+    heatUiLocked || dirtyState.totalDirty === 0 || dirtyState.marshalRoundBlocked.length > 0;
+
+  const dirtyEventIds = new Set([
+    ...dirtyState.roundDirty.map((e) => e.id),
+    ...dirtyState.heatDirty.map((e) => e.id),
+  ]);
 
   return (
     <Card className="overflow-hidden border-border/80 shadow-sm">
@@ -122,71 +126,56 @@ export function StartListRoundSettingsCard({
         <ul className="divide-y divide-border/50">
           {visibleEvents.map((event) => {
             const scheduleText = canEditSchedule ? null : formatEventStartJa(event.scheduledStartAt);
-            const mergedBase: HeatSetting = {
-              ...(baselineForHeatUi.eventSettings[event.id] ?? {}),
-              ...(heatDraftByEvent[event.id] ?? {}),
-            };
-            const displayTabs = buildRoundTabsForRoundCount(
-              parseRoundCountDraft(roundCounts[event.id]),
-              normalizeRoundTabs(mergedBase)
-            );
-            const draftN = parseRoundCountDraft(roundCounts[event.id]);
-            const savedN = savedRoundCount(event);
-            const heatUiLocked =
-              extraHeatUiLocked ||
-              heatSavingEventId !== null ||
-              roundSavingId !== null ||
-              heatPlanConfirmingId !== null;
+            const displayTabs = buildRoundTabsForEvent(event);
             return (
               <StartListEventRoundSettingsRow
                 key={event.id}
                 event={event}
                 scheduleText={scheduleText}
                 displayTabs={displayTabs}
-                draftN={draftN}
-                savedN={savedN}
                 roundCountValue={roundCounts[event.id] ?? "1"}
                 onRoundCountChange={(value) =>
                   setRoundCounts((p) => ({ ...p, [event.id]: value }))
                 }
                 heatUiLocked={heatUiLocked}
-                roundSaveDisabled={
-                  extraHeatUiLocked ||
-                  roundSavingId === event.id ||
-                  heatSavingEventId !== null ||
-                  heatPlanConfirmingId !== null
-                }
-                savingRound={roundSavingId === event.id}
-                onSaveRoundCount={() => void saveRoundCount(event.id)}
                 onUpdateHeatTab={(tabIdx, patch) => updateHeatTab(event.id, tabIdx, patch)}
-                heatSaveDisabled={
-                  heatUiLocked ||
-                  heatSavingEventId === event.id ||
-                  heatPlanConfirmingId === event.id ||
-                  draftN !== savedN
-                }
-                heatSaving={heatSavingEventId === event.id}
-                heatPlanConfirming={heatPlanConfirmingId === event.id}
-                onSaveHeatPlan={() => void saveHeatPlanForEvent(event.id)}
+                isDirty={dirtyEventIds.has(event.id)}
               />
             );
           })}
         </ul>
-        {roundSavingId ? (
-          <p className={`border-t border-border/50 py-1 text-[10px] text-muted-foreground ${contentStatusClassName}`}>
-            ラウンド数保存中…
-          </p>
-        ) : null}
-        {heatSavingEventId ? (
-          <p className={`border-t border-border/50 py-1 text-[10px] text-muted-foreground ${contentStatusClassName}`}>
-            ヒート・レーン保存中…
-          </p>
-        ) : null}
-        {heatPlanConfirmingId ? (
-          <p className={`border-t border-border/50 py-1 text-[10px] text-muted-foreground ${contentStatusClassName}`}>
-            ヒート・レーンの確定を記録中…
-          </p>
-        ) : null}
+        <div
+          className={`flex flex-col gap-1.5 border-t border-border/50 bg-muted/10 px-2.5 py-2 sm:flex-row sm:items-center sm:justify-between ${contentStatusClassName}`}
+        >
+          <div className="text-[10px] leading-snug text-muted-foreground">
+            {dirtyState.totalDirty > 0 ? (
+              <>
+                変更 {dirtyState.totalDirty} 件
+                {dirtyState.roundDirty.length > 0
+                  ? ` · ラウンド ${dirtyState.roundDirty.length}`
+                  : ""}
+                {dirtyState.heatDirty.length > 0 ? ` · ヒート ${dirtyState.heatDirty.length}` : ""}
+              </>
+            ) : (
+              "変更はありません"
+            )}
+            {dirtyState.marshalRoundBlocked.length > 0 ? (
+              <span className="mt-0.5 block text-amber-700 dark:text-amber-300">
+                マーシャル開始済みの種目はラウンド数を変更できません
+              </span>
+            ) : null}
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="h-8 shrink-0 px-3 text-[11px]"
+            onClick={() => void saveAllRoundSettings(visibleEvents)}
+            disabled={bulkSaveDisabled}
+          >
+            {bulkSaving ? "一括保存中…" : "一括保存"}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
@@ -225,17 +214,12 @@ export function StartListRoundSettingsCardWithHook({
     serverSyncKey,
     syncHeatDraftsFromSettings: true,
   });
-  const baselineForHeatUi = useMemo(
-    () => parseStartListSettings(initialStartListSettings ?? null),
-    [initialStartListSettings]
-  );
 
   return (
     <StartListRoundSettingsCard
       competitionName={competitionName}
       events={barItems}
       draft={draft}
-      baselineForHeatUi={baselineForHeatUi}
       focusEventId={focusEventId}
       scheduleLabel={scheduleLabel}
       hintText={hintText}
@@ -244,8 +228,5 @@ export function StartListRoundSettingsCardWithHook({
     />
   );
 }
-
-/** @deprecated StartListRoundSettingsCardWithHook を使用 */
-export const StartListEventPageRoundSettingsPanel = StartListRoundSettingsCardWithHook;
 
 export { buildStartListAgeCategoryTabs };

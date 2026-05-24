@@ -4,11 +4,13 @@ import {
   normalizeRoundTabs,
   type HeatSetting,
 } from "@/lib/startListSettings";
+import { parseScheduleRowKey, roundCountForEvent, type ScheduleRowOrderByDay } from "@/lib/scheduleRowOrder";
 
 export type CompetitionScheduleTabLite = {
   id: string;
   name: string;
   displayOrder: number;
+  scheduleRowOrder?: ScheduleRowOrderByDay | null;
 };
 
 export type EventWithScheduleTab = {
@@ -44,19 +46,48 @@ export function filterEventsByScheduleTabId<T extends EventWithScheduleTab>(
 export type ScheduleTabListItem = {
   id: string;
   name: string;
-  /** そのタブに属する種目数 */
-  eventCount: number;
+  /** そのタブに属するスケジュール行数（ラウンド込み） */
+  rowCount: number;
 };
 
 export function buildScheduleTabListItems(
   tabs: readonly CompetitionScheduleTabLite[],
-  events: readonly EventWithScheduleTab[]
+  rowOrderByTabId: Record<string, string[]>
 ): ScheduleTabListItem[] {
   return tabs.map((t) => ({
     id: t.id,
     name: t.name,
-    eventCount: events.filter((e) => e.scheduleTabId === t.id).length,
+    rowCount: rowOrderByTabId[t.id]?.length ?? 0,
   }));
+}
+
+/** partition の行キーから表示行を構築 */
+export function buildScheduleRoundRowsFromKeys<T extends { id: string; startListRoundCount?: number }>(
+  rowKeys: readonly string[],
+  events: readonly T[],
+  roundCountDraftByEventId: Record<string, string>,
+  heatSettingForEvent: (eventId: string) => HeatSetting,
+  parseDraft: (raw: string | undefined, fallback: number) => number = parseScheduleRoundCountDraft
+): ScheduleRoundRow<T>[] {
+  const eventById = new Map(events.map((e) => [e.id, e]));
+  const rows: ScheduleRoundRow<T>[] = [];
+  for (const key of rowKeys) {
+    const parsed = parseScheduleRowKey(key);
+    if (!parsed) continue;
+    const event = eventById.get(parsed.eventId);
+    if (!event) continue;
+    const n = roundCountForEvent(event, roundCountDraftByEventId, parseDraft);
+    if (parsed.roundIndex < 0 || parsed.roundIndex >= n) continue;
+    const merged = heatSettingForEvent(event.id);
+    const roundTabs = buildRoundTabsForRoundCount(n, normalizeRoundTabs(merged));
+    const defaults = defaultStartListRoundTabLabels(n);
+    const label =
+      roundTabs[parsed.roundIndex]?.label?.trim() ||
+      defaults[parsed.roundIndex]?.trim() ||
+      `ラウンド ${parsed.roundIndex + 1}`;
+    rows.push({ event, roundIndex: parsed.roundIndex, roundLabel: label });
+  }
+  return rows;
 }
 
 export function parseScheduleRoundCountDraft(raw: string | undefined, fallback: number): number {

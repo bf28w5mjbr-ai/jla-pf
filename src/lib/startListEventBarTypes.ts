@@ -7,6 +7,8 @@ export type StartListEventBarItem = {
   displayOrder: number;
   ageCategoryId?: string | null;
   ageCategoryName?: string | null;
+  /** 年齢カテゴリの表示順（ラウンド設定タブの並びに使用） */
+  ageCategoryDisplayOrder?: number | null;
   scheduledStartAt?: Date | string | null;
   /** ラウンド別の想定開始（API・DB の JSON） */
   roundScheduledStarts?: unknown;

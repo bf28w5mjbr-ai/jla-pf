@@ -1,8 +1,8 @@
 "use client";
 
-import type { Dispatch, DragEvent, SetStateAction } from "react";
+import { useState, type Dispatch, DragEvent, SetStateAction } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Clock, GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
+import { GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -22,8 +22,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatEventStartJa } from "@/lib/eventScheduleDisplay";
+import { Badge } from "@/components/ui/badge";
+import {
+  formatEventStartTimeColumnJa,
+  formatScheduleDateHeadingJa,
+  scheduleDateKeyFromIso,
+} from "@/lib/eventScheduleDisplay";
 import { effectiveRoundStartIso, roundStartKey } from "@/lib/eventRoundScheduledStarts";
+import { formatScheduleRowKey } from "@/lib/scheduleRowOrder";
 import {
   type CompetitionScheduleTabLite,
   type ScheduleRoundRow,
@@ -31,15 +37,31 @@ import {
 import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
 import { sexLabelJa } from "@/lib/sexLabelJa";
 import { cn } from "@/lib/utils";
+import { StartListScheduleAssignBoard } from "@/components/StartListScheduleAssignBoard";
+import {
+  StartListSchedulePublicView,
+  type PublicScheduleViewSection,
+} from "@/components/StartListSchedulePublicView";
+import type { CompetitionScheduleDay } from "@/lib/competitionScheduleDays";
+
+type ScheduleCardMode = "assign" | "schedule";
 
 export type StartListScheduleCardProps = {
   competitionId: string;
   competitionName?: string;
-  hintEventListCard: string;
+  hintAssignCard: string;
+  hintScheduleCard: string;
   canReorder: boolean;
   canEditSchedule: boolean;
+  publicScheduleBarsOnly?: boolean;
+  publicScheduleSections?: PublicScheduleViewSection[];
+  scheduleDayTabs?: Array<Pick<CompetitionScheduleDay, "key" | "label">>;
+  competitionDays: readonly CompetitionScheduleDay[];
+  resolvedActiveScheduleDayKey?: string;
+  setActiveScheduleDayKey?: (key: string) => void;
   scheduleTabs: CompetitionScheduleTabLite[];
-  scheduleTabBarItems: Array<{ id: string; eventCount: number }>;
+  scheduleTabBarItems: Array<{ id: string; rowCount: number }>;
+  tabRowCountsAllDays?: Record<string, number>;
   resolvedActiveAreaTabId: string;
   setActiveAreaTabId: (id: string) => void;
   newTabNameDraft: string;
@@ -48,16 +70,9 @@ export type StartListScheduleCardProps = {
   reorderSaving: boolean;
   bulkApplying: boolean;
   timeSavingId: string | null;
-  roundSavingId: string | null;
-  heatSavingEventId: string | null;
-  heatPlanConfirmingId: string | null;
-  autoSortAfterSaveStart: boolean;
-  setAutoSortPreference: (enabled: boolean) => void;
-  handleSortByStartTime: () => void | Promise<void>;
+  roundSetupBulkSaving?: boolean;
   addScheduleTab: () => void | Promise<void>;
-  setRenameTargetTabId: (id: string) => void;
   setDeleteTargetTabId: (id: string) => void;
-  shiftActiveScheduleTab: (delta: -1 | 1) => void | Promise<void>;
   scheduleMinMax: { min?: string; max?: string };
   staggerBase: string;
   setStaggerBase: (v: string) => void;
@@ -65,20 +80,23 @@ export type StartListScheduleCardProps = {
   setStaggerMinutes: (v: string) => void;
   applyStaggerAndSave: () => void | Promise<void>;
   visibleRoundRows: ScheduleRoundRow<StartListEventBarItem>[];
+  rowsByTabId: Record<string, ScheduleRoundRow<StartListEventBarItem>[]>;
+  rowsByTabIdAndDay?: Record<string, Record<string, ScheduleRoundRow<StartListEventBarItem>[]>>;
   dragId: string | null;
   setDragId: (id: string | null) => void;
-  handleDropOn: (eventId: string) => void;
-  parseRoundCountDraft: (raw: string | undefined) => number;
+  handleDropOn: (rowKey: string) => void;
+  onAssignDropOn: (tabId: string, dayKey: string, targetRowKey: string | null) => void;
+  assignDirty?: boolean;
+  assignSaving?: boolean;
+  onSaveAssign?: () => void | Promise<void | boolean>;
+  onDiscardAssign?: () => void;
+  onBeforeLeaveAssignMode?: () => boolean | Promise<boolean>;
+  parseRoundCountDraft: (raw: string | undefined, fallback: number) => number;
   roundCounts: Record<string, string>;
   roundStarts: Record<string, string>;
   setRoundStarts: Dispatch<SetStateAction<Record<string, string>>>;
-  saveRoundStart: (eventId: string, roundIndex: number) => void | Promise<void>;
-  moveEventToScheduleTab: (eventId: string, tabId: string) => void | Promise<void>;
-  renameOpen: boolean;
-  setRenameOpen: (open: boolean) => void;
-  renameDraft: string;
-  setRenameDraft: (v: string) => void;
-  submitRenameTab: () => void | Promise<void>;
+  saveRoundStart: (eventId: string, roundIndex: number) => void | Promise<void | boolean>;
+  saveRoundStartOnBlur?: (eventId: string, roundIndex: number) => void;
   deleteOpen: boolean;
   setDeleteOpen: (open: boolean) => void;
   deleteTargetTabId: string | null;
@@ -91,11 +109,19 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
   const {
     competitionId,
     competitionName,
-    hintEventListCard,
+    hintAssignCard,
+    hintScheduleCard,
     canReorder,
     canEditSchedule,
+    publicScheduleBarsOnly = false,
+    publicScheduleSections = [],
+    scheduleDayTabs = [],
+    competitionDays,
+    resolvedActiveScheduleDayKey = "",
+    setActiveScheduleDayKey,
     scheduleTabs,
     scheduleTabBarItems,
+    tabRowCountsAllDays = {},
     resolvedActiveAreaTabId,
     setActiveAreaTabId,
     newTabNameDraft,
@@ -104,19 +130,10 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
     reorderSaving,
     bulkApplying,
     timeSavingId,
-    roundSavingId,
-    heatSavingEventId,
-    heatPlanConfirmingId,
-    autoSortAfterSaveStart,
-    setAutoSortPreference,
-    handleSortByStartTime,
+    roundSetupBulkSaving = false,
     addScheduleTab,
-    setRenameTargetTabId,
-    setRenameDraft,
-    setRenameOpen,
     setDeleteTargetTabId,
     setDeleteOpen,
-    shiftActiveScheduleTab,
     scheduleMinMax,
     staggerBase,
     setStaggerBase,
@@ -124,18 +141,22 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
     setStaggerMinutes,
     applyStaggerAndSave,
     visibleRoundRows,
+    rowsByTabId,
+    rowsByTabIdAndDay = {},
     dragId,
     setDragId,
     handleDropOn,
+    onAssignDropOn,
+    assignDirty = false,
+    assignSaving = false,
+    onSaveAssign,
+    onDiscardAssign,
+    onBeforeLeaveAssignMode,
     parseRoundCountDraft,
     roundCounts,
     roundStarts,
     setRoundStarts,
-    saveRoundStart,
-    moveEventToScheduleTab,
-    renameOpen,
-    renameDraft,
-    submitRenameTab,
+    saveRoundStartOnBlur,
     deleteOpen,
     deleteTargetTabId,
     deleteMigrateToTabId,
@@ -143,427 +164,384 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
     submitDeleteTab,
   } = props;
 
+  const [scheduleCardMode, setScheduleCardMode] = useState<ScheduleCardMode>(
+    canReorder ? "assign" : "schedule"
+  );
+  const [areaTabsEditMode, setAreaTabsEditMode] = useState(false);
+
+  const effectiveMode: ScheduleCardMode = canReorder ? scheduleCardMode : "schedule";
+  const modeSwitchDisabled = reorderSaving || tabMutationSaving || assignSaving;
+  const hintText = effectiveMode === "assign" ? hintAssignCard : hintScheduleCard;
+  const showScheduleDayTabs =
+    !publicScheduleBarsOnly &&
+    effectiveMode === "schedule" &&
+    scheduleDayTabs.length > 0 &&
+    (canReorder || canEditSchedule);
+  const showScheduleAreaTabs =
+    !publicScheduleBarsOnly && effectiveMode === "schedule" && scheduleTabs.length > 1;
+
+  const switchMode = async (mode: ScheduleCardMode) => {
+    if (modeSwitchDisabled) return;
+    if (mode === "schedule" && effectiveMode === "assign" && onBeforeLeaveAssignMode) {
+      const ok = await onBeforeLeaveAssignMode();
+      if (!ok) return;
+    }
+    setDragId(null);
+    setScheduleCardMode(mode);
+    if (mode === "schedule") {
+      setAreaTabsEditMode(false);
+    }
+  };
+
   return (
     <>
-    <Card className="overflow-hidden border-border/80 shadow-sm">
-      <CardHeader className="space-y-0.5 border-b border-border/80 bg-muted/15 px-2.5 py-1.5">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-2">
-          <div className="min-w-0 flex-1 space-y-0.5">
-            <CardTitle className="text-sm font-semibold leading-tight">タイムスケジュール</CardTitle>
-            {competitionName ? (
-              <p className="truncate text-[10px] text-muted-foreground">{competitionName}</p>
-            ) : null}
-          </div>
-          {canReorder ? (
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 sm:shrink-0 sm:justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-6 gap-0.5 px-2 text-[11px]"
-                onClick={() => void handleSortByStartTime()}
-                disabled={reorderSaving || bulkApplying || timeSavingId !== null || roundSavingId !== null || heatSavingEventId !== null || heatPlanConfirmingId !== null}
-              >
-                <Clock className="h-3 w-3" />
-                時刻順
-              </Button>
-              {canEditSchedule ? (
-                <label className="flex cursor-pointer items-center gap-1 text-[10px] text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    className="size-3 rounded border-input accent-primary"
-                    checked={autoSortAfterSaveStart}
-                    onChange={(e) => setAutoSortPreference(e.target.checked)}
-                  />
-                  保存後に時刻順へ
-                </label>
+      <Card className="overflow-hidden border-border/80 shadow-sm">
+        <CardHeader className="space-y-0.5 border-b border-border/80 bg-muted/15 px-2.5 py-1.5">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0 space-y-0.5">
+              <CardTitle className="text-sm font-semibold leading-tight">タイムスケジュール</CardTitle>
+              {competitionName ? (
+                <p className="truncate text-[10px] text-muted-foreground">{competitionName}</p>
               ) : null}
             </div>
-          ) : null}
-        </div>
-        <p className="text-[10px] leading-snug text-muted-foreground">{hintEventListCard}</p>
-        {scheduleTabs.length > 0 && (scheduleTabs.length > 1 || canReorder) ? (
-          <div className="mt-2 space-y-2 border-t border-border/40 pt-2">
-            {scheduleTabs.length > 1 ? (
-              <Tabs value={resolvedActiveAreaTabId} onValueChange={setActiveAreaTabId}>
-                <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between lg:gap-3">
-                  <TabsList className="h-auto min-h-9 w-full max-w-full flex-1 flex-wrap justify-start gap-0.5 bg-muted/50 p-1">
-                    {scheduleTabs.map((t) => (
-                      <TabsTrigger
-                        key={t.id}
-                        value={t.id}
-                        className="max-w-[11rem] shrink-0 px-2 py-1 text-left text-[11px]"
-                      >
-                        <span className="truncate">{t.name}</span>
-                        <span className="ml-0.5 shrink-0 tabular-nums text-muted-foreground">
-                          ({scheduleTabBarItems.find((x) => x.id === t.id)?.eventCount ?? 0})
-                        </span>
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                  {canReorder ? (
-                    <div className="flex flex-wrap items-center gap-1 lg:shrink-0">
-                      <Input
-                        placeholder="例: メイン池 東側"
-                        className="h-7 max-w-[10rem] text-[11px]"
-                        value={newTabNameDraft}
-                        onChange={(e) => setNewTabNameDraft(e.target.value)}
-                        disabled={tabMutationSaving}
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className="h-7 px-2 text-[11px]"
-                        onClick={() => void addScheduleTab()}
-                        disabled={tabMutationSaving || reorderSaving}
-                        aria-label="エリアを追加"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 gap-0.5 px-2 text-[11px]"
-                        onClick={() => {
-                          const tab = scheduleTabs.find((t) => t.id === resolvedActiveAreaTabId);
-                          if (!tab) return;
-                          setRenameTargetTabId(tab.id);
-                          setRenameDraft(tab.name);
-                          setRenameOpen(true);
-                        }}
-                        disabled={tabMutationSaving || !resolvedActiveAreaTabId}
-                      >
-                        <Pencil className="h-3 w-3" />
-                        名前
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 gap-0.5 px-2 text-[11px]"
-                        onClick={() => {
-                          setDeleteTargetTabId(resolvedActiveAreaTabId);
-                          const other = scheduleTabs.find((t) => t.id !== resolvedActiveAreaTabId);
-                          setDeleteMigrateToTabId(other?.id ?? "");
-                          setDeleteOpen(true);
-                        }}
-                        disabled={
-                          tabMutationSaving || scheduleTabs.length <= 1 || !resolvedActiveAreaTabId
-                        }
-                      >
-                        <Trash2 className="h-3 w-3" />
-                        削除
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 px-1 text-[11px]"
-                        disabled={tabMutationSaving || scheduleTabs.length <= 1}
-                        onClick={() => void shiftActiveScheduleTab(-1)}
-                        aria-label="エリアを左へ"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 px-1 text-[11px]"
-                        disabled={tabMutationSaving || scheduleTabs.length <= 1}
-                        onClick={() => void shiftActiveScheduleTab(1)}
-                        aria-label="エリアを右へ"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-              </Tabs>
-            ) : (
-              <div className="flex flex-wrap items-center gap-1">
-                <Input
-                  placeholder="例: メイン池 東側"
-                  className="h-7 max-w-[10rem] text-[11px]"
-                  value={newTabNameDraft}
-                  onChange={(e) => setNewTabNameDraft(e.target.value)}
-                  disabled={tabMutationSaving}
-                />
+            {canReorder ? (
+              <div className="inline-flex shrink-0 rounded-lg border border-border/60 bg-muted/40 p-0.5">
                 <Button
                   type="button"
                   size="sm"
-                  variant="secondary"
-                  className="h-7 px-2 text-[11px]"
-                  onClick={() => void addScheduleTab()}
-                  disabled={tabMutationSaving || reorderSaving}
-                  aria-label="エリアを追加"
+                  variant={effectiveMode === "assign" ? "secondary" : "ghost"}
+                  className="h-7 px-2.5 text-[11px]"
+                  disabled={modeSwitchDisabled}
+                  onClick={() => void switchMode("assign")}
                 >
-                  <Plus className="h-3.5 w-3.5" />
+                  振分
                 </Button>
-                <span className="text-[10px] text-muted-foreground">エリアを分けるときは名前を入れて追加</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={effectiveMode === "schedule" ? "secondary" : "ghost"}
+                  className="h-7 px-2.5 text-[11px]"
+                  disabled={modeSwitchDisabled}
+                  onClick={() => void switchMode("schedule")}
+                >
+                  スケジュール
+                </Button>
               </div>
-            )}
+            ) : null}
           </div>
-        ) : null}
-      </CardHeader>
-      <CardContent className="p-0">
-        {canEditSchedule ? (
-          <details className="group border-b border-border/50 bg-muted/5">
-            <summary className="cursor-pointer list-none px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground marker:content-none hover:bg-muted/25 [&::-webkit-details-marker]:hidden">
-              <span className="underline decoration-dotted underline-offset-2 group-open:no-underline">
-                一括で開始時刻（表示中のエリアのリスト上から順に、各行＝ラウンドごとに分刻みで保存）
-              </span>
-            </summary>
-            <div className="flex flex-wrap items-end gap-2 border-t border-border/40 px-2.5 py-2">
-              <div className="space-y-0.5">
-                <Label htmlFor="stagger-base" className="text-[10px] text-muted-foreground">
-                  1件目
-                </Label>
-                <Input
-                  id="stagger-base"
-                  type="datetime-local"
-                  className="h-7 max-w-[10.5rem] text-[11px]"
-                  min={scheduleMinMax.min}
-                  max={scheduleMinMax.max}
-                  value={staggerBase}
-                  onChange={(e) => setStaggerBase(e.target.value)}
-                  disabled={bulkApplying || roundSavingId !== null || reorderSaving || heatSavingEventId !== null || heatPlanConfirmingId !== null}
-                />
-              </div>
-              <div className="space-y-0.5">
-                <Label htmlFor="stagger-step" className="text-[10px] text-muted-foreground">
-                  間隔(分)
-                </Label>
-                <Input
-                  id="stagger-step"
-                  numericInput="integer"
-                  min={1}
-                  max={1440}
-                  className="h-7 w-[4.25rem] text-[11px]"
-                  value={staggerMinutes}
-                  onChange={(e) => setStaggerMinutes(e.target.value)}
-                  disabled={bulkApplying || roundSavingId !== null || reorderSaving || heatSavingEventId !== null || heatPlanConfirmingId !== null}
-                />
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="h-7 px-2 text-[11px]"
-                onClick={() => void applyStaggerAndSave()}
-                disabled={bulkApplying || reorderSaving || timeSavingId !== null || roundSavingId !== null || heatSavingEventId !== null || heatPlanConfirmingId !== null}
-              >
-                {bulkApplying ? "保存中…" : "このエリアに保存"}
-              </Button>
-            </div>
-          </details>
-        ) : null}
-        <ul className="divide-y divide-border/50">
-          {visibleRoundRows.length === 0 ? (
-            <li className="px-2.5 py-6 text-center text-xs text-muted-foreground">
-              {scheduleTabs.length > 1
-                ? "このエリアに表示する種目がありません。行の「エリア」から移すか、別のエリアを選んでください。"
-                : "表示する種目がありません。エリアを追加すると種目を分けて表示できます。"}
-            </li>
+          {hintText ? (
+            <p className="text-[10px] leading-snug text-muted-foreground">{hintText}</p>
           ) : null}
-          {visibleRoundRows.map(({ event, roundIndex, roundLabel }) => {
-            const rk = roundStartKey(event.id, roundIndex);
-            const roundIso = effectiveRoundStartIso({
-              scheduledStartAt: event.scheduledStartAt,
-              roundScheduledStarts: event.roundScheduledStarts,
-              roundIndex,
-            });
-            const scheduleText = canEditSchedule
-              ? null
-              : roundIso
-                ? formatEventStartJa(roundIso)
-                : null;
-            const rowDrop = canReorder
-              ? {
-                  onDragOver: (e: DragEvent) => {
-                    if (!dragId) return;
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = "move";
-                  },
-                  onDrop: (e: DragEvent) => {
-                    e.preventDefault();
-                    handleDropOn(event.id);
-                  },
-                }
-              : {};
-            const nRounds = parseRoundCountDraft(roundCounts[event.id]);
-            const startListHref =
-              nRounds > 1
-                ? `/competitions/${competitionId}/start-list/${event.id}?roundIndex=${roundIndex}`
-                : `/competitions/${competitionId}/start-list/${event.id}`;
-            const tabSelectValue = event.scheduleTabId ?? scheduleTabs[0]?.id ?? "";
-
-            return (
-              <li
-                key={`${event.id}-${roundIndex}`}
-                className={cn(
-                  "flex flex-col sm:flex-row sm:items-stretch",
-                  dragId === event.id ? "bg-muted/40" : roundIndex % 2 === 1 ? "bg-muted/[0.06]" : ""
-                )}
-              >
-                <div className="flex min-w-0 flex-1 items-stretch">
-                  {canReorder ? (
-                    <button
-                      type="button"
-                      draggable
-                      aria-label={`${event.name}（${roundLabel}）の並べ替え`}
-                      className="flex w-7 shrink-0 cursor-grab touch-none items-center justify-center border-r border-border/50 px-0 text-muted-foreground active:cursor-grabbing"
-                      onDragStart={(e) => {
-                        setDragId(event.id);
-                        e.dataTransfer.effectAllowed = "move";
-                        e.dataTransfer.setData("text/plain", event.id);
-                      }}
-                      onDragEnd={() => setDragId(null)}
-                      {...rowDrop}
+          {showScheduleDayTabs && setActiveScheduleDayKey ? (
+            <div className="mt-2 border-t border-border/40 pt-2">
+              <Tabs value={resolvedActiveScheduleDayKey} onValueChange={setActiveScheduleDayKey}>
+                <TabsList className="h-auto min-h-9 min-w-0 flex-wrap justify-start gap-1 bg-muted/50 p-1">
+                  {scheduleDayTabs.map((d) => (
+                    <TabsTrigger
+                      key={d.key}
+                      value={d.key}
+                      className="shrink-0 px-2 py-1 text-[11px]"
                     >
-                      <GripVertical className="h-3.5 w-3.5" />
-                    </button>
-                  ) : null}
-                  {canReorder && scheduleTabs.length > 1 ? (
-                    <div className="flex w-[8.25rem] shrink-0 items-center justify-center border-r border-border/50 px-1">
-                      <Select
-                        value={tabSelectValue}
-                        onValueChange={(v) => void moveEventToScheduleTab(event.id, v)}
+                      {d.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+            </div>
+          ) : null}
+          {showScheduleAreaTabs ? (
+            <div className="mt-2 border-t border-border/40 pt-2">
+              <Tabs value={resolvedActiveAreaTabId} onValueChange={setActiveAreaTabId}>
+                <TabsList className="h-auto min-h-9 min-w-0 flex-wrap justify-start gap-1 bg-muted/50 p-1">
+                  {scheduleTabs.map((t) => {
+                    const rowCount =
+                      scheduleTabBarItems.find((x) => x.id === t.id)?.rowCount ?? 0;
+                    return (
+                      <TabsTrigger
+                        key={t.id}
+                        value={t.id}
+                        className="max-w-[11rem] shrink-0 gap-1 px-2 py-1 text-left text-[11px]"
                       >
-                        <SelectTrigger
-                          className="h-7 w-full max-w-[7.5rem] text-[10px]"
-                          aria-label={`${event.name} のエリア`}
-                        >
-                          <SelectValue placeholder="エリア" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {scheduleTabs.map((t) => (
-                            <SelectItem key={t.id} value={t.id} className="text-xs">
-                              {t.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ) : null}
-                  <Link
-                    href={startListHref}
-                    className="flex min-w-0 flex-1 flex-col gap-0 px-2 py-1.5 text-left text-sm transition hover:bg-muted/30 sm:flex-row sm:items-center sm:gap-2 sm:py-1.5"
-                    {...rowDrop}
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium leading-tight">
-                        {event.name}
-                        <span className="font-normal text-muted-foreground"> · {roundLabel}</span>
-                      </span>
-                      {scheduleText ? (
-                        <span className="mt-0.5 block truncate text-[10px] leading-tight text-muted-foreground">
-                          {scheduleText}
+                        <span className="truncate">{t.name}</span>
+                        <span className="shrink-0 tabular-nums text-muted-foreground">
+                          ({rowCount})
                         </span>
-                      ) : null}
-                    </span>
-                    <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {sexLabelJa(event.sex)}
-                      {event.type === "TEAM" ? " · 団体" : " · 個人"}
-                      {event.ageCategoryName ? ` · ${event.ageCategoryName}` : ""}
-                    </span>
-                  </Link>
-                </div>
-                {canEditSchedule ? (
-                  <div className="flex shrink-0 items-center gap-1 border-t border-border/50 px-2 py-1 sm:w-auto sm:border-l sm:border-t-0 sm:py-1 sm:pl-2 sm:pr-2">
-                    <Input
-                      type="datetime-local"
-                      aria-label={`${event.name}（${roundLabel}）の開始時刻`}
-                      className="h-7 max-w-[10.5rem] text-[11px]"
-                      min={scheduleMinMax.min}
-                      max={scheduleMinMax.max}
-                      value={roundStarts[rk] ?? ""}
-                      onChange={(e) =>
-                        setRoundStarts((p) => ({ ...p, [rk]: e.target.value }))
-                      }
-                      disabled={
-                        bulkApplying ||
-                        roundSavingId !== null ||
-                        reorderSaving ||
-                        heatSavingEventId !== null ||
-                        heatPlanConfirmingId !== null
-                      }
-                    />
+                      </TabsTrigger>
+                    );
+                  })}
+                </TabsList>
+              </Tabs>
+            </div>
+          ) : null}
+        </CardHeader>
+        <CardContent className="p-0">
+          {publicScheduleBarsOnly ? (
+            <StartListSchedulePublicView
+              competitionId={competitionId}
+              sections={publicScheduleSections}
+              scheduleTabCount={scheduleTabs.length}
+              roundCounts={roundCounts}
+            />
+          ) : effectiveMode === "assign" ? (
+            <StartListScheduleAssignBoard
+              scheduleTabs={scheduleTabs}
+              competitionDays={competitionDays}
+              rowsByTabIdAndDay={rowsByTabIdAndDay}
+              tabRowCountsAllDays={tabRowCountsAllDays}
+              tabMutationSaving={tabMutationSaving}
+              assignSaving={assignSaving}
+              assignDirty={assignDirty}
+              onSaveAssign={onSaveAssign}
+              onDiscardAssign={onDiscardAssign}
+              newTabNameDraft={newTabNameDraft}
+              setNewTabNameDraft={setNewTabNameDraft}
+              addScheduleTab={addScheduleTab}
+              areaTabsEditMode={areaTabsEditMode}
+              setAreaTabsEditMode={setAreaTabsEditMode}
+              setDeleteTargetTabId={setDeleteTargetTabId}
+              setDeleteMigrateToTabId={setDeleteMigrateToTabId}
+              setDeleteOpen={setDeleteOpen}
+              dragId={dragId}
+              setDragId={setDragId}
+              onAssignDropOn={onAssignDropOn}
+            />
+          ) : (
+            <>
+              {canEditSchedule ? (
+                <div className="border-b border-border/50 bg-muted/5 px-2.5 py-2">
+                  <p className="mb-1.5 text-[10px] font-medium text-muted-foreground">
+                    一括で開始時刻（表示中の日・エリアの上から順に、各行＝ラウンドごとに分刻みで保存）
+                  </p>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="stagger-base" className="text-[10px] text-muted-foreground">
+                        1件目
+                      </Label>
+                      <Input
+                        id="stagger-base"
+                        type="datetime-local"
+                        className="h-7 max-w-[10.5rem] text-[11px]"
+                        min={scheduleMinMax.min}
+                        max={scheduleMinMax.max}
+                        value={staggerBase}
+                        onChange={(e) => setStaggerBase(e.target.value)}
+                        disabled={bulkApplying || roundSetupBulkSaving || reorderSaving}
+                      />
+                    </div>
+                    <div className="space-y-0.5">
+                      <Label htmlFor="stagger-step" className="text-[10px] text-muted-foreground">
+                        間隔(分)
+                      </Label>
+                      <Input
+                        id="stagger-step"
+                        numericInput="integer"
+                        min={1}
+                        max={1440}
+                        className="h-7 w-[4.25rem] text-[11px]"
+                        value={staggerMinutes}
+                        onChange={(e) => setStaggerMinutes(e.target.value)}
+                        disabled={bulkApplying || roundSetupBulkSaving || reorderSaving}
+                      />
+                    </div>
                     <Button
                       type="button"
                       size="sm"
                       variant="secondary"
-                      className="h-7 shrink-0 px-2 text-[11px]"
-                      onClick={() => void saveRoundStart(event.id, roundIndex)}
+                      className="h-7 px-2 text-[11px]"
+                      onClick={() => void applyStaggerAndSave()}
                       disabled={
                         bulkApplying ||
-                        timeSavingId === `${event.id}:${roundIndex}` ||
-                        roundSavingId !== null ||
                         reorderSaving ||
-                        heatSavingEventId !== null ||
-                        heatPlanConfirmingId !== null
+                        timeSavingId !== null ||
+                        roundSetupBulkSaving
                       }
                     >
-                      {timeSavingId === `${event.id}:${roundIndex}` ? "保存中" : "保存"}
+                      {bulkApplying ? "保存中…" : "このエリアに保存"}
                     </Button>
                   </div>
+                </div>
+              ) : null}
+              <ul className="divide-y divide-border/50">
+                {visibleRoundRows.length === 0 ? (
+                  <li className="px-2.5 py-6 text-center text-xs text-muted-foreground">
+                    {canReorder
+                      ? "この日・エリアに表示する種目がありません。「振分」モードで行を配置してください。"
+                      : scheduleTabs.length > 1
+                        ? "この日・エリアに表示する種目がありません。別の日またはエリアを選んでください。"
+                        : "この日に表示する種目がありません。"}
+                  </li>
                 ) : null}
-              </li>
-            );
-          })}
-        </ul>
-        {canReorder && reorderSaving ? (
-          <p className="border-t border-border/50 px-2.5 py-1 text-[10px] text-muted-foreground">
-            並べ替え保存中…
-          </p>
-        ) : null}
-        {canEditSchedule && bulkApplying ? (
-          <p className="border-t border-border/50 px-2.5 py-1 text-[10px] text-muted-foreground">
-            一括保存中…
-          </p>
-        ) : null}
-      </CardContent>
-    </Card>
+                {visibleRoundRows.map(({ event, roundIndex, roundLabel }, rowIdx) => {
+                  const rowKey = formatScheduleRowKey(event.id, roundIndex);
+                  const rk = roundStartKey(event.id, roundIndex);
+                  const roundIso = effectiveRoundStartIso({
+                    scheduledStartAt: event.scheduledStartAt,
+                    roundScheduledStarts: event.roundScheduledStarts,
+                    roundIndex,
+                  });
+                  const timeColumn = formatEventStartTimeColumnJa(roundIso);
+                  const prevRow = rowIdx > 0 ? visibleRoundRows[rowIdx - 1] : null;
+                  const prevIso = prevRow
+                    ? effectiveRoundStartIso({
+                        scheduledStartAt: prevRow.event.scheduledStartAt,
+                        roundScheduledStarts: prevRow.event.roundScheduledStarts,
+                        roundIndex: prevRow.roundIndex,
+                      })
+                    : null;
+                  const dateKey = scheduleDateKeyFromIso(roundIso);
+                  const prevDateKey = scheduleDateKeyFromIso(prevIso);
+                  const showDateHeading = dateKey && dateKey !== prevDateKey;
+                  const dateHeading = showDateHeading ? formatScheduleDateHeadingJa(roundIso) : null;
+                  const rowDrop = canReorder
+                    ? {
+                        onDragOver: (e: DragEvent) => {
+                          if (!dragId) return;
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                        },
+                        onDrop: (e: DragEvent) => {
+                          e.preventDefault();
+                          handleDropOn(rowKey);
+                        },
+                      }
+                    : {};
+                  const savedRound =
+                    typeof event.startListRoundCount === "number" &&
+                    Number.isInteger(event.startListRoundCount) &&
+                    event.startListRoundCount >= 1
+                      ? event.startListRoundCount
+                      : 1;
+                  const nRounds = parseRoundCountDraft(roundCounts[event.id], savedRound);
+                  const startListHref =
+                    nRounds > 1
+                      ? `/competitions/${competitionId}/start-list/${event.id}?roundIndex=${roundIndex}`
+                      : `/competitions/${competitionId}/start-list/${event.id}`;
+                  const isSaving = timeSavingId === `${event.id}:${roundIndex}`;
 
-      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>エリア名を変更</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2 py-1">
-            <Label htmlFor="rename-schedule-tab" className="text-xs text-muted-foreground">
-              名前
-            </Label>
-            <Input
-              id="rename-schedule-tab"
-              value={renameDraft}
-              onChange={(e) => setRenameDraft(e.target.value)}
-              className="h-9 text-sm"
-              maxLength={64}
-            />
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => setRenameOpen(false)}>
-              キャンセル
-            </Button>
-            <Button type="button" onClick={() => void submitRenameTab()} disabled={tabMutationSaving}>
-              保存
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                  return (
+                    <li key={rowKey} className="list-none">
+                      {dateHeading ? (
+                        <div className="border-b border-border/40 bg-muted/10 px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
+                          {dateHeading}
+                        </div>
+                      ) : null}
+                      <div
+                        className={cn(
+                          "flex flex-col sm:flex-row sm:items-stretch",
+                          dragId === rowKey
+                            ? "bg-muted/40"
+                            : rowIdx % 2 === 1
+                              ? "bg-muted/[0.04]"
+                              : ""
+                        )}
+                      >
+                        <div className="flex min-w-0 flex-1 items-stretch">
+                          {canReorder ? (
+                            <button
+                              type="button"
+                              draggable
+                              aria-label={`${event.name}（${roundLabel}）の並べ替え`}
+                              className="flex w-7 shrink-0 cursor-grab touch-none items-center justify-center border-r border-border/50 px-0 text-muted-foreground active:cursor-grabbing"
+                              onDragStart={(e) => {
+                                setDragId(rowKey);
+                                e.dataTransfer.effectAllowed = "move";
+                                e.dataTransfer.setData("text/plain", rowKey);
+                              }}
+                              onDragEnd={() => setDragId(null)}
+                              {...rowDrop}
+                            >
+                              <GripVertical className="h-3.5 w-3.5" />
+                            </button>
+                          ) : null}
+                          <div
+                            className={cn(
+                              "flex w-[3.25rem] shrink-0 items-center justify-center border-r border-border/50 px-1 tabular-nums text-[11px]",
+                              canEditSchedule ? "text-muted-foreground" : "font-medium text-foreground"
+                            )}
+                          >
+                            {timeColumn ?? (
+                              <span className="text-[10px] text-muted-foreground/70">未定</span>
+                            )}
+                          </div>
+                          <Link
+                            href={startListHref}
+                            className="flex min-w-0 flex-1 flex-col gap-0.5 px-2 py-1.5 text-left text-sm transition hover:bg-muted/30 sm:flex-row sm:items-center sm:gap-2"
+                            {...rowDrop}
+                          >
+                            <span className="min-w-0 flex-1">
+                              <span className="flex flex-wrap items-center gap-1.5">
+                                <span className="truncate text-[13px] font-medium leading-tight">
+                                  {event.name}
+                                </span>
+                                <Badge
+                                  variant="secondary"
+                                  className="h-4 shrink-0 px-1.5 text-[9px] font-normal"
+                                >
+                                  {roundLabel}
+                                </Badge>
+                              </span>
+                            </span>
+                            <span className="shrink-0 text-[10px] text-muted-foreground">
+                              {sexLabelJa(event.sex)}
+                              {event.type === "TEAM" ? " · 団体" : " · 個人"}
+                              {event.ageCategoryName ? ` · ${event.ageCategoryName}` : ""}
+                            </span>
+                          </Link>
+                        </div>
+                        {canEditSchedule ? (
+                          <div className="flex shrink-0 items-center gap-1 border-t border-border/50 px-2 py-1 sm:w-auto sm:border-l sm:border-t-0 sm:py-1 sm:pl-2 sm:pr-2">
+                            <Input
+                              type="datetime-local"
+                              aria-label={`${event.name}（${roundLabel}）の開始時刻`}
+                              className="h-7 max-w-[10.5rem] text-[11px]"
+                              min={scheduleMinMax.min}
+                              max={scheduleMinMax.max}
+                              value={roundStarts[rk] ?? ""}
+                              onChange={(e) =>
+                                setRoundStarts((p) => ({ ...p, [rk]: e.target.value }))
+                              }
+                              onBlur={() => saveRoundStartOnBlur?.(event.id, roundIndex)}
+                              disabled={bulkApplying || roundSetupBulkSaving || reorderSaving}
+                            />
+                            {isSaving ? (
+                              <span className="shrink-0 text-[10px] text-muted-foreground">
+                                保存中
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              {canReorder && reorderSaving ? (
+                <p className="border-t border-border/50 px-2.5 py-1 text-[10px] text-muted-foreground">
+                  並べ替え保存中…
+                </p>
+              ) : null}
+              {canEditSchedule && bulkApplying ? (
+                <p className="border-t border-border/50 px-2.5 py-1 text-[10px] text-muted-foreground">
+                  一括保存中…
+                </p>
+              ) : null}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>エリアを削除</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            このエリアを削除します。種目が残っている場合は、あらかじめ移動先のエリアを選んでください。
+            このエリアを削除します。行（ラウンド）が残っている場合は、あらかじめ移動先のエリアを選んでください。
           </p>
           {deleteTargetTabId &&
-          (scheduleTabBarItems.find((x) => x.id === deleteTargetTabId)?.eventCount ?? 0) > 0 ? (
+          (tabRowCountsAllDays[deleteTargetTabId] ??
+            scheduleTabBarItems.find((x) => x.id === deleteTargetTabId)?.rowCount ??
+            0) > 0 ? (
             <div className="space-y-2 py-2">
               <Label className="text-xs text-muted-foreground">移動先エリア</Label>
               <Select value={deleteMigrateToTabId} onValueChange={setDeleteMigrateToTabId}>

@@ -33,7 +33,7 @@ const competitionPublicDetailInclude = (sessionUserId: string | null) =>
     },
     scheduleTabs: {
       orderBy: { displayOrder: "asc" as const },
-      select: { id: true, name: true, displayOrder: true },
+      select: { id: true, name: true, displayOrder: true, scheduleRowOrder: true },
     },
     events: {
       select: {

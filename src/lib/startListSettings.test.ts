@@ -6,11 +6,81 @@ import {
   coerceRoundTabsToHeatOnly,
   defaultProgressionRoundLabels,
   defaultStartListRoundTabLabels,
+  normalizeHeatSettingForPersist,
   normalizeRoundTabs,
+  resolveEventRoundCount,
   resolveHeatCountForSnapshotTransition,
   resolveMaxLanesForSnapshotTransition,
+  resolveRoundTabsForEvent,
   resolveTabMaxLanes,
 } from "./startListSettings";
+
+describe("resolveEventRoundCount", () => {
+  it("roundTabs.length を優先する", () => {
+    const settings = {
+      events: {
+        ev1: {
+          roundTabs: [
+            { id: "a", label: "q", mode: "count", heatCount: "1", heatSize: "" },
+            { id: "b", label: "s", mode: "count", heatCount: "1", heatSize: "" },
+            { id: "c", label: "f", mode: "count", heatCount: "1", heatSize: "" },
+          ],
+        },
+      },
+    };
+    expect(resolveEventRoundCount("ev1", settings, 1)).toBe(3);
+  });
+
+  it("roundTabs が無いとき列に fallback", () => {
+    expect(resolveEventRoundCount("ev1", {}, 2)).toBe(2);
+  });
+});
+
+describe("normalizeHeatSettingForPersist", () => {
+  it("roundTabs のみ永続化しトップレベル mode を落とす", () => {
+    const out = normalizeHeatSettingForPersist({
+      mode: "count",
+      heatCount: "9",
+      heatSize: "",
+      roundTabs: [
+        { id: "a", label: "f", mode: "count", heatCount: "1", heatSize: "" },
+      ],
+      progressionHeatCounts: [2, 1],
+    });
+    expect(out.mode).toBeUndefined();
+    expect(out.heatCount).toBeUndefined();
+    expect(out.roundTabs).toHaveLength(1);
+    expect(out.progressionHeatCounts).toEqual([2, 1]);
+  });
+});
+
+describe("resolveRoundTabsForEvent", () => {
+  it("roundCount に合わせてタブ数を揃える", () => {
+    const tabs = resolveRoundTabsForEvent({
+      heatSetting: {
+        roundTabs: [
+          { id: "a", label: "f", mode: "count", heatCount: "1", heatSize: "" },
+        ],
+      },
+      roundCount: 3,
+    });
+    expect(tabs).toHaveLength(3);
+  });
+
+  it("coerceToCount で size を count に変換", () => {
+    const tabs = resolveRoundTabsForEvent({
+      heatSetting: {
+        roundTabs: [
+          { id: "a", label: "f", mode: "size", heatCount: "1", heatSize: "8" },
+        ],
+      },
+      roundCount: 1,
+      entryCount: 16,
+      coerceToCount: true,
+    });
+    expect(tabs[0]).toMatchObject({ mode: "count", heatCount: "2", heatSize: "" });
+  });
+});
 
 describe("defaultProgressionRoundLabels", () => {
   it("matches 1〜6 ラウンドの規則（初回レース含む）", () => {

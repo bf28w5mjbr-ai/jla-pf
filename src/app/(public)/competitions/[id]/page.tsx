@@ -65,6 +65,8 @@ import {
 } from "@/lib/competitionEntryAgeTiered";
 import { renderRequiredQualificationsSummary } from "@/lib/competitionParticipationSummaries";
 import { sortEventsByScheduleTabs } from "@/lib/competitionScheduleTabDisplay";
+import { parseScheduleRowOrderByDayJson } from "@/lib/scheduleRowOrder";
+import { firstCompetitionScheduleDayKey } from "@/lib/competitionScheduleDays";
 
 export const dynamic = "force-dynamic";
 
@@ -104,10 +106,15 @@ export default async function CompetitionDetailPage({
     notFound();
   }
 
+  const defaultScheduleDayKey = firstCompetitionScheduleDayKey(
+    competition.startDate,
+    competition.endDate
+  );
   const scheduleTabsForPanel = competition.scheduleTabs.map((t) => ({
     id: t.id,
     name: t.name,
     displayOrder: t.displayOrder,
+    scheduleRowOrder: parseScheduleRowOrderByDayJson(t.scheduleRowOrder, defaultScheduleDayKey),
   }));
 
   const eventsForStartListPanel = sortEventsByScheduleTabs(
@@ -618,14 +625,6 @@ export default async function CompetitionDetailPage({
 
       <CompetitionPublicPageTabs
         competitionId={id}
-        tabsTrailing={
-          <StartListVisibilityAdminControls
-            canManage={canToggleStartListVisibility}
-            organizationId={competition.organizationId}
-            competitionId={id}
-            initialVisible={competition.startListPubliclyVisible ?? true}
-          />
-        }
         overview={
           activeTab === "overview" ? (
             <div className="space-y-4">
@@ -855,6 +854,14 @@ export default async function CompetitionDetailPage({
                 passphraseConfigured={dayOpsUnlockConfigured}
                 alreadyUnlocked={hasDayOpsUnlock}
               />
+              <div className="flex justify-end">
+                <StartListVisibilityAdminControls
+                  canManage={canToggleStartListVisibility}
+                  organizationId={competition.organizationId}
+                  competitionId={id}
+                  initialVisible={competition.startListPubliclyVisible ?? true}
+                />
+              </div>
               {canViewStartListOnPublicPage ? (
                 <StartListEventIndexBars
                   competitionId={competition.id}
@@ -870,6 +877,7 @@ export default async function CompetitionDetailPage({
                     displayOrder: event.displayOrder,
                     ageCategoryId: event.ageCategory?.id ?? null,
                     ageCategoryName: event.ageCategory?.name ?? null,
+                    ageCategoryDisplayOrder: event.ageCategory?.displayOrder ?? null,
                     scheduledStartAt: event.scheduledStartAt,
                     roundScheduledStarts: event.roundScheduledStarts,
                     scheduledEndAt: event.scheduledEndAt,

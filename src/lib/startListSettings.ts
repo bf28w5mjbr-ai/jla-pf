@@ -78,12 +78,115 @@ export function parseStartListSettings(value: unknown): {
   };
 }
 
+/** 1〜32 に clamp したラウンド数（列・draft 共通） */
+export function clampStartListRoundCount(value: number | null | undefined): number {
+  if (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= 32
+  ) {
+    return value;
+  }
+  return 1;
+}
+
+/**
+ * 種目のラウンド数。正は startListSettings の roundTabs.length、列は fallback。
+ */
+export function resolveEventRoundCount(
+  eventId: string,
+  startListSettings: unknown,
+  eventColumn?: number | null | undefined
+): number {
+  const { eventSettings } = parseStartListSettings(startListSettings);
+  const setting = eventSettings[eventId];
+  if (setting && Array.isArray(setting.roundTabs) && setting.roundTabs.length > 0) {
+    return clampStartListRoundCount(setting.roundTabs.length);
+  }
+  return clampStartListRoundCount(eventColumn);
+}
+
+/** 永続 JSON 用: roundTabs（+ progressionHeatCounts）のみ残す */
+export function normalizeHeatSettingForPersist(setting: HeatSetting): HeatSetting {
+  const tabs = normalizeRoundTabs(setting);
+  const out: HeatSetting = {
+    roundTabs: tabs.map((t) => {
+      const mode = t.mode === "size" ? "size" : "count";
+      const heatSizeRaw = typeof t.heatSize === "string" ? t.heatSize.trim() : "";
+      const base: StartListRoundTab = {
+        id: t.id,
+        label: (t.label?.trim() || "ラウンド").slice(0, START_LIST_ROUND_LABEL_MAX_LEN),
+        mode,
+        heatCount: t.heatCount ?? "1",
+        heatSize: mode === "size" ? (heatSizeRaw !== "" ? heatSizeRaw : "8") : "",
+      };
+      if (t.useAutoHeatFromMaxLanes === false) {
+        return { ...base, useAutoHeatFromMaxLanes: false as const };
+      }
+      if (
+        typeof t.maxLanesPerHeat === "number" &&
+        Number.isFinite(t.maxLanesPerHeat) &&
+        t.maxLanesPerHeat >= 1 &&
+        t.maxLanesPerHeat <= 32
+      ) {
+        return { ...base, maxLanesPerHeat: Math.floor(t.maxLanesPerHeat) };
+      }
+      return base;
+    }),
+  };
+  const prog = setting.progressionHeatCounts;
+  if (Array.isArray(prog) && prog.length > 0) {
+    out.progressionHeatCounts = prog
+      .filter((v): v is number => typeof v === "number" && v >= 1 && v <= 64)
+      .map((v) => Math.floor(v));
+  }
+  return out;
+}
+
+/**
+ * 種目の roundTabs を解決（ラウンド数との整合・編集 UI 用 coerce を含む）。
+ */
+export function resolveRoundTabsForEvent(params: {
+  heatSetting: HeatSetting | undefined;
+  roundCount: number | null | undefined;
+  entryCount?: number;
+  coerceToCount?: boolean;
+}): StartListRoundTab[] {
+  const normalized = normalizeRoundTabs(params.heatSetting ?? {});
+  const rc = clampStartListRoundCount(
+    typeof params.roundCount === "number" &&
+      Number.isInteger(params.roundCount) &&
+      params.roundCount >= 1 &&
+      params.roundCount <= 32
+      ? params.roundCount
+      : null
+  );
+  const needsAlign =
+    typeof params.roundCount === "number" &&
+    Number.isInteger(params.roundCount) &&
+    params.roundCount >= 1 &&
+    params.roundCount <= 32;
+  let tabs =
+    needsAlign && normalized.length !== rc
+      ? buildRoundTabsForRoundCount(rc, normalized)
+      : normalized;
+  if (params.coerceToCount && params.entryCount !== undefined) {
+    tabs = coerceRoundTabsToHeatOnly(tabs, params.entryCount);
+  }
+  return tabs;
+}
+
 export function buildStartListSettingsPayload(params: {
   eventSettings: Record<string, HeatSetting>;
   teamAssignmentDeadline?: string | null;
 }) {
+  const events: Record<string, HeatSetting> = {};
+  for (const [id, setting] of Object.entries(params.eventSettings)) {
+    events[id] = normalizeHeatSettingForPersist(setting);
+  }
   return {
-    events: params.eventSettings,
+    events,
     teamAssignmentDeadline:
       typeof params.teamAssignmentDeadline === "string" &&
       params.teamAssignmentDeadline.trim().length > 0

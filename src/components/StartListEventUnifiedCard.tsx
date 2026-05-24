@@ -34,11 +34,9 @@ import {
 } from "@/lib/startListEventTabDisplay";
 import type { StartListRoundData } from "@/lib/startListRounds";
 import {
-  buildRoundTabsForRoundCount,
-  coerceRoundTabsToHeatOnly,
   defaultStartListRoundTabLabels,
-  normalizeRoundTabs,
   parseStartListSettings,
+  resolveRoundTabsForEvent,
   type HeatSetting,
   type StartListRoundTab,
 } from "@/lib/startListSettings";
@@ -133,27 +131,6 @@ function pickSetting(
 ): HeatSetting {
   if (saved[eventId]) return saved[eventId];
   return { mode: "count", heatCount: "1", heatSize: "" };
-}
-
-function deriveRoundTabsForEditor(
-  eventSettings: Record<string, HeatSetting>,
-  eventId: string,
-  configuredStartListRoundCount: number | null | undefined,
-  entryCount: number
-): StartListRoundTab[] {
-  const picked = pickSetting(eventSettings, eventId);
-  let tabs = normalizeRoundTabs(picked);
-  const rc =
-    typeof configuredStartListRoundCount === "number" &&
-    Number.isInteger(configuredStartListRoundCount) &&
-    configuredStartListRoundCount >= 1 &&
-    configuredStartListRoundCount <= 32
-      ? configuredStartListRoundCount
-      : null;
-  if (rc !== null && tabs.length !== rc) {
-    tabs = buildRoundTabsForRoundCount(rc, tabs);
-  }
-  return coerceRoundTabsToHeatOnly(tabs, entryCount);
 }
 
 function StartListEventPublicCard({
@@ -454,18 +431,13 @@ export default function StartListEventUnifiedCard({
   const parsed = useMemo(() => parseStartListSettings(initialSettings), [initialSettings]);
   const tabs = useMemo(
     () =>
-      deriveRoundTabsForEditor(
-        parsed.eventSettings,
-        event.id,
-        configuredStartListRoundCount,
-        entryCount
-      ),
-    [
-      parsed.eventSettings,
-      event.id,
-      configuredStartListRoundCount,
-      entryCount,
-    ]
+      resolveRoundTabsForEvent({
+        heatSetting: pickSetting(parsed.eventSettings, event.id),
+        roundCount: configuredStartListRoundCount,
+        entryCount,
+        coerceToCount: true,
+      }),
+    [parsed.eventSettings, event.id, configuredStartListRoundCount, entryCount]
   );
   /** ユーザーが選んだタブ。無効なら先頭タブを表示 */
   const [activeTabUserPick, setActiveTabUserPick] = useState<string | null>(null);

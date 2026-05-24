@@ -694,6 +694,15 @@ export async function PATCH(
     }
 
     if (hasStartListRoundCountKey) {
+      if (rawKeys.length === 1) {
+        return NextResponse.json(
+          {
+            message:
+              "ラウンド数の変更はスタートリスト画面の「一括保存」をご利用ください。",
+          },
+          { status: 400 }
+        );
+      }
       if (
         hasPreliminaryLaneKey ||
         hasSchedulePatch ||

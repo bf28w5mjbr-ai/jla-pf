@@ -3,6 +3,7 @@ import {
   buildRoundTabsForRoundCount,
   normalizeRoundTabs,
   resolveHeatCountForSnapshotTransition,
+  resolveRoundTabsForEvent,
   resolveTabMaxLanes,
   roundTabToHeatSetting,
   type HeatSetting,
@@ -54,18 +55,10 @@ export function getLiveTabsAligned(
   setting: HeatSetting,
   startListRoundCount: number | null | undefined
 ): StartListRoundTab[] {
-  const normalized = normalizeRoundTabs(setting);
-  const rc =
-    typeof startListRoundCount === "number" &&
-    Number.isInteger(startListRoundCount) &&
-    startListRoundCount >= 1 &&
-    startListRoundCount <= 32
-      ? Math.min(32, startListRoundCount)
-      : null;
-  if (rc !== null && normalized.length !== rc) {
-    return buildRoundTabsForRoundCount(rc, normalized);
-  }
-  return normalized;
+  return resolveRoundTabsForEvent({
+    heatSetting: setting,
+    roundCount: startListRoundCount,
+  });
 }
 
 export type StartListIndividualInput = {

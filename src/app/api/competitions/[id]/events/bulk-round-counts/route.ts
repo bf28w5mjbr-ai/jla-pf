@@ -10,6 +10,7 @@ import { syncStartListSettingsRoundTabsForEvents } from "@/lib/startListRoundCou
 
 /**
  * 種目表保存など: ラウンド数だけを複数行まとめて更新（startListSettings の競合を避ける）。
+ * @deprecated スタートリスト UI からは POST /round-setup/bulk-save を使用
  */
 export async function POST(
   request: NextRequest,

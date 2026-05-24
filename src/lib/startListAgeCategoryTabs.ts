@@ -4,12 +4,17 @@ export type StartListAgeCategoryScopedEvent = {
   id: string;
   ageCategoryId?: string | null;
   ageCategoryName?: string | null;
+  ageCategoryDisplayOrder?: number | null;
 };
 
 export type StartListAgeCategoryTabItem = {
   key: string;
   label: string;
   count: number;
+};
+
+type AgeCategoryTabAccum = StartListAgeCategoryTabItem & {
+  displayOrder: number | null;
 };
 
 function normalizeText(value: string | null | undefined): string {
@@ -21,28 +26,42 @@ export function ageCategoryScopeKey(ageCategoryId?: string | null): string {
   return normalized.length > 0 ? normalized : START_LIST_UNCATEGORIZED_KEY;
 }
 
+function compareAgeCategoryTabs(a: AgeCategoryTabAccum, b: AgeCategoryTabAccum): number {
+  if (a.key === START_LIST_UNCATEGORIZED_KEY) return 1;
+  if (b.key === START_LIST_UNCATEGORIZED_KEY) return -1;
+  const oa = a.displayOrder ?? Number.MAX_SAFE_INTEGER;
+  const ob = b.displayOrder ?? Number.MAX_SAFE_INTEGER;
+  if (oa !== ob) return oa - ob;
+  return a.label.localeCompare(b.label, "ja", { numeric: true, sensitivity: "base" });
+}
+
 export function buildStartListAgeCategoryTabs<T extends StartListAgeCategoryScopedEvent>(
   events: readonly T[]
 ): StartListAgeCategoryTabItem[] {
-  const byKey = new Map<string, StartListAgeCategoryTabItem>();
+  const byKey = new Map<string, AgeCategoryTabAccum>();
   for (const event of events) {
     const key = ageCategoryScopeKey(event.ageCategoryId);
     const label =
       key === START_LIST_UNCATEGORIZED_KEY
         ? "未分類"
         : normalizeText(event.ageCategoryName) || "カテゴリ";
+    const displayOrder =
+      key === START_LIST_UNCATEGORIZED_KEY
+        ? null
+        : typeof event.ageCategoryDisplayOrder === "number" &&
+            Number.isFinite(event.ageCategoryDisplayOrder)
+          ? event.ageCategoryDisplayOrder
+          : null;
     const current = byKey.get(key);
     if (current) {
       current.count += 1;
       continue;
     }
-    byKey.set(key, { key, label, count: 1 });
+    byKey.set(key, { key, label, count: 1, displayOrder });
   }
-  return Array.from(byKey.values()).sort((a, b) => {
-    if (a.key === START_LIST_UNCATEGORIZED_KEY) return 1;
-    if (b.key === START_LIST_UNCATEGORIZED_KEY) return -1;
-    return a.label.localeCompare(b.label, "ja");
-  });
+  return Array.from(byKey.values())
+    .sort(compareAgeCategoryTabs)
+    .map(({ key, label, count }) => ({ key, label, count }));
 }
 
 export function filterEventsByStartListAgeCategory<T extends StartListAgeCategoryScopedEvent>(
