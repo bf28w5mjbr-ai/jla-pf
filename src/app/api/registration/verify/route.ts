@@ -12,6 +12,10 @@ import { verifyRegistrationOtp } from "@/lib/registration/verifyRegistrationOtp"
 import { issueSessionCookie } from "@/lib/auth/issueSessionCookie";
 import { logRegistrationVerifyPhase } from "@/lib/registration/logRegistrationVerifyPhase";
 import { registrationUniqueConstraintResponse } from "@/lib/registration/registrationUniqueConstraintResponse";
+import {
+  buildRegistrationUserCreateInput,
+  missingRequiredProfileFields,
+} from "@/lib/registration/buildRegistrationUserCreateInput";
 import { AuthLoginChannel, Prisma, RegistrationSession } from "@prisma/client";
 import { onAuthLoginSuccess } from "@/lib/authLoginSuccess";
 import { jsonInternalError500, logApiError } from "@/lib/apiInternalError";
@@ -24,63 +28,6 @@ const VerifyOTPSchema = z.object({
 
 const MAX_OTP_ATTEMPTS = 5;
 
-function buildUserCreateData(
-  session: RegistrationSession,
-  normalizedFamilyName: string,
-  normalizedGivenName: string
-): Prisma.UserCreateInput {
-  const verifiedPhoneBySms = session.registrationOtpDelivery !== "EMAIL";
-
-  return {
-    email: session.email || `${session.phoneNumber.replace("+", "")}@temp.jla.local`,
-    security: {
-      create: {
-        emailVerified: !verifiedPhoneBySms,
-        passwordHash: session.password || null,
-      },
-    },
-    profile: {
-      create: {
-        familyName: session.familyName,
-        givenName: session.givenName,
-        familyNameKana: session.familyNameKana,
-        givenNameKana: session.givenNameKana,
-        normalizedFamilyName,
-        normalizedGivenName,
-        dateOfBirth: session.dateOfBirth,
-        sex: session.sex,
-      },
-    },
-    contact: {
-      create: {
-        phoneNumber: session.phoneNumber,
-        phoneVerified: verifiedPhoneBySms,
-        phoneVerifiedAt: verifiedPhoneBySms ? new Date() : null,
-      },
-    },
-    address: {
-      create: {
-        postalCode: session.postalCode,
-        prefecture: session.prefecture,
-        city: session.city,
-        addressLine1: session.addressLine1,
-        addressLine2: session.addressLine2,
-      },
-    },
-    emergencyContact: {
-      create: {
-        familyName: session.emergencyContactFamilyName,
-        givenName: session.emergencyContactGivenName,
-        familyNameKana: session.emergencyContactFamilyNameKana,
-        givenNameKana: session.emergencyContactGivenNameKana,
-        phoneNumber: session.emergencyContactPhone,
-      },
-    },
-    jlaProfile: { create: {} },
-    nfcTag: { create: {} },
-  };
-}
-
 async function createUserAndDeleteSession(
   session: RegistrationSession,
   normalizedFamilyName: string,
@@ -88,7 +35,11 @@ async function createUserAndDeleteSession(
 ) {
   return prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
-      data: buildUserCreateData(session, normalizedFamilyName, normalizedGivenName),
+      data: buildRegistrationUserCreateInput(
+        session,
+        normalizedFamilyName,
+        normalizedGivenName
+      ),
     });
     await tx.registrationSession.delete({ where: { id: session.id } });
     return user;
@@ -245,6 +196,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const missingProfile = missingRequiredProfileFields(session);
+
+    if (missingProfile.length > 0) {
+      await prisma.registrationSession.delete({ where: { id: session.id } }).catch(() => {});
+      return NextResponse.json(
+        {
+          error:
+            "登録情報が不完全です。入力画面から最初にやり直してください。",
+          code: "INCOMPLETE_REGISTRATION_SESSION",
+        },
+        { status: 400 }
+      );
+    }
+
     const user = await createUserAndDeleteSession(
       session,
       normalizedFamilyName,
@@ -292,6 +257,22 @@ export async function POST(req: NextRequest) {
     }
 
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2011") {
+        if (sessionIdForCleanup) {
+          await prisma.registrationSession
+            .delete({ where: { id: sessionIdForCleanup } })
+            .catch(() => {});
+        }
+        return NextResponse.json(
+          {
+            error:
+              "登録情報が不完全です。入力画面から最初にやり直してください。",
+            code: "INCOMPLETE_REGISTRATION_SESSION",
+          },
+          { status: 400 }
+        );
+      }
+
       const conflict = registrationUniqueConstraintResponse(error);
       if (conflict) {
         if (sessionIdForCleanup) {
