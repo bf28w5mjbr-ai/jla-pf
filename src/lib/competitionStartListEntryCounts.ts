@@ -13,25 +13,23 @@ export async function fetchPaidEntryCountByEventId(
   const eventIds = events.map((e) => e.id);
   if (eventIds.length === 0) return {};
 
-  const [entryItemGroups, teamEntryGroups] = await Promise.all([
-    prisma.entryItem.groupBy({
-      by: ["eventId"],
-      where: {
-        eventId: { in: eventIds },
-        entry: {
-          competitionId,
-          status: "SUBMITTED",
-          ...competitionEntryEligibleForStartListWhere,
-        },
+  const entryItemGroups = await prisma.entryItem.groupBy({
+    by: ["eventId"],
+    where: {
+      eventId: { in: eventIds },
+      entry: {
+        competitionId,
+        status: "SUBMITTED",
+        ...competitionEntryEligibleForStartListWhere,
       },
-      _count: { id: true },
-    }),
-    prisma.teamEntry.groupBy({
-      by: ["eventId"],
-      where: { competitionId, eventId: { in: eventIds } },
-      _count: { id: true },
-    }),
-  ]);
+    },
+    _count: { id: true },
+  });
+  const teamEntryGroups = await prisma.teamEntry.groupBy({
+    by: ["eventId"],
+    where: { competitionId, eventId: { in: eventIds } },
+    _count: { id: true },
+  });
 
   const individualByEvent: Record<string, number> = {};
   for (const row of entryItemGroups) {

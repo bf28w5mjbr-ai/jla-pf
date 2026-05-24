@@ -48,7 +48,7 @@ export async function DashboardMain({ userId }: { userId: string }) {
   const user = await getAuthenticatedAppUser(userId);
   if (!user) redirect("/login");
 
-  const [entries, attendancePreview, attendanceAggRows, qualificationTemplates] = await Promise.all([
+  const [entries, attendancePreview, attendanceAggRows, qualificationTemplates] = await prisma.$transaction([
     prisma.competitionEntry.findMany({
       where: { userId },
       select: {

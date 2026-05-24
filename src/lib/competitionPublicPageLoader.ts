@@ -102,7 +102,7 @@ export type SessionContextForPublicCompetition = {
 /** ログイン時のクラブ一覧・問い合わせ氏名（大会取得の後に実行） */
 export const loadSessionContextForPublicCompetition = cache(
   async (sessionUserId: string): Promise<SessionContextForPublicCompetition> => {
-    const [sessionApprovedMemberships, sessionUserForInquiry] = await Promise.all([
+    const [sessionApprovedMemberships, sessionUserForInquiry] = await prisma.$transaction([
       prisma.membership.findMany({
         where: { userId: sessionUserId, status: "APPROVED" },
         ...sessionMembershipSelect,

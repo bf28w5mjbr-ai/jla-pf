@@ -13,9 +13,12 @@
 - **原因**: Vercel 等の 1 プロセスあたり Prisma 接続上限（本番 `DATABASE_URL` の `connection_limit`、多くは 5）に対し、**同一リクエスト内の並列クエリが多すぎる**。DB ダウンとは限らない。
 - **よくある箇所**: 公開大会 `/competitions/[id]`（ログイン時の `Promise.all`）、認証レイアウト + ダッシュボードの同時読み込み。
 - **アプリ側の対策（実装済み）**:
-  - 公開大会ページは `src/lib/competitionPublicPageLoader.ts` で直列化し、同時 DB 接続を抑える。
+  - 公開大会ページは `src/lib/competitionPublicPageLoader.ts` で大会取得後にセッション文脈を読み、`prisma.$transaction` で同時接続を抑える。
+  - 公開大会のエントリー件数集計（`fetchPaidEntryCountByEventId`）は **スタートリストタブ表示時のみ**（概要タブでは実行しない）。
+  - 複数クエリが必要な箇所は `Promise.all` より `prisma.$transaction([...])` または直列 `await` を優先（ダッシュボード本体・スタートリスト件数集計など）。
   - `ensureCompetitionScheduleTabs` は公開閲覧では実行しない（スケジュールタブ補完は `api/competitions/[id]/schedule-tabs/*` 等の管理 API のみ）。
   - 認証レイアウトの未読通知は DB 失敗時 0 件フォールバック。
+- **ローカル dev**: `.env` の `DATABASE_URL` に `pool_timeout=10` が付いていると `src/server/db.ts` の開発用延長（既定 60 秒）が効かない。P2024 が続くときは `PRISMA_DEV_POOL_TIMEOUT=60` を検討する。
 - **インフラ**: 本番の `connection_limit` を安易に大きくしない（サーバーレスインスタンス数 × limit で Supabase 総接続が先に枯渇しうる）。まず並列削減を優先する。
 
 ## Prisma migrate dev の警告

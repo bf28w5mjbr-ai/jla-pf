@@ -123,7 +123,7 @@ export default async function CompetitionDetailPage({
   );
 
   const startListEntryCountByEventId =
-    competition.events.length > 0
+    activeTab === "start-list" && competition.events.length > 0
       ? await fetchPaidEntryCountByEventId(
           id,
           competition.events.map((e) => ({ id: e.id, type: e.type }))
