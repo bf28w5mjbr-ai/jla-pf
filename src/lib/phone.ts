@@ -8,7 +8,7 @@ import {
   getCountries,
   type CountryCode,
   type PhoneNumber,
-} from "libphonenumber-js";
+} from "libphonenumber-js/max";
 
 export type { CountryCode };
 

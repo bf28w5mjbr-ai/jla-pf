@@ -6,6 +6,7 @@ import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
 import { appRoutes } from "@/lib/appRoutes";
 import { getRequiredAuthenticatedUserId } from "@/lib/auth";
+import { competitionMetadataTitle } from "@/lib/competitionMetadata";
 import { prisma } from "@/server/db";
 import {
   Card,
@@ -91,14 +92,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const competition = await prisma.competition.findUnique({
-    where: { id },
-    select: { name: true },
-  });
-
-  return {
-    title: `エントリー | ${competition?.name || "大会"} | Bluvium`,
-  };
+  return competitionMetadataTitle(id, "エントリー");
 }
 
 export default async function CompetitionEntryPage({

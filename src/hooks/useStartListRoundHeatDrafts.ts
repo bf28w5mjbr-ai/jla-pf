@@ -283,3 +283,5 @@ export function useStartListRoundHeatDrafts({
     saveHeatPlanForEvent,
   };
 }
+
+export type StartListRoundHeatDraftControls = ReturnType<typeof useStartListRoundHeatDrafts>;

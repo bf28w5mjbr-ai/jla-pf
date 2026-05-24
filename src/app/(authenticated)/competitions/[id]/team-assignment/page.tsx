@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { ArrowLeft, Users } from "lucide-react";
 import { appRoutes } from "@/lib/appRoutes";
 import { getRequiredAuthenticatedUserId } from "@/lib/auth";
+import { competitionMetadataTitle } from "@/lib/competitionMetadata";
 import { prisma } from "@/server/db";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,14 +19,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const competition = await prisma.competition.findUnique({
-    where: { id },
-    select: { name: true },
-  });
-
-  return {
-    title: `チームメンバー割当 | ${competition?.name || "大会"} | Bluvium`,
-  };
+  return competitionMetadataTitle(id, "チームメンバー割当");
 }
 
 /**

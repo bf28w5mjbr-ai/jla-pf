@@ -4,7 +4,11 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { verifySessionCached } from "@/lib/auth";
-import { prisma } from "@/server/db";
+import { competitionMetadataTitleOnly } from "@/lib/competitionMetadata";
+import {
+  loadCompetitionPublicDetail,
+  loadSessionContextForPublicCompetition,
+} from "@/lib/competitionPublicPageLoader";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,7 +29,7 @@ import CompetitionRelationsEditor from "@/components/CompetitionRelationsEditor"
 import CompetitionAnnouncementsManager from "@/components/CompetitionAnnouncementsManager";
 import CompetitionAttachmentsManager from "@/components/CompetitionAttachmentsManager";
 import CompetitionPublicGallery from "@/components/CompetitionPublicGallery";
-import CompetitionStartListPanel from "@/components/CompetitionStartListPanel";
+import StartListEventIndexBars from "@/components/StartListEventIndexBars";
 import { fetchPaidEntryCountByEventId } from "@/lib/competitionStartListEntryCounts";
 import { appRoutes } from "@/lib/appRoutes";
 import { hasOrgAdminAccess, isClubAdminRole } from "@/lib/roleScopes";
@@ -60,7 +64,6 @@ import {
   requiredQualificationsMentionCertifiedLifesaver,
 } from "@/lib/competitionEntryAgeTiered";
 import { renderRequiredQualificationsSummary } from "@/lib/competitionParticipationSummaries";
-import { ensureCompetitionScheduleTabs } from "@/lib/ensureCompetitionScheduleTabs";
 import { sortEventsByScheduleTabs } from "@/lib/competitionScheduleTabDisplay";
 
 export const dynamic = "force-dynamic";
@@ -71,14 +74,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const competition = await prisma.competition.findUnique({
-    where: { id },
-    select: { name: true },
-  });
-
-  return {
-    title: `${competition?.name || "大会"} | Bluvium`,
-  };
+  return competitionMetadataTitleOnly(id);
 }
 
 export default async function CompetitionDetailPage({
@@ -98,87 +94,11 @@ export default async function CompetitionDetailPage({
   const session = await verifySessionCached(token);
   const sessionUserId = session?.userId ?? null;
 
-  await ensureCompetitionScheduleTabs(id);
-
-  const [competition, hasDayOpsUnlock, sessionApprovedMemberships, sessionUserForInquiry] =
-    await Promise.all([
-      prisma.competition.findUnique({
-        where: { id },
-        include: {
-          organization: {
-            include: {
-              admins: {
-                where: { userId: sessionUserId ?? "clinvalidnosessionuser0000" },
-              },
-            },
-          },
-          technicalOfficialQualificationTemplate: {
-            select: { name: true },
-          },
-          announcements: {
-            where: { publishedAt: { not: null } },
-            orderBy: { createdAt: "desc" },
-          },
-          attachments: {
-            orderBy: { createdAt: "desc" },
-          },
-          galleryPhotos: {
-            orderBy: { createdAt: "asc" },
-            select: { id: true, imageUrl: true, fileName: true },
-          },
-          ageCategories: {
-            orderBy: { displayOrder: "asc" },
-            select: { id: true, name: true, displayOrder: true },
-          },
-          scheduleTabs: {
-            orderBy: { displayOrder: "asc" },
-            select: { id: true, name: true, displayOrder: true },
-          },
-          events: {
-            select: {
-              id: true,
-              name: true,
-              sex: true,
-              type: true,
-              category: true,
-              displayOrder: true,
-              scheduledStartAt: true,
-              roundScheduledStarts: true,
-              scheduledEndAt: true,
-              startListRoundCount: true,
-              preliminaryHeatLaneCount: true,
-              startListHeatPlanConfirmedAt: true,
-              marshalStartedAt: true,
-              scheduleTabId: true,
-              scheduleTabSortOrder: true,
-              ageCategory: {
-                select: { id: true, name: true, displayOrder: true },
-              },
-            },
-            orderBy: [{ displayOrder: "asc" }, { sex: "asc" }, { id: "asc" }],
-          },
-          officialApplications: {
-            where: { userId: sessionUserId ?? "clinvalidnosessionuser0000" },
-            select: { status: true, positionName: true, message: true },
-            take: 1,
-          },
-        },
-      }),
-      verifyDayOpsUnlockFromCookies(id),
-      sessionUserId
-        ? prisma.membership.findMany({
-            where: { userId: sessionUserId, status: "APPROVED" },
-            include: { club: { select: { id: true, name: true } } },
-            orderBy: { club: { name: "asc" } },
-          })
-        : Promise.resolve([]),
-      sessionUserId
-        ? prisma.user.findUnique({
-            where: { id: sessionUserId },
-            select: { profile: { select: { familyName: true, givenName: true } } },
-          })
-        : Promise.resolve(null),
-    ]);
+  const competition = await loadCompetitionPublicDetail(id, sessionUserId);
+  const hasDayOpsUnlock = await verifyDayOpsUnlockFromCookies(id);
+  const { sessionApprovedMemberships, sessionUserForInquiry } = sessionUserId
+    ? await loadSessionContextForPublicCompetition(sessionUserId)
+    : { sessionApprovedMemberships: [], sessionUserForInquiry: null };
 
   if (!competition) {
     notFound();
@@ -936,37 +856,35 @@ export default async function CompetitionDetailPage({
                 alreadyUnlocked={hasDayOpsUnlock}
               />
               {canViewStartListOnPublicPage ? (
-                <CompetitionStartListPanel
-                  canEditStartListSplit={canEditPublishedSchedule}
-                  canEditEventSchedule={canEditPublishedSchedule}
-                  canEditStartListRoundCount={canEditPublishedSchedule}
-                  initialStartListSettings={competition.startListSettings}
+                <StartListEventIndexBars
+                  competitionId={competition.id}
+                  competitionName={competition.name}
+                  competitionStartDate={competition.startDate}
+                  competitionEndDate={competition.endDate}
                   scheduleTabs={scheduleTabsForPanel}
-                  competition={{
-                    id: competition.id,
-                    name: competition.name,
-                    startDate: competition.startDate,
-                    endDate: competition.endDate,
-                    events: eventsForStartListPanel.map((event) => ({
-                      id: event.id,
-                      name: event.name,
-                      sex: event.sex,
-                      type: event.type,
-                      displayOrder: event.displayOrder,
-                      ageCategoryId: event.ageCategory?.id ?? null,
-                      ageCategoryName: event.ageCategory?.name ?? null,
-                      scheduledStartAt: event.scheduledStartAt,
-                      roundScheduledStarts: event.roundScheduledStarts,
-                      scheduledEndAt: event.scheduledEndAt,
-                      startListRoundCount: event.startListRoundCount,
-                      scheduleTabId: event.scheduleTabId,
-                      scheduleTabSortOrder: event.scheduleTabSortOrder,
-                      entryCount: startListEntryCountByEventId[event.id] ?? 0,
-                      preliminaryHeatLaneCount: event.preliminaryHeatLaneCount,
-                      startListHeatPlanConfirmedAt: event.startListHeatPlanConfirmedAt,
-                      marshalStartedAt: event.marshalStartedAt,
-                    })),
-                  }}
+                  events={eventsForStartListPanel.map((event) => ({
+                    id: event.id,
+                    name: event.name,
+                    sex: event.sex,
+                    type: event.type,
+                    displayOrder: event.displayOrder,
+                    ageCategoryId: event.ageCategory?.id ?? null,
+                    ageCategoryName: event.ageCategory?.name ?? null,
+                    scheduledStartAt: event.scheduledStartAt,
+                    roundScheduledStarts: event.roundScheduledStarts,
+                    scheduledEndAt: event.scheduledEndAt,
+                    startListRoundCount: event.startListRoundCount,
+                    scheduleTabId: event.scheduleTabId,
+                    scheduleTabSortOrder: event.scheduleTabSortOrder,
+                    entryCount: startListEntryCountByEventId[event.id] ?? 0,
+                    preliminaryHeatLaneCount: event.preliminaryHeatLaneCount,
+                    startListHeatPlanConfirmedAt: event.startListHeatPlanConfirmedAt,
+                    marshalStartedAt: event.marshalStartedAt,
+                  }))}
+                  initialStartListSettings={competition.startListSettings}
+                  canReorder={canEditPublishedSchedule}
+                  canEditSchedule={canEditPublishedSchedule}
+                  canEditRoundCount={canEditPublishedSchedule}
                 />
               ) : (
                 <p className="rounded-lg border border-border/60 bg-muted/10 px-3 py-6 text-center text-sm text-muted-foreground">

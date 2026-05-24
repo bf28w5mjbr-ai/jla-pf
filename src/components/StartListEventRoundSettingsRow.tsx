@@ -4,9 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
 import type { StartListRoundTab } from "@/lib/startListSettings";
-
-const sexLabel = (sex: string) =>
-  sex === "MALE" ? "男子" : sex === "FEMALE" ? "女子" : "その他";
+import { sexLabelJa } from "@/lib/sexLabelJa";
 
 export type StartListEventRoundSettingsRowProps = {
   event: StartListEventBarItem;
@@ -67,7 +65,7 @@ export function StartListEventRoundSettingsRow({
               </span>
             </span>
             <span className="shrink-0 text-[10px] text-muted-foreground">
-              {sexLabel(event.sex)}
+              {sexLabelJa(event.sex)}
               {event.type === "TEAM" ? " · 団体" : " · 個人"}
               {event.ageCategoryName ? ` · ${event.ageCategoryName}` : ""}
             </span>

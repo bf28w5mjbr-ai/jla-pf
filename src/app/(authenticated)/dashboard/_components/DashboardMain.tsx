@@ -45,8 +45,10 @@ type OfficialAttendanceAggRow = {
 };
 
 export async function DashboardMain({ userId }: { userId: string }) {
-  const [user, entries, attendancePreview, attendanceAggRows, qualificationTemplates] = await Promise.all([
-    getAuthenticatedAppUser(userId),
+  const user = await getAuthenticatedAppUser(userId);
+  if (!user) redirect("/login");
+
+  const [entries, attendancePreview, attendanceAggRows, qualificationTemplates] = await Promise.all([
     prisma.competitionEntry.findMany({
       where: { userId },
       select: {
@@ -128,8 +130,6 @@ export async function DashboardMain({ userId }: { userId: string }) {
       orderBy: { kind: "asc" },
     }),
   ]);
-
-  if (!user) redirect("/login");
 
   const agg = attendanceAggRows[0];
   const officialAttendanceTotalDays = Number(agg?.total ?? BigInt(0));

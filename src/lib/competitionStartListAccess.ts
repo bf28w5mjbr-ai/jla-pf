@@ -11,16 +11,8 @@ export function canEditCompetitionPublishedSchedule(args: {
   return hostOrgAdminCanManageCompetition(args.orgAdminsForCurrentUser, args.orgStatus);
 }
 
-/**
- * 大会単位のスタートリスト全体（タイムスケジュール・全種目）の公開／非公開を切り替えできるか。
- * 主催団体の org 管理者（ADMIN）のみ。当日運用アンロックでは不可。
- */
-export function canToggleCompetitionStartListVisibility(args: {
-  orgAdminsForCurrentUser: ReadonlyArray<{ role?: string | null }>;
-  orgStatus?: string | null;
-}): boolean {
-  return canEditCompetitionPublishedSchedule(args);
-}
+/** @see canEditCompetitionPublishedSchedule — スタートリスト公開切替も主催 org 管理者のみ */
+export const canToggleCompetitionStartListVisibility = canEditCompetitionPublishedSchedule;
 
 /**
  * 大会のスタートリスト設定（ヒート分割・次ラ生成・マーシャル運用・当日のヒート JSON 更新など）を編集できるか。

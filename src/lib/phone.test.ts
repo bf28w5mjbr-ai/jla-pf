@@ -24,6 +24,18 @@ describe("phone", () => {
     expect(isValidMobileE164(e164!)).toBe(true);
   });
 
+  it("parses Singapore mobile to E.164", () => {
+    const e164 = parsePhoneToE164("SG", "97518203");
+    expect(e164).toBe("+6597518203");
+    expect(isValidMobileE164(e164!)).toBe(true);
+  });
+
+  it("parses Korean mobile to E.164", () => {
+    const e164 = parsePhoneToE164("KR", "1012345678");
+    expect(e164).toBe("+821012345678");
+    expect(isValidMobileE164(e164!)).toBe(true);
+  });
+
   it("rejects invalid numbers", () => {
     expect(parsePhoneToE164("JP", "123")).toBeNull();
     expect(isValidMobileE164("+81901234567")).toBe(false);

@@ -9,21 +9,13 @@ function parseHeatMarshalResponseRound(raw: unknown): ResultRound | null {
   return (RESULT_ROUNDS as readonly string[]).includes(raw) ? (raw as ResultRound) : null;
 }
 
-/** 当日運用シェル: 通常モードの参加者ステータスポーリング */
-const DAY_OPS_POLL_INTERVAL_NORMAL_MS = 20_000;
-/** マーシャル／リザルト時は複数端末で状態を揃えるため短めにヒート一覧・リザルトを再取得 */
-const DAY_OPS_POLL_INTERVAL_SYNC_MS = 4_500;
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { flushSync } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown,
   CircleHelp,
   ClipboardList,
-  LayoutList,
-  ListChecks,
-  Trophy,
   Users,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -32,8 +24,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   computeLiveFirstRoundAdvanceQuotas,
+  dedupeFrozenTabIndicesBySnapshotRound,
   formatStartListTabLabelWithHeatCount,
   getLiveHeatsByTab,
+  getLiveTabsAligned,
   snapshotRoundForTab,
   type StartListIndividualInput,
   type StartListTeamInput,
@@ -49,15 +43,15 @@ import {
   type StartListRoundTab,
 } from "@/lib/startListSettings";
 import type { HeatMarshalHeatRow } from "@/components/HeatMarshalLanePanel";
-import { LiveRoundContent, sexLabel } from "@/components/StartListRoundListPanels";
+import { LiveRoundContent } from "@/components/StartListRoundListPanels";
 import { getHeatResultCapture, type HeatResultCaptureRow } from "@/lib/heatResultCaptureApi";
 import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
-import { StartListEventPageRoundSettingsPanel } from "@/components/StartListEventPageRoundSettingsPanel";
+import { StartListRoundSettingsCardWithHook } from "@/components/StartListRoundSettingsCard";
+import { StartListMarshalModeBar } from "@/components/StartListMarshalModeBar";
+import { useDayOpsStartListPolling } from "@/hooks/useDayOpsStartListPolling";
+import { sexLabelJa } from "@/lib/sexLabelJa";
 import { cn } from "@/lib/utils";
-import {
-  dispatchJlaDayOpsParticipantStatusChanged,
-  JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED,
-} from "@/lib/dayOpsParticipantStatusDisplay";
+import { dispatchJlaDayOpsParticipantStatusChanged } from "@/lib/dayOpsParticipantStatusDisplay";
 import { measureDayOpsAsync } from "@/lib/dayOpsMetrics";
 
 /** スタートリスト表示モード（タブごと・localStorage） */
@@ -72,6 +66,8 @@ type EventRow = {
 };
 
 type Props = {
+  /** "public" = 一般閲覧（確定ラウンドのみ）、"ops" = 主催/当日運用 */
+  variant?: "public" | "ops";
   competitionId: string;
   competitionName: string;
   /** DB 上のスタートリストスナップショットの記録日時（締切後の自動作成など。表示は常にライブ） */
@@ -94,11 +90,6 @@ type Props = {
   heatPlanConfirmedAtIso?: string | null;
   /** マーシャル開始日時（ISO）。設定後はヒート分割変更不可 */
   marshalStartedAtIso?: string | null;
-  /**
-   * 後方互換: showMarshalOps / showResultOps が未指定のとき、両方をまとめて有効にする。
-   * @deprecated showMarshalOps と showResultOps を明示してください。
-   */
-  showMarshalHeatLinks?: boolean;
   /** 召集（マーシャル）操作。主催管理者向け */
   showMarshalOps?: boolean;
   /** リザルト入力・NFC・ヒート確定。主催管理者またはレコーダー */
@@ -132,6 +123,8 @@ type Props = {
    * スタートリスト内のラウンドタブ UI 自体は変えない。
    */
   initialRoundIndex?: number | null;
+  /** variant=public のとき SSR 再取得間隔（秒）。15 未満は無効 */
+  softRefreshIntervalSec?: number;
 };
 
 function pickSetting(
@@ -163,7 +156,245 @@ function deriveRoundTabsForEditor(
   return coerceRoundTabsToHeatOnly(tabs, entryCount);
 }
 
+function StartListEventPublicCard({
+  competitionName,
+  archiveRecordedAtIso,
+  event,
+  scheduleLabel,
+  individuals,
+  teams,
+  initialSettings,
+  officialRanksByRound = null,
+  placementSeed,
+  frozenSnapshotRounds = null,
+  startListRoundCount = null,
+  preliminaryHeatLaneCount = null,
+  heatPlanConfirmedAtIso = null,
+  participantStatusByKey,
+  initialParticipantStatusRows,
+  softRefreshIntervalSec,
+}: Pick<
+  Props,
+  | "competitionName"
+  | "archiveRecordedAtIso"
+  | "event"
+  | "scheduleLabel"
+  | "individuals"
+  | "teams"
+  | "initialSettings"
+  | "officialRanksByRound"
+  | "placementSeed"
+  | "frozenSnapshotRounds"
+  | "startListRoundCount"
+  | "preliminaryHeatLaneCount"
+  | "heatPlanConfirmedAtIso"
+  | "participantStatusByKey"
+  | "initialParticipantStatusRows"
+  | "softRefreshIntervalSec"
+>) {
+  const router = useRouter();
+  const eventId = event.id;
+  const isTeam = event.type === "TEAM";
+  const total = isTeam ? teams.length : individuals.length;
+  const setting = useMemo(() => {
+    const parsed = parseStartListSettings(initialSettings);
+    return parsed.eventSettings[eventId] ?? { mode: "count" as const, heatCount: "1", heatSize: "" };
+  }, [initialSettings, eventId]);
+  const heatPlanStep1Confirmed = Boolean(heatPlanConfirmedAtIso);
+
+  useEffect(() => {
+    const sec = softRefreshIntervalSec;
+    if (sec == null || sec < 15) return;
+    const ms = Math.min(sec * 1000, 120_000);
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      router.refresh();
+    }, ms);
+    return () => window.clearInterval(id);
+  }, [softRefreshIntervalSec, router]);
+
+  const liveTabs = useMemo(
+    () => getLiveTabsAligned(setting, startListRoundCount),
+    [setting, startListRoundCount]
+  );
+
+  const liveHeatsByTab = useMemo(
+    () =>
+      getLiveHeatsByTab({
+        liveTabs,
+        individuals,
+        teams,
+        isTeam,
+        preliminaryHeatLaneCount,
+        officialRanksByRound,
+        placementSeed,
+        frozenSnapshotRounds,
+        heatPlanStep1Confirmed,
+        eventHeatSetting: setting,
+      }),
+    [
+      liveTabs,
+      individuals,
+      teams,
+      isTeam,
+      preliminaryHeatLaneCount,
+      officialRanksByRound,
+      placementSeed,
+      frozenSnapshotRounds,
+      heatPlanStep1Confirmed,
+      setting,
+    ]
+  );
+
+  const tabCount = liveTabs.length;
+  const publicVisibleIndices = useMemo(
+    () => dedupeFrozenTabIndicesBySnapshotRound(tabCount, frozenSnapshotRounds),
+    [tabCount, frozenSnapshotRounds]
+  );
+  const publicLiveTabs = publicVisibleIndices.map((i) => liveTabs[i]!);
+  const publicLiveHeatsByTab = publicVisibleIndices.map((i) => liveHeatsByTab[i]!);
+  const publicTabCount = publicLiveTabs.length;
+
+  const liveTabsKey = `${startListRoundCount ?? "x"}-${liveTabs.map((t) => t.id).join("|")}-pub-${publicVisibleIndices.join(",")}`;
+  const archiveLabel = archiveRecordedAtIso
+    ? new Date(archiveRecordedAtIso).toLocaleString("ja-JP")
+    : null;
+
+  return (
+    <Card className="overflow-hidden border-border/80 py-0 shadow-md">
+      <CardHeader className="space-y-3 border-b border-border/80 bg-gradient-to-b from-muted/40 to-muted/10 px-4 py-4 sm:px-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 space-y-1.5">
+            <CardTitle className="text-base font-semibold leading-snug tracking-tight sm:text-lg">
+              {event.name}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">スタートリスト（公開分）</p>
+            <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+              <span className="shrink-0 font-medium text-foreground/80">
+                {sexLabelJa(event.sex)}
+                {isTeam ? "・団体" : "・個人"}
+              </span>
+              <span className="hidden text-border sm:inline" aria-hidden>
+                ·
+              </span>
+              <span className="min-w-0 truncate">{competitionName}</span>
+            </p>
+            {event.ageCategoryName ? (
+              <p className="text-xs text-muted-foreground">カテゴリ: {event.ageCategoryName}</p>
+            ) : null}
+            {scheduleLabel ? (
+              <p className="text-xs font-medium text-foreground">進行予定: {scheduleLabel}</p>
+            ) : null}
+          </div>
+          {total > 0 ? (
+            <Badge variant="secondary" className="w-fit gap-1 font-normal tabular-nums">
+              <Users className="size-3 opacity-70" aria-hidden />
+              {isTeam ? "チーム" : "選手"} <span className="font-semibold">{total}</span>
+            </Badge>
+          ) : null}
+        </div>
+        <p className="text-[11px] text-muted-foreground">確定ラウンドのみ表示</p>
+        {archiveLabel ? (
+          <p className="rounded-md border border-orange-200/80 bg-orange-50/80 px-2.5 py-1 text-[11px] text-orange-950 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-100">
+            スナップショット記録: {archiveLabel}
+          </p>
+        ) : null}
+      </CardHeader>
+      <CardContent className="space-y-3 px-4 py-4 sm:px-5">
+        {total === 0 ? (
+          <div className="rounded-md border border-dashed border-border/80 bg-muted/20 px-3 py-6 text-center">
+            <p className="text-sm text-muted-foreground">この種目にエントリーはまだありません</p>
+          </div>
+        ) : publicLiveTabs.length === 0 ? (
+          <div className="rounded-lg border border-border/70 bg-muted/15 px-3 py-4 text-sm leading-relaxed text-muted-foreground">
+            この種目のスタートリストはまだ公開されていません。エントリー締切後の確定、または次ラウンド確定後に表示されます。
+          </div>
+        ) : publicLiveTabs.length === 1 ? (
+          <div>
+            <p className="mb-2 text-xs font-semibold text-muted-foreground">
+              {formatStartListTabLabelWithHeatCount(
+                publicLiveTabs[0]!.label,
+                isTeam
+                  ? (publicLiveHeatsByTab[0]?.teamHeats.length ?? 0)
+                  : (publicLiveHeatsByTab[0]?.individualHeats.length ?? 0)
+              )}
+            </p>
+            <LiveRoundContent
+              eventId={eventId}
+              isTeam={isTeam}
+              individualHeats={publicLiveHeatsByTab[0]?.individualHeats ?? []}
+              teamHeats={publicLiveHeatsByTab[0]?.teamHeats ?? []}
+              marshalDisplayHeatIndices={publicLiveHeatsByTab[0]?.marshalDisplayHeatIndices ?? null}
+              heatAdvanceQuotas={publicLiveHeatsByTab[0]?.heatAdvanceQuotas ?? null}
+              participantStatusRows={
+                initialParticipantStatusRows && initialParticipantStatusRows.length > 0
+                  ? initialParticipantStatusRows
+                  : null
+              }
+              marshalRoundForDisplay={
+                publicTabCount >= 1 ? snapshotRoundForTab(0, publicTabCount) : null
+              }
+              participantStatusByKey={participantStatusByKey}
+            />
+          </div>
+        ) : (
+          <Tabs key={liveTabsKey} defaultValue={publicLiveTabs[0]!.id} className="mt-1">
+            <TabsList className="h-auto min-h-10 w-full flex-wrap justify-start gap-1 rounded-lg bg-muted/60 p-1.5">
+              {publicLiveTabs.map((t, index) => {
+                const row = publicLiveHeatsByTab[index];
+                const heatCount = isTeam
+                  ? (row?.teamHeats.length ?? 0)
+                  : (row?.individualHeats.length ?? 0);
+                const text = formatStartListTabLabelWithHeatCount(t.label, heatCount);
+                return (
+                  <TabsTrigger
+                    key={t.id}
+                    value={t.id}
+                    className="max-w-[min(100%,14rem)] shrink-0 truncate rounded-md px-2.5 py-1.5 text-xs data-[state=active]:shadow-sm sm:max-w-[16rem]"
+                    title={text}
+                  >
+                    {text}
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+            {publicLiveHeatsByTab.map(
+              (
+                { tab, individualHeats, teamHeats, heatAdvanceQuotas, marshalDisplayHeatIndices },
+                pubIndex
+              ) => (
+                <TabsContent key={tab.id} value={tab.id} className="mt-3">
+                  <LiveRoundContent
+                    eventId={eventId}
+                    isTeam={isTeam}
+                    individualHeats={individualHeats}
+                    teamHeats={teamHeats}
+                    marshalDisplayHeatIndices={marshalDisplayHeatIndices ?? null}
+                    heatAdvanceQuotas={heatAdvanceQuotas ?? null}
+                    participantStatusRows={
+                      initialParticipantStatusRows && initialParticipantStatusRows.length > 0
+                        ? initialParticipantStatusRows
+                        : null
+                    }
+                    marshalRoundForDisplay={
+                      publicTabCount >= 1
+                        ? snapshotRoundForTab(pubIndex, publicTabCount)
+                        : null
+                    }
+                    participantStatusByKey={participantStatusByKey}
+                  />
+                </TabsContent>
+              )
+            )}
+          </Tabs>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function StartListEventUnifiedCard({
+  variant = "ops",
   competitionId,
   competitionName,
   archiveRecordedAtIso,
@@ -178,21 +409,45 @@ export default function StartListEventUnifiedCard({
   officialRanksByRound = null,
   placementSeed,
   frozenSnapshotRounds = null,
+  startListRoundCount = null,
   preliminaryHeatLaneCount = null,
   heatPlanConfirmedAtIso = null,
   marshalStartedAtIso = null,
-  showMarshalHeatLinks = false,
-  showMarshalOps: showMarshalOpsProp,
-  showResultOps: showResultOpsProp,
+  showMarshalOps: showMarshalOpsProp = false,
+  showResultOps: showResultOpsProp = false,
   canEditHeatConfiguration = true,
   canEditPublishedScheduleForRoundSetup = false,
   roundHeatBarItems = null,
   participantStatusByKey,
   initialParticipantStatusRows,
   initialRoundIndex = null,
+  softRefreshIntervalSec,
 }: Props) {
-  const showMarshalOps = showMarshalOpsProp ?? showMarshalHeatLinks;
-  const showResultOps = showResultOpsProp ?? showMarshalHeatLinks;
+  if (variant === "public") {
+    return (
+      <StartListEventPublicCard
+        competitionName={competitionName}
+        archiveRecordedAtIso={archiveRecordedAtIso}
+        event={event}
+        scheduleLabel={scheduleLabel}
+        individuals={individuals}
+        teams={teams}
+        initialSettings={initialSettings}
+        officialRanksByRound={officialRanksByRound}
+        placementSeed={placementSeed}
+        frozenSnapshotRounds={frozenSnapshotRounds}
+        startListRoundCount={startListRoundCount}
+        preliminaryHeatLaneCount={preliminaryHeatLaneCount}
+        heatPlanConfirmedAtIso={heatPlanConfirmedAtIso}
+        participantStatusByKey={participantStatusByKey}
+        initialParticipantStatusRows={initialParticipantStatusRows}
+        softRefreshIntervalSec={softRefreshIntervalSec}
+      />
+    );
+  }
+
+  const showMarshalOps = showMarshalOpsProp;
+  const showResultOps = showResultOpsProp;
   const showDayOpsShell = showMarshalOps || showResultOps;
 
   const router = useRouter();
@@ -552,83 +807,14 @@ export default function StartListEventUnifiedCard({
     return () => ac.abort();
   }, [showDayOpsShell, listMarshalRound, fetchListMarshalHeatsCore]);
 
-  useEffect(() => {
-    if (!showDayOpsShell) return;
-    const tick = () => {
-      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
-      void refreshDayOpsParticipantPoll();
-      refreshMarshalAndResultLists();
-    };
-    const intervalMs =
-      activeViewMode === "normal"
-        ? DAY_OPS_POLL_INTERVAL_NORMAL_MS
-        : DAY_OPS_POLL_INTERVAL_SYNC_MS;
-    const id = setInterval(tick, intervalMs);
-    return () => clearInterval(id);
-  }, [
-    showDayOpsShell,
+  useDayOpsStartListPolling({
+    enabled: showDayOpsShell,
+    competitionId,
+    eventId: event.id,
     activeViewMode,
-    refreshDayOpsParticipantPoll,
+    refreshParticipantStatuses: refreshDayOpsParticipantPoll,
     refreshMarshalAndResultLists,
-  ]);
-
-  /** バックグラウンドから戻った直後に他端末の更新を取り込む */
-  useEffect(() => {
-    if (!showDayOpsShell) return;
-    const onVisibility = () => {
-      if (typeof document === "undefined" || document.visibilityState !== "visible") return;
-      void refreshDayOpsParticipantPoll();
-      refreshMarshalAndResultLists();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [showDayOpsShell, refreshDayOpsParticipantPoll, refreshMarshalAndResultLists]);
-
-  useEffect(() => {
-    if (!showDayOpsShell) return;
-    const handler = (ev: Event) => {
-      const d = (ev as CustomEvent<{ competitionId?: string; eventId?: string }>).detail;
-      if (d?.competitionId === competitionId && d?.eventId === event.id) {
-        void refreshDayOpsParticipantPoll();
-        refreshMarshalAndResultLists();
-      }
-    };
-    window.addEventListener(JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED, handler);
-    return () => window.removeEventListener(JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED, handler);
-  }, [
-    showDayOpsShell,
-    competitionId,
-    event.id,
-    refreshDayOpsParticipantPoll,
-    refreshMarshalAndResultLists,
-  ]);
-
-  /** 別ブラウザ向け: DB fingerprint を SSE で監視（`NEXT_PUBLIC_DAY_OPS_LIVE_STREAM=1`）。リザルトドラフトのサーバー同期は `NEXT_PUBLIC_DAY_OPS_RESULT_DRAFT_SYNC=1`。 */
-  useEffect(() => {
-    if (!showDayOpsShell || process.env.NEXT_PUBLIC_DAY_OPS_LIVE_STREAM !== "1") return;
-    const url = `/api/competitions/${competitionId}/day-ops/live-events?eventId=${encodeURIComponent(event.id)}`;
-    const es = new EventSource(url, { withCredentials: true });
-    es.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data) as { type?: string };
-        if (msg.type === "changes") {
-          void refreshDayOpsParticipantPoll();
-          refreshMarshalAndResultLists();
-        }
-      } catch {
-        /* ignore */
-      }
-    };
-    return () => {
-      es.close();
-    };
-  }, [
-    showDayOpsShell,
-    competitionId,
-    event.id,
-    refreshDayOpsParticipantPoll,
-    refreshMarshalAndResultLists,
-  ]);
+  });
 
   const listMarshalHeatsByIndex = useMemo(() => {
     const m = new Map<number, HeatMarshalHeatRow>();
@@ -646,102 +832,16 @@ export default function StartListEventUnifiedCard({
     const roundName =
       roundTabDisplayLabels[tabIndex]?.trim() || `ラウンド ${tabIndex + 1}`;
     const mode: StartListMarshalViewMode = marshalViewModeByTab[tabId] ?? "normal";
-    const highlightMarshal = mode === "marshal";
-    const highlightResult = mode === "result";
     return (
-      <div
-        className={cn(
-          "rounded-xl border p-3 shadow-sm transition-colors sm:p-3.5",
-          highlightMarshal
-            ? "border-emerald-200/90 bg-emerald-50/40 dark:border-emerald-800/80 dark:bg-emerald-950/30"
-            : highlightResult
-              ? "border-violet-200/90 bg-violet-50/40 dark:border-violet-800/80 dark:bg-violet-950/25"
-              : "border-border/70 bg-muted/15"
-        )}
-        role="region"
-        aria-label={`${roundName}のスタートリスト表示`}
-      >
-        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-stretch sm:items-center sm:justify-between sm:gap-3">
-          <div className="min-w-0">
-            <p className="min-w-0 text-xs font-semibold text-foreground">
-              表示モード
-              {tabCount > 1 ? (
-                <span className="ml-1.5 font-normal text-muted-foreground">（{roundName}）</span>
-              ) : null}
-            </p>
-            <p className="mt-0.5 text-[10px] text-muted-foreground">
-              現在:{" "}
-              {mode === "normal" ? "通常" : mode === "marshal" ? "マーシャル" : "リザルト"}
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-col gap-1.5 sm:w-[min(100%,22rem)]">
-            <div className="flex flex-wrap gap-0 rounded-lg border border-border/80 bg-background p-0.5 shadow-inner">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className={cn(
-                  "h-8 min-w-0 flex-1 gap-0.5 rounded-md px-1.5 text-[11px] font-medium sm:px-2",
-                  mode === "normal" && "bg-muted text-foreground shadow-sm"
-                )}
-                aria-pressed={mode === "normal"}
-                onClick={() => persistMarshalViewMode(tabId, "normal")}
-              >
-                <LayoutList className="size-3.5 shrink-0 opacity-80" aria-hidden />
-                通常
-              </Button>
-              {showMarshalOps ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                  "h-8 min-w-0 flex-1 gap-0.5 rounded-md px-1.5 text-[11px] font-medium sm:px-2",
-                    highlightMarshal &&
-                      "bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 hover:text-white dark:bg-emerald-700 dark:hover:bg-emerald-600"
-                  )}
-                  aria-pressed={highlightMarshal}
-                  onClick={() => {
-                    flushSync(() => {
-                      persistMarshalViewMode(tabId, "marshal");
-                    });
-                    if (typeof window !== "undefined") {
-                      window.dispatchEvent(new Event("jla-marshal-nfc-arm"));
-                    }
-                  }}
-                >
-                  <ListChecks className="size-3.5 shrink-0 opacity-90" aria-hidden />
-                  マーシャル
-                </Button>
-              ) : null}
-              {showResultOps ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                  "h-8 min-w-0 flex-1 gap-0.5 rounded-md px-1.5 text-[11px] font-medium sm:px-2",
-                    highlightResult &&
-                      "bg-violet-600 text-white shadow-sm hover:bg-violet-700 hover:text-white dark:bg-violet-700 dark:hover:bg-violet-600"
-                  )}
-                  aria-pressed={highlightResult}
-                  onClick={() => {
-                    flushSync(() => {
-                      persistMarshalViewMode(tabId, "result");
-                    });
-                    if (typeof window !== "undefined") {
-                      window.dispatchEvent(new Event("jla-result-nfc-arm"));
-                    }
-                  }}
-                >
-                  <Trophy className="size-3.5 shrink-0 opacity-90" aria-hidden />
-                  リザルト
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </div>
+      <StartListMarshalModeBar
+        tabId={tabId}
+        tabCount={tabCount}
+        roundName={roundName}
+        mode={mode}
+        showMarshalOps={showMarshalOps}
+        showResultOps={showResultOps}
+        onModeChange={persistMarshalViewMode}
+      />
     );
   };
 
@@ -881,7 +981,7 @@ export default function StartListEventUnifiedCard({
             </div>
             <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
               <span className="shrink-0 font-medium text-foreground/80">
-                {sexLabel(event.sex)}
+                {sexLabelJa(event.sex)}
                 {event.type === "TEAM" ? "・団体" : "・個人"}
               </span>
               <span className="hidden text-border sm:inline" aria-hidden>
@@ -951,7 +1051,7 @@ export default function StartListEventUnifiedCard({
         ) : null}
         {canEditHeatConfiguration && canEditPublishedScheduleForRoundSetup ? (
           roundHeatBarItems && roundHeatBarItems.length > 0 ? (
-            <StartListEventPageRoundSettingsPanel
+            <StartListRoundSettingsCardWithHook
               competitionId={competitionId}
               competitionName={competitionName}
               focusEventId={event.id}

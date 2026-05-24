@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
 import { ArrowLeft, AlertTriangle, CheckCircle2, ChevronDown, Clock } from "lucide-react";
-import StartListConfigurator from "@/components/admin/StartListConfigurator";
+import TeamAssignmentDeadlineEditor from "@/components/admin/TeamAssignmentDeadlineEditor";
 import CompetitionTeamBillingManager from "@/components/admin/CompetitionTeamBillingManager";
 import CompetitionEntryAdminActions from "@/components/admin/CompetitionEntryAdminActions";
 import { getCompetitionManagementAccess } from "@/lib/competitionManagementAccess";
@@ -20,7 +20,6 @@ import {
 import {
   getAdminEntryLifecycleStateLabel,
   getIndividualEventIdsFromEntry,
-  hasIndividualWithdrawalForEvent,
 } from "@/lib/entryWithdrawalAdminLabel";
 import SimpleMarkdown from "@/components/SimpleMarkdown";
 import { getMergedEventIdsFromEntry } from "@/lib/competitionEntryMergedEventIds";
@@ -236,39 +235,6 @@ export default async function CompetitionEntriesPage({
     return entry.checkoutSessions.some((s) => s.status === "DISPUTED");
   }).length;
 
-  const individualByEvent = new Map<string, { name: string; clubName: string | null }[]>();
-  entries.forEach((entry) => {
-    entry.items.forEach((item) => {
-      const eventId = item.eventId;
-      if (hasIndividualWithdrawalForEvent(entry.participantStatuses, eventId)) return;
-      const list = individualByEvent.get(eventId) ?? [];
-      list.push({
-        name: `${entry.user.profile?.familyName ?? ""} ${entry.user.profile?.givenName ?? ""}`.trim(),
-        clubName: entry.club?.name ?? null,
-      });
-      individualByEvent.set(eventId, list);
-    });
-  });
-
-  const teamByEvent = new Map<
-    string,
-    { teamName: string; clubName?: string | null; members: string[] }[]
-  >();
-  teamEntries.forEach((teamEntry) => {
-    const eventId = teamEntry.eventId;
-    const list = teamByEvent.get(eventId) ?? [];
-    list.push({
-      teamName: teamEntry.teamName,
-      clubName: teamEntry.club?.name ?? null,
-      members: teamEntry.members
-        .map((member) => `${member.user.profile?.familyName ?? ""} ${member.user.profile?.givenName ?? ""}`.trim())
-        .filter(Boolean),
-    });
-    teamByEvent.set(eventId, list);
-  });
-
-  const individualByEventObject = Object.fromEntries(individualByEvent.entries());
-  const teamByEventObject = Object.fromEntries(teamByEvent.entries());
   const teamEntryFeePerTeam =
     competition.entryFee &&
     typeof competition.entryFee === "object" &&
@@ -544,11 +510,8 @@ export default async function CompetitionEntriesPage({
           <CardTitle>スタートリスト</CardTitle>
         </CardHeader>
         <CardContent>
-          <StartListConfigurator
+          <TeamAssignmentDeadlineEditor
             competitionId={competition.id}
-            events={programOrderedEvents}
-            individualByEvent={individualByEventObject}
-            teamByEvent={teamByEventObject}
             initialSettings={competition.startListSettings ?? undefined}
           />
         </CardContent>

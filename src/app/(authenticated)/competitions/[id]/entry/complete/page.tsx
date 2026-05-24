@@ -1,5 +1,6 @@
 import { Metadata } from "next";
 import { redirect, notFound } from "next/navigation";
+import { competitionMetadataTitle } from "@/lib/competitionMetadata";
 import { prisma } from "@/server/db";
 
 export const dynamic = "force-dynamic";
@@ -10,14 +11,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const competition = await prisma.competition.findUnique({
-    where: { id },
-    select: { name: true },
-  });
-
-  return {
-    title: `エントリー | ${competition?.name || "大会"} | Bluvium`,
-  };
+  return competitionMetadataTitle(id, "エントリー");
 }
 
 /** 表示は `/entry` のフォームに集約。旧 URL・Stripe success_url の互換のためリダイレクトのみ。 */

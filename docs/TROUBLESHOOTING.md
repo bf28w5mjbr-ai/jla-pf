@@ -7,6 +7,17 @@
 - **Direct でも `Can't reach`** のときは、ローカルから **5432 番がブロック**されていることが多い（テザリングや別回線、VPN オフを試す）。CLI が不要なら **Supabase → SQL Editor** で更新する（`pnpm formalize:organization` 失敗時に案内 SQLが標準エラーへ出る）。
 - IPv6 まわりの問題のときは別回線・VPN オフを試す。
 
+## Prisma P2024（接続プール枯渇・`Timed out fetching a new connection`）
+
+- **症状**: ログに `code: 'P2024'`、`connection_limit: 5`、`pool_timeout: 10`。`prisma.*` の呼び出しがまとめて失敗する。
+- **原因**: Vercel 等の 1 プロセスあたり Prisma 接続上限（本番 `DATABASE_URL` の `connection_limit`、多くは 5）に対し、**同一リクエスト内の並列クエリが多すぎる**。DB ダウンとは限らない。
+- **よくある箇所**: 公開大会 `/competitions/[id]`（ログイン時の `Promise.all`）、認証レイアウト + ダッシュボードの同時読み込み。
+- **アプリ側の対策（実装済み）**:
+  - 公開大会ページは `src/lib/competitionPublicPageLoader.ts` で直列化し、同時 DB 接続を抑える。
+  - `ensureCompetitionScheduleTabs` は公開閲覧では実行しない（スケジュールタブ補完は `api/competitions/[id]/schedule-tabs/*` 等の管理 API のみ）。
+  - 認証レイアウトの未読通知は DB 失敗時 0 件フォールバック。
+- **インフラ**: 本番の `connection_limit` を安易に大きくしない（サーバーレスインスタンス数 × limit で Supabase 総接続が先に枯渇しうる）。まず並列削減を優先する。
+
 ## Prisma migrate dev の警告
 **例**: `ClubStatus` / `OrgStatus` の enum から `ACTIVE` が削除される警告
 - 対応: DB 内に `ACTIVE` が残っていないことを確認してから migration を実行。
