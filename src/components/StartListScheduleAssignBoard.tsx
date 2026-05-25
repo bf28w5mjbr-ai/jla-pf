@@ -12,6 +12,7 @@ import {
 } from "@/lib/competitionScheduleTabDisplay";
 import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
 import type { CompetitionScheduleDay } from "@/lib/competitionScheduleDays";
+import { sexLabelJa } from "@/lib/sexLabelJa";
 import { cn } from "@/lib/utils";
 
 export type StartListScheduleAssignBoardProps = {
@@ -226,7 +227,7 @@ export function StartListScheduleAssignBoard({
                                 <button
                                   type="button"
                                   draggable={!dndDisabled}
-                                  aria-label={`${event.name}（${roundLabel}）を移動`}
+                                  aria-label={`${event.name} ${sexLabelJa(event.sex)}（${roundLabel}）を移動`}
                                   className={cn(
                                     "mt-0.5 shrink-0 touch-none text-muted-foreground",
                                     dndDisabled
@@ -252,6 +253,11 @@ export function StartListScheduleAssignBoard({
                                   >
                                     {roundLabel}
                                   </Badge>
+                                  <p className="truncate text-[10px] leading-tight text-muted-foreground">
+                                    {sexLabelJa(event.sex)}
+                                    {event.type === "TEAM" ? " · 団体" : " · 個人"}
+                                    {event.ageCategoryName ? ` · ${event.ageCategoryName}` : ""}
+                                  </p>
                                 </div>
                               </div>
                             </li>
