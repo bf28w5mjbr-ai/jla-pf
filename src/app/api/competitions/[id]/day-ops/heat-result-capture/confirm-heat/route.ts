@@ -9,6 +9,7 @@ import { loadStartListSnapshotPayload } from "@/lib/heatMarshalGate";
 import { countCalledMarshalSlotsForHeatConfirmInTransaction } from "@/lib/marshalHeatCalledCount";
 import { tryAutoAppendNextStartListRound } from "@/lib/startListNextRoundFromOfficial";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
+import { START_LIST_STEP1_REQUIRED_SHORT_MESSAGE } from "@/lib/startListStep1Messages";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
     if (!eventRow.startListHeatPlanConfirmedAt) {
       return NextResponse.json(
-        { error: "先にスタートリストのステップ1を確定してください。" },
+        { error: START_LIST_STEP1_REQUIRED_SHORT_MESSAGE },
         { status: 409 }
       );
     }

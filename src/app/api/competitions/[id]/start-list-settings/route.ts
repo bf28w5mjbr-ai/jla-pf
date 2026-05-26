@@ -20,9 +20,8 @@ import { prisma } from "@/server/db";
 import { hostOrgAdminCanManageCompetition } from "@/lib/roleScopes";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
-import { replaceCompetitionStartListSnapshotWithAudit } from "@/lib/replaceStartListSnapshotWithAudit";
-import { eventIdsWhereHeatPlanSplitChanged } from "@/lib/startListSnapshot";
 import { syncAllEventStartListRoundCountsFromSettings } from "@/lib/startListRoundCountSync";
+import { runSnapshotCaptureForSettings } from "@/lib/startListSaveFlowService";
 
 export async function PUT(
   request: NextRequest,
@@ -212,46 +211,15 @@ export async function PUT(
       eventIds: competition.events.map((e) => e.id),
     });
 
-    type SnapshotCapturePayload =
-      | {
-          ok: true;
-          snapshotId: string;
-          wasUpdate: boolean;
-          skipped?: boolean;
-          partialRebuild?: boolean;
-        }
-      | { ok: false; error: string };
-
-    let snapshotCapture: SnapshotCapturePayload | undefined;
-    if (shouldCaptureSnapshot) {
-      const heatPlanChangedIds = eventIdsWhereHeatPlanSplitChanged({
-        orderedEventIds: competition.events.map((e) => e.id),
-        previous: existingParsed.eventSettings,
-        next: eventSettingsForMonotonic,
-      });
-      try {
-        const snap = await replaceCompetitionStartListSnapshotWithAudit(request, {
-          competitionId,
-          sessionUserId,
-          onlyRebuildEventIds: heatPlanChangedIds,
-        });
-        snapshotCapture = {
-          ok: true,
-          snapshotId: snap.snapshotId,
-          wasUpdate: snap.wasUpdate,
-          skipped: snap.skipped,
-          partialRebuild: snap.partialRebuild,
-        };
-      } catch (snapErr) {
-        snapshotCapture = {
-          ok: false,
-          error:
-            snapErr instanceof Error
-              ? snapErr.message
-              : "スタートリスト記録の更新に失敗しました（設定は保存済みです）。",
-        };
-      }
-    }
+    const snapshotCapture = await runSnapshotCaptureForSettings({
+      request,
+      competitionId,
+      sessionUserId,
+      shouldCaptureSnapshot,
+      orderedEventIds: competition.events.map((e) => e.id),
+      previousEventSettings: existingParsed.eventSettings,
+      nextEventSettings: eventSettingsForMonotonic,
+    });
 
     return NextResponse.json({
       message: "スタートリスト設定を更新しました",

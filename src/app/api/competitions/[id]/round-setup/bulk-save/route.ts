@@ -1,5 +1,4 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
-import type { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { validateEventSettingsRoundTabHeatMonotonic } from "@/lib/startListEventHeatValidation";
@@ -11,15 +10,18 @@ import { competitionEntryEligibleForStartListWhere } from "@/lib/entryCheckoutSe
 import { prisma } from "@/server/db";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
-import { replaceCompetitionStartListSnapshotWithAudit } from "@/lib/replaceStartListSnapshotWithAudit";
-import { eventIdsWhereHeatPlanSplitChanged } from "@/lib/startListSnapshot";
 import { parseStartListSettings } from "@/lib/startListSettings";
+import { START_LIST_STEP1_LOCKED_AFTER_MARSHAL_MESSAGE } from "@/lib/startListStep1Messages";
 import {
   buildBulkSaveSettingsPayload,
   buildEventUpdatesForBulkSave,
   mergeBulkSaveItemsIntoEventSettings,
   parseRoundSetupBulkSaveItems,
 } from "@/lib/roundSetupBulkSave";
+import {
+  resolveRoundSetupConfirmEventIds,
+  runSnapshotCaptureForSettings,
+} from "@/lib/startListSaveFlowService";
 
 export async function POST(
   request: NextRequest,
@@ -198,61 +200,22 @@ export async function POST(
       });
     });
 
-    type SnapshotCapturePayload =
-      | {
-          ok: true;
-          snapshotId: string;
-          wasUpdate: boolean;
-          skipped?: boolean;
-          partialRebuild?: boolean;
-        }
-      | { ok: false; error: string };
+    const snapshotCapture = await runSnapshotCaptureForSettings({
+      request,
+      competitionId,
+      sessionUserId,
+      shouldCaptureSnapshot,
+      orderedEventIds: competition.events.map((e) => e.id),
+      previousEventSettings: existingParsed.eventSettings,
+      nextEventSettings: mergedEventSettings,
+    });
 
-    let snapshotCapture: SnapshotCapturePayload | undefined;
-    if (shouldCaptureSnapshot) {
-      const heatPlanChangedIds = eventIdsWhereHeatPlanSplitChanged({
-        orderedEventIds: competition.events.map((e) => e.id),
-        previous: existingParsed.eventSettings,
-        next: mergedEventSettings,
-      });
-      try {
-        const snap = await replaceCompetitionStartListSnapshotWithAudit(request, {
-          competitionId,
-          sessionUserId,
-          onlyRebuildEventIds: heatPlanChangedIds,
-        });
-        snapshotCapture = {
-          ok: true,
-          snapshotId: snap.snapshotId,
-          wasUpdate: snap.wasUpdate,
-          skipped: snap.skipped,
-          partialRebuild: snap.partialRebuild,
-        };
-      } catch (snapErr) {
-        snapshotCapture = {
-          ok: false,
-          error:
-            snapErr instanceof Error
-              ? snapErr.message
-              : "スタートリスト記録の更新に失敗しました（設定は保存済みです）。",
-        };
-      }
-    }
-
-    const confirmIdsRaw = body?.confirmEventIds;
-    let confirmEventIds: string[];
-    if (Array.isArray(confirmIdsRaw) && confirmIdsRaw.length > 0) {
-      confirmEventIds = confirmIdsRaw.filter(
-        (id): id is string => typeof id === "string" && eventIdSet.has(id)
-      );
-    } else {
-      confirmEventIds = items
-        .map((i) => i.eventId)
-        .filter((id) => {
-          const ev = eventsById.get(id);
-          return ev && !ev.startListHeatPlanConfirmedAt && !ev.marshalStartedAt;
-        });
-    }
+    const confirmEventIds = resolveRoundSetupConfirmEventIds({
+      requestedIds: body?.confirmEventIds,
+      itemsEventIds: items.map((i) => i.eventId),
+      allEventIds: eventIdSet,
+      eventsById,
+    });
 
     const now = new Date();
     const confirmResults: Array<{ eventId: string; ok: boolean; message?: string }> = [];
@@ -263,7 +226,7 @@ export async function POST(
         confirmResults.push({
           eventId,
           ok: false,
-          message: "マーシャル開始後はステップ1の状態を変更できません",
+          message: START_LIST_STEP1_LOCKED_AFTER_MARSHAL_MESSAGE,
         });
         continue;
       }

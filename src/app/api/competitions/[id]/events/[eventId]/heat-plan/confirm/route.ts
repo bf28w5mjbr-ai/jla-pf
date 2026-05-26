@@ -7,6 +7,7 @@ import {
   requireHostOrgAdminForCompetition,
 } from "@/lib/organizerAccess";
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
+import { START_LIST_STEP1_LOCKED_AFTER_MARSHAL_MESSAGE } from "@/lib/startListStep1Messages";
 
 type RouteContext = { params: Promise<{ id: string; eventId: string }> };
 
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     if (event.marshalStartedAt) {
       return NextResponse.json(
-        { message: "マーシャル開始後はステップ1の状態を変更できません" },
+        { message: START_LIST_STEP1_LOCKED_AFTER_MARSHAL_MESSAGE },
         { status: 409 }
       );
     }

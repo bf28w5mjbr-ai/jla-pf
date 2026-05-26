@@ -14,6 +14,7 @@ import {
 } from "@/lib/heatMarshalFromSnapshot";
 import { expandTeamMarshalRefsWithMembers } from "@/lib/teamMarshalExpand";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
+import { START_LIST_STEP1_REQUIRED_MESSAGE } from "@/lib/startListStep1Messages";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -83,10 +84,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
     if (!event.startListHeatPlanConfirmedAt) {
       return NextResponse.json(
-        {
-          error:
-            "先にスタートリストでステップ1（ラウンド設定）を確定してください。確定後にマーシャル操作が可能になります。",
-        },
+        { error: START_LIST_STEP1_REQUIRED_MESSAGE },
         { status: 409 }
       );
     }
