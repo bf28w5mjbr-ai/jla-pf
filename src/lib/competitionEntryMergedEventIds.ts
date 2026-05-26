@@ -1,5 +1,6 @@
 /**
- * エントリーの「出場種目」表示・CSV 用に、スナップショット優先でマージした種目 ID の集合を返す。
+ * エントリー受付時点の種目（スナップショット優先）をマージした集合。
+ * スタートリスト・CSV 整合には {@link getLiveIndividualEventIdsFromEntry} を使うこと。
  */
 export function getMergedEventIdsFromEntry(entry: {
   items: { eventId: string }[];

@@ -22,7 +22,7 @@ import {
   getIndividualEventIdsFromEntry,
 } from "@/lib/entryWithdrawalAdminLabel";
 import SimpleMarkdown from "@/components/SimpleMarkdown";
-import { getMergedEventIdsFromEntry } from "@/lib/competitionEntryMergedEventIds";
+import { getLiveIndividualEventIdsFromEntry } from "@/lib/startListEntryAlignment";
 import {
   orderedLabelsForMergedEventIds,
   sortEventsForEntryExport,
@@ -440,10 +440,12 @@ export default async function CompetitionEntriesPage({
                           <div className="text-sm text-gray-500">
                             <p>エントリー種目:</p>
                             {(() => {
-                              const merged = getMergedEventIdsFromEntry(entry);
+                              const liveIds = new Set(
+                                getLiveIndividualEventIdsFromEntry(entry.items)
+                              );
                               const labels = orderedLabelsForMergedEventIds(
                                 programOrderedEvents,
-                                merged,
+                                liveIds,
                                 (id) => formatEventLabel(eventMap.get(id))
                               );
 

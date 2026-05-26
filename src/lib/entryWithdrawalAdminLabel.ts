@@ -52,20 +52,11 @@ export function hasIndividualWithdrawalForEvent(
   );
 }
 
-/** 個人種目の eventId 一覧（スナップショット優先・棄権 API と同じ解釈） */
+/** 個人種目の eventId 一覧（現行 EntryItem。棄権ラベル・スタートリスト整合と同じ母数） */
 export function getIndividualEventIdsFromEntry(entry: {
   items: { eventId: string }[];
-  snapshot: { data: unknown } | null | undefined;
 }): string[] {
-  const snapshot = entry.snapshot?.data as
-    | {
-        items?: { eventId?: string }[];
-      }
-    | undefined;
-  const individualItems = Array.isArray(snapshot?.items)
-    ? snapshot.items
-    : entry.items.map((item) => ({ eventId: item.eventId }));
-  const ids = individualItems
+  const ids = entry.items
     .map((item) => item.eventId)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
   return [...new Set(ids)];

@@ -14,13 +14,17 @@ import {
   getPendingCsvExportRequest,
 } from "@/lib/competitionEntryCsvExport";
 import { getCompetitionEligibilityAgeYears, getJapanCalendarDateParts } from "@/lib/competitionEligibilityAge";
-import { getMergedEventIdsFromEntry } from "@/lib/competitionEntryMergedEventIds";
 import {
   orderedLabelsForMergedEventIds,
   sortEventsForEntryExport,
 } from "@/lib/competitionEntryExportOrdering";
+import { isEntryEstablished } from "@/lib/entryFinalization";
 import { isPlayerRegistrationQualificationKind } from "@/lib/qualificationRegistrationKinds";
-import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
+import {
+  buildIndividualEventCircleCells,
+  getLiveIndividualEventIdsFromEntry,
+  shouldHideTeamEntryFromStartListAlignment,
+} from "@/lib/startListEntryAlignment";
 
 type Props = {
   organizationId: string;
@@ -457,7 +461,12 @@ export default async function CompetitionEntriesTabContent({
 
   const entries = await prisma.competitionEntry.findMany({
     where: { competitionId: competition.id },
-    include: {
+    select: {
+      id: true,
+      status: true,
+      totalFee: true,
+      clubIndividualFeePaidAt: true,
+      createdAt: true,
       club: { select: { name: true } },
       user: {
         select: {
@@ -481,15 +490,19 @@ export default async function CompetitionEntriesTabContent({
       },
       checkoutSessions: {
         orderBy: { createdAt: "desc" },
-        take: 1,
-        select: { status: true, payload: true, createdAt: true, amount: true },
+        take: 15,
+        select: { status: true, createdAt: true, amount: true },
       },
       items: {
         select: { eventId: true },
       },
-      snapshot: { select: { data: true } },
       participantStatuses: {
-        select: { eventId: true, status: true, reason: true },
+        select: {
+          eventId: true,
+          status: true,
+          reason: true,
+          participantType: true,
+        },
       },
     },
     orderBy: { createdAt: "desc" },
@@ -525,6 +538,15 @@ export default async function CompetitionEntriesTabContent({
         },
         orderBy: [{ order: "asc" }, { createdAt: "asc" }],
       },
+      participantStatuses: {
+        select: {
+          eventId: true,
+          status: true,
+          reason: true,
+          participantType: true,
+          teamEntryId: true,
+        },
+      },
     },
     orderBy: { createdAt: "asc" },
   });
@@ -549,26 +571,25 @@ export default async function CompetitionEntriesTabContent({
     competition.ageCategories
   );
 
+  const entryEstablishedInput = (entry: (typeof entries)[number]) => ({
+    status: entry.status,
+    totalFee: entry.totalFee,
+    clubIndividualFeePaidAt: entry.clubIndividualFeePaidAt,
+    checkoutSessions: entry.checkoutSessions.map((s) => ({ status: s.status })),
+  });
+
   const buildIndividualEventInfo = (entry: (typeof entries)[number]) => {
-    const merged = getMergedEventIdsFromEntry(entry);
-    const labels = orderedLabelsForMergedEventIds(programOrderedEvents, merged, (id) =>
+    const liveIds = new Set(getLiveIndividualEventIdsFromEntry(entry.items));
+    const labels = orderedLabelsForMergedEventIds(programOrderedEvents, liveIds, (id) =>
       formatEventLabel(id)
     );
     return labels.length > 0 ? labels.join(" / ") : "—";
   };
 
-  const isEstablishedIndividualEntry = (entry: (typeof entries)[number]) => {
-    if (entry.status === "CANCELLED") return false;
-    if (entry.totalFee <= 0) return true;
-    if (entry.clubIndividualFeePaidAt) return true;
-    return isEntryCheckoutPaidForEligibility(entry.checkoutSessions[0]?.status);
-  };
-
   const isUnpaidIndividualEntryAttempt = (entry: (typeof entries)[number]) => {
     if (entry.status === "CANCELLED") return false;
-    if (entry.totalFee <= 0) return false;
-    if (entry.clubIndividualFeePaidAt) return false;
-    return !isEntryCheckoutPaidForEligibility(entry.checkoutSessions[0]?.status);
+    if (isEntryEstablished(entryEstablishedInput(entry))) return false;
+    return entry.totalFee > 0;
   };
 
   const paidIndividualListRows: IndividualEntryListRow[] = [];
@@ -593,7 +614,7 @@ export default async function CompetitionEntriesTabContent({
       eventsLabel,
     };
 
-    if (isEstablishedIndividualEntry(entry)) {
+    if (isEntryEstablished(entryEstablishedInput(entry))) {
       paidIndividualListRows.push(baseRow);
     } else if (isUnpaidIndividualEntryAttempt(entry)) {
       const latestCheckout = entry.checkoutSessions[0];
@@ -608,7 +629,13 @@ export default async function CompetitionEntriesTabContent({
       return;
     }
 
-    const mergedEventIds = getMergedEventIdsFromEntry(entry);
+    const liveEventIds = new Set(getLiveIndividualEventIdsFromEntry(entry.items));
+    const alignmentStatuses = entry.participantStatuses.map((row) => ({
+      eventId: row.eventId,
+      status: row.status,
+      reason: row.reason,
+      participantType: row.participantType,
+    }));
     const ageYears = profile?.dateOfBirth
       ? getCompetitionEligibilityAgeYears(profile.dateOfBirth, competition.startDate)
       : 0;
@@ -625,7 +652,11 @@ export default async function CompetitionEntriesTabContent({
       String(ageYears),
       profile?.dateOfBirth ? formatBirthYmdJp(profile.dateOfBirth) : "",
       playerRegLabel,
-      ...individualCsvEvents.map((ev) => (mergedEventIds.has(ev.id) ? "○" : "")),
+      ...buildIndividualEventCircleCells(
+        individualCsvEvents.map((ev) => ev.id),
+        liveEventIds,
+        alignmentStatuses
+      ),
     ]);
   });
 
@@ -681,6 +712,11 @@ export default async function CompetitionEntriesTabContent({
   type TeamGroupAgg = { clubId: string; clubName: string; eventId: string; count: number };
   const teamGroupMap = new Map<string, TeamGroupAgg>();
   for (const te of teamEntries) {
+    if (
+      shouldHideTeamEntryFromStartListAlignment(te.id, te.eventId, te.participantStatuses)
+    ) {
+      continue;
+    }
     const gk = `${te.clubId}:${te.eventId}`;
     const cur = teamGroupMap.get(gk);
     if (cur) {
@@ -724,6 +760,11 @@ export default async function CompetitionEntriesTabContent({
   }[] = [];
 
   teamEntries.forEach((te) => {
+    if (
+      shouldHideTeamEntryFromStartListAlignment(te.id, te.eventId, te.participantStatuses)
+    ) {
+      return;
+    }
     const eventInfoBase = `${formatEventLabel(te.eventId, te.event)} / チーム: ${te.teamName}（${te.club.name}）`;
     const statusLabel = clubPaymentLabel(te.clubId);
 
@@ -770,7 +811,10 @@ export default async function CompetitionEntriesTabContent({
 
   const exportNameBase = competition.name.replace(/[\\/:*?"<>|]/g, "_").trim() || competition.id;
 
-  const teamEntryCount = teamEntries.length;
+  const teamEntryCount = teamEntries.filter(
+    (te) =>
+      !shouldHideTeamEntryFromStartListAlignment(te.id, te.eventId, te.participantStatuses)
+  ).length;
 
   const individualEventOptions = competition.events
     .filter((e) => e.type === "INDIVIDUAL")
@@ -798,6 +842,7 @@ export default async function CompetitionEntriesTabContent({
                 出場種目の並び（一覧・CSVの種目列）は、
                 <span className="font-medium text-foreground/90"> 年齢カテゴリの表示順 </span>
                 でまとまり、同一カテゴリ内は種目の表示順です（カテゴリの並びが同順のときはカテゴリ名の順）。種目は正しい年齢カテゴリに紐づけてください。
+                CSVの種目○はスタートリスト掲載対象と同じ条件です（現行登録種目のみ。棄権した種目は○なし）。
               </CardDescription>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:justify-end">
