@@ -11,21 +11,16 @@ import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
 import { formatEventScheduleJa } from "@/lib/eventScheduleDisplay";
 import { computePlacementSeed } from "@/lib/startListHeatPlacement";
 import { extractFrozenRoundsForEventFromSnapshotData } from "@/lib/startListEventTabDisplay";
-import {
-  buildParticipantDayOpsStatusByKey,
-  shouldHideFromStartListLineupParticipantRow,
-} from "@/lib/dayOpsParticipantStatusDisplay";
+import { buildParticipantDayOpsStatusByKey } from "@/lib/dayOpsParticipantStatusDisplay";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
+import { buildStartListLineupFromEntries } from "@/lib/buildStartListLineupParticipants";
+import type {
+  StartListEventCardProps,
+  StartListEventPageIndividual,
+  StartListEventPageTeam,
+} from "@/lib/startListEventTypes";
 
-type ParticipantStatusRow = {
-  participantType: string;
-  competitionEntryId: string | null;
-  teamEntryId: string | null;
-  status: string;
-  marshalRound: ResultRound;
-  updatedAt: Date;
-  calledAt: Date | null;
-};
+export type { StartListEventPageIndividual, StartListEventPageTeam };
 
 /** メタデータとページ本体で同一リクエスト内の二重クエリを避ける */
 export const getStartListEventDetail = cache(async (competitionId: string, eventId: string) => {
@@ -50,22 +45,6 @@ export const getStartListEventDetail = cache(async (competitionId: string, event
   });
 });
 
-export type StartListEventPageIndividual = {
-  entryId: string;
-  userId: string;
-  name: string;
-  clubId: string | null;
-  clubName: string | null;
-};
-
-export type StartListEventPageTeam = {
-  teamEntryId: string;
-  teamName: string;
-  clubId: string | null;
-  clubName: string | null;
-  members: string[];
-};
-
 export type StartListEventPageLoaded =
   | { kind: "notFound" }
   | {
@@ -77,46 +56,17 @@ export type StartListEventPageLoaded =
   | {
       kind: "ok";
       competitionId: string;
-      eventId: string;
       dayOpsUnlockConfigured: boolean;
       hasDayOpsUnlock: boolean;
-      showUnifiedStartListCard: boolean;
-      showVenueOps: boolean;
-      canManageStartListOps: boolean;
-      isOrgAdmin: boolean;
-      initialRoundIndex: number | null;
-      competitionName: string;
-      startListSettings: unknown;
-      archiveRecordedAtIso: string | null;
-      scheduleLabel: string | null;
-      event: {
-        id: string;
-        name: string;
-        sex: string;
-        type: "INDIVIDUAL" | "TEAM";
-        ageCategoryName: string | null;
-        preliminaryHeatLaneCount: number | null;
-        startListRoundCount: number | null;
-        heatPlanConfirmedAtIso: string | null;
-        marshalStartedAtIso: string | null;
-      };
-      individuals: StartListEventPageIndividual[];
-      teams: StartListEventPageTeam[];
-      officialRanksByRound: Partial<Record<ResultRound, Record<string, number>>>;
-      placementSeed: number;
-      frozenSnapshotRounds: ReturnType<typeof extractFrozenRoundsForEventFromSnapshotData>;
-      participantStatusByKey: ReturnType<typeof buildParticipantDayOpsStatusByKey>;
-      participantStatusRows: ParticipantStatusRow[];
-      roundHeatBarItems: StartListEventBarItem[] | null;
+      cardProps: StartListEventCardProps;
     };
 
 export async function loadStartListEventPage(input: {
   competitionId: string;
   eventId: string;
   sessionToken: string | undefined;
-  initialRoundIndex: number | null;
 }): Promise<StartListEventPageLoaded> {
-  const { competitionId, eventId, sessionToken, initialRoundIndex } = input;
+  const { competitionId, eventId, sessionToken } = input;
   const session = await verifySessionCached(sessionToken);
   const sessionUserId = session?.userId ?? null;
 
@@ -159,7 +109,6 @@ export async function loadStartListEventPage(input: {
     orgStatus: competition.organization.status,
     hasDayOpsUnlock,
   });
-  const showUnifiedStartListCard = canManageStartListOps;
   const showVenueOps = isOrgAdmin || hasDayOpsUnlock;
 
   if (competition.status === "DRAFT" && !isOrgAdmin) {
@@ -178,7 +127,8 @@ export async function loadStartListEventPage(input: {
     };
   }
 
-  const needRoundHeatBarItems = isOrgAdmin && showUnifiedStartListCard;
+  /** org 管理者のみ全種目 bar を取得（当日運用のみアンロックは ops UI だがインライン保存用データなし） */
+  const needRoundHeatBarItems = isOrgAdmin && canManageStartListOps;
 
   const [
     liveEntries,
@@ -311,40 +261,12 @@ export async function loadStartListEventPage(input: {
 
   const participantStatusByKey = buildParticipantDayOpsStatusByKey(participantStatusRows);
 
-  const excludedIndividualEntryIds = new Set<string>();
-  const indRowsByEntry = new Map<string, typeof participantStatusRows>();
-  for (const row of participantStatusRows) {
-    if (row.participantType !== "INDIVIDUAL" || !row.competitionEntryId) continue;
-    const id = row.competitionEntryId;
-    if (!indRowsByEntry.has(id)) indRowsByEntry.set(id, []);
-    indRowsByEntry.get(id)!.push(row);
-  }
-  for (const [entryId, rows] of indRowsByEntry) {
-    if (
-      rows.some((r) =>
-        shouldHideFromStartListLineupParticipantRow({ status: r.status, reason: r.reason })
-      )
-    ) {
-      excludedIndividualEntryIds.add(entryId);
-    }
-  }
-  const excludedTeamEntryIds = new Set<string>();
-  const teamRowsById = new Map<string, typeof participantStatusRows>();
-  for (const row of participantStatusRows) {
-    if (row.participantType !== "TEAM" || !row.teamEntryId) continue;
-    const id = row.teamEntryId;
-    if (!teamRowsById.has(id)) teamRowsById.set(id, []);
-    teamRowsById.get(id)!.push(row);
-  }
-  for (const [teamId, rows] of teamRowsById) {
-    if (
-      rows.some((r) =>
-        shouldHideFromStartListLineupParticipantRow({ status: r.status, reason: r.reason })
-      )
-    ) {
-      excludedTeamEntryIds.add(teamId);
-    }
-  }
+  const { individuals, teams, placementIndividualIds, placementTeamIds } =
+    buildStartListLineupFromEntries({
+      liveEntries,
+      liveTeamEntries,
+      participantStatusRows,
+    });
 
   const officialRanksByRound: Partial<Record<ResultRound, Record<string, number>>> = {};
   for (const or of officialResults) {
@@ -361,43 +283,6 @@ export async function loadStartListEventPage(input: {
     }
   }
 
-  const individuals: StartListEventPageIndividual[] = [];
-  const placementIndividualIds: string[] = [];
-  for (const entry of liveEntries) {
-    if (excludedIndividualEntryIds.has(entry.id)) continue;
-    const item = entry.items[0];
-    if (!item) continue;
-    placementIndividualIds.push(entry.id);
-    individuals.push({
-      entryId: entry.id,
-      userId: entry.userId,
-      name: `${entry.user.profile?.familyName ?? ""} ${entry.user.profile?.givenName ?? ""}`.trim(),
-      clubId: entry.club?.id ?? null,
-      clubName: entry.club?.name ?? null,
-    });
-  }
-  placementIndividualIds.sort();
-
-  const teams: StartListEventPageTeam[] = [];
-  const placementTeamIds: string[] = [];
-  for (const teamEntry of liveTeamEntries) {
-    if (excludedTeamEntryIds.has(teamEntry.id)) continue;
-    placementTeamIds.push(teamEntry.id);
-    teams.push({
-      teamEntryId: teamEntry.id,
-      teamName: teamEntry.teamName,
-      clubId: teamEntry.club?.id ?? null,
-      clubName: teamEntry.club?.name ?? null,
-      members: teamEntry.members
-        .map(
-          (member) =>
-            `${member.user.profile?.familyName ?? ""} ${member.user.profile?.givenName ?? ""}`.trim()
-        )
-        .filter(Boolean),
-    });
-  }
-  placementTeamIds.sort();
-
   const scheduleLabel = formatEventScheduleJa(event.scheduledStartAt, event.scheduledEndAt);
   const archiveRecordedAtIso = competition.startListSnapshot?.capturedAt
     ? new Date(competition.startListSnapshot.capturedAt).toISOString()
@@ -411,47 +296,58 @@ export async function loadStartListEventPage(input: {
     eventId
   );
 
+  const mappedParticipantRows = participantStatusRows.map((row) => ({
+    participantType: row.participantType,
+    competitionEntryId: row.competitionEntryId,
+    teamEntryId: row.teamEntryId,
+    status: row.status,
+    marshalRound: row.marshalRound ?? "HEAT",
+    updatedAt: row.updatedAt,
+    calledAt: row.calledAt,
+  }));
+
+  const viewMode = canManageStartListOps ? "ops" : "public";
+
   return {
     kind: "ok",
     competitionId,
-    eventId,
     dayOpsUnlockConfigured,
     hasDayOpsUnlock,
-    showUnifiedStartListCard,
-    showVenueOps,
-    canManageStartListOps,
-    isOrgAdmin,
-    initialRoundIndex,
-    competitionName: competition.name,
-    startListSettings: competition.startListSettings,
-    archiveRecordedAtIso,
-    scheduleLabel,
-    event: {
-      id: event.id,
-      name: event.name,
-      sex: event.sex,
-      type: event.type,
-      ageCategoryName: event.ageCategory?.name ?? null,
-      preliminaryHeatLaneCount: event.preliminaryHeatLaneCount ?? null,
-      startListRoundCount: event.startListRoundCount ?? null,
-      heatPlanConfirmedAtIso: event.startListHeatPlanConfirmedAt?.toISOString() ?? null,
-      marshalStartedAtIso: event.marshalStartedAt?.toISOString() ?? null,
+    cardProps: {
+      viewMode,
+      competitionId,
+      competitionName: competition.name,
+      archiveRecordedAtIso,
+      event: {
+        id: event.id,
+        name: event.name,
+        sex: event.sex,
+        type: event.type,
+        ageCategoryName: event.ageCategory?.name ?? null,
+        preliminaryHeatLaneCount: event.preliminaryHeatLaneCount ?? null,
+        startListRoundCount: event.startListRoundCount ?? null,
+        heatPlanConfirmedAtIso: event.startListHeatPlanConfirmedAt?.toISOString() ?? null,
+        marshalStartedAtIso: event.marshalStartedAt?.toISOString() ?? null,
+      },
+      initialSettings: competition.startListSettings,
+      defaultMaxLanesPerRace: event.preliminaryHeatLaneCount ?? null,
+      entryCount: event.type === "TEAM" ? teams.length : individuals.length,
+      scheduleLabel,
+      individuals,
+      teams,
+      officialRanksByRound,
+      placementSeed,
+      frozenSnapshotRounds,
+      participantStatusByKey,
+      initialParticipantStatusRows: mappedParticipantRows,
+      initialRoundIndex: null,
+      roundHeatBarItems,
+      permissions: {
+        canManageStartListOps,
+        isOrgAdmin,
+        showVenueOps,
+      },
+      softRefreshIntervalSec: viewMode === "public" ? 25 : undefined,
     },
-    individuals,
-    teams,
-    officialRanksByRound,
-    placementSeed,
-    frozenSnapshotRounds,
-    participantStatusByKey,
-    participantStatusRows: participantStatusRows.map((row) => ({
-      participantType: row.participantType,
-      competitionEntryId: row.competitionEntryId,
-      teamEntryId: row.teamEntryId,
-      status: row.status,
-      marshalRound: row.marshalRound ?? "HEAT",
-      updatedAt: row.updatedAt,
-      calledAt: row.calledAt,
-    })),
-    roundHeatBarItems,
   };
 }

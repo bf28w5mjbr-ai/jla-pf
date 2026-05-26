@@ -4,7 +4,7 @@ import { flushSync } from "react-dom";
 import { LayoutList, ListChecks, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { StartListMarshalViewMode } from "@/components/StartListEventUnifiedCard";
+import type { StartListMarshalViewMode } from "@/lib/startListEventTypes";
 
 type Props = {
   tabId: string;

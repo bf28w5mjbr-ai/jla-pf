@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { StartListRoundData } from "@/lib/startListRounds";
 import {
+  buildStartListEventRoundDisplay,
   dedupeFrozenTabIndicesBySnapshotRound,
   getLiveHeatsByTab,
   getSnapshotTabPanels,
@@ -395,5 +396,70 @@ describe("dedupeFrozenTabIndicesBySnapshotRound", () => {
       },
     ]);
     expect(idx).toEqual([2]);
+  });
+});
+
+describe("buildStartListEventRoundDisplay", () => {
+  const individuals = Array.from({ length: 8 }, (_, i) => ({
+    entryId: `e${i}`,
+    userId: `u${i}`,
+    name: `P${i}`,
+    clubId: null as string | null,
+    clubName: null as string | null,
+  }));
+
+  it("ops mode returns all configured round tabs", () => {
+    const d = buildStartListEventRoundDisplay({
+      eventId: "ev1",
+      initialSettings: {
+        events: {
+          ev1: {
+            roundTabs: [
+              { id: "h", label: "予選", mode: "count", heatCount: "2", heatSize: "" },
+              { id: "f", label: "決勝", mode: "count", heatCount: "1", heatSize: "" },
+            ],
+          },
+        },
+      },
+      startListRoundCount: 2,
+      configuredStartListRoundCount: 2,
+      entryCount: 8,
+      individuals,
+      teams: [],
+      isTeam: false,
+      preliminaryHeatLaneCount: 4,
+      placementSeed: 42,
+      mode: "ops",
+    });
+    expect(d.allTabs).toHaveLength(2);
+    expect(d.visibleTabIndices).toEqual([0, 1]);
+    expect(d.rows).toHaveLength(2);
+  });
+
+  it("public mode filters to frozen snapshot rounds only", () => {
+    const frozen: StartListRoundData[] = [
+      {
+        round: "HEAT",
+        generatedAt: "2020-01-01T00:00:00.000Z",
+        generatedBy: "BASELINE",
+        heats: [{ heatIndex: 1, participants: [] }],
+      },
+    ];
+    const d = buildStartListEventRoundDisplay({
+      eventId: "ev1",
+      initialSettings: { events: { ev1: { mode: "count", heatCount: "2", heatSize: "" } } },
+      startListRoundCount: 2,
+      individuals,
+      teams: [],
+      isTeam: false,
+      preliminaryHeatLaneCount: 4,
+      placementSeed: 1,
+      frozenSnapshotRounds: frozen,
+      heatPlanConfirmedAtIso: "2020-01-01T00:00:00.000Z",
+      mode: "public",
+    });
+    expect(d.visibleTabIndices.length).toBeGreaterThanOrEqual(1);
+    expect(d.rows.length).toBe(d.visibleTabIndices.length);
+    expect(d.allTabs.length).toBeGreaterThanOrEqual(d.rows.length);
   });
 });

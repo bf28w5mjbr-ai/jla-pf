@@ -2,6 +2,8 @@ import type { ResultRound } from "@prisma/client";
 import {
   buildRoundTabsForRoundCount,
   normalizeRoundTabs,
+  parseStartListSettings,
+  pickHeatSettingForEvent,
   resolveHeatCountForSnapshotTransition,
   resolveRoundTabsForEvent,
   resolveTabMaxLanes,
@@ -597,6 +599,111 @@ export function getLiveHeatsByTab(params: {
       marshalDisplayHeatIndices: teamHeats.map((_, i) => i + 1),
     };
   });
+}
+
+export type StartListEventRoundDisplayRow = {
+  tab: StartListRoundTab;
+  individualHeats: StartListIndividualDisplayItem[][];
+  teamHeats: StartListTeamDisplayItem[][];
+  heatAdvanceQuotas: (number | null)[];
+  marshalDisplayHeatIndices: number[];
+};
+
+export type StartListEventRoundDisplay = {
+  eventHeatSetting: HeatSetting;
+  allTabs: StartListRoundTab[];
+  /** mode=public では確定ラウンドのみ。ops では allTabs と同じインデックス */
+  visibleTabIndices: number[];
+  rows: StartListEventRoundDisplayRow[];
+};
+
+/**
+ * 種目スタートリストページ向け: ラウンドタブとヒート表を一括計算する。
+ * public はスナップショットで凍結したラウンドのタブのみ visibleTabIndices に含める。
+ */
+export function buildStartListEventRoundDisplay(params: {
+  eventId: string;
+  initialSettings: unknown;
+  startListRoundCount: number | null | undefined;
+  configuredStartListRoundCount?: number | null;
+  entryCount?: number;
+  individuals: StartListIndividualInput[];
+  teams: StartListTeamInput[];
+  isTeam: boolean;
+  preliminaryHeatLaneCount: number | null | undefined;
+  officialRanksByRound?: Partial<Record<ResultRound, Record<string, number>>> | null;
+  placementSeed: number;
+  frozenSnapshotRounds?: StartListRoundData[] | null;
+  heatPlanConfirmedAtIso?: string | null;
+  mode: "public" | "ops";
+}): StartListEventRoundDisplay {
+  const {
+    eventId,
+    initialSettings,
+    startListRoundCount,
+    configuredStartListRoundCount,
+    entryCount,
+    individuals,
+    teams,
+    isTeam,
+    preliminaryHeatLaneCount,
+    officialRanksByRound,
+    placementSeed,
+    frozenSnapshotRounds,
+    heatPlanConfirmedAtIso,
+    mode,
+  } = params;
+
+  const parsed = parseStartListSettings(initialSettings);
+  const eventHeatSetting = pickHeatSettingForEvent(parsed.eventSettings, eventId);
+  const heatPlanStep1Confirmed = Boolean(heatPlanConfirmedAtIso);
+
+  const allTabs =
+    mode === "ops"
+      ? resolveRoundTabsForEvent({
+          heatSetting: eventHeatSetting,
+          roundCount: configuredStartListRoundCount ?? startListRoundCount,
+          entryCount,
+          coerceToCount: true,
+        })
+      : getLiveTabsAligned(eventHeatSetting, startListRoundCount);
+
+  const heatsByTab = getLiveHeatsByTab({
+    liveTabs: allTabs,
+    individuals,
+    teams,
+    isTeam,
+    preliminaryHeatLaneCount,
+    officialRanksByRound,
+    placementSeed,
+    frozenSnapshotRounds,
+    heatPlanStep1Confirmed,
+    eventHeatSetting,
+  });
+
+  const tabCount = allTabs.length;
+  const visibleTabIndices =
+    mode === "public"
+      ? dedupeFrozenTabIndicesBySnapshotRound(tabCount, frozenSnapshotRounds)
+      : allTabs.map((_, i) => i);
+
+  const rows = visibleTabIndices.map((tabIndex) => {
+    const heatRow = heatsByTab[tabIndex]!;
+    return {
+      tab: allTabs[tabIndex]!,
+      individualHeats: heatRow.individualHeats,
+      teamHeats: heatRow.teamHeats,
+      heatAdvanceQuotas: heatRow.heatAdvanceQuotas,
+      marshalDisplayHeatIndices: heatRow.marshalDisplayHeatIndices,
+    };
+  });
+
+  return {
+    eventHeatSetting,
+    allTabs,
+    visibleTabIndices,
+    rows,
+  };
 }
 
 export type SnapshotRoundBlockLoose = {

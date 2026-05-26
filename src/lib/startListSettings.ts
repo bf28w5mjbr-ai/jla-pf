@@ -78,6 +78,15 @@ export function parseStartListSettings(value: unknown): {
   };
 }
 
+/** 種目 ID に対応するヒート設定（未設定時は 1 ヒートの count モード） */
+export function pickHeatSettingForEvent(
+  eventSettings: Record<string, HeatSetting>,
+  eventId: string
+): HeatSetting {
+  if (eventSettings[eventId]) return eventSettings[eventId];
+  return { mode: "count", heatCount: "1", heatSize: "" };
+}
+
 /** 1〜32 に clamp したラウンド数（列・draft 共通） */
 export function clampStartListRoundCount(value: number | null | undefined): number {
   if (
