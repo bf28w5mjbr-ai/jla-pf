@@ -240,31 +240,82 @@ export function countOkRanksForHeat(
   return n;
 }
 
-/** 次ラ進出の目安人数（アップ枠・召集済み・着順記録の最小）。次ラ生成の collectAdvancersPerHeatByRank と整合。 */
+/** 次ラ進出の目安人数（アップ枠・召集済み・着順/ランアップ記録の最小）。 */
 export function effectiveNextRoundAdvanceCount(
   quota: number,
   rankOkCount: number,
-  calledCount: number
+  calledCount: number,
+  runUpCount = 0
 ): number {
-  return Math.min(quota, rankOkCount, calledCount);
+  return Math.min(quota, rankOkCount + runUpCount, calledCount);
 }
+
+export function countRunUpForHeat(
+  rows: HeatResultCaptureRow[],
+  heatIndex1Based: number,
+  apiHeat: HeatMarshalHeatRow | undefined
+): number {
+  const calledHere = marshalCalledParticipantKeys(apiHeat);
+  let n = 0;
+  for (const r of rows) {
+    if (!r.advanceWithoutRank) continue;
+    if (typeof r.heat === "number" && r.heat >= 1) {
+      if (r.heat === heatIndex1Based) n += 1;
+      continue;
+    }
+    const k = participantKeyFromResultRow(r);
+    if (k && calledHere.has(k)) n += 1;
+  }
+  return n;
+}
+
+export function participantHasRunUpInHeat(
+  heatIndex1Based: number,
+  participant: HeatMarshalParticipant | undefined,
+  rows: HeatResultCaptureRow[]
+): boolean {
+  if (!participant) return false;
+  const match = rows.find((r) => {
+    if (!r.advanceWithoutRank) return false;
+    const entryMatch =
+      participant.participantType === "INDIVIDUAL"
+        ? r.entryType === "INDIVIDUAL" && r.competitionEntryId === participant.competitionEntryId
+        : r.entryType === "TEAM" && r.teamEntryId === participant.teamEntryId;
+    if (!entryMatch) return false;
+    if (typeof r.heat === "number" && r.heat >= 1) {
+      return r.heat === heatIndex1Based;
+    }
+    return true;
+  });
+  return Boolean(match);
+}
+
+export {
+  canApplyRunUp,
+  eliminationSlots,
+  heatUsesEliminationRunUp,
+  isEliminationStyleResultInput,
+  isHeatResultReadyForConfirm,
+} from "@/lib/heatResultEliminationRunUp";
 
 export function HeatAdvanceQuotaLabel({
   quota,
   resultCaptureVisible,
   rankOkCount,
+  runUpCount = 0,
   calledCount,
   hasApiHeat,
 }: {
   quota: number;
   resultCaptureVisible: boolean;
   rankOkCount: number;
+  runUpCount?: number;
   calledCount: number;
   hasApiHeat: boolean;
 }) {
   if (resultCaptureVisible) {
     const called = hasApiHeat ? calledCount : Number.POSITIVE_INFINITY;
-    const eff = effectiveNextRoundAdvanceCount(quota, rankOkCount, called);
+    const eff = effectiveNextRoundAdvanceCount(quota, rankOkCount, called, runUpCount);
     return (
       <span className="ml-1.5 font-normal text-gray-600 dark:text-gray-400">
         · 次ラ進出{" "}

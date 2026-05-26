@@ -50,30 +50,36 @@ function withSupabaseTransactionPooler(url: string | undefined): string | undefi
  */
 function withNonProdPoolTuning(url: string | undefined): string | undefined {
   if (!url || process.env.NODE_ENV === "production") return url;
-  const devPoolTimeout = process.env.PRISMA_DEV_POOL_TIMEOUT ?? "60";
+  const devPoolTimeout = Number(process.env.PRISMA_DEV_POOL_TIMEOUT ?? "60");
   /**
-   * 開発時はポーリングや並列RSCで同時接続が増えやすいので、
-   * 既定値を 5 -> 10 に引き上げる（環境変数で上書き可能）。
-   * Supabase の transaction pooler（pgbouncer=true）では接続を抑えた方が安定することがある。
+   * 開発時はポーリング・並列 RSC・$transaction 併用で同時接続が増えやすい。
+   * pgbouncer 経由でも Prisma クライアント側の上限を少し上げる（環境変数で上書き可）。
    */
-  const defaultLimit = /[?&]pgbouncer=true/.test(url) ? "5" : "10";
-  const devConnectionLimit = process.env.PRISMA_DEV_CONNECTION_LIMIT ?? defaultLimit;
-  const hasPoolTimeout = /[?&]pool_timeout=/.test(url);
-  const hasConnectionLimit = /[?&]connection_limit=/.test(url);
-  if (hasPoolTimeout && hasConnectionLimit) return url;
+  const defaultLimit = /[?&]pgbouncer=true/.test(url) ? 8 : 10;
+  const devConnectionLimit = Number(
+    process.env.PRISMA_DEV_CONNECTION_LIMIT ?? String(defaultLimit)
+  );
   try {
     const u = new URL(url);
-    if (!u.searchParams.has("pool_timeout")) {
-      u.searchParams.set("pool_timeout", devPoolTimeout);
+    const existingTimeout = u.searchParams.get("pool_timeout");
+    const existingLimit = u.searchParams.get("connection_limit");
+    const timeoutNum = existingTimeout != null ? Number(existingTimeout) : NaN;
+    const limitNum = existingLimit != null ? Number(existingLimit) : NaN;
+    if (!Number.isFinite(timeoutNum) || timeoutNum < devPoolTimeout) {
+      u.searchParams.set("pool_timeout", String(devPoolTimeout));
     }
-    if (!u.searchParams.has("connection_limit")) {
-      u.searchParams.set("connection_limit", devConnectionLimit);
+    if (!Number.isFinite(limitNum) || limitNum < devConnectionLimit) {
+      u.searchParams.set("connection_limit", String(devConnectionLimit));
     }
     return u.toString();
   } catch {
-    const query = [];
-    if (!hasPoolTimeout) query.push(`pool_timeout=${devPoolTimeout}`);
-    if (!hasConnectionLimit) query.push(`connection_limit=${devConnectionLimit}`);
+    const query: string[] = [];
+    if (!/[?&]pool_timeout=/.test(url)) {
+      query.push(`pool_timeout=${devPoolTimeout}`);
+    }
+    if (!/[?&]connection_limit=/.test(url)) {
+      query.push(`connection_limit=${devConnectionLimit}`);
+    }
     if (query.length === 0) return url;
     const joiner = url.includes("?") ? "&" : "?";
     return `${url}${joiner}${query.join("&")}`;

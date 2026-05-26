@@ -14,6 +14,10 @@ import {
 } from "@/lib/heatMarshalFromSnapshot";
 import { expandTeamMarshalRefsWithMembers } from "@/lib/teamMarshalExpand";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
+import {
+  syncOfficialDsqRowFromSnapshot,
+  toOfficialMarshalParticipantRef,
+} from "@/lib/officialResultDsqSync";
 import { START_LIST_STEP1_REQUIRED_MESSAGE } from "@/lib/startListStep1Messages";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -111,6 +115,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     );
 
     let updatedCount = 0;
+    let officialSyncSkipped = false;
 
     if (refsFromSnapshot.length > 0) {
       const orConditions: Array<
@@ -146,6 +151,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
 
       await prisma.$transaction(async (tx) => {
+        const dsqOfficialRefs = new Map<string, MarshalParticipantRef>();
+
         const existingRows =
           orConditions.length > 0
             ? await tx.competitionParticipantStatus.findMany({
@@ -214,6 +221,31 @@ export async function POST(request: NextRequest, context: RouteContext) {
             });
           }
           updatedCount += 1;
+
+          if (terminalStatus === "DSQ") {
+            const offRef = toOfficialMarshalParticipantRef(ref);
+            const offKey =
+              offRef.participantType === "INDIVIDUAL" && offRef.competitionEntryId
+                ? `I:${offRef.competitionEntryId}`
+                : offRef.participantType === "TEAM" && offRef.teamEntryId
+                  ? `T:${offRef.teamEntryId}`
+                  : "";
+            if (offKey) dsqOfficialRefs.set(offKey, offRef);
+          }
+        }
+
+        if (terminalStatus === "DSQ") {
+          for (const offRef of dsqOfficialRefs.values()) {
+            const sync = await syncOfficialDsqRowFromSnapshot(tx, {
+              competitionId,
+              eventId,
+              round,
+              snapshot,
+              participant: offRef,
+              reason: updateReason,
+            });
+            if (sync.officialSyncSkipped) officialSyncSkipped = true;
+          }
         }
 
         await markMarshalStartedIfUnset(tx.event, eventId, now);
@@ -272,6 +304,45 @@ export async function POST(request: NextRequest, context: RouteContext) {
             })
           )
         );
+
+        if (terminalStatus === "DSQ") {
+          const seen = new Set<string>();
+          for (const status of currentStatuses) {
+            const ref: MarshalParticipantRef =
+              status.participantType === "INDIVIDUAL" && status.competitionEntryId
+                ? {
+                    participantType: "INDIVIDUAL",
+                    competitionEntryId: status.competitionEntryId,
+                    teamEntryId: null,
+                  }
+                : status.participantType === "TEAM" && status.teamEntryId
+                  ? {
+                      participantType: "TEAM",
+                      competitionEntryId: null,
+                      teamEntryId: status.teamEntryId,
+                    }
+                  : { participantType: "INDIVIDUAL", competitionEntryId: null, teamEntryId: null };
+            const offRef = toOfficialMarshalParticipantRef(ref);
+            const offKey =
+              offRef.participantType === "INDIVIDUAL" && offRef.competitionEntryId
+                ? `I:${offRef.competitionEntryId}`
+                : offRef.participantType === "TEAM" && offRef.teamEntryId
+                  ? `T:${offRef.teamEntryId}`
+                  : "";
+            if (!offKey || seen.has(offKey)) continue;
+            seen.add(offKey);
+            const sync = await syncOfficialDsqRowFromSnapshot(tx, {
+              competitionId,
+              eventId,
+              round,
+              snapshot,
+              participant: offRef,
+              reason: updateReason,
+            });
+            if (sync.officialSyncSkipped) officialSyncSkipped = true;
+          }
+        }
+
         await markMarshalStartedIfUnset(tx.event, eventId, now);
       });
       updatedCount = currentStatuses.length;
@@ -300,7 +371,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       result: "SUCCESS",
     });
 
-    return NextResponse.json({ updatedCount });
+    return NextResponse.json({ updatedCount, officialSyncSkipped });
   } catch (error) {
     if (error instanceof Error && error.message === "DAY_OPS_FORBIDDEN") {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });

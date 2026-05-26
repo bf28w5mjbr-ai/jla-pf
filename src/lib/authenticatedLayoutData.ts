@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/server/db";
 import { notificationUnreadCountTag } from "@/lib/cacheTags";
+import { withPrismaPoolRetryOnce } from "@/lib/prismaPool";
 
 const authenticatedAppUserSelect = {
   id: true,
@@ -95,10 +96,12 @@ export type AuthenticatedAppUser = Omit<
  * ダッシュボードと認証レイアウトで共有するユーザー行（同一リクエスト内は1回の DB 往復）。
  */
 export const getAuthenticatedAppUser = cache(async (userId: string) => {
-  const u = await prisma.user.findUnique({
-    where: { id: userId },
-    select: authenticatedAppUserSelect,
-  });
+  const u = await withPrismaPoolRetryOnce(() =>
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: authenticatedAppUserSelect,
+    })
+  );
   if (!u) return null;
   return {
     ...u,
@@ -138,9 +141,11 @@ export const getAuthenticatedLayoutUser = cache(async (userId: string) => {
 export async function getCachedUnreadNotificationCount(userId: string): Promise<number> {
   return unstable_cache(
     async () =>
-      prisma.notification.count({
-        where: { userId, read: false },
-      }),
+      withPrismaPoolRetryOnce(() =>
+        prisma.notification.count({
+          where: { userId, read: false },
+        })
+      ),
     ["notification-unread-count", userId],
     { revalidate: 30, tags: [notificationUnreadCountTag(userId)] }
   )();

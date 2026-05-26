@@ -45,8 +45,11 @@ export function LiveRoundContent({
   const resultMode = uiMode === "result";
   const marshalInline = Boolean(m && uiMode === "inline");
   const showMarshalAdminUi = Boolean(m && !resultMode);
+  const showMarshalHeatControls = marshalInline;
   const marshalRoundMismatch = Boolean(m?.marshalRoundMismatch);
-  const showDsqManagementLink = Boolean(m && !m.loading && heatPlanConfirmedForDsq);
+  const showDsqManagementLink = Boolean(
+    m && !m.loading && heatPlanConfirmedForDsq && (marshalInline || resultMode)
+  );
   const resultCapture = m?.resultCapture;
   const resultCaptureVisible = Boolean(resultMode && m && resultCapture);
 
@@ -97,6 +100,13 @@ export function LiveRoundContent({
     heatResultConfirmTarget,
     setHeatResultConfirmTarget,
     heatResultConfirmBusy,
+    runUpTarget,
+    setRunUpTarget,
+    clearRunUpTarget,
+    setClearRunUpTarget,
+    runUpBusy,
+    runHeatResultRunUp,
+    runHeatResultClearRunUp,
     handleRankRecorded,
     countResultDraftsForHeat,
     toggleResultDraft,
@@ -190,6 +200,7 @@ export function LiveRoundContent({
           statusByKey={statusByKey}
           marshalRoundMismatch={marshalRoundMismatch}
           showMarshalAdminUi={showMarshalAdminUi}
+          showMarshalHeatControls={showMarshalHeatControls}
           resultCaptureVisible={resultCaptureVisible}
           marshalInline={marshalInline}
           localConfirmedHeats={localConfirmedHeats}
@@ -209,6 +220,9 @@ export function LiveRoundContent({
           reorderResultRanks={reorderResultRanks}
           setHeatResultConfirmTarget={setHeatResultConfirmTarget}
           heatResultConfirmBusy={heatResultConfirmBusy}
+          setRunUpTarget={setRunUpTarget}
+          setClearRunUpTarget={setClearRunUpTarget}
+          runUpBusy={runUpBusy}
           setHeatCloseTarget={setHeatCloseTarget}
           setHeatReopenTarget={setHeatReopenTarget}
           marshalBulkSubmitting={marshalBulkSubmitting}
@@ -231,6 +245,13 @@ export function LiveRoundContent({
         setHeatResultConfirmTarget={setHeatResultConfirmTarget}
         heatResultConfirmBusy={heatResultConfirmBusy}
         runHeatResultConfirm={runHeatResultConfirm}
+        runUpTarget={runUpTarget}
+        setRunUpTarget={setRunUpTarget}
+        runUpBusy={runUpBusy}
+        runHeatResultRunUp={runHeatResultRunUp}
+        clearRunUpTarget={clearRunUpTarget}
+        setClearRunUpTarget={setClearRunUpTarget}
+        runHeatResultClearRunUp={runHeatResultClearRunUp}
         marshalResult={marshalResult}
         setMarshalResult={setMarshalResult}
       />

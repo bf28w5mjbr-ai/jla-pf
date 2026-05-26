@@ -1290,6 +1290,8 @@ model OfficialResultRow {
 
   rank   Int?
   status ResultStatus @default(OK)
+  /** 脱落式リザルト: 着順なしで次ラ進出（rank は null のまま） */
+  advanceWithoutRank Boolean @default(false)
 
   resultValue Int?
   unit        ResultUnit @default(TIME_MS)

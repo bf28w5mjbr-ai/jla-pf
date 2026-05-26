@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildNextRoundHeatsFromPreviousResults,
   collectAdvancersPerHeatByRank,
+  collectAdvancersPerHeatByRunUp,
+  collectAdvancersPerHeatMixed,
   collectUniformTopPerHeat,
   computeAdvanceCountsByLargestRemainder,
   computeAdvanceCountsByLaneSlotsPerHeat,
@@ -168,6 +170,36 @@ describe("collectAdvancersPerHeatByRank", () => {
     ];
     const out = collectAdvancersPerHeatByRank([[1, h1]], [5]);
     expect(out.map((r) => r.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("collectAdvancersPerHeatByRunUp", () => {
+  it("advanceWithoutRank 行のみレーン順で take 名まで", () => {
+    const h1 = [
+      { rank: 8 as number | null, advanceWithoutRank: false, lane: 1, id: "out" },
+      { rank: null, advanceWithoutRank: true, lane: 3, id: "a" },
+      { rank: null, advanceWithoutRank: true, lane: 2, id: "b" },
+    ];
+    const out = collectAdvancersPerHeatByRunUp([[1, h1]], [2]);
+    expect(out.map((r) => r.id)).toEqual(["b", "a"]);
+  });
+});
+
+describe("collectAdvancersPerHeatMixed", () => {
+  it("ヒート1はランアップ・ヒート2は着順", () => {
+    const h1 = [{ rank: null, advanceWithoutRank: true, lane: 1, id: "ru" }];
+    const h2 = [
+      { rank: 2, advanceWithoutRank: false, lane: 2, id: "b" },
+      { rank: 1, advanceWithoutRank: false, lane: 1, id: "a" },
+    ];
+    const out = collectAdvancersPerHeatMixed(
+      [
+        [1, h1],
+        [2, h2],
+      ] as [number, { rank: number | null; advanceWithoutRank?: boolean; lane?: number | null; id: string }[]][],
+      [1, 1]
+    );
+    expect(out.map((r) => r.id)).toEqual(["ru", "a"]);
   });
 });
 

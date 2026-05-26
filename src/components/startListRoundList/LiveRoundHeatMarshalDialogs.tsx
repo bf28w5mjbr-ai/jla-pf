@@ -26,6 +26,13 @@ export type LiveRoundHeatMarshalDialogsProps = {
   setHeatResultConfirmTarget: (n: number | null) => void;
   heatResultConfirmBusy: boolean;
   runHeatResultConfirm: (heatIndex: number) => void | Promise<void>;
+  runUpTarget: number | null;
+  setRunUpTarget: (n: number | null) => void;
+  runUpBusy: boolean;
+  runHeatResultRunUp: (heatIndex: number) => void | Promise<void>;
+  clearRunUpTarget: number | null;
+  setClearRunUpTarget: (n: number | null) => void;
+  runHeatResultClearRunUp: (heatIndex: number) => void | Promise<void>;
   marshalResult: MarshalResultPayload | null;
   setMarshalResult: (r: MarshalResultPayload | null) => void;
 };
@@ -43,6 +50,13 @@ export function LiveRoundHeatMarshalDialogs({
   setHeatResultConfirmTarget,
   heatResultConfirmBusy,
   runHeatResultConfirm,
+  runUpTarget,
+  setRunUpTarget,
+  runUpBusy,
+  runHeatResultRunUp,
+  clearRunUpTarget,
+  setClearRunUpTarget,
+  runHeatResultClearRunUp,
   marshalResult,
   setMarshalResult,
 }: LiveRoundHeatMarshalDialogsProps) {
@@ -142,10 +156,10 @@ export function LiveRoundHeatMarshalDialogs({
             <AlertDialogDescription asChild>
               <div className="space-y-2 text-left text-sm text-foreground">
                 <p>
-                  このヒートの着順記録を
+                  このヒートのリザルト記録を
                   <span className="font-semibold"> 確定 </span>
-                  します。確定後はこのヒートへの追記（チェック・NFC）はできません。
-                  召集済みの参加者には、全員分の着順が入っていることが前提です。
+                  します。確定後はこのヒートへの追記（チェック・NFC・ランアップ）はできません。
+                  タイムトライアル型は全員着順、脱落式は脱落着順とランアップが揃っていることが前提です。
                 </p>
                 <p className="text-muted-foreground">
                   種目全体の公式結果ロックとは別です。誤りがある場合は管理者向けの修正フローを利用してください。
@@ -168,6 +182,85 @@ export function LiveRoundHeatMarshalDialogs({
               }
             >
               {heatResultConfirmBusy ? "処理中…" : "確定する"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={runUpTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !runUpBusy) setRunUpTarget(null);
+        }}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>ヒート {runUpTarget ?? "—"} の残りをランアップ</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-left text-sm text-foreground">
+                <p>
+                  脱落着順の記録が済んだ召集済み参加者を、
+                  <span className="font-semibold"> 着順なしで進出 </span>
+                  として一括登録します（次ラ進出枠まで）。
+                </p>
+                <p className="text-muted-foreground">
+                  リザルト確定前であれば「ランアップ解除」で取り消せます。
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-0">
+            <AlertDialogCancel type="button" disabled={runUpBusy}>
+              キャンセル
+            </AlertDialogCancel>
+            <Button
+              type="button"
+              variant="default"
+              disabled={runUpBusy || runUpTarget === null}
+              onClick={() =>
+                runUpTarget !== null ? void runHeatResultRunUp(runUpTarget) : undefined
+              }
+            >
+              {runUpBusy ? "処理中…" : "ランアップする"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={clearRunUpTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !runUpBusy) setClearRunUpTarget(null);
+        }}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>ヒート {clearRunUpTarget ?? "—"} のランアップ解除</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-left text-sm text-foreground">
+                <p>
+                  このヒートの
+                  <span className="font-semibold"> 着順なし進出（ランアップ） </span>
+                  記録をすべて削除します。脱落の着順記録は残ります。
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-0">
+            <AlertDialogCancel type="button" disabled={runUpBusy}>
+              キャンセル
+            </AlertDialogCancel>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={runUpBusy || clearRunUpTarget === null}
+              onClick={() =>
+                clearRunUpTarget !== null
+                  ? void runHeatResultClearRunUp(clearRunUpTarget)
+                  : undefined
+              }
+            >
+              {runUpBusy ? "処理中…" : "解除する"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

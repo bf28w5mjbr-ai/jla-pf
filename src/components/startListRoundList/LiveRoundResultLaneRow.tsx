@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import {
   marshalDisplayClass,
   marshalParticipantForLane,
+  participantHasRunUpInHeat,
   provisionalResultRankForParticipant,
   resultRankForParticipant,
 } from "./panelHelpers";
@@ -90,6 +91,7 @@ export function LiveRoundResultLaneRow({
     resultInputOrder
   );
   const displayRk = serverRk ?? provisionalRk;
+  const hasRunUp = participantHasRunUpInHeat(displayHeatNumber, participant, localResultRows);
   const heatConfirmed = localConfirmedHeats.includes(displayHeatNumber);
   const heatMarshalClosed = Boolean(apiHeatForHeat?.callClosedAt);
   const captureBlocked =
@@ -97,11 +99,19 @@ export function LiveRoundResultLaneRow({
     marshal.marshalRoundMismatch ||
     rc.locked ||
     heatConfirmed ||
-    !heatMarshalClosed;
+    !heatMarshalClosed ||
+    hasRunUp;
   const st = displayStatus;
   const terminalResult = Boolean(st && isDayOpsTerminalParticipantStatus(st));
   const leftColumnContent =
-    heatConfirmed && serverRk != null ? (
+    hasRunUp ? (
+      <span
+        className="text-[10px] font-semibold text-violet-800 dark:text-violet-200"
+        title="着順なしで次ラ進出（ランアップ）"
+      >
+        進出
+      </span>
+    ) : heatConfirmed && serverRk != null ? (
       <span className="text-violet-800 dark:text-violet-200">{serverRk}位</span>
     ) : heatConfirmed ? (
       <span className="text-muted-foreground" title={`スタートレーン ${laneNumber}（着順記録なし）`}>

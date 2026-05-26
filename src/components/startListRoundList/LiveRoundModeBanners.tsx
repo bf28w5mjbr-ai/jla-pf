@@ -55,6 +55,18 @@ export function LiveRoundModeBanners({
               で記録し、召集済み全員分そろってから「リザルト確定」してください。記録済みの行はドラッグで並べ替えられます。
             </p>
             <p className="text-muted-foreground dark:text-violet-200/85">
+              <span className="font-semibold text-violet-950 dark:text-violet-100">脱落式</span>
+              {" — "}
+              「下位から」で脱落着順を入れたあと、ヒート見出しの
+              <span className="font-medium text-foreground"> 残りをランアップ </span>
+              で生存者を着順なし進出として登録できます（アップ枠表示があるとき）。
+            </p>
+            <p className="text-muted-foreground dark:text-violet-200/85">
+              レーン単位の失格は、直上の
+              <span className="font-medium text-foreground"> 失格管理 </span>
+              から登録・取り消しできます（公開用の公式結果に自動反映されます）。
+            </p>
+            <p className="text-muted-foreground dark:text-violet-200/85">
               <span className="font-semibold text-violet-950 dark:text-violet-100">公開</span>
               {" — "}
               Web の一般掲載は主催の「公式結果」で
@@ -207,14 +219,17 @@ export function LiveRoundModeBanners({
                     : "NFC を準備しています…"}
             </p>
           ) : null}
+          <p className="rounded-md border border-dashed border-border/80 bg-muted/20 px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
+            レーン単位の失格は、直上の
+            <span className="font-medium text-foreground"> 失格管理 </span>
+            から登録・取り消しできます。
+          </p>
         </div>
       ) : m && !marshalInline && !resultMode && !m.loading ? (
         <p className="rounded-md border border-dashed border-border/80 bg-muted/20 px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
-          通常モードです。レーン単位の失格の申請・取り消しは、直下の
-          <span className="font-medium text-foreground"> 失格管理 </span>
-          から行えます。マーシャル操作は
+          通常モードです。マーシャル操作は
           <span className="font-medium text-foreground"> 「マーシャル」モード </span>
-          、着順の記録は
+          、着順の記録・失格管理は
           <span className="font-medium text-foreground"> 「リザルト」モード </span>
           に切り替えてください。マーシャルモードでは、各ヒートの
           <span className="font-medium text-foreground"> マーシャル締切まで </span>

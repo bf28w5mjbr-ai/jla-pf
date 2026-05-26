@@ -22,7 +22,7 @@ import { computePlacementSeed } from "@/lib/startListHeatPlacement";
 import { createStartListSnapshotIfNeeded } from "@/lib/startListSnapshot";
 import {
   buildNextRoundHeatsFromPreviousResults,
-  collectAdvancersPerHeatByRank,
+  collectAdvancersPerHeatMixed,
   computeAdvanceCountsByLaneSlotsPerHeat,
   countStartListParticipantsBySourceHeat,
   enforceMinHeatCountForMaxLanes,
@@ -281,7 +281,7 @@ export async function tryAutoAppendNextStartListRound(params: {
     totalInRound
   );
   const advancePerHeat = computeAdvanceCountsByLaneSlotsPerHeat(heatEntries.length, maxLanes, capacity);
-  const selectedRows = collectAdvancersPerHeatByRank(heatEntries, advancePerHeat);
+  const selectedRows = collectAdvancersPerHeatMixed(heatEntries, advancePerHeat);
 
   const participants: StartListParticipant[] = [];
   for (const row of selectedRows) {

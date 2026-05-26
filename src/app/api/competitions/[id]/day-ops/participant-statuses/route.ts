@@ -16,6 +16,7 @@ import {
   resolveParticipantMarshalHeat,
 } from "@/lib/heatMarshalGate";
 import { dayOpsServerTimingEnabled, formatDayOpsServerTiming } from "@/lib/dayOpsMetrics";
+import { syncOfficialDsqRowFromSnapshot } from "@/lib/officialResultDsqSync";
 import { START_LIST_STEP1_REQUIRED_MESSAGE } from "@/lib/startListStep1Messages";
 
 type RouteContext = {
@@ -665,7 +666,28 @@ export async function POST(request: NextRequest, context: RouteContext) {
       result: "SUCCESS",
     });
 
-    return NextResponse.json({ status: upserted });
+    let officialSyncSkipped = false;
+    if (status === "DSQ") {
+      const snapshotForDsq =
+        (await loadStartListSnapshotPayload(competitionId)) ?? null;
+      const sync = await prisma.$transaction(async (tx) =>
+        syncOfficialDsqRowFromSnapshot(tx, {
+          competitionId,
+          eventId,
+          round: marshalRound,
+          snapshot: snapshotForDsq,
+          participant: {
+            participantType,
+            competitionEntryId,
+            teamEntryId,
+          },
+          reason: reason || null,
+        })
+      );
+      officialSyncSkipped = sync.officialSyncSkipped;
+    }
+
+    return NextResponse.json({ status: upserted, officialSyncSkipped });
   } catch (error) {
     if (error instanceof Error && error.message === "COMPETITION_NOT_FOUND") {
       return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });

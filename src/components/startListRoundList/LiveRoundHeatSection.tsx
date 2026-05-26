@@ -18,10 +18,15 @@ import { cn } from "@/lib/utils";
 import type { ResultDraftOp } from "@/hooks/liveRound/types";
 import type { IndividualItem, LiveRoundContentProps, TeamItem } from "./types";
 import {
+  canApplyRunUp,
   countCalledInMarshalHeat,
   countOkRanksForHeat,
+  countRunUpForHeat,
+  eliminationSlots,
   foldTeamServerStatusFromMemberKeys,
   HeatAdvanceQuotaLabel,
+  isEliminationStyleResultInput,
+  isHeatResultReadyForConfirm,
   individualLiveRowLabel,
   LaneRow,
   marshalDisplayClass,
@@ -53,6 +58,7 @@ export type LiveRoundHeatSectionProps = {
   statusByKey: Record<string, string>;
   marshalRoundMismatch: boolean;
   showMarshalAdminUi: boolean;
+  showMarshalHeatControls: boolean;
   resultCaptureVisible: boolean;
   marshalInline: boolean;
   localConfirmedHeats: number[];
@@ -72,6 +78,9 @@ export type LiveRoundHeatSectionProps = {
   reorderResultRanks: LiveRoundResultLaneRowProps["onReorderRanks"];
   setHeatResultConfirmTarget: (n: number | null) => void;
   heatResultConfirmBusy: boolean;
+  setRunUpTarget: (n: number | null) => void;
+  setClearRunUpTarget: (n: number | null) => void;
+  runUpBusy: boolean;
   setHeatCloseTarget: (n: number | null) => void;
   setHeatReopenTarget: (n: number | null) => void;
   marshalBulkSubmitting: boolean;
@@ -94,6 +103,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
     statusByKey,
     marshalRoundMismatch,
     showMarshalAdminUi,
+    showMarshalHeatControls,
     resultCaptureVisible,
     marshalInline,
     localConfirmedHeats,
@@ -113,6 +123,9 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
     reorderResultRanks,
     setHeatResultConfirmTarget,
     heatResultConfirmBusy,
+    setRunUpTarget,
+    setClearRunUpTarget,
+    runUpBusy,
     setHeatCloseTarget,
     setHeatReopenTarget,
     marshalBulkSubmitting,
@@ -143,11 +156,28 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
     const heatConfirmedForSort = localConfirmedHeats.includes(displayHeatNumber);
     const calledForResultConfirm = countCalledInMarshalHeat(apiHeat);
     const rankOkCount = countOkRanksForHeat(localResultRows, displayHeatNumber, apiHeat);
+    const runUpCount = countRunUpForHeat(localResultRows, displayHeatNumber, apiHeat);
     const resultDraftCount = countResultDraftsForHeat(displayHeatNumber);
+    const eliminationStyle = isEliminationStyleResultInput(heatAdvanceQuota ?? null, resultInputOrder);
+    const elimSlots = eliminationStyle
+      ? eliminationSlots({ called: calledForResultConfirm, quota: heatAdvanceQuota ?? null })
+      : null;
     const canTieInHeat = rankOkCount > 0;
-    const heatResultRanksComplete =
-      calledForResultConfirm === 0 ||
-      rankOkCount + resultDraftCount >= calledForResultConfirm;
+    const heatResultRanksComplete = isHeatResultReadyForConfirm({
+      called: calledForResultConfirm,
+      quota: heatAdvanceQuota ?? null,
+      rankedCount: rankOkCount,
+      runUpCount,
+      resultDraftCount,
+      usesElimination: eliminationStyle,
+    });
+    const runUpApplyEnabled = canApplyRunUp({
+      called: calledForResultConfirm,
+      quota: heatAdvanceQuota ?? null,
+      rankedCount: rankOkCount,
+      runUpCount,
+      resultDraftCount,
+    });
     const teamForResult = heatConfirmedForSort
       ? orderTeamItemsByConfirmedResultRank(teams, displayHeatNumber, localResultRows)
       : teams;
@@ -164,6 +194,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                 quota={heatAdvanceQuota}
                 resultCaptureVisible={resultCaptureVisible}
                 rankOkCount={rankOkCount}
+                runUpCount={runUpCount}
                 calledCount={calledForResultConfirm}
                 hasApiHeat={Boolean(apiHeat)}
               />
@@ -192,6 +223,61 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                       未確定 {resultDraftCount}件
                     </span>
                   ) : null}
+                  {eliminationStyle &&
+                  !localConfirmedHeats.includes(displayHeatNumber) &&
+                  runUpCount > 0 ? (
+                    <span className="rounded bg-violet-100/90 px-1.5 py-0.5 text-[10px] font-medium text-violet-950 dark:bg-violet-900/70 dark:text-violet-100">
+                      ランアップ {runUpCount}名
+                    </span>
+                  ) : null}
+                  {eliminationStyle &&
+                  !localConfirmedHeats.includes(displayHeatNumber) &&
+                  runUpCount > 0 ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-6 px-2 text-[10px]"
+                      disabled={
+                        m.loading ||
+                        resultCapture.loading ||
+                        resultCapture.locked ||
+                        m.marshalOpsBlocked ||
+                        marshalRoundMismatch ||
+                        !apiHeat ||
+                        !heatCallClosed ||
+                        heatResultConfirmBusy ||
+                        runUpBusy
+                      }
+                      onClick={() => setClearRunUpTarget(displayHeatNumber)}
+                    >
+                      ランアップ解除
+                    </Button>
+                  ) : null}
+                  {eliminationStyle &&
+                  !localConfirmedHeats.includes(displayHeatNumber) ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-6 px-2 text-[10px]"
+                      disabled={
+                        m.loading ||
+                        resultCapture.loading ||
+                        resultCapture.locked ||
+                        m.marshalOpsBlocked ||
+                        marshalRoundMismatch ||
+                        !apiHeat ||
+                        !heatCallClosed ||
+                        heatResultConfirmBusy ||
+                        runUpBusy ||
+                        !runUpApplyEnabled
+                      }
+                      onClick={() => setRunUpTarget(displayHeatNumber)}
+                    >
+                      残りをランアップ
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     variant="secondary"
@@ -207,6 +293,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                       !heatCallClosed ||
                       localConfirmedHeats.includes(displayHeatNumber) ||
                       heatResultConfirmBusy ||
+                      runUpBusy ||
                       !heatResultRanksComplete
                     }
                     onClick={() => setHeatResultConfirmTarget(displayHeatNumber)}
@@ -252,34 +339,36 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                       受付中
                     </span>
                   )}
-                  {heatCallClosed ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-6 px-2 text-[10px]"
-                      disabled={heatReopenDisabled}
-                      title={
-                        apiHeat?.marshalReopenBlocked
-                          ? "公式リザルトがあるヒートは受付中に戻せません"
-                          : undefined
-                      }
-                      onClick={() => setHeatReopenTarget(displayHeatNumber)}
-                    >
-                      受付中に戻す
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      className="h-6 px-2 text-[10px]"
-                      disabled={heatCloseDisabled}
-                      onClick={() => setHeatCloseTarget(displayHeatNumber)}
-                    >
-                      マーシャル締切
-                    </Button>
-                  )}
+                  {showMarshalHeatControls ? (
+                    heatCallClosed ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-[10px]"
+                        disabled={heatReopenDisabled}
+                        title={
+                          apiHeat?.marshalReopenBlocked
+                            ? "公式リザルトがあるヒートは受付中に戻せません"
+                            : undefined
+                        }
+                        onClick={() => setHeatReopenTarget(displayHeatNumber)}
+                      >
+                        受付中に戻す
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        className="h-6 px-2 text-[10px]"
+                        disabled={heatCloseDisabled}
+                        onClick={() => setHeatCloseTarget(displayHeatNumber)}
+                      >
+                        マーシャル締切
+                      </Button>
+                    )
+                  ) : null}
                 </>
               ) : null}
             </div>
@@ -310,8 +399,19 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
         calledForResultConfirm > 0 &&
         !heatResultRanksComplete ? (
           <p className="mt-1 text-[10px] leading-snug text-amber-800 dark:text-amber-200">
-            召集済み {calledForResultConfirm} 名のうち、着順入力済み {rankOkCount}{" "}
-            件・未確定 {resultDraftCount} 件です。全員分が反映されるまでリザルト確定はできません。
+            {eliminationStyle ? (
+              <>
+                脱落着順 {rankOkCount}
+                {elimSlots ? ` / ${elimSlots.eliminationTarget}` : ""} 名・ランアップ {runUpCount}
+                {elimSlots ? ` / ${elimSlots.runUpTarget}` : ""} 名（未確定チェック {resultDraftCount}{" "}
+                件）。下位から脱落を記録し、「残りをランアップ」してから確定してください。
+              </>
+            ) : (
+              <>
+                召集済み {calledForResultConfirm} 名のうち、着順入力済み {rankOkCount}{" "}
+                件・未確定 {resultDraftCount} 件です。全員分が反映されるまでリザルト確定はできません。
+              </>
+            )}
           </p>
         ) : null}
         {resultCaptureVisible && m && resultCapture ? (
@@ -558,11 +658,28 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
     const heatConfirmedForSort = localConfirmedHeats.includes(displayHeatNumber);
     const calledForResultConfirm = countCalledInMarshalHeat(apiHeat);
     const rankOkCount = countOkRanksForHeat(localResultRows, displayHeatNumber, apiHeat);
+    const runUpCount = countRunUpForHeat(localResultRows, displayHeatNumber, apiHeat);
     const resultDraftCount = countResultDraftsForHeat(displayHeatNumber);
+    const eliminationStyle = isEliminationStyleResultInput(heatAdvanceQuota ?? null, resultInputOrder);
+    const elimSlots = eliminationStyle
+      ? eliminationSlots({ called: calledForResultConfirm, quota: heatAdvanceQuota ?? null })
+      : null;
     const canTieInHeat = rankOkCount > 0;
-    const heatResultRanksComplete =
-      calledForResultConfirm === 0 ||
-      rankOkCount + resultDraftCount >= calledForResultConfirm;
+    const heatResultRanksComplete = isHeatResultReadyForConfirm({
+      called: calledForResultConfirm,
+      quota: heatAdvanceQuota ?? null,
+      rankedCount: rankOkCount,
+      runUpCount,
+      resultDraftCount,
+      usesElimination: eliminationStyle,
+    });
+    const runUpApplyEnabled = canApplyRunUp({
+      called: calledForResultConfirm,
+      quota: heatAdvanceQuota ?? null,
+      rankedCount: rankOkCount,
+      runUpCount,
+      resultDraftCount,
+    });
     const indForResult = heatConfirmedForSort
       ? orderIndividualItemsByConfirmedResultRank(individuals, displayHeatNumber, localResultRows)
       : individuals;
@@ -579,6 +696,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                 quota={heatAdvanceQuota}
                 resultCaptureVisible={resultCaptureVisible}
                 rankOkCount={rankOkCount}
+                runUpCount={runUpCount}
                 calledCount={calledForResultConfirm}
                 hasApiHeat={Boolean(apiHeat)}
               />
@@ -606,6 +724,61 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                       未確定 {resultDraftCount}件
                     </span>
                   ) : null}
+                  {eliminationStyle &&
+                  !localConfirmedHeats.includes(displayHeatNumber) &&
+                  runUpCount > 0 ? (
+                    <span className="rounded bg-violet-100/90 px-1.5 py-0.5 text-[10px] font-medium text-violet-950 dark:bg-violet-900/70 dark:text-violet-100">
+                      ランアップ {runUpCount}名
+                    </span>
+                  ) : null}
+                  {eliminationStyle &&
+                  !localConfirmedHeats.includes(displayHeatNumber) &&
+                  runUpCount > 0 ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-6 px-2 text-[10px]"
+                      disabled={
+                        m.loading ||
+                        resultCapture.loading ||
+                        resultCapture.locked ||
+                        m.marshalOpsBlocked ||
+                        marshalRoundMismatch ||
+                        !apiHeat ||
+                        !heatCallClosed ||
+                        heatResultConfirmBusy ||
+                        runUpBusy
+                      }
+                      onClick={() => setClearRunUpTarget(displayHeatNumber)}
+                    >
+                      ランアップ解除
+                    </Button>
+                  ) : null}
+                  {eliminationStyle &&
+                  !localConfirmedHeats.includes(displayHeatNumber) ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-6 px-2 text-[10px]"
+                      disabled={
+                        m.loading ||
+                        resultCapture.loading ||
+                        resultCapture.locked ||
+                        m.marshalOpsBlocked ||
+                        marshalRoundMismatch ||
+                        !apiHeat ||
+                        !heatCallClosed ||
+                        heatResultConfirmBusy ||
+                        runUpBusy ||
+                        !runUpApplyEnabled
+                      }
+                      onClick={() => setRunUpTarget(displayHeatNumber)}
+                    >
+                      残りをランアップ
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     variant="secondary"
@@ -621,6 +794,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                       !heatCallClosed ||
                       localConfirmedHeats.includes(displayHeatNumber) ||
                       heatResultConfirmBusy ||
+                      runUpBusy ||
                       !heatResultRanksComplete
                     }
                     onClick={() => setHeatResultConfirmTarget(displayHeatNumber)}
@@ -666,34 +840,36 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                       受付中
                     </span>
                   )}
-                  {heatCallClosed ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-6 px-2 text-[10px]"
-                      disabled={heatReopenDisabled}
-                      title={
-                        apiHeat?.marshalReopenBlocked
-                          ? "公式リザルトがあるヒートは受付中に戻せません"
-                          : undefined
-                      }
-                      onClick={() => setHeatReopenTarget(displayHeatNumber)}
-                    >
-                      受付中に戻す
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      className="h-6 px-2 text-[10px]"
-                      disabled={heatCloseDisabled}
-                      onClick={() => setHeatCloseTarget(displayHeatNumber)}
-                    >
-                      マーシャル締切
-                    </Button>
-                  )}
+                  {showMarshalHeatControls ? (
+                    heatCallClosed ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-[10px]"
+                        disabled={heatReopenDisabled}
+                        title={
+                          apiHeat?.marshalReopenBlocked
+                            ? "公式リザルトがあるヒートは受付中に戻せません"
+                            : undefined
+                        }
+                        onClick={() => setHeatReopenTarget(displayHeatNumber)}
+                      >
+                        受付中に戻す
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        className="h-6 px-2 text-[10px]"
+                        disabled={heatCloseDisabled}
+                        onClick={() => setHeatCloseTarget(displayHeatNumber)}
+                      >
+                        マーシャル締切
+                      </Button>
+                    )
+                  ) : null}
                 </>
               ) : null}
             </div>
@@ -724,8 +900,19 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
         calledForResultConfirm > 0 &&
         !heatResultRanksComplete ? (
           <p className="mt-1 text-[10px] leading-snug text-amber-800 dark:text-amber-200">
-            召集済み {calledForResultConfirm} 名のうち、着順入力済み {rankOkCount} 件・未確定{" "}
-            {resultDraftCount} 件です。全員分が反映されるまでリザルト確定はできません。
+            {eliminationStyle ? (
+              <>
+                脱落着順 {rankOkCount}
+                {elimSlots ? ` / ${elimSlots.eliminationTarget}` : ""} 名・ランアップ {runUpCount}
+                {elimSlots ? ` / ${elimSlots.runUpTarget}` : ""} 名（未確定チェック {resultDraftCount}{" "}
+                件）。下位から脱落を記録し、「残りをランアップ」してから確定してください。
+              </>
+            ) : (
+              <>
+                召集済み {calledForResultConfirm} 名のうち、着順入力済み {rankOkCount} 件・未確定{" "}
+                {resultDraftCount} 件です。全員分が反映されるまでリザルト確定はできません。
+              </>
+            )}
           </p>
         ) : null}
         {resultCaptureVisible && m && resultCapture ? (

@@ -6,6 +6,7 @@ export type HeatResultCaptureRow = {
   heat: number | null;
   lane: number | null;
   rank: number | null;
+  advanceWithoutRank?: boolean;
   entryType: string;
   competitionEntryId: string | null;
   teamEntryId: string | null;
@@ -72,16 +73,20 @@ export async function postParticipantDsqRevert(
     reason: string;
     marshalRound?: "HEAT" | "SEMI" | "FINAL";
   }
-): Promise<void> {
+): Promise<{ officialSyncSkipped?: boolean }> {
   const res = await fetch(`/api/competitions/${competitionId}/day-ops/participant-dsq-revert`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    officialSyncSkipped?: boolean;
+  };
   if (!res.ok) {
     throw new Error(typeof data.error === "string" ? data.error : "失格の取り消しに失敗しました");
   }
+  return { officialSyncSkipped: Boolean(data.officialSyncSkipped) };
 }
 
 export async function postHeatLaneDsq(
@@ -93,7 +98,7 @@ export async function postHeatLaneDsq(
     lane: number;
     reason?: string;
   }
-): Promise<{ alreadyDsq: boolean }> {
+): Promise<{ alreadyDsq: boolean; officialSyncSkipped?: boolean }> {
   const res = await fetch(`/api/competitions/${competitionId}/day-ops/heat-lane-dsq`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -102,11 +107,15 @@ export async function postHeatLaneDsq(
   const data = (await res.json().catch(() => ({}))) as {
     error?: string;
     alreadyDsq?: boolean;
+    officialSyncSkipped?: boolean;
   };
   if (!res.ok) {
     throw new Error(typeof data.error === "string" ? data.error : "失格の登録に失敗しました");
   }
-  return { alreadyDsq: Boolean(data.alreadyDsq) };
+  return {
+    alreadyDsq: Boolean(data.alreadyDsq),
+    officialSyncSkipped: Boolean(data.officialSyncSkipped),
+  };
 }
 
 export async function postHeatResultCaptureAppend(
@@ -186,4 +195,48 @@ export async function postHeatResultReorder(
     throw new Error(typeof data.error === "string" ? data.error : "順位の並べ替えに失敗しました");
   }
   return { updatedCount: Number(data.updatedCount ?? 0) };
+}
+
+export async function postHeatResultRunUp(
+  competitionId: string,
+  body: { eventId: string; round: "HEAT" | "SEMI" | "FINAL"; heatIndex: number }
+): Promise<{ createdCount: number }> {
+  const res = await fetch(
+    `/api/competitions/${competitionId}/day-ops/heat-result-capture/run-up`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    createdCount?: number;
+  };
+  if (!res.ok) {
+    throw new Error(typeof data.error === "string" ? data.error : "ランアップの登録に失敗しました");
+  }
+  return { createdCount: Number(data.createdCount ?? 0) };
+}
+
+export async function postHeatResultClearRunUp(
+  competitionId: string,
+  body: { eventId: string; round: "HEAT" | "SEMI" | "FINAL"; heatIndex: number }
+): Promise<{ deletedCount: number }> {
+  const res = await fetch(
+    `/api/competitions/${competitionId}/day-ops/heat-result-capture/clear-run-up`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    deletedCount?: number;
+  };
+  if (!res.ok) {
+    throw new Error(typeof data.error === "string" ? data.error : "ランアップの解除に失敗しました");
+  }
+  return { deletedCount: Number(data.deletedCount ?? 0) };
 }

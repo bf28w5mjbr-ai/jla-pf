@@ -205,6 +205,11 @@ export function EventDsqManagementClient({
       } else {
         toast.success(`ヒート ${heatIndex} レーン ${lane} を失格（DSQ）にしました`);
       }
+      if (res.officialSyncSkipped) {
+        toast.warning(
+          "種目全体の公式結果が確定済みのため、公開用の公式結果行は更新されませんでした"
+        );
+      }
       setApplyLane("");
       setApplyReason("");
       await loadMeta();
@@ -228,7 +233,7 @@ export function EventDsqManagementClient({
     const participantType = revertRow.participantType === "TEAM" ? "TEAM" : "INDIVIDUAL";
     setRevertBusy(true);
     try {
-      await postParticipantDsqRevert(competitionId, {
+      const revertRes = await postParticipantDsqRevert(competitionId, {
         eventId,
         participantType,
         competitionEntryId: revertRow.competitionEntryId ?? undefined,
@@ -238,6 +243,11 @@ export function EventDsqManagementClient({
         marshalRound,
       });
       toast.success("失格を取り消しました");
+      if (revertRes.officialSyncSkipped) {
+        toast.warning(
+          "種目全体の公式結果が確定済みのため、公開用の公式結果行は更新されませんでした"
+        );
+      }
       setRevertOpen(false);
       setRevertRow(null);
       await loadMeta();

@@ -22,14 +22,10 @@ export default async function AuthenticatedLayout({
     redirect("/login");
   }
 
-  const user = await getAuthenticatedLayoutUser(session.userId);
-
-  let unreadNotificationCount = 0;
-  try {
-    unreadNotificationCount = await getCachedUnreadNotificationCount(session.userId);
-  } catch {
-    // 接続プール枯渇等で未読数だけ失敗してもシェルは表示する
-  }
+  const [user, unreadNotificationCount] = await Promise.all([
+    getAuthenticatedLayoutUser(session.userId),
+    getCachedUnreadNotificationCount(session.userId).catch(() => 0),
+  ]);
 
   if (!user) {
     redirect("/login");

@@ -243,6 +243,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
+    const snapshotForDescInput =
+      body.tieWithPrevious !== true && body.inputOrder === "desc"
+        ? ((await loadStartListSnapshotPayload(competitionId)) ??
+          (await loadStartListSnapshotPayloadLoose(competitionId)))
+        : null;
+
     const row = await prisma.$transaction(async (tx) => {
       const existing = await tx.officialResult.findUnique({
         where: {
@@ -299,9 +305,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
       const duplicate = await tx.officialResultRow.findFirst({
         where: dupWhere,
-        select: { id: true, rank: true },
+        select: { id: true, rank: true, advanceWithoutRank: true },
       });
       if (duplicate) {
+        if (duplicate.advanceWithoutRank) {
+          throw new Error("ALREADY_RUN_UP_IN_HEAT");
+        }
         throw new Error("ALREADY_RANKED_IN_HEAT");
       }
 
@@ -339,9 +348,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
         }
       }
       if (body.tieWithPrevious !== true && body.inputOrder === "desc") {
-        const snapshot =
-          (await loadStartListSnapshotPayload(competitionId)) ??
-          (await loadStartListSnapshotPayloadLoose(competitionId));
         const calledInHeat = await computeDescInputCalledBaselineInHeat({
           tx,
           competitionId,
@@ -349,7 +355,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           round,
           heatIndex,
           heatMarshalCallClosed: true,
-          snapshot,
+          snapshot: snapshotForDescInput,
         });
         if (calledInHeat <= 0) {
           throw new Error("DESC_INPUT_NO_CALLED");
@@ -451,6 +457,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (error instanceof Error && error.message === "ALREADY_RANKED_IN_HEAT") {
       return NextResponse.json(
         { error: "このヒートではすでに順位が記録されています" },
+        { status: 409 }
+      );
+    }
+    if (error instanceof Error && error.message === "ALREADY_RUN_UP_IN_HEAT") {
+      return NextResponse.json(
+        {
+          error:
+            "この参加者はランアップ（着順なし進出）済みです。脱落着順の記録はできません。ランアップ解除後に操作してください。",
+        },
         { status: 409 }
       );
     }

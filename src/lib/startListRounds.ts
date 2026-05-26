@@ -202,6 +202,47 @@ export function totalAdvanceCapacityFromNextRoundLayout(
 
 export type RankedHeatRow = { rank: number | null };
 
+export type RunUpHeatRow = RankedHeatRow & {
+  advanceWithoutRank?: boolean;
+  lane?: number | null;
+};
+
+/**
+ * 脱落式: 各ヒートの `advanceWithoutRank` 行をレーン昇順で最大 take[i] 名まで進出させる。
+ */
+export function collectAdvancersPerHeatByRunUp<T extends RunUpHeatRow>(
+  heatEntries: [heatKey: number, rows: T[]][],
+  takePerHeat: number[]
+): T[] {
+  return heatEntries.flatMap(([, rows], i) => {
+    const take = takePerHeat[i] ?? 0;
+    if (take <= 0) return [] as T[];
+    const runners = rows
+      .filter((r) => r.advanceWithoutRank === true)
+      .sort((a, b) => {
+        const la = typeof a.lane === "number" && a.lane >= 1 ? a.lane : 10_000;
+        const lb = typeof b.lane === "number" && b.lane >= 1 ? b.lane : 10_000;
+        return la - lb;
+      });
+    return runners.slice(0, take);
+  });
+}
+
+/** ヒートごとにランアップ行の有無で {@link collectAdvancersPerHeatByRunUp} / {@link collectAdvancersPerHeatByRank} を切り替える */
+export function collectAdvancersPerHeatMixed<T extends RunUpHeatRow>(
+  heatEntries: [heatKey: number, rows: T[]][],
+  takePerHeat: number[]
+): T[] {
+  return heatEntries.flatMap(([heatKey, rows], i) => {
+    const take = takePerHeat[i] ?? 0;
+    if (take <= 0) return [] as T[];
+    if (rows.some((r) => r.advanceWithoutRank === true)) {
+      return collectAdvancersPerHeatByRunUp([[heatKey, rows]], [take]);
+    }
+    return collectAdvancersPerHeatByRank([[heatKey, rows]], [take]);
+  });
+}
+
 /**
  * 前ラウンド各ヒートについて、**着順が確定している行（rank あり）のみ**を対象に、rank 昇順で上位 take[i] 名を集める。
  * take は各ヒートの進出**上限**であり、マーシャル未完了・着順未入力で人数が足りなければそのヒートからはその分だけ少なくなる（null rank を繰り上げて枠を埋めない）。

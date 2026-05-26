@@ -13,7 +13,7 @@ import {
 } from "@/lib/startListSettings";
 import {
   buildNextRoundHeatsFromPreviousResults,
-  collectAdvancersPerHeatByRank,
+  collectAdvancersPerHeatMixed,
   collectUniformTopPerHeat,
   computeAdvanceCountsByLaneSlotsPerHeat,
   countStartListParticipantsBySourceHeat,
@@ -254,7 +254,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         totalInRound
       );
       advancePerHeat = computeAdvanceCountsByLaneSlotsPerHeat(heatEntries.length, maxLanes, capacity);
-      selectedRows = collectAdvancersPerHeatByRank(heatEntries, advancePerHeat);
+      selectedRows = collectAdvancersPerHeatMixed(heatEntries, advancePerHeat);
     }
 
     const cappedRows =

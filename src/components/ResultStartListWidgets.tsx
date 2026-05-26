@@ -56,6 +56,7 @@ export function ResultStartListLaneCheckbox({
   resultRows: Array<{
     heat: number | null;
     rank: number | null;
+    advanceWithoutRank?: boolean;
     entryType: string;
     competitionEntryId: string | null;
     teamEntryId: string | null;
@@ -80,6 +81,13 @@ export function ResultStartListLaneCheckbox({
   const p = participant;
   const pKey = marshalParticipantKey(p);
   const rank = rankForParticipant(heatIndex, p, resultRows);
+  const hasRunUp = resultRows.some((r) => {
+    if (!r.advanceWithoutRank || r.heat !== heatIndex) return false;
+    if (p.participantType === "INDIVIDUAL") {
+      return r.entryType === "INDIVIDUAL" && r.competitionEntryId === p.competitionEntryId;
+    }
+    return r.entryType === "TEAM" && r.teamEntryId === p.teamEntryId;
+  });
   const hasRank = rank != null;
   const checkedState = hasRank || draftChecked;
   const mergedStatus = resolveHeatLaneDayOpsDisplayStatus(p, serverDayOpsStatus);
@@ -95,6 +103,7 @@ export function ResultStartListLaneCheckbox({
     globallyBusy ||
     isTerminal ||
     hasRank ||
+    hasRunUp ||
     !marshalReady ||
     teamMissingMember;
   const inputId = `sl-result-h${heatIndex}-L${p.lane}-${pKey.replace(/[^a-zA-Z0-9_-]/g, "")}`;

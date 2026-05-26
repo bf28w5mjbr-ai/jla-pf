@@ -341,7 +341,7 @@ export function OfficialResultManager({
       <CardHeader>
         <CardTitle>公式結果管理</CardTitle>
         <CardDescription>
-          種目ごとに結果を登録し、公開日時と確定日時を設定できます。
+          種目ごとに結果を登録し、公開日時と確定日時を設定できます。競技中の失格（DSQ）はスタートリストの失格管理から登録すると、公開用の公式結果に自動反映されます（この画面では DSQ を手入力しません）。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -503,24 +503,29 @@ export function OfficialResultManager({
                     </div>
                     <div className="space-y-2">
                       <Label>ステータス</Label>
-                      <Select
-                        value={row.status}
-                        onValueChange={(value) =>
-                          updateRow(row.localId, {
-                            status: value as "OK" | "DNS" | "DNF" | "DSQ",
-                          })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="OK">OK</SelectItem>
-                          <SelectItem value="DNS">DNS</SelectItem>
-                          <SelectItem value="DNF">DNF</SelectItem>
-                          <SelectItem value="DSQ">DSQ</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      {row.status === "DSQ" ? (
+                        <p className="flex h-9 items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground">
+                          DSQ（当日運用から反映）
+                        </p>
+                      ) : (
+                        <Select
+                          value={row.status}
+                          onValueChange={(value) =>
+                            updateRow(row.localId, {
+                              status: value as "OK" | "DNS" | "DNF" | "DSQ",
+                            })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="OK">OK</SelectItem>
+                            <SelectItem value="DNS">DNS</SelectItem>
+                            <SelectItem value="DNF">DNF</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label>レーン</Label>

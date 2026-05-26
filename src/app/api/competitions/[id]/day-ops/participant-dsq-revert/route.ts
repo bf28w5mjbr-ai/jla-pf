@@ -14,6 +14,7 @@ import {
   resolveParticipantMarshalHeat,
 } from "@/lib/heatMarshalGate";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
+import { clearOfficialRowAfterDsqRevert } from "@/lib/officialResultDsqSync";
 import { START_LIST_STEP1_REQUIRED_SHORT_MESSAGE } from "@/lib/startListStep1Messages";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -117,7 +118,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const now = new Date();
     const note = `失格取り消し: ${reason}`;
 
-    const row = await prisma.$transaction(async (tx) => {
+    const snapshotForRevert = await loadStartListSnapshotPayload(competitionId);
+    const heatIndexForRevert = resolveParticipantMarshalHeat(
+      snapshotForRevert,
+      eventId,
+      marshalRound,
+      {
+        participantType,
+        competitionEntryId: competitionEntryId ?? null,
+        teamEntryId: teamEntryId ?? null,
+      }
+    );
+
+    const { row, officialSyncSkipped } = await prisma.$transaction(async (tx) => {
       const existing = await tx.competitionParticipantStatus.findFirst({
         where: {
           competitionId,
@@ -147,7 +160,20 @@ export async function POST(request: NextRequest, context: RouteContext) {
       if (targetStatus !== "PENDING") {
         await markMarshalStartedIfUnset(tx.event, eventId, now);
       }
-      return updated;
+
+      const sync = await clearOfficialRowAfterDsqRevert(tx, {
+        competitionId,
+        eventId,
+        round: marshalRound,
+        participant: {
+          participantType,
+          competitionEntryId: competitionEntryId ?? null,
+          teamEntryId: teamEntryId ?? null,
+        },
+        heatIndex: heatIndexForRevert,
+      });
+
+      return { row: updated, officialSyncSkipped: sync.officialSyncSkipped };
     });
 
     await logAuditAction({
@@ -175,6 +201,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       ok: true,
       id: row.id,
       status: row.status,
+      officialSyncSkipped,
     });
   } catch (error) {
     if (error instanceof Error && error.message === "DAY_OPS_FORBIDDEN") {

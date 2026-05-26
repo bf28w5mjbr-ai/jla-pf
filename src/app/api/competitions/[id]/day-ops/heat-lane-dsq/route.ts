@@ -13,6 +13,7 @@ import {
   marshalParticipantRefAtLane,
 } from "@/lib/heatMarshalFromSnapshot";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
+import { applyOfficialRowForParticipantDsq } from "@/lib/officialResultDsqSync";
 import { START_LIST_STEP1_REQUIRED_SHORT_MESSAGE } from "@/lib/startListStep1Messages";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -161,8 +162,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
           });
 
       await markMarshalStartedIfUnset(tx.event, eventId, now);
-      return { id: row.id, status: row.status as "DSQ", alreadyDsq: false as const };
+      return {
+        id: row.id,
+        status: row.status as "DSQ",
+        alreadyDsq: false as const,
+      };
     });
+
+    const sync = await prisma.$transaction(async (tx) =>
+      applyOfficialRowForParticipantDsq(tx, {
+        competitionId,
+        eventId,
+        round: roundDb,
+        heatIndex,
+        lane,
+        participant: target,
+        reason,
+      })
+    );
 
     await logAuditAction({
       action: "COMPETITION_HEAT_LANE_DSQ",
@@ -189,6 +206,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       ok: true,
       alreadyDsq: upserted.alreadyDsq,
       status: upserted.status,
+      officialSyncSkipped: sync.officialSyncSkipped,
     });
   } catch (error) {
     if (error instanceof Error && error.message === "DAY_OPS_FORBIDDEN") {

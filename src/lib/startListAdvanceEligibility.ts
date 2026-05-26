@@ -28,6 +28,7 @@ export type DedupeOfficialResultRowShape = {
   teamEntryId: string | null;
   rank: number | null;
   heat: number | null;
+  advanceWithoutRank?: boolean;
 };
 
 /**
@@ -49,8 +50,10 @@ export function dedupeOfficialResultRowsForAdvance<T extends DedupeOfficialResul
       byKey.set(key, row);
       continue;
     }
-    const rankOf = (r: T) =>
-      typeof r.rank === "number" && Number.isFinite(r.rank) ? r.rank : Number.POSITIVE_INFINITY;
+    const rankOf = (r: T) => {
+      if (r.advanceWithoutRank) return -1;
+      return typeof r.rank === "number" && Number.isFinite(r.rank) ? r.rank : Number.POSITIVE_INFINITY;
+    };
     const heatOf = (r: T) =>
       typeof r.heat === "number" && r.heat >= 1 ? r.heat : 10_000;
 

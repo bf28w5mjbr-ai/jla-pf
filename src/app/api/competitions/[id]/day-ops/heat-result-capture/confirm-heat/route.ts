@@ -7,6 +7,11 @@ import { assertDayOpsRecorderWriteAccess } from "@/lib/dayOpsAccess";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
 import { loadStartListSnapshotPayload } from "@/lib/heatMarshalGate";
 import { countCalledMarshalSlotsForHeatConfirmInTransaction } from "@/lib/marshalHeatCalledCount";
+import {
+  resolveAdvanceQuotaForHeatInDayOps,
+  validateHeatResultConfirmInTransaction,
+} from "@/lib/heatResultEliminationRunUp";
+import { reconcileOfficialDsqRowsForHeat } from "@/lib/officialResultDsqSync";
 import { tryAutoAppendNextStartListRound } from "@/lib/startListNextRoundFromOfficial";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
 import { START_LIST_STEP1_REQUIRED_SHORT_MESSAGE } from "@/lib/startListStep1Messages";
@@ -48,6 +53,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const snapshot = await loadStartListSnapshotPayload(competitionId);
+    const advanceQuota = await resolveAdvanceQuotaForHeatInDayOps({
+      competitionId,
+      eventId,
+      round: roundDb,
+      heatIndex,
+      snapshot,
+    });
 
     const row = await prisma.$transaction(async (tx) => {
       const existing = await tx.officialResult.findUnique({
@@ -85,17 +97,31 @@ export async function POST(request: NextRequest, context: RouteContext) {
       });
 
       if (calledInHeat > 0) {
-        const rankCount = await tx.officialResultRow.count({
+        const okRows = await tx.officialResultRow.findMany({
           where: {
             officialResultId: officialResult.id,
             heat: heatIndex,
             status: "OK",
           },
+          select: { rank: true, advanceWithoutRank: true },
         });
-        if (rankCount < calledInHeat) {
-          throw new Error("HEAT_RESULT_INCOMPLETE_RANKS");
+        const validation = validateHeatResultConfirmInTransaction({
+          calledInHeat,
+          quota: advanceQuota,
+          rows: okRows,
+        });
+        if (!validation.ok) {
+          throw new Error(validation.code);
         }
       }
+
+      await reconcileOfficialDsqRowsForHeat(tx, {
+        competitionId,
+        eventId,
+        round: roundDb,
+        heatIndex,
+        snapshot,
+      });
 
       await tx.officialResultHeatConfirmed.upsert({
         where: {
@@ -173,6 +199,20 @@ export async function POST(request: NextRequest, context: RouteContext) {
         {
           error:
             "このヒートでは召集済みの人数に足りる順位が記録されていません。全員分の着順を入れてから確定してください。",
+        },
+        { status: 409 }
+      );
+    }
+    if (
+      error instanceof Error &&
+      (error.message === "HEAT_RESULT_INCOMPLETE_ELIMINATION" ||
+        error.message === "HEAT_RESULT_INCOMPLETE_RUN_UP" ||
+        error.message === "HEAT_RESULT_INCOMPLETE_ELIMINATION_OR_RUN_UP")
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "脱落の着順とランアップ（残りの進出）が揃っていません。下位から脱落を記録し、「残りをランアップ」してから確定してください。",
         },
         { status: 409 }
       );

@@ -5,8 +5,10 @@ import type { HeatMarshalParticipant } from "@/components/HeatMarshalLanePanel";
 import type { HeatResultCaptureRow } from "@/lib/heatResultCaptureApi";
 import {
   postHeatResultCaptureAppend,
+  postHeatResultClearRunUp,
   postHeatResultConfirmHeat,
   postHeatResultReorder,
+  postHeatResultRunUp,
 } from "@/lib/heatResultCaptureApi";
 import { toast } from "sonner";
 import {
@@ -50,6 +52,9 @@ export function useResultCaptureDraft(args: {
   const [dragOverParticipantKey, setDragOverParticipantKey] = useState<string | null>(null);
   const [heatResultConfirmTarget, setHeatResultConfirmTarget] = useState<number | null>(null);
   const [heatResultConfirmBusy, setHeatResultConfirmBusy] = useState(false);
+  const [runUpTarget, setRunUpTarget] = useState<number | null>(null);
+  const [clearRunUpTarget, setClearRunUpTarget] = useState<number | null>(null);
+  const [runUpBusy, setRunUpBusy] = useState(false);
 
   const tieNextHeatIndexRef = useRef<number | null>(null);
   useEffect(() => {
@@ -297,6 +302,51 @@ export function useResultCaptureDraft(args: {
     [applyRankOrderLocally, eventId, m, rankedParticipantKeysForHeat, resultCapture]
   );
 
+  const runHeatResultRunUp = useCallback(
+    async (displayHeatNumber: number) => {
+      if (!m || !resultCapture) return;
+      setRunUpBusy(true);
+      try {
+        const { createdCount } = await postHeatResultRunUp(m.competitionId, {
+          eventId,
+          round: m.round,
+          heatIndex: displayHeatNumber,
+        });
+        setRunUpTarget(null);
+        void resultCapture.onRefetch();
+        toast.success(`ランアップ ${createdCount} 名を登録しました`);
+        dispatchJlaDayOpsParticipantStatusChanged(m.competitionId, eventId);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "ランアップの登録に失敗しました");
+      } finally {
+        setRunUpBusy(false);
+      }
+    },
+    [m, resultCapture, eventId]
+  );
+
+  const runHeatResultClearRunUp = useCallback(
+    async (displayHeatNumber: number) => {
+      if (!m || !resultCapture) return;
+      setRunUpBusy(true);
+      try {
+        const { deletedCount } = await postHeatResultClearRunUp(m.competitionId, {
+          eventId,
+          round: m.round,
+          heatIndex: displayHeatNumber,
+        });
+        setClearRunUpTarget(null);
+        void resultCapture.onRefetch();
+        toast.success(`ランアップ ${deletedCount} 名を解除しました`);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "ランアップの解除に失敗しました");
+      } finally {
+        setRunUpBusy(false);
+      }
+    },
+    [m, resultCapture, eventId]
+  );
+
   const runHeatResultConfirm = useCallback(
     async (displayHeatNumber: number) => {
       if (!m || !resultCapture) return;
@@ -408,6 +458,13 @@ export function useResultCaptureDraft(args: {
     heatResultConfirmTarget,
     setHeatResultConfirmTarget,
     heatResultConfirmBusy,
+    runUpTarget,
+    setRunUpTarget,
+    clearRunUpTarget,
+    setClearRunUpTarget,
+    runUpBusy,
+    runHeatResultRunUp,
+    runHeatResultClearRunUp,
     handleRankRecorded,
     countResultDraftsForHeat,
     toggleResultDraft,
