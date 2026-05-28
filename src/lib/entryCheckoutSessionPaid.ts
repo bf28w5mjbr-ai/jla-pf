@@ -30,6 +30,8 @@ export const competitionEntryEligibleForStartListWhere: Prisma.CompetitionEntryW
   OR: [
     { totalFee: { lte: 0 } },
     { clubIndividualFeePaidAt: { not: null } },
+    { organizerManualPaidAt: { not: null } },
+    { organizerPostPayApprovedAt: { not: null } },
     competitionEntryPaidCheckoutWhere,
   ],
 };

@@ -127,6 +127,21 @@
 
 ### 大会：エントリー / チーム請求とクラブ個人枠請求（分離）
 - `POST /api/competitions/[id]/entries`（`clubIndividualFeePaidAt`・クラブ先払い枠／締切後一括の扱い。詳細は `route.ts`）
+- `POST /api/competitions/[id]/entries/[entryId]/post-pay/approve`（OrgAdmin: 未決済エントリーを後払い承認で成立）
+- `POST /api/competitions/[id]/entries/[entryId]/post-pay/revoke`（OrgAdmin: 未入金のみ後払い承認を取り消し）
+- `POST /api/competitions/[id]/entries/[entryId]/manual-payment`（OrgAdmin: 後払い承認済み・未入金の手動入金記録。JSON `{ note?: string }`）
+- `POST /api/competitions/[id]/unpaid-intent/send-bulk`（OrgAdmin: **主催の通常操作**。未決済者への出場意思確認メール一括送信。`{ preview?: true }` または `{ responseDeadlineAt: ISO }`。送信後は参加者回答・期限後 DNS が自動）
+- `POST /api/competitions/[id]/unpaid-intent/process-deadline`（期限後 DNS の手動実行。本番は Cron に任せ、OrgAdmin または `Authorization: Bearer $CRON_SECRET`・ローカル開発用）
+- `GET` / `POST /api/competitions/[id]/entry/payment-intent`（トークンリンクからの出場/棄権回答・公開）
+- `GET /api/cron/unpaid-entry-intent-deadline`（Vercel Cron・15分間隔・`CRON_SECRET` 必須。全大会の期限切れキャンペーンを処理）
+
+**未決済出場意思確認の運用（本番）**: `RESEND_API_KEY` と `CRON_SECRET` を設定。主催は管理画面で回答期限＋一括送信のみ。期限後の未回答 DNS は Cron が自動適用。個別の `post-pay/approve` はメール未達などの救済用。
+
+**ローカルで期限 DNS を試す例**:
+```bash
+curl -sS -H "Authorization: Bearer $CRON_SECRET" "$E2E_BASE_URL/api/cron/unpaid-entry-intent-deadline"
+# または OrgAdmin セッションで POST .../unpaid-intent/process-deadline
+```
 - `PUT /api/competitions/[id]/team-entries`（任意 `prepaidIndividualUserIds: string[]`。チーム種目分とクラブ個人枠分は別 `Payment.ownerId` に upsert。先払い枠の `clubPaymentId` は個人枠用 `Payment` のみ）
 - `POST /api/competitions/[id]/team-billing/checkout`（JSON に `billingScope`: `"team"` | `"prepaid"`。省略時は `"team"`）
 - `POST /api/competitions/[id]/team-billing/finalize`（チーム用・個人枠用の2行に分割して確定。締切後の未払い個人分は個人枠行へ）

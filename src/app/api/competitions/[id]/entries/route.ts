@@ -928,6 +928,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 totalFee: result.entry.totalFee,
                 checkoutSessions: [{ status: afterSync.status }],
                 clubIndividualFeePaidAt: result.entry.clubIndividualFeePaidAt,
+                organizerPostPayApprovedAt: result.entry.organizerPostPayApprovedAt,
+                organizerManualPaidAt: result.entry.organizerManualPaidAt,
               });
               const completeUrl = `${stripeRedirectOrigin()}/competitions/${competitionId}/entry?completed=1&entryId=${result.entry.id}`;
               return NextResponse.json({
@@ -1086,6 +1088,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         ? [{ status: latestCompletedCheckout.status }]
         : [],
       clubIndividualFeePaidAt: result.entry.clubIndividualFeePaidAt,
+      organizerPostPayApprovedAt: result.entry.organizerPostPayApprovedAt,
+      organizerManualPaidAt: result.entry.organizerManualPaidAt,
     });
 
     return NextResponse.json({

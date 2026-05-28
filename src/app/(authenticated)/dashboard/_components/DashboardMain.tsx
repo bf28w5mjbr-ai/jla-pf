@@ -57,6 +57,8 @@ export async function DashboardMain({ userId }: { userId: string }) {
         totalFee: true,
         createdAt: true,
         clubIndividualFeePaidAt: true,
+        organizerPostPayApprovedAt: true,
+        organizerManualPaidAt: true,
         competition: {
           select: {
             id: true,
@@ -423,6 +425,8 @@ export async function DashboardMain({ userId }: { userId: string }) {
                   totalFee: entry.totalFee,
                   checkoutSessions: entry.checkoutSessions.map((s) => ({ status: s.status })),
                   clubIndividualFeePaidAt: entry.clubIndividualFeePaidAt,
+                  organizerPostPayApprovedAt: entry.organizerPostPayApprovedAt,
+                  organizerManualPaidAt: entry.organizerManualPaidAt,
                 });
                 const canIssueReceipt = userStatus.businessEstablished && entry.status !== "CANCELLED";
                 const isResultPublished =

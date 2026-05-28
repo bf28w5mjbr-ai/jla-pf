@@ -4,7 +4,10 @@ import { prisma } from "@/server/db";
 import {
   parseClubIdFromClubCompetitionEntryFeeOwnerId,
 } from "@/lib/competitionStripeDisputeAccess";
-import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
+import {
+  hasOrganizerPostPayApproval,
+  isEntryFeeSettled,
+} from "@/lib/entryOrganizerPostPay";
 import { stripe } from "@/lib/stripe";
 import {
   buildClubPrepaidIndividualPaymentOwnerId,
@@ -101,6 +104,9 @@ export default async function CompetitionFinanceTabContent({
       select: {
         totalFee: true,
         status: true,
+        clubIndividualFeePaidAt: true,
+        organizerPostPayApprovedAt: true,
+        organizerManualPaidAt: true,
         checkoutSessions: {
           orderBy: { createdAt: "desc" },
           take: 1,
@@ -135,12 +141,27 @@ export default async function CompetitionFinanceTabContent({
 
   let individualReceived = 0;
   let individualPending = 0;
+  let postPayApprovedUnsettled = 0;
+  let postPayApprovedUnsettledCount = 0;
   for (const e of entries) {
     if (e.status === "CANCELLED") continue;
     if (e.totalFee <= 0) continue;
-    const completed = isEntryCheckoutPaidForEligibility(e.checkoutSessions[0]?.status);
-    if (completed) individualReceived += e.totalFee;
-    else individualPending += e.totalFee;
+    const feeInput = {
+      status: e.status,
+      totalFee: e.totalFee,
+      clubIndividualFeePaidAt: e.clubIndividualFeePaidAt,
+      organizerManualPaidAt: e.organizerManualPaidAt,
+      checkoutSessions: e.checkoutSessions.map((s) => ({ status: s.status })),
+    };
+    if (isEntryFeeSettled(feeInput)) {
+      individualReceived += e.totalFee;
+    } else {
+      individualPending += e.totalFee;
+      if (hasOrganizerPostPayApproval(e)) {
+        postPayApprovedUnsettled += e.totalFee;
+        postPayApprovedUnsettledCount += 1;
+      }
+    }
   }
 
   const clubIds = [...new Set(teamEntries.map((t) => t.clubId))];
@@ -309,9 +330,18 @@ export default async function CompetitionFinanceTabContent({
           <h3 id="finance-auto-heading" className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             自動集計（エントリー・経費ワークフロー）
           </h3>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
             <Stat label="個人（決済済）" value={formatYen(individualReceived)} />
             <Stat label="個人（未決済）" value={formatYen(individualPending)} />
+            <Stat
+              label="個人（後払い・未入金）"
+              value={formatYen(postPayApprovedUnsettled)}
+              sub={
+                postPayApprovedUnsettledCount > 0
+                  ? `${postPayApprovedUnsettledCount}件`
+                  : undefined
+              }
+            />
             <Stat
               label="チーム（入金済）"
               value={formatYen(teamReceived)}

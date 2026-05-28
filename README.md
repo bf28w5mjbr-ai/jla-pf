@@ -42,6 +42,7 @@ pnpm dev
 
 - `pnpm dev` で `.next/dev/lock` エラーが出る場合、別の Next.js プロセスが起動中です。既存プロセスを停止してから再実行してください。
 - Stripe Webhook は `POST /api/webhooks/stripe` で受信・処理します。ローカル確認時は `stripe listen --forward-to localhost:3000/api/webhooks/stripe` を使います。
+- 未決済の出場意思確認メール（一括送信・期限後 DNS）を本番同等に試す場合は `.env.local` に `RESEND_API_KEY` と `CRON_SECRET` を設定してください。期限後 DNS は Vercel Cron が自動実行します（ローカルでは `docs/API_SPEC.md` の curl 例または `process-deadline` API）。
 
 ## 主要スクリプト
 

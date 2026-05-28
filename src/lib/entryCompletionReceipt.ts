@@ -1,6 +1,7 @@
 import type { CompetitionEntryStatus, EntryCheckoutSessionStatus } from "@prisma/client";
 import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
+import { isEntryFeeSettled } from "@/lib/entryOrganizerPostPay";
 import { getStripeProcessingFeeBpsFromEnv } from "@/lib/stripeProcessingFee";
 
 type CheckoutRow = {
@@ -17,6 +18,8 @@ type EntryRow = {
   status: string;
   totalFee: number;
   clubIndividualFeePaidAt?: Date | null;
+  organizerPostPayApprovedAt?: Date | null;
+  organizerManualPaidAt?: Date | null;
   items: { eventId: string; entryTime: string | null }[];
   snapshot: { data: unknown } | null;
   checkoutSessions: CheckoutRow[];
@@ -87,6 +90,8 @@ export function buildEntryCompletionReceipt(args: {
       status: s.status as EntryCheckoutSessionStatus,
     })),
     clubIndividualFeePaidAt: entry.clubIndividualFeePaidAt ?? null,
+    organizerPostPayApprovedAt: entry.organizerPostPayApprovedAt ?? null,
+    organizerManualPaidAt: entry.organizerManualPaidAt ?? null,
   });
 
   const payload =
@@ -101,6 +106,8 @@ export function buildEntryCompletionReceipt(args: {
       ? [{ status: sessionRecord.status as EntryCheckoutSessionStatus }]
       : [],
     clubIndividualFeePaidAt: entry.clubIndividualFeePaidAt ?? null,
+    organizerPostPayApprovedAt: entry.organizerPostPayApprovedAt ?? null,
+    organizerManualPaidAt: entry.organizerManualPaidAt ?? null,
   });
 
   let statusRow: EntryReceiptForClient["statusRow"];
@@ -164,14 +171,18 @@ export function buildEntryCompletionReceipt(args: {
         ? `${competitionName} へのエントリーは成立しました。`
         : `${competitionName} のエントリー手続きが完了しました（入金確認中）。`;
 
-  const sessionStatus = sessionRecord?.status as EntryCheckoutSessionStatus | undefined;
-  const clubBulkPaid = Boolean(entry.clubIndividualFeePaidAt);
   const showPaymentPendingBlock =
     entry.status !== "CANCELLED" &&
     entry.totalFee > 0 &&
-    !clubBulkPaid &&
-    !isEntryCheckoutPaidForEligibility(sessionStatus) &&
-    sessionStatus !== "DISPUTE_LOST";
+    !isEntryFeeSettled({
+      status: entry.status as CompetitionEntryStatus,
+      totalFee: entry.totalFee,
+      checkoutSessions: entry.checkoutSessions.map((s) => ({
+        status: s.status as EntryCheckoutSessionStatus,
+      })),
+      clubIndividualFeePaidAt: entry.clubIndividualFeePaidAt ?? null,
+      organizerManualPaidAt: entry.organizerManualPaidAt ?? null,
+    });
 
   const pollerActive =
     entry.status !== "CANCELLED" && entry.totalFee > 0 && !entryState.businessEstablished;

@@ -754,7 +754,9 @@ export default function CompetitionEntryForm({
             ) : null}
             {entryPaymentPhase === "awaiting_payment" && entryReceipt.showPaymentPendingBlock ? (
               <div className="rounded-lg border border-amber-200/80 bg-amber-50/90 px-3 py-2.5 text-xs leading-relaxed text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/35 dark:text-amber-100">
-                下の「決済へ進む」からお支払いください。決済がシステムに反映されるまで、種目・クラブ・連絡事項は変更できません。
+                {entryEstablished
+                  ? "参加費のお支払いがまだ完了していません。下の「決済へ進む」からカード決済できます。"
+                  : "下の「決済へ進む」からお支払いください。決済がシステムに反映されるまで、種目・クラブ・連絡事項は変更できません。"}
               </div>
             ) : null}
             {entryReceipt.showPaymentPendingBlock ? (
@@ -846,6 +848,19 @@ export default function CompetitionEntryForm({
                 </>
               ) : establishedSummaryOnly ? (
                 <>
+                  {entryReceipt.showPaymentPendingBlock &&
+                  entryPaymentPhase !== "confirming" ? (
+                    <Button
+                      type="button"
+                      variant="default"
+                      className="h-10 w-full gap-2 text-sm sm:h-9 sm:w-auto"
+                      onClick={handleSubmit}
+                      disabled={isSubmitDisabled}
+                    >
+                      <Send className="h-4 w-4 opacity-90" aria-hidden />
+                      {isSubmitting ? "処理中…" : "決済へ進む"}
+                    </Button>
+                  ) : null}
                   {entryIdForActions && entryReceipt && entryReceipt.totalFee > 0 ? (
                     <Button variant="outline" className="h-10 w-full gap-2 text-sm sm:h-9 sm:w-auto" asChild>
                       <a

@@ -29,6 +29,36 @@ describe("entryFinalization / チャージバック系ステータス", () => {
     })).toBe(true);
   });
 
+  it("organizerPostPayApprovedAt があれば未 Checkout でも成立", () => {
+    const r = getEntryUserFacingStatus({
+      status: "SUBMITTED",
+      totalFee: 2000,
+      checkoutSessions: [],
+      organizerPostPayApprovedAt: new Date(),
+    });
+    expect(r.businessEstablished).toBe(true);
+    expect(r.userLabel).toContain("お支払い待ち");
+    expect(
+      isEntryEstablished({
+        status: "SUBMITTED",
+        totalFee: 2000,
+        checkoutSessions: [],
+        organizerPostPayApprovedAt: new Date(),
+      })
+    ).toBe(true);
+  });
+
+  it("organizerManualPaidAt で主催確認の決済完了", () => {
+    const r = getEntryUserFacingStatus({
+      status: "SUBMITTED",
+      totalFee: 2000,
+      checkoutSessions: [],
+      organizerManualPaidAt: new Date(),
+    });
+    expect(r.businessEstablished).toBe(true);
+    expect(r.userLabel).toContain("主催確認");
+  });
+
   it("DISPUTE_LOST では成立しない", () => {
     const r = getEntryUserFacingStatus({
       status: "SUBMITTED",

@@ -6,6 +6,9 @@ export type EntryForPaymentLabel = {
   status: string;
   totalFee: number;
   checkoutSessions: { status: string; payload: unknown }[];
+  clubIndividualFeePaidAt?: Date | null;
+  organizerPostPayApprovedAt?: Date | null;
+  organizerManualPaidAt?: Date | null;
 };
 
 export type ParticipantStatusRow = {
@@ -27,11 +30,14 @@ export function getIndividualEntryPaymentStatusLabel(entry: EntryForPaymentLabel
     return "取消済み";
   }
   if (entry.totalFee === 0) return "決済不要（受付済み）";
+  if (entry.clubIndividualFeePaidAt) return "決済完了（クラブ一括）";
+  if (entry.organizerManualPaidAt) return "決済完了（主催確認）";
   const sessionRecord = entry.checkoutSessions[0];
   const st = sessionRecord?.status;
   if (st === "DISPUTE_LOST") return "決済無効（異議・返金確定）";
   if (st === "DISPUTED") return "決済完了（異議申し立て中）";
   if (st === "COMPLETED") return "決済完了";
+  if (entry.organizerPostPayApprovedAt) return "後払い承認（入金待ち）";
   return "決済確認中";
 }
 

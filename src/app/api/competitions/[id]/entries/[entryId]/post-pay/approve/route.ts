@@ -1,0 +1,78 @@
+import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { NextRequest, NextResponse } from "next/server";
+import { verifySession } from "@/lib/auth";
+import { prisma } from "@/server/db";
+import {
+  hostOrgAdminGateMessageError,
+  requireHostOrgAdminForCompetition,
+} from "@/lib/organizerAccess";
+import { logAuditAction, getRequestContext } from "@/lib/auditLog";
+import {
+  canApproveOrganizerPostPay,
+  loadEntryForOrganizerPostPay,
+} from "@/lib/entryOrganizerPostPayService";
+
+type RouteContext = { params: Promise<{ id: string; entryId: string }> };
+
+export async function POST(request: NextRequest, context: RouteContext) {
+  const { id: competitionId, entryId } = await context.params;
+  const token = request.cookies.get("session")?.value;
+  const session = token ? await verifySession(token) : null;
+  if (!session?.userId) {
+    return NextResponse.json({ message: "認証が必要です" }, { status: 401 });
+  }
+
+  try {
+    await requireHostOrgAdminForCompetition(competitionId, session.userId);
+  } catch (e) {
+    const gated = hostOrgAdminGateMessageError(e);
+    if (gated) {
+      return NextResponse.json({ message: gated.message }, { status: gated.status });
+    }
+    throw e;
+  }
+
+  try {
+    const entry = await loadEntryForOrganizerPostPay(prisma, competitionId, entryId);
+    if (!entry) {
+      return NextResponse.json({ message: "エントリーが見つかりません" }, { status: 404 });
+    }
+    if (!canApproveOrganizerPostPay(entry)) {
+      return NextResponse.json(
+        { message: "このエントリーは後払い承認できません" },
+        { status: 400 }
+      );
+    }
+
+    const now = new Date();
+    await prisma.competitionEntry.update({
+      where: { id: entryId },
+      data: {
+        organizerPostPayApprovedAt: now,
+        organizerPostPayApprovedByUserId: session.userId,
+      },
+    });
+
+    await logAuditAction({
+      action: "COMPETITION_ENTRY_POST_PAY_APPROVED",
+      actorType: "USER",
+      actorKey: session.userId,
+      actorUserId: session.userId,
+      targetType: "CompetitionEntry",
+      targetId: entryId,
+      result: "SUCCESS",
+      metadata: { competitionId, totalFee: entry.totalFee },
+      request: getRequestContext(request),
+    });
+
+    return NextResponse.json({
+      message: "後払いでエントリーを成立させました",
+      entryId,
+    });
+  } catch (e) {
+    return jsonInternalError500(
+      "POST api/competitions/[id]/entries/[entryId]/post-pay/approve/route.ts",
+      e
+    );
+  }
+}

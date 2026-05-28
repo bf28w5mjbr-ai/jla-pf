@@ -91,6 +91,7 @@ model User {
   orgAdminInvitesReceived              OrganizationAdminInvitation[]            @relation("OrgAdminInvitee")
   technicalOfficialAssignments         CompetitionTechnicalOfficialAssignment[]
   clubPrepaidIndividualSlotsCovered    ClubCompetitionPrepaidIndividualSlot[]   @relation("ClubPrepaidSlotCoveredUser")
+  unpaidEntryIntentCampaignsSent       CompetitionUnpaidEntryIntentCampaign[]   @relation("UnpaidEntryIntentCampaignSender")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1156,6 +1157,16 @@ model CompetitionEntry {
   paymentId               String?
   /// クラブ一括（締切後請求含む）で個人参加費が清算された日時
   clubIndividualFeePaidAt DateTime?
+  /// 主催が後払いでエントリー成立を承認した日時
+  organizerPostPayApprovedAt DateTime?
+  /// 主催が後払い承認した OrgAdmin の userId
+  organizerPostPayApprovedByUserId String?
+  /// 主催がオフライン入金を確認した日時
+  organizerManualPaidAt DateTime?
+  /// 主催がオフライン入金を記録した OrgAdmin の userId
+  organizerManualPaidByUserId String?
+  /// オフライン入金のメモ（振込名義・領収書番号等）
+  organizerManualPaidNote String? @db.Text
   /// 誓約に同意した日時（エントリー送信日時と同一運用）
   pledgeAcceptedAt        DateTime?
   /// 同意時点の誓約文（Markdown）
@@ -1171,11 +1182,56 @@ model CompetitionEntry {
   officialResultRows      OfficialResultRow[]
   participantStatuses     CompetitionParticipantStatus[]
   resultDraftRows         CompetitionResultDraftRow[]
+  paymentIntentTokens     CompetitionEntryPaymentIntentToken[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([competitionId, userId])
+}
+
+/// 未決済エントリーへの出場意思確認メール一括送信キャンペーン
+model CompetitionUnpaidEntryIntentCampaign {
+  id                 String   @id @default(cuid())
+  competitionId      String
+  responseDeadlineAt DateTime
+  sentAt             DateTime
+  sentByUserId       String
+
+  competition Competition                        @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  sentBy      User                                 @relation("UnpaidEntryIntentCampaignSender", fields: [sentByUserId], references: [id], onDelete: Cascade)
+  tokens      CompetitionEntryPaymentIntentToken[]
+
+  createdAt DateTime @default(now())
+
+  @@index([competitionId, sentAt])
+}
+
+enum EntryPaymentIntentChoice {
+  PARTICIPATE
+  WITHDRAW
+}
+
+/// 出場意思確認用マジックリンク（ハッシュのみ保存）
+model CompetitionEntryPaymentIntentToken {
+  id             String                    @id @default(cuid())
+  campaignId     String
+  entryId        String
+  tokenHash      String                    @unique
+  expiresAt      DateTime
+  choice              EntryPaymentIntentChoice?
+  respondedAt         DateTime?
+  deadlineDnsAppliedAt DateTime?
+  lastEmailSentAt     DateTime?
+
+  campaign CompetitionUnpaidEntryIntentCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  entry    CompetitionEntry                     @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([campaignId, entryId])
+  @@index([entryId])
+  @@index([campaignId, respondedAt])
 }
 
 model EntrySnapshot {
@@ -1597,6 +1653,7 @@ model Competition {
   technicalOfficialAssignments CompetitionTechnicalOfficialAssignment[]
   typeApplications             CompetitionTypeApplication[]
   clubPrepaidIndividualSlots   ClubCompetitionPrepaidIndividualSlot[]
+  unpaidEntryIntentCampaigns   CompetitionUnpaidEntryIntentCampaign[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

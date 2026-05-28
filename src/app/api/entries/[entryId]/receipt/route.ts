@@ -251,6 +251,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
       totalFee: entry.totalFee,
       checkoutSessions: entry.checkoutSessions.map((item) => ({ status: item.status })),
       clubIndividualFeePaidAt: entry.clubIndividualFeePaidAt,
+      organizerPostPayApprovedAt: entry.organizerPostPayApprovedAt,
+      organizerManualPaidAt: entry.organizerManualPaidAt,
     });
     if (!entryState.businessEstablished) {
       return NextResponse.json(

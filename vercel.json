@@ -1,3 +1,8 @@
 {
-  "crons": []
+  "crons": [
+    {
+      "path": "/api/cron/unpaid-entry-intent-deadline",
+      "schedule": "*/15 * * * *"
+    }
+  ]
 }

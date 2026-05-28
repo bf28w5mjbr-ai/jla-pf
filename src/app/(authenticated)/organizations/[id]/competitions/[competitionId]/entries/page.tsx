@@ -6,7 +6,14 @@ import { getRequiredAuthenticatedUserId, verifySessionCached } from "@/lib/auth"
 import { prisma } from "@/server/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
+import {
+  canApproveOrganizerPostPay,
+  canRecordOrganizerManualPayment,
+  canRevokeOrganizerPostPay,
+  isEntryFeeSettled,
+} from "@/lib/entryOrganizerPostPay";
+import CompetitionEntryPostPayActions from "@/components/admin/CompetitionEntryPostPayActions";
+import { getIndividualEntryPaymentStatusLabel } from "@/lib/entryWithdrawalAdminLabel";
 import { ArrowLeft, AlertTriangle, CheckCircle2, ChevronDown, Clock } from "lucide-react";
 import TeamAssignmentDeadlineEditor from "@/components/admin/TeamAssignmentDeadlineEditor";
 import CompetitionTeamBillingManager from "@/components/admin/CompetitionTeamBillingManager";
@@ -225,9 +232,15 @@ export default async function CompetitionEntriesPage({
 
   const totalEntries = entries.length;
   const paidEntries = entries.filter((entry) => {
+    if (entry.status === "CANCELLED") return false;
     if (entry.totalFee === 0) return true;
-    const sessionRecord = entry.checkoutSessions[0];
-    return isEntryCheckoutPaidForEligibility(sessionRecord?.status);
+    return isEntryFeeSettled({
+      status: entry.status,
+      totalFee: entry.totalFee,
+      clubIndividualFeePaidAt: entry.clubIndividualFeePaidAt,
+      organizerManualPaidAt: entry.organizerManualPaidAt,
+      checkoutSessions: entry.checkoutSessions.map((s) => ({ status: s.status })),
+    });
   }).length;
 
   const openDisputeEntryCount = entries.filter((entry) => {
@@ -362,38 +375,39 @@ export default async function CompetitionEntriesPage({
                     entryEventIds: individualEventIds,
                     participantStatuses: entry.participantStatuses,
                   });
-                  const checkout = entry.checkoutSessions[0];
-                  const payload =
-                    checkout?.payload && typeof checkout.payload === "object"
-                      ? (checkout.payload as Record<string, unknown>)
-                      : null;
-                  const paymentStatus = entry.status === "CANCELLED"
-                    ? {
-                        label:
-                          typeof payload?.refundedAt === "string" || entry.totalFee === 0
-                            ? "返金 / 取消済み"
-                            : "取消済み",
-                        icon: CheckCircle2,
-                        color: "text-gray-500",
-                      }
-                    : entry.totalFee === 0
-                      ? { label: "決済不要", icon: CheckCircle2, color: "text-emerald-600" }
-                      : checkout?.status === "DISPUTE_LOST"
-                        ? {
-                            label: "決済無効（異議・返金）",
-                            icon: AlertTriangle,
-                            color: "text-red-600 dark:text-red-400",
-                          }
-                        : checkout?.status === "DISPUTED"
-                          ? {
-                              label: "決済完了（異議申し立て中）",
-                              icon: AlertTriangle,
-                              color: "text-amber-600 dark:text-amber-400",
-                            }
-                          : isEntryCheckoutPaidForEligibility(checkout?.status)
-                            ? { label: "決済完了", icon: CheckCircle2, color: "text-emerald-600" }
-                            : { label: "決済確認中", icon: Clock, color: "text-gray-500" };
-                  const StatusIcon = paymentStatus.icon;
+                  const paymentLabel = getIndividualEntryPaymentStatusLabel({
+                    status: entry.status,
+                    totalFee: entry.totalFee,
+                    checkoutSessions: entry.checkoutSessions,
+                    clubIndividualFeePaidAt: entry.clubIndividualFeePaidAt,
+                    organizerPostPayApprovedAt: entry.organizerPostPayApprovedAt,
+                    organizerManualPaidAt: entry.organizerManualPaidAt,
+                  });
+                  const feeInput = {
+                    status: entry.status,
+                    totalFee: entry.totalFee,
+                    clubIndividualFeePaidAt: entry.clubIndividualFeePaidAt,
+                    organizerPostPayApprovedAt: entry.organizerPostPayApprovedAt,
+                    organizerManualPaidAt: entry.organizerManualPaidAt,
+                    checkoutSessions: entry.checkoutSessions.map((s) => ({ status: s.status })),
+                  };
+                  const showPostPayApprove = canApproveOrganizerPostPay(feeInput);
+                  const showPostPayRevoke = canRevokeOrganizerPostPay(feeInput);
+                  const showManualPayment = canRecordOrganizerManualPayment(feeInput);
+                  const StatusIcon =
+                    paymentLabel.includes("無効") || paymentLabel.includes("異議")
+                      ? AlertTriangle
+                      : paymentLabel.includes("完了") || paymentLabel.includes("不要")
+                        ? CheckCircle2
+                        : Clock;
+                  const statusColor =
+                    paymentLabel.includes("無効")
+                      ? "text-red-600 dark:text-red-400"
+                      : paymentLabel.includes("異議")
+                        ? "text-amber-600 dark:text-amber-400"
+                        : paymentLabel.includes("完了") || paymentLabel.includes("不要")
+                          ? "text-emerald-600"
+                          : "text-gray-500";
 
                   return (
                     <div
@@ -468,8 +482,8 @@ export default async function CompetitionEntriesPage({
                         <div className="text-right text-sm text-gray-600 dark:text-gray-300">
                           <p className="font-medium">参加費: ¥{entry.totalFee.toLocaleString()}</p>
                           <div className="mt-2 flex items-center gap-2 justify-end">
-                            <StatusIcon className={`h-4 w-4 ${paymentStatus.color}`} />
-                            <span>{paymentStatus.label}</span>
+                            <StatusIcon className={`h-4 w-4 ${statusColor}`} />
+                            <span>{paymentLabel}</span>
                           </div>
                           <div className="mt-2 text-xs text-gray-500">
                             {entry.user.email}
@@ -477,7 +491,31 @@ export default async function CompetitionEntriesPage({
                           <div className="text-xs text-gray-500">
                             {entry.user.contact?.phoneNumber}
                           </div>
-                          <div className="mt-3">
+                          <div className="mt-3 flex flex-col items-end gap-2">
+                            {showPostPayApprove ? (
+                              <CompetitionEntryPostPayActions
+                                competitionId={competition.id}
+                                entryId={entry.id}
+                                mode="approve"
+                                fullName={`${entry.user.profile?.familyName ?? ""} ${entry.user.profile?.givenName ?? ""}`.trim()}
+                              />
+                            ) : null}
+                            {showManualPayment ? (
+                              <CompetitionEntryPostPayActions
+                                competitionId={competition.id}
+                                entryId={entry.id}
+                                mode="manual"
+                                fullName={`${entry.user.profile?.familyName ?? ""} ${entry.user.profile?.givenName ?? ""}`.trim()}
+                              />
+                            ) : null}
+                            {showPostPayRevoke ? (
+                              <CompetitionEntryPostPayActions
+                                competitionId={competition.id}
+                                entryId={entry.id}
+                                mode="revoke"
+                                fullName={`${entry.user.profile?.familyName ?? ""} ${entry.user.profile?.givenName ?? ""}`.trim()}
+                              />
+                            ) : null}
                             <CompetitionEntryAdminActions
                               competitionId={competition.id}
                               entryId={entry.id}

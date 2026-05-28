@@ -29,6 +29,7 @@ import { stripe } from "@/lib/stripe";
 import { buildEntryCompletionReceipt } from "@/lib/entryCompletionReceipt";
 import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
+import { isEntryFeeSettled } from "@/lib/entryOrganizerPostPay";
 import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
 import {
@@ -581,18 +582,32 @@ export default async function CompetitionEntryPage({
               .filter((item) => item.eventId)
           : [],
         paymentStatus:
-          isEntryCheckoutPaidForEligibility(latestCheckout?.status) ||
           existingEntry.totalFee === 0 ||
-          Boolean(existingEntry.clubIndividualFeePaidAt)
+          isEntryFeeSettled({
+            status: existingEntry.status,
+            totalFee: existingEntry.totalFee,
+            clubIndividualFeePaidAt: existingEntry.clubIndividualFeePaidAt,
+            organizerManualPaidAt: existingEntry.organizerManualPaidAt,
+            checkoutSessions: existingEntry.checkoutSessions.map((s) => ({ status: s.status })),
+          })
             ? ("PAID" as const)
             : ("UNPAID" as const),
       }
     : null;
 
   const clubIndividualBulkPaid = Boolean(existingEntry?.clubIndividualFeePaidAt);
-  const checkoutPaidLike =
-    isEntryCheckoutPaidForEligibility(latestCheckout?.status) ||
-    clubIndividualBulkPaid;
+  const entryFeeSettled = existingEntry
+    ? isEntryFeeSettled({
+        status: existingEntry.status,
+        totalFee: existingEntry.totalFee,
+        clubIndividualFeePaidAt: existingEntry.clubIndividualFeePaidAt,
+        organizerManualPaidAt: existingEntry.organizerManualPaidAt,
+        checkoutSessions: existingEntry.checkoutSessions.map((s) => ({ status: s.status })),
+      })
+    : false;
+  const postPayApprovedPendingPayment = Boolean(
+    existingEntry?.organizerPostPayApprovedAt && !entryFeeSettled
+  );
 
   const deferredClubPaySlot =
     existingEntry?.clubId &&
@@ -609,13 +624,14 @@ export default async function CompetitionEntryPage({
         })
       : null;
   const clubBulkSettlementPending = Boolean(
-    deferredClubPaySlot && !clubIndividualBulkPaid && !checkoutPaidLike
+    deferredClubPaySlot && !clubIndividualBulkPaid && !entryFeeSettled
   );
   const awaitingDbPaymentConfirmation = Boolean(
     existingEntry &&
       existingEntry.status === "SUBMITTED" &&
       existingEntry.totalFee > 0 &&
-      !checkoutPaidLike &&
+      !entryFeeSettled &&
+      !postPayApprovedPendingPayment &&
       latestCheckout?.status !== "DISPUTE_LOST"
   );
   const unpaidContentLocked = awaitingDbPaymentConfirmation;
@@ -628,7 +644,7 @@ export default async function CompetitionEntryPage({
     existingEntry &&
     existingEntry.status === "SUBMITTED" &&
     existingEntry.totalFee > 0 &&
-    !checkoutPaidLike &&
+    !entryFeeSettled &&
     !clubIndividualBulkPaid &&
     latestCheckout?.status !== "DISPUTE_LOST"
   ) {
@@ -728,6 +744,8 @@ export default async function CompetitionEntryPage({
         totalFee: existingEntry.totalFee,
         checkoutSessions: existingEntry.checkoutSessions.map((s) => ({ status: s.status })),
         clubIndividualFeePaidAt: existingEntry.clubIndividualFeePaidAt,
+        organizerPostPayApprovedAt: existingEntry.organizerPostPayApprovedAt,
+        organizerManualPaidAt: existingEntry.organizerManualPaidAt,
       })
     : null;
 
@@ -782,6 +800,8 @@ export default async function CompetitionEntryPage({
           status: existingEntry.status,
           totalFee: existingEntry.totalFee,
           clubIndividualFeePaidAt: existingEntry.clubIndividualFeePaidAt,
+          organizerPostPayApprovedAt: existingEntry.organizerPostPayApprovedAt,
+          organizerManualPaidAt: existingEntry.organizerManualPaidAt,
           items: existingEntry.items,
           snapshot: existingEntry.snapshot,
           checkoutSessions: existingEntry.checkoutSessions,
@@ -906,6 +926,17 @@ export default async function CompetitionEntryPage({
             <p className="font-medium text-foreground">個人参加費はクラブ一括請求（締切後）の対象です</p>
             <p className="mt-1.5 text-muted-foreground">
               カード決済は不要です。エントリー締切後に主催者が請求を確定し、クラブがチーム参加費とあわせて支払うとエントリーが成立します。それまでは内容の変更はできません。
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {postPayApprovedPendingPayment ? (
+        <Card className="border-emerald-200/80 bg-emerald-50/60 dark:border-emerald-900/50 dark:bg-emerald-950/25">
+          <CardContent className="px-4 py-3 text-sm leading-relaxed text-emerald-950 dark:text-emerald-100">
+            <p className="font-medium text-foreground">エントリーは成立しています（参加費は後払い）</p>
+            <p className="mt-1.5 text-muted-foreground">
+              主催者により後払いが承認されました。受付内容の確認・変更申請は可能です。カード決済は受付票の「決済へ進む」からお支払いいただけます。
             </p>
           </CardContent>
         </Card>

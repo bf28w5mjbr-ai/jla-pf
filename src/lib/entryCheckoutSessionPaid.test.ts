@@ -12,9 +12,21 @@ describe("competitionEntryEligibleForStartListWhere", () => {
       OR: [
         { totalFee: { lte: 0 } },
         { clubIndividualFeePaidAt: { not: null } },
+        { organizerManualPaidAt: { not: null } },
+        { organizerPostPayApprovedAt: { not: null } },
         competitionEntryPaidCheckoutWhere,
       ],
     });
+  });
+
+  it("organizerPostPayApprovedAt のみで isEntryEstablished と整合する成立例", () => {
+    const entry = {
+      status: "SUBMITTED" as const,
+      totalFee: 1000,
+      checkoutSessions: [],
+      organizerPostPayApprovedAt: new Date(),
+    };
+    expect(isEntryEstablished(entry)).toBe(true);
   });
 
   it("clubIndividualFeePaidAt のみで isEntryEstablished と整合する成立例", () => {

@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/server/db";
 import CompetitionHostInviteEntryPanel from "@/components/admin/CompetitionHostInviteEntryPanel";
+import CompetitionEntryPostPayActions from "@/components/admin/CompetitionEntryPostPayActions";
+import CompetitionUnpaidIntentBulkMailPanel from "@/components/admin/CompetitionUnpaidIntentBulkMailPanel";
 import {
   buildClubPrepaidIndividualPaymentOwnerId,
   buildTeamEntryPaymentOwnerId,
@@ -19,6 +21,10 @@ import {
   sortEventsForEntryExport,
 } from "@/lib/competitionEntryExportOrdering";
 import { isEntryEstablished } from "@/lib/entryFinalization";
+import {
+  hasOrganizerPostPayApproval,
+  isEntryFeeSettled,
+} from "@/lib/entryOrganizerPostPay";
 import { isPlayerRegistrationQualificationKind } from "@/lib/qualificationRegistrationKinds";
 import {
   buildIndividualEventCircleCells,
@@ -100,9 +106,16 @@ type IndividualEntryListRow = {
 };
 
 type UnpaidIndividualEntryListRow = IndividualEntryListRow & {
+  entryId: string;
   paymentStatusLabel: string;
   attemptedAtLabel: string;
   amountLabel: string;
+};
+
+type PostPayPendingEntryListRow = IndividualEntryListRow & {
+  entryId: string;
+  amountLabel: string;
+  approvedAtLabel: string;
 };
 
 const yenFormatter = new Intl.NumberFormat("ja-JP", {
@@ -306,7 +319,7 @@ function IndividualEntriesResponsive({
 function UnpaidIndividualEntriesTableDesktop({ rows }: { rows: UnpaidIndividualEntryListRow[] }) {
   return (
     <div className="hidden overflow-x-auto rounded-xl border border-amber-200/80 shadow-sm md:block dark:border-amber-900/60">
-      <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+      <table className="w-full min-w-[640px] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-amber-200/80 bg-amber-50/70 dark:border-amber-900/60 dark:bg-amber-950/30">
             <th className="min-w-[8rem] whitespace-nowrap px-3 py-3 text-xs font-semibold text-muted-foreground">
@@ -389,10 +402,47 @@ function UnpaidIndividualEntriesCardsMobile({ rows }: { rows: UnpaidIndividualEn
   );
 }
 
+function UnpaidIndividualEntriesRescuePanel({
+  competitionId,
+  rows,
+}: {
+  competitionId: string;
+  rows: UnpaidIndividualEntryListRow[];
+}) {
+  return (
+    <details className="rounded-lg border border-dashed border-border bg-muted/10 px-3 py-2">
+      <summary className="cursor-pointer text-xs font-medium text-foreground">
+        救済（通常は不要）
+      </summary>
+      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+        通常は上の「未決済者への出場意思確認メール」で対応してください。メール未達や電話対応などで個別に後払い承認が必要な場合のみ使います。
+      </p>
+      <ul className="mt-3 space-y-2">
+        {rows.map((row) => (
+          <li
+            key={row.key}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs"
+          >
+            <span className="font-medium text-foreground">{row.fullName}</span>
+            <CompetitionEntryPostPayActions
+              competitionId={competitionId}
+              entryId={row.entryId}
+              mode="approve"
+              fullName={row.fullName}
+            />
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 function UnpaidIndividualEntriesResponsive({
+  competitionId,
   rows,
   emptyMessage,
 }: {
+  competitionId: string;
   rows: UnpaidIndividualEntryListRow[];
   emptyMessage: string;
 }) {
@@ -403,6 +453,118 @@ function UnpaidIndividualEntriesResponsive({
     <>
       <UnpaidIndividualEntriesCardsMobile rows={rows} />
       <UnpaidIndividualEntriesTableDesktop rows={rows} />
+      <UnpaidIndividualEntriesRescuePanel competitionId={competitionId} rows={rows} />
+    </>
+  );
+}
+
+function PostPayPendingEntriesTableDesktop({
+  competitionId,
+  rows,
+}: {
+  competitionId: string;
+  rows: PostPayPendingEntryListRow[];
+}) {
+  return (
+    <div className="hidden overflow-x-auto rounded-xl border border-emerald-200/80 shadow-sm md:block dark:border-emerald-900/60">
+      <table className="w-full min-w-[820px] border-collapse text-left text-sm">
+        <thead>
+          <tr className="border-b border-emerald-200/80 bg-emerald-50/70 dark:border-emerald-900/60 dark:bg-emerald-950/30">
+            <th className="min-w-[8rem] px-3 py-3 text-xs font-semibold text-muted-foreground">氏名</th>
+            <th className="min-w-[7rem] px-3 py-3 text-xs font-semibold text-muted-foreground">所属クラブ</th>
+            <th className="min-w-[14rem] px-3 py-3 text-xs font-semibold text-muted-foreground">出場種目</th>
+            <th className="whitespace-nowrap px-3 py-3 text-xs font-semibold text-muted-foreground">承認日時</th>
+            <th className="whitespace-nowrap px-3 py-3 text-right text-xs font-semibold text-muted-foreground">金額</th>
+            <th className="whitespace-nowrap px-3 py-3 text-right text-xs font-semibold text-muted-foreground">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key} className="border-b border-border last:border-0 odd:bg-muted/20">
+              <td className="px-3 py-2.5 font-medium">{row.fullName}</td>
+              <td className="px-3 py-2.5 text-xs">{row.clubName}</td>
+              <td className="px-3 py-2.5 text-xs">{row.eventsLabel}</td>
+              <td className="px-3 py-2.5 text-xs tabular-nums text-muted-foreground">{row.approvedAtLabel}</td>
+              <td className="px-3 py-2.5 text-right text-xs tabular-nums">{row.amountLabel}</td>
+              <td className="px-3 py-2.5">
+                <div className="flex flex-wrap justify-end gap-2">
+                  <CompetitionEntryPostPayActions
+                    competitionId={competitionId}
+                    entryId={row.entryId}
+                    mode="manual"
+                    fullName={row.fullName}
+                  />
+                  <CompetitionEntryPostPayActions
+                    competitionId={competitionId}
+                    entryId={row.entryId}
+                    mode="revoke"
+                    fullName={row.fullName}
+                  />
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PostPayPendingEntriesCardsMobile({
+  competitionId,
+  rows,
+}: {
+  competitionId: string;
+  rows: PostPayPendingEntryListRow[];
+}) {
+  return (
+    <div className="grid gap-3 md:hidden">
+      {rows.map((row) => (
+        <div
+          key={row.key}
+          className="rounded-xl border border-emerald-200/80 bg-card p-4 shadow-sm dark:border-emerald-900/60"
+        >
+          <p className="text-sm font-semibold">{row.fullName}</p>
+          <p className="mt-1 text-xs text-muted-foreground">所属: {row.clubName}</p>
+          <p className="mt-2 text-xs">{row.eventsLabel}</p>
+          <p className="mt-2 text-xs text-muted-foreground">承認: {row.approvedAtLabel}</p>
+          <p className="mt-1 text-xs">金額: {row.amountLabel}</p>
+          <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
+            <CompetitionEntryPostPayActions
+              competitionId={competitionId}
+              entryId={row.entryId}
+              mode="manual"
+              fullName={row.fullName}
+            />
+            <CompetitionEntryPostPayActions
+              competitionId={competitionId}
+              entryId={row.entryId}
+              mode="revoke"
+              fullName={row.fullName}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PostPayPendingEntriesResponsive({
+  competitionId,
+  rows,
+  emptyMessage,
+}: {
+  competitionId: string;
+  rows: PostPayPendingEntryListRow[];
+  emptyMessage: string;
+}) {
+  if (rows.length === 0) {
+    return <EntriesEmpty message={emptyMessage} />;
+  }
+  return (
+    <>
+      <PostPayPendingEntriesCardsMobile competitionId={competitionId} rows={rows} />
+      <PostPayPendingEntriesTableDesktop competitionId={competitionId} rows={rows} />
     </>
   );
 }
@@ -466,6 +628,8 @@ export default async function CompetitionEntriesTabContent({
       status: true,
       totalFee: true,
       clubIndividualFeePaidAt: true,
+      organizerPostPayApprovedAt: true,
+      organizerManualPaidAt: true,
       createdAt: true,
       club: { select: { name: true } },
       user: {
@@ -575,6 +739,8 @@ export default async function CompetitionEntriesTabContent({
     status: entry.status,
     totalFee: entry.totalFee,
     clubIndividualFeePaidAt: entry.clubIndividualFeePaidAt,
+    organizerPostPayApprovedAt: entry.organizerPostPayApprovedAt,
+    organizerManualPaidAt: entry.organizerManualPaidAt,
     checkoutSessions: entry.checkoutSessions.map((s) => ({ status: s.status })),
   });
 
@@ -594,6 +760,7 @@ export default async function CompetitionEntriesTabContent({
 
   const paidIndividualListRows: IndividualEntryListRow[] = [];
   const unpaidIndividualListRows: UnpaidIndividualEntryListRow[] = [];
+  const postPayPendingListRows: PostPayPendingEntryListRow[] = [];
   const individualCsvRows: string[][] = [];
 
   const individualCsvEvents = programOrderedEvents.filter((e) => e.type === "INDIVIDUAL");
@@ -614,20 +781,41 @@ export default async function CompetitionEntriesTabContent({
       eventsLabel,
     };
 
-    if (isEntryEstablished(entryEstablishedInput(entry))) {
-      paidIndividualListRows.push(baseRow);
-    } else if (isUnpaidIndividualEntryAttempt(entry)) {
+    const establishedInput = entryEstablishedInput(entry);
+    const established = isEntryEstablished(establishedInput);
+
+    if (
+      established &&
+      hasOrganizerPostPayApproval(entry) &&
+      !isEntryFeeSettled(establishedInput)
+    ) {
+      postPayPendingListRows.push({
+        ...baseRow,
+        entryId: entry.id,
+        amountLabel: formatYen(entry.totalFee),
+        approvedAtLabel: entry.organizerPostPayApprovedAt
+          ? formatAttemptedAt(entry.organizerPostPayApprovedAt)
+          : "—",
+      });
+    }
+
+    if (isUnpaidIndividualEntryAttempt(entry)) {
       const latestCheckout = entry.checkoutSessions[0];
       unpaidIndividualListRows.push({
         ...baseRow,
+        entryId: entry.id,
         paymentStatusLabel: unpaidCheckoutStatusLabel(latestCheckout?.status),
         attemptedAtLabel: formatAttemptedAt(latestCheckout?.createdAt ?? entry.createdAt),
         amountLabel: formatYen(latestCheckout?.amount ?? entry.totalFee),
       });
       return;
-    } else {
+    }
+
+    if (!established) {
       return;
     }
+
+    paidIndividualListRows.push(baseRow);
 
     const liveEventIds = new Set(getLiveIndividualEventIdsFromEntry(entry.items));
     const alignmentStatuses = entry.participantStatuses.map((row) => ({
@@ -825,11 +1013,46 @@ export default async function CompetitionEntriesTabContent({
       requiresEntryTime: e.requiresEntryTime,
     }));
 
+  const latestIntentCampaign = await prisma.competitionUnpaidEntryIntentCampaign.findFirst({
+    where: { competitionId: competition.id },
+    orderBy: { sentAt: "desc" },
+    select: {
+      id: true,
+      sentAt: true,
+      responseDeadlineAt: true,
+      tokens: {
+        select: { choice: true, respondedAt: true, deadlineDnsAppliedAt: true },
+      },
+    },
+  });
+
+  const initialIntentCampaign = latestIntentCampaign
+    ? {
+        id: latestIntentCampaign.id,
+        sentAt: latestIntentCampaign.sentAt.toISOString(),
+        responseDeadlineAt: latestIntentCampaign.responseDeadlineAt.toISOString(),
+        totalTokens: latestIntentCampaign.tokens.length,
+        participateCount: latestIntentCampaign.tokens.filter((t) => t.choice === "PARTICIPATE")
+          .length,
+        withdrawCount: latestIntentCampaign.tokens.filter((t) => t.choice === "WITHDRAW").length,
+        deadlineDnsCount: latestIntentCampaign.tokens.filter((t) => t.deadlineDnsAppliedAt != null)
+          .length,
+        pendingCount: latestIntentCampaign.tokens.filter(
+          (t) => t.respondedAt == null && t.deadlineDnsAppliedAt == null
+        ).length,
+      }
+    : null;
+
   return (
     <div className="min-w-0 space-y-8">
       <CompetitionHostInviteEntryPanel
         competitionId={competitionId}
         individualEvents={individualEventOptions}
+      />
+
+      <CompetitionUnpaidIntentBulkMailPanel
+        competitionId={competitionId}
+        initialCampaign={initialIntentCampaign}
       />
 
       <Card className="overflow-hidden border-border shadow-sm">
@@ -890,8 +1113,26 @@ export default async function CompetitionEntriesTabContent({
                 </p>
               </div>
               <UnpaidIndividualEntriesResponsive
+                competitionId={competition.id}
                 rows={unpaidIndividualListRows}
                 emptyMessage="未決済のエントリー試行はありません。"
+              />
+            </section>
+          </div>
+          <div className="border-t border-border pt-5">
+            <section className="space-y-3" aria-labelledby="post-pay-pending-entries-title">
+              <div className="space-y-1">
+                <h3 id="post-pay-pending-entries-title" className="text-sm font-semibold text-foreground">
+                  後払い承認済み（入金待ち）
+                </h3>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  エントリーは成立していますが参加費は未入金です。手動入金の記録、または参加者のカード決済で入金済みにできます。
+                </p>
+              </div>
+              <PostPayPendingEntriesResponsive
+                competitionId={competition.id}
+                rows={postPayPendingListRows}
+                emptyMessage="後払い承認済みで入金待ちのエントリーはありません。"
               />
             </section>
           </div>
