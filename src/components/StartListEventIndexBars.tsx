@@ -990,6 +990,17 @@ export default function StartListEventIndexBars({
     parseRoundCountDraft,
   ]);
 
+  const tabRowCountsAllDays = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const tab of scheduleTabs) counts[tab.id] = 0;
+    for (const tabMap of Object.values(rowOrderByDayAndTab)) {
+      for (const [tabId, keys] of Object.entries(tabMap)) {
+        counts[tabId] = (counts[tabId] ?? 0) + keys.length;
+      }
+    }
+    return counts;
+  }, [rowOrderByDayAndTab, scheduleTabs]);
+
   if (order.length === 0) {
     return (
       <Card className="border-border/80 shadow-sm">
@@ -1021,17 +1032,6 @@ export default function StartListEventIndexBars({
       }
     />
   ) : null;
-
-  const tabRowCountsAllDays = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const tab of scheduleTabs) counts[tab.id] = 0;
-    for (const tabMap of Object.values(rowOrderByDayAndTab)) {
-      for (const [tabId, keys] of Object.entries(tabMap)) {
-        counts[tabId] = (counts[tabId] ?? 0) + keys.length;
-      }
-    }
-    return counts;
-  }, [rowOrderByDayAndTab, scheduleTabs]);
 
   const scheduleCard = (
     <StartListScheduleCard

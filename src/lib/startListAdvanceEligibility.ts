@@ -4,6 +4,11 @@ import { loadStartListSnapshotPayloadLoose, resolveParticipantMarshalHeat } from
 import { getRoundDataFromSnapshot } from "@/lib/heatMarshalFromSnapshot";
 import type { StartListSnapshotPayload } from "@/lib/startListSnapshot";
 import { prisma } from "@/server/db";
+import {
+  marshalIndividualKey,
+  marshalTeamLegacyKey,
+  resultParticipantKeyFromParts,
+} from "@/lib/dayOpsParticipantKeys";
 
 /**
  * 次ラ進出の考え方（シンプル版）
@@ -39,11 +44,7 @@ export function dedupeOfficialResultRowsForAdvance<T extends DedupeOfficialResul
   const byKey = new Map<string, T>();
   for (const row of rows) {
     const key =
-      row.entryType === "INDIVIDUAL" && row.competitionEntryId
-        ? `I:${row.competitionEntryId}`
-        : row.entryType === "TEAM" && row.teamEntryId
-          ? `T:${row.teamEntryId}`
-          : "";
+      resultParticipantKeyFromParts(row.entryType, row.competitionEntryId, row.teamEntryId) ?? "";
     if (!key) continue;
     const prev = byKey.get(key);
     if (!prev) {
@@ -201,7 +202,7 @@ export function isOfficialRowEligibleForNextRoundAdvance(
   if (row.entryType === "INDIVIDUAL") {
     const entryId = row.competitionEntryId ?? row.competitionEntry?.id;
     if (!entryId) return false;
-    const key = `I:${entryId}`;
+    const key = marshalIndividualKey(entryId);
     const st = latestStatusByKey.get(key) ?? "PENDING";
     if (TERMINAL_DAY_OPS_STATUSES.has(st)) return false;
     if (st !== "CALLED") return false;
@@ -214,7 +215,7 @@ export function isOfficialRowEligibleForNextRoundAdvance(
   }
   const teamId = row.teamEntryId ?? row.teamEntry?.id;
   if (!teamId) return false;
-  const key = `T:${teamId}`;
+  const key = marshalTeamLegacyKey(teamId);
   const st = latestStatusByKey.get(key) ?? "PENDING";
   if (TERMINAL_DAY_OPS_STATUSES.has(st)) return false;
   if (st !== "CALLED") return false;

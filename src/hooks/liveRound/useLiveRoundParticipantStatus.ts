@@ -4,6 +4,7 @@ import {
   buildParticipantStatusRecordForRound,
   type ParticipantStatusRowForScope,
 } from "@/lib/competitionParticipantStatusScope";
+import { marshalStatusKeyFromParts } from "@/lib/dayOpsParticipantKeys";
 
 export type LiveRoundParticipantStatusRow = {
   participantType: string;
@@ -25,13 +26,12 @@ export function buildStatusUpdatedAtByKey(
   for (const row of participantStatusRows) {
     if (row.marshalRound !== marshalRoundForDisplay) continue;
     const pType = row.participantType === "TEAM" ? "TEAM" : "INDIVIDUAL";
-    const teamMemberUserId = row.teamMemberUserId;
-    const key =
-      pType === "INDIVIDUAL"
-        ? `I:${row.competitionEntryId ?? ""}`
-        : teamMemberUserId
-          ? `T:${row.teamEntryId ?? ""}:${teamMemberUserId}`
-          : `T:${row.teamEntryId ?? ""}`;
+    const key = marshalStatusKeyFromParts(
+      pType,
+      row.competitionEntryId,
+      row.teamEntryId,
+      row.teamMemberUserId
+    );
     if (!key) continue;
     const ts = row.updatedAt instanceof Date ? row.updatedAt : new Date(row.updatedAt);
     if (!Number.isFinite(ts.getTime())) continue;

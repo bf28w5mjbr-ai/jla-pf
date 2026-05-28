@@ -10,18 +10,22 @@ import {
   dayOpsTerminalStatusBadgeClass,
   isDayOpsTerminalParticipantStatus,
 } from "@/lib/dayOpsParticipantStatusDisplay";
+import {
+  marshalIndividualKey,
+  marshalTeamLegacyKey,
+  resultParticipantKeyFromParts,
+} from "@/lib/dayOpsParticipantKeys";
+import {
+  foldTeamMemberStatuses,
+  isCalledLikeStatus,
+  isTeamFullyCalled,
+} from "@/lib/dayOpsTeamStatus";
 import { cn } from "@/lib/utils";
 import { sexLabelJa } from "@/lib/sexLabelJa";
 import type { IndividualItem, SnapshotParticipant, TeamItem } from "./types";
 
 export function foldTeamMarshalStatuses(rows: HeatMarshalParticipant[]): string {
-  if (rows.length === 0) return "PENDING";
-  const s = rows.map((r) => r.status);
-  if (s.some((x) => x === "DSQ")) return "DSQ";
-  if (s.some((x) => x === "DNS" || x === "WITHDRAWN")) return "DNS";
-  if (s.every((x) => x === "CALLED" || x === "CHECKED_IN")) return "CALLED";
-  if (s.some((x) => x === "MARSHAL_ABSENT")) return "MARSHAL_ABSENT";
-  return "PENDING";
+  return foldTeamMemberStatuses(rows.map((r) => r.status));
 }
 
 export function applyMarshalDraftOpsToHeats(
@@ -56,19 +60,15 @@ export function foldTeamServerStatusFromMemberKeys(
   statusByKey: Record<string, string> | undefined
 ): string | undefined {
   if (!statusByKey) return undefined;
-  const prefix = `T:${teamEntryId}:`;
+  const prefix = `${marshalTeamLegacyKey(teamEntryId)}:`;
   const statuses: string[] = [];
   let legacy: string | undefined;
   for (const [k, v] of Object.entries(statusByKey)) {
-    if (k === `T:${teamEntryId}`) legacy = v;
+    if (k === marshalTeamLegacyKey(teamEntryId)) legacy = v;
     else if (k.startsWith(prefix)) statuses.push(v);
   }
   if (statuses.length > 0) {
-    if (statuses.some((s) => s === "DSQ")) return "DSQ";
-    if (statuses.some((s) => s === "DNS" || s === "WITHDRAWN")) return "DNS";
-    if (statuses.every((s) => s === "CALLED" || s === "CHECKED_IN")) return "CALLED";
-    if (statuses.some((s) => s === "MARSHAL_ABSENT")) return "MARSHAL_ABSENT";
-    return "PENDING";
+    return foldTeamMemberStatuses(statuses);
   }
   return legacy;
 }
@@ -170,7 +170,7 @@ export function countCalledInMarshalHeat(apiHeat: HeatMarshalHeatRow | undefined
   let indiv = 0;
   for (const p of apiHeat.participants) {
     if (p.participantType === "INDIVIDUAL") {
-      if (p.status === "CALLED") indiv += 1;
+      if (isCalledLikeStatus(p.status)) indiv += 1;
     } else if (p.teamEntryId) {
       const list = byTeam.get(p.teamEntryId) ?? [];
       list.push(p);
@@ -179,19 +179,13 @@ export function countCalledInMarshalHeat(apiHeat: HeatMarshalHeatRow | undefined
   }
   let teams = 0;
   for (const [, rows] of byTeam) {
-    if (rows.length > 0 && rows.every((r) => r.status === "CALLED")) teams += 1;
+    if (isTeamFullyCalled(rows.map((r) => r.status))) teams += 1;
   }
   return indiv + teams;
 }
 
 export function participantKeyFromResultRow(r: HeatResultCaptureRow): string | null {
-  if (r.entryType === "INDIVIDUAL" && r.competitionEntryId) {
-    return `I:${r.competitionEntryId}`;
-  }
-  if (r.entryType === "TEAM" && r.teamEntryId) {
-    return `T:${r.teamEntryId}`;
-  }
-  return null;
+  return resultParticipantKeyFromParts(r.entryType, r.competitionEntryId, r.teamEntryId);
 }
 
 export function marshalCalledParticipantKeys(apiHeat: HeatMarshalHeatRow | undefined): Set<string> {
@@ -200,8 +194,8 @@ export function marshalCalledParticipantKeys(apiHeat: HeatMarshalHeatRow | undef
   const byTeam = new Map<string, HeatMarshalParticipant[]>();
   for (const p of apiHeat.participants) {
     if (p.participantType === "INDIVIDUAL") {
-      if (p.status === "CALLED" && p.competitionEntryId) {
-        keys.add(`I:${p.competitionEntryId}`);
+      if (isCalledLikeStatus(p.status) && p.competitionEntryId) {
+        keys.add(marshalIndividualKey(p.competitionEntryId));
       }
     } else if (p.teamEntryId) {
       const list = byTeam.get(p.teamEntryId) ?? [];
@@ -210,8 +204,8 @@ export function marshalCalledParticipantKeys(apiHeat: HeatMarshalHeatRow | undef
     }
   }
   for (const [tid, rows] of byTeam) {
-    if (rows.length > 0 && rows.every((r) => r.status === "CALLED")) {
-      keys.add(`T:${tid}`);
+    if (isTeamFullyCalled(rows.map((r) => r.status))) {
+      keys.add(marshalTeamLegacyKey(tid));
     }
   }
   return keys;
@@ -334,7 +328,7 @@ export function HeatAdvanceQuotaLabel({
 /** スタートリスト上の氏名・チーム名の色（マーシャル状態） */
 export function marshalDisplayClass(status: string | undefined): string {
   if (!status) return "";
-  if (status === "CALLED") {
+  if (isCalledLikeStatus(status)) {
     return "text-emerald-700 dark:text-emerald-400";
   }
   if (

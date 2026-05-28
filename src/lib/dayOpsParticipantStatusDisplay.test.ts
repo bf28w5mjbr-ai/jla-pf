@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DAY_OPS_STATUS_MARSHAL_ABSENT,
+  buildParticipantDayOpsStatusByKey,
   effectiveDayOpsStatusForMarshalDisplay,
   resolveHeatLaneDayOpsDisplayStatus,
 } from "./dayOpsParticipantStatusDisplay";
@@ -37,5 +38,20 @@ describe("resolveHeatLaneDayOpsDisplayStatus", () => {
 
   it("終了系はサーバー優先", () => {
     expect(resolveHeatLaneDayOpsDisplayStatus({ status: "PENDING" }, "DSQ")).toBe("DSQ");
+  });
+});
+
+describe("buildParticipantDayOpsStatusByKey", () => {
+  it("TEAM の teamMemberUserId が null の行はレガシーキーで保持する", () => {
+    const out = buildParticipantDayOpsStatusByKey([
+      {
+        participantType: "TEAM",
+        competitionEntryId: null,
+        teamEntryId: "team-1",
+        teamMemberUserId: null,
+        status: "CALLED",
+      },
+    ]);
+    expect(out["T:team-1"]).toBe("CALLED");
   });
 });

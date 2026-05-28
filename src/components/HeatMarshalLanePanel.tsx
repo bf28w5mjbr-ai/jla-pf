@@ -9,9 +9,15 @@ import {
   dayOpsParticipantStatusLabelJa,
   isDayOpsTerminalParticipantStatus,
 } from "@/lib/dayOpsParticipantStatusDisplay";
+import { isCalledLikeStatus } from "@/lib/dayOpsTeamStatus";
 import { postHeatMarshalComplete, postParticipantStatusesBulk } from "@/lib/heatMarshalApi";
 import { isNfcScanSupportedSync, startNfcScanSession } from "@/lib/nfc/nfcScanSession";
 import { cn } from "@/lib/utils";
+import {
+  marshalIndividualKey,
+  marshalTeamLegacyKey,
+  marshalTeamMemberKey,
+} from "@/lib/dayOpsParticipantKeys";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,12 +52,12 @@ type MarshalRoundKey = "HEAT" | "SEMI" | "FINAL";
 
 export function marshalParticipantKey(p: HeatMarshalParticipant) {
   if (p.participantType === "INDIVIDUAL") {
-    return `I:${p.competitionEntryId}`;
+    return marshalIndividualKey(String(p.competitionEntryId));
   }
   if (p.teamMemberUserId) {
-    return `T:${p.teamEntryId}:${p.teamMemberUserId}`;
+    return marshalTeamMemberKey(String(p.teamEntryId), p.teamMemberUserId);
   }
-  return `T:${p.teamEntryId}`;
+  return marshalTeamLegacyKey(String(p.teamEntryId));
 }
 
 type Props = {
@@ -375,7 +381,7 @@ export function HeatMarshalLanePanel({
             <ul className={compact ? "space-y-1.5" : "space-y-2"} role="list">
               {participants.map((p) => {
                 const pKey = marshalParticipantKey(p);
-                const done = p.status === "CALLED";
+                const done = isCalledLikeStatus(p.status);
                 const isTerminal = isDayOpsTerminalParticipantStatus(p.status);
                 const globallyBusy = marshalPendingKey !== null || marshalBulkSubmitting;
                 const rowBusy = marshalPendingKey === pKey;

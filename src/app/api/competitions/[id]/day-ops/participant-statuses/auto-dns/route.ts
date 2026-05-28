@@ -19,6 +19,10 @@ import {
   toOfficialMarshalParticipantRef,
 } from "@/lib/officialResultDsqSync";
 import { START_LIST_STEP1_REQUIRED_MESSAGE } from "@/lib/startListStep1Messages";
+import {
+  marshalStatusKeyFromParts,
+  resultParticipantKeyFromParts,
+} from "@/lib/dayOpsParticipantKeys";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -35,11 +39,9 @@ const autoDsqSchema = z.object({
 type AutoDsqMode = "pendingOnly" | "calledOnly" | "pendingOrCalled";
 
 function marshalRefKey(ref: MarshalParticipantRef): string {
-  return ref.participantType === "INDIVIDUAL" && ref.competitionEntryId
-    ? `I:${ref.competitionEntryId}`
-    : ref.participantType === "TEAM" && ref.teamEntryId
-      ? `T:${ref.teamEntryId}`
-      : "";
+  return (
+    resultParticipantKeyFromParts(ref.participantType, ref.competitionEntryId, ref.teamEntryId) ?? ""
+  );
 }
 
 /** 既存 DB 行の status（無い場合は未マーシャル＝未召集扱い）が、このモードで DSQ 対象か */
@@ -176,13 +178,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
         const byKey = new Map<string, (typeof existingRows)[0]>();
         for (const row of existingRows) {
           const k =
-            row.participantType === "INDIVIDUAL" && row.competitionEntryId
-              ? `I:${row.competitionEntryId}`
-              : row.participantType === "TEAM" && row.teamEntryId
-                ? row.teamMemberUserId != null
-                  ? `T:${row.teamEntryId}:${row.teamMemberUserId}`
-                  : `T:${row.teamEntryId}`
-                : "";
+            marshalStatusKeyFromParts(
+              row.participantType,
+              row.competitionEntryId,
+              row.teamEntryId,
+              row.teamMemberUserId
+            ) ?? "";
           if (k) byKey.set(k, row);
         }
 
@@ -225,11 +226,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
           if (terminalStatus === "DSQ") {
             const offRef = toOfficialMarshalParticipantRef(ref);
             const offKey =
-              offRef.participantType === "INDIVIDUAL" && offRef.competitionEntryId
-                ? `I:${offRef.competitionEntryId}`
-                : offRef.participantType === "TEAM" && offRef.teamEntryId
-                  ? `T:${offRef.teamEntryId}`
-                  : "";
+              resultParticipantKeyFromParts(
+                offRef.participantType,
+                offRef.competitionEntryId,
+                offRef.teamEntryId
+              ) ?? "";
             if (offKey) dsqOfficialRefs.set(offKey, offRef);
           }
         }
@@ -324,11 +325,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
                   : { participantType: "INDIVIDUAL", competitionEntryId: null, teamEntryId: null };
             const offRef = toOfficialMarshalParticipantRef(ref);
             const offKey =
-              offRef.participantType === "INDIVIDUAL" && offRef.competitionEntryId
-                ? `I:${offRef.competitionEntryId}`
-                : offRef.participantType === "TEAM" && offRef.teamEntryId
-                  ? `T:${offRef.teamEntryId}`
-                  : "";
+              resultParticipantKeyFromParts(
+                offRef.participantType,
+                offRef.competitionEntryId,
+                offRef.teamEntryId
+              ) ?? "";
             if (!offKey || seen.has(offKey)) continue;
             seen.add(offKey);
             const sync = await syncOfficialDsqRowFromSnapshot(tx, {

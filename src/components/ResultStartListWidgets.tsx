@@ -9,6 +9,7 @@ import {
   isMarshalAbsentDisplayStatus,
   resolveHeatLaneDayOpsDisplayStatus,
 } from "@/lib/dayOpsParticipantStatusDisplay";
+import { isCalledLikeStatus } from "@/lib/dayOpsTeamStatus";
 import { cn } from "@/lib/utils";
 
 function rankForParticipant(
@@ -93,7 +94,7 @@ export function ResultStartListLaneCheckbox({
   const mergedStatus = resolveHeatLaneDayOpsDisplayStatus(p, serverDayOpsStatus);
   const isTerminal = Boolean(mergedStatus && isDayOpsTerminalParticipantStatus(mergedStatus));
   /** マーシャル GET の行のみで判定（ポールの CALLED だけでは有効にしない） */
-  const marshalReady = p.status === "CALLED";
+  const marshalReady = isCalledLikeStatus(p.status);
   const teamMissingMember =
     p.participantType === "TEAM" && !(p.teamMemberUserId && p.teamMemberUserId.trim());
   const globallyBusy = capturePendingKey !== null;

@@ -15,6 +15,7 @@ import { computeDescInputCalledBaselineInHeat } from "@/lib/marshalHeatCalledCou
 import { resolveParticipantInHeatForDayOps } from "@/lib/heatDayOpsResolveParticipantInHeat";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
 import { START_LIST_STEP1_REQUIRED_SHORT_MESSAGE } from "@/lib/startListStep1Messages";
+import { resultParticipantKeyFromParts } from "@/lib/dayOpsParticipantKeys";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -546,7 +547,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       });
 
       const keyOf = (r: (typeof rows)[number]) =>
-        r.entryType === "INDIVIDUAL" ? `I:${r.competitionEntryId}` : `T:${r.teamEntryId}`;
+        resultParticipantKeyFromParts(r.entryType, r.competitionEntryId, r.teamEntryId) ?? "";
       const byKey = new Map(rows.map((r) => [keyOf(r), r]));
 
       if (rows.length !== order.length) throw new Error("REORDER_INVALID_LENGTH");

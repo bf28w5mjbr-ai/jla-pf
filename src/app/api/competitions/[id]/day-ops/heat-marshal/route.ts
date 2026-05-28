@@ -28,6 +28,12 @@ import {
 } from "@/lib/marshalHeatOfficialResultGate";
 import { dayOpsServerTimingEnabled, formatDayOpsServerTiming } from "@/lib/dayOpsMetrics";
 import { START_LIST_STEP1_REQUIRED_MESSAGE } from "@/lib/startListStep1Messages";
+import {
+  marshalIndividualKey,
+  marshalTeamLegacyKey,
+  marshalTeamMemberKey,
+} from "@/lib/dayOpsParticipantKeys";
+import { fetchTeamMembersMapForTeamIds } from "@/lib/teamMarshalExpand";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -137,23 +143,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
     const teamMembersByTeamId = new Map<string, Array<{ userId: string; label: string }>>();
     if (teamIdsInRound.size > 0) {
-      const memberRows = await prisma.teamEntryMember.findMany({
-        where: { teamEntryId: { in: [...teamIdsInRound] } },
-        orderBy: { order: "asc" },
-        select: {
-          teamEntryId: true,
-          userId: true,
-          user: { select: { profile: { select: { familyName: true, givenName: true } } } },
-        },
-      });
-      for (const m of memberRows) {
-        const list = teamMembersByTeamId.get(m.teamEntryId) ?? [];
-        list.push({
-          userId: m.userId,
-          label: `${m.user.profile?.familyName ?? ""} ${m.user.profile?.givenName ?? ""}`.trim(),
-        });
-        teamMembersByTeamId.set(m.teamEntryId, list);
-      }
+      const members = await fetchTeamMembersMapForTeamIds(prisma, [...teamIdsInRound]);
+      for (const [teamId, rows] of members) teamMembersByTeamId.set(teamId, rows);
     }
     const wall3 = Date.now();
 
@@ -194,7 +185,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
             for (const p of heatParticipants) {
               if (p.kind === "INDIVIDUAL") {
                 lane += 1;
-                const st = statusByKey.get(`I:${p.entryId}`);
+                const st = statusByKey.get(marshalIndividualKey(p.entryId));
                 const stored = st?.status ?? "PENDING";
                 rows.push({
                   lane,
@@ -212,7 +203,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
                 lane += 1;
                 const members = teamMembersByTeamId.get(p.teamEntryId) ?? [];
                 if (members.length === 0) {
-                  const stUnassigned = statusByKey.get(`T:${p.teamEntryId}`);
+                  const stUnassigned = statusByKey.get(marshalTeamLegacyKey(p.teamEntryId));
                   const stored = stUnassigned?.status ?? "PENDING";
                   rows.push({
                     lane,
@@ -227,7 +218,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
                   });
                 } else {
                   for (const mem of members) {
-                    const st = statusByKey.get(`T:${p.teamEntryId}:${mem.userId}`);
+                    const st = statusByKey.get(marshalTeamMemberKey(p.teamEntryId, mem.userId));
                     const stored = st?.status ?? "PENDING";
                     rows.push({
                       lane,

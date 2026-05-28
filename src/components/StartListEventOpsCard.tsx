@@ -19,6 +19,7 @@ import {
   snapshotRoundForTab,
 } from "@/lib/startListEventTabDisplay";
 import { defaultStartListRoundTabLabels } from "@/lib/startListSettings";
+import { isCalledLikeStatus } from "@/lib/dayOpsTeamStatus";
 import { LiveRoundContent } from "@/components/StartListRoundListPanels";
 import { StartListRoundSettingsCardWithHook } from "@/components/StartListRoundSettingsCard";
 import { StartListMarshalModeBar } from "@/components/StartListMarshalModeBar";
@@ -203,7 +204,7 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
         const displayNum = row.marshalDisplayHeatIndices?.[heatIndex] ?? heatIndex + 1;
         const apiHeat = dayOps.listMarshalHeatsByIndex.get(Number(displayNum));
         if (!apiHeat?.participants?.length) return 0;
-        return apiHeat.participants.filter((p) => p.status === "CALLED").length;
+        return apiHeat.participants.filter((p) => isCalledLikeStatus(p.status)).length;
       });
       const totalCalled = calledSizes.reduce((a, b) => a + b, 0);
       if (totalCalled > 0) {

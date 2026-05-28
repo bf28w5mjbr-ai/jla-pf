@@ -7,7 +7,14 @@ import {
   type ParticipantStatusRowForScope,
 } from "@/lib/competitionParticipantStatusScope";
 import { effectiveDayOpsStatusForMarshalDisplay } from "@/lib/dayOpsParticipantStatusDisplay";
+import {
+  marshalIndividualKey,
+  marshalTeamLegacyKey,
+  marshalTeamMemberKey,
+} from "@/lib/dayOpsParticipantKeys";
+import { isCalledLikeStatus, isTeamFullyCalled } from "@/lib/dayOpsTeamStatus";
 import { getHeatFromRoundData, getRoundDataFromSnapshot } from "@/lib/heatMarshalFromSnapshot";
+import { fetchTeamMembersMapForTeamIds } from "@/lib/teamMarshalExpand";
 
 /**
  * heat-marshal GET が組み立てる参加者行と同じキー・締切表示ルールで、
@@ -27,16 +34,16 @@ export function countCalledMarshalSlotsInHeat(opts: {
 
   for (const p of parts) {
     if (p.kind === "INDIVIDUAL") {
-      const st = statusByKey.get(`I:${p.entryId}`);
+      const st = statusByKey.get(marshalIndividualKey(p.entryId));
       const stored = st?.status ?? "PENDING";
       const eff = effectiveDayOpsStatusForMarshalDisplay(stored, heatMarshalCallClosed);
-      if (eff === "CALLED") indiv += 1;
+      if (isCalledLikeStatus(eff)) indiv += 1;
       continue;
     }
     if (p.kind === "TEAM" && p.teamEntryId) {
       const members = teamMembersByTeamId.get(p.teamEntryId) ?? [];
       if (members.length === 0) {
-        const stUnassigned = statusByKey.get(`T:${p.teamEntryId}`);
+        const stUnassigned = statusByKey.get(marshalTeamLegacyKey(p.teamEntryId));
         const stored = stUnassigned?.status ?? "PENDING";
         const eff = effectiveDayOpsStatusForMarshalDisplay(stored, heatMarshalCallClosed);
         const list = byTeam.get(p.teamEntryId) ?? [];
@@ -45,7 +52,7 @@ export function countCalledMarshalSlotsInHeat(opts: {
       } else {
         const list = byTeam.get(p.teamEntryId) ?? [];
         for (const mem of members) {
-          const st = statusByKey.get(`T:${p.teamEntryId}:${mem.userId}`);
+          const st = statusByKey.get(marshalTeamMemberKey(p.teamEntryId, mem.userId));
           const stored = st?.status ?? "PENDING";
           const eff = effectiveDayOpsStatusForMarshalDisplay(stored, heatMarshalCallClosed);
           list.push({ status: eff });
@@ -57,7 +64,7 @@ export function countCalledMarshalSlotsInHeat(opts: {
 
   let teams = 0;
   for (const [, rows] of byTeam) {
-    if (rows.length > 0 && rows.every((r) => r.status === "CALLED")) teams += 1;
+    if (isTeamFullyCalled(rows.map((r) => r.status))) teams += 1;
   }
   return indiv + teams;
 }
@@ -81,32 +88,6 @@ export async function fetchParticipantStatusesForMarshalEvent(
       updatedAt: true,
     },
   });
-}
-
-export async function fetchTeamMembersMapForTeamIds(
-  db: Pick<Prisma.TransactionClient, "teamEntryMember">,
-  teamIds: string[]
-): Promise<Map<string, Array<{ userId: string; label: string }>>> {
-  const map = new Map<string, Array<{ userId: string; label: string }>>();
-  if (teamIds.length === 0) return map;
-  const memberRows = await db.teamEntryMember.findMany({
-    where: { teamEntryId: { in: teamIds } },
-    orderBy: { order: "asc" },
-    select: {
-      teamEntryId: true,
-      userId: true,
-      user: { select: { profile: { select: { familyName: true, givenName: true } } } },
-    },
-  });
-  for (const m of memberRows) {
-    const list = map.get(m.teamEntryId) ?? [];
-    list.push({
-      userId: m.userId,
-      label: `${m.user.profile?.familyName ?? ""} ${m.user.profile?.givenName ?? ""}`.trim(),
-    });
-    map.set(m.teamEntryId, list);
-  }
-  return map;
 }
 
 /**

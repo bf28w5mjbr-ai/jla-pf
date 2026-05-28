@@ -21,6 +21,7 @@ export default function DayOpsUnlockBanner({
   alreadyUnlocked,
 }: Props) {
   const [code, setCode] = useState("");
+  const [expanded, setExpanded] = useState(false);
   const [pending, startTransition] = useTransition();
 
   if (!passphraseConfigured || alreadyUnlocked) {
@@ -57,27 +58,50 @@ export default function DayOpsUnlockBanner({
     <div className="rounded-lg border border-primary/25 bg-primary/[0.04] px-3 py-3 sm:px-4">
       <p className="text-xs font-medium text-foreground">当日運用（マーシャル・リザルト等）</p>
       <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-        主催から共有された暗号を入力すると、このブラウザでマーシャル・リザルト・ヒート運用（当日のスタートリスト操作）が利用できます。公開ページのタイムスケジュールやラウンド数の編集は主催の管理者のみが行えます。
+        通常の閲覧では暗号入力は不要です。主催から共有された場合のみ入力すると、このブラウザでマーシャル・リザルト・ヒート運用（当日のスタートリスト操作）が利用できます。公開ページのタイムスケジュールやラウンド数の編集は主催の管理者のみが行えます。
       </p>
-      <AutofillSyncForm onSubmit={onSubmit} className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
-        <div className="min-w-0 flex-1 space-y-1">
-          <Label htmlFor="dayops-code" className="text-xs">
-            当日運用暗号
-          </Label>
-          <Input
-            id="dayops-code"
-            type="password"
-            autoComplete="off"
-            value={code}
-            onChange={(ev) => setCode(ev.target.value)}
-            className="h-9"
-            disabled={pending}
-          />
-        </div>
-        <Button type="submit" size="sm" className="h-9 shrink-0" disabled={pending}>
-          {pending ? "確認中…" : "有効化"}
+      <div className="mt-3">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 px-3 text-xs"
+          onClick={() => setExpanded((prev) => !prev)}
+          aria-expanded={expanded}
+          aria-controls="dayops-unlock-form"
+          disabled={pending}
+        >
+          {expanded ? "詳細設定を閉じる" : "当日運用暗号を入力する（必要な場合のみ）"}
         </Button>
-      </AutofillSyncForm>
+      </div>
+      {expanded ? (
+        <AutofillSyncForm
+          id="dayops-unlock-form"
+          onSubmit={onSubmit}
+          className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end"
+        >
+          <div className="min-w-0 flex-1 space-y-1">
+            <Label htmlFor="dayops-code" className="text-xs">
+              当日運用暗号（任意）
+            </Label>
+            <Input
+              id="dayops-code"
+              type="password"
+              autoComplete="off"
+              value={code}
+              onChange={(ev) => setCode(ev.target.value)}
+              className="h-9"
+              disabled={pending}
+            />
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              通常は入力不要です。主催から暗号が共有された場合のみ入力してください。
+            </p>
+          </div>
+          <Button type="submit" size="sm" className="h-9 shrink-0" disabled={pending}>
+            {pending ? "確認中…" : "有効化"}
+          </Button>
+        </AutofillSyncForm>
+      ) : null}
     </div>
   );
 }

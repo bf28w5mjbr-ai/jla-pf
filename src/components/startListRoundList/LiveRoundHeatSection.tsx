@@ -14,6 +14,7 @@ import {
   resolveHeatLaneDayOpsDisplayStatus,
 } from "@/lib/dayOpsParticipantStatusDisplay";
 import { secondaryClubLabelForTeamRow } from "@/lib/startListTeamDisplay";
+import { marshalIndividualKey, marshalTeamLegacyKey } from "@/lib/dayOpsParticipantKeys";
 import { cn } from "@/lib/utils";
 import type { ResultDraftOp } from "@/hooks/liveRound/types";
 import type { IndividualItem, LiveRoundContentProps, TeamItem } from "./types";
@@ -493,7 +494,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                     }
                     rowKey={`${eventId}-team-${heatIndex}-${team.teamEntryId}-${laneIndex0}`}
                     serverStatus={foldTeamServerStatusFromMemberKeys(team.teamEntryId, statusByKey)}
-                    participantRankKey={`T:${team.teamEntryId}`}
+                    participantRankKey={marshalTeamLegacyKey(team.teamEntryId)}
                     localResultRows={localResultRows}
                     localConfirmedHeats={localConfirmedHeats}
                     resultDraftOps={resultDraftOps}
@@ -973,8 +974,8 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                     laneIndex0={laneIndex0}
                     nameContent={individualLiveRowLabel(item.name, item.clubName)}
                     rowKey={`${eventId}-ind-${heatIndex}-${item.entryId}-${laneIndex0}`}
-                    serverStatus={statusByKey?.[`I:${item.entryId}`]}
-                    participantRankKey={`I:${item.entryId}`}
+                    serverStatus={statusByKey?.[marshalIndividualKey(item.entryId)]}
+                    participantRankKey={marshalIndividualKey(item.entryId)}
                     localResultRows={localResultRows}
                     localConfirmedHeats={localConfirmedHeats}
                     resultDraftOps={resultDraftOps}
@@ -1006,7 +1007,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                   laneIndex0={index}
                   nameContent={individualLiveRowLabel(item.name, item.clubName)}
                   rowKey={`${eventId}-ind-${heatIndex}-${item.entryId}`}
-                  serverStatus={statusByKey?.[`I:${item.entryId}`]}
+                  serverStatus={statusByKey?.[marshalIndividualKey(item.entryId)]}
                   marshalBulkSubmitting={marshalBulkSubmitting}
                   marshalPendingKey={marshalPendingKey}
                   marshalDraftErrors={marshalDraftErrors}
@@ -1023,7 +1024,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                 m && !m.loading && apiHeat
                   ? marshalParticipantForLane(apiHeat, lane, index)
                   : undefined;
-              const serverSt = statusByKey?.[`I:${item.entryId}`];
+              const serverSt = statusByKey?.[marshalIndividualKey(item.entryId)];
               const displayStatus = resolveHeatLaneDayOpsDisplayStatus(mp, serverSt);
               const mClass = marshalDisplayClass(displayStatus);
               const called = displayStatus === "CALLED";

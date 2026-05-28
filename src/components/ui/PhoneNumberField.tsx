@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
@@ -44,16 +44,12 @@ export function PhoneNumberField({
   className,
 }: PhoneNumberFieldProps) {
   const countryOptions = useMemo(() => getPhoneCountryOptions(), []);
-  const initial = useMemo(() => splitE164ForInput(value || ""), [value]);
-
-  const [country, setCountry] = useState<CountryCode>(initial.country);
-  const [national, setNational] = useState(initial.national);
-
-  useEffect(() => {
-    const split = splitE164ForInput(value || "");
-    setCountry(split.country);
-    setNational(split.national);
-  }, [value]);
+  const external = useMemo(() => splitE164ForInput(value || ""), [value]);
+  const [draft, setDraft] = useState<{ country: CountryCode; national: string } | null>(null);
+  const draftE164 = draft ? parsePhoneToE164(draft.country, draft.national) ?? "" : null;
+  const useDraft = draft !== null && draftE164 === (value || "");
+  const country = useDraft ? draft.country : external.country;
+  const national = useDraft ? draft.national : external.national;
 
   const emitChange = (nextCountry: CountryCode, nextNational: string) => {
     const e164 = parsePhoneToE164(nextCountry, nextNational);
@@ -62,13 +58,14 @@ export function PhoneNumberField({
 
   const handleCountryChange = (next: string) => {
     const c = next as CountryCode;
-    setCountry(c);
-    emitChange(c, national);
+    const nextNational = national;
+    setDraft({ country: c, national: nextNational });
+    emitChange(c, nextNational);
   };
 
   const handleNationalChange = (raw: string) => {
     const digits = raw.replace(/[^\d]/g, "");
-    setNational(digits);
+    setDraft({ country, national: digits });
     emitChange(country, digits);
   };
 

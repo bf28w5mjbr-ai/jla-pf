@@ -1,3 +1,5 @@
+import { marshalStatusKeyFromParts } from "@/lib/dayOpsParticipantKeys";
+
 /**
  * スタートリスト・マーシャルUI向けの当日運用ステータス表示。
  * 競技中の失格（DSQ）の入力は失格管理（参加者ステータス）のみ。公式結果の DSQ は自動反映。
@@ -90,18 +92,15 @@ export function buildParticipantDayOpsStatusByKey(
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const row of rows) {
-    if (row.participantType === "INDIVIDUAL" && row.competitionEntryId) {
-      const k = `I:${row.competitionEntryId}`;
-      if (out[k] !== undefined) continue;
-      out[k] = row.status;
-    } else if (row.participantType === "TEAM" && row.teamEntryId) {
-      const uid = row.teamMemberUserId;
-      if (uid) {
-        const k = `T:${row.teamEntryId}:${uid}`;
-        if (out[k] !== undefined) continue;
-        out[k] = row.status;
-      }
-    }
+    const k = marshalStatusKeyFromParts(
+      row.participantType,
+      row.competitionEntryId,
+      row.teamEntryId,
+      row.teamMemberUserId
+    );
+    if (!k) continue;
+    if (out[k] !== undefined) continue;
+    out[k] = row.status;
   }
   return out;
 }

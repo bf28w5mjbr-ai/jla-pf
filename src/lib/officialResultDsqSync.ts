@@ -9,6 +9,10 @@ import {
   resolveMarshalSlotInHeat,
   type MarshalParticipantRef,
 } from "@/lib/heatMarshalFromSnapshot";
+import {
+  marshalIndividualKey,
+  marshalTeamLegacyKey,
+} from "@/lib/dayOpsParticipantKeys";
 
 export type OfficialResultDsqSyncResult = {
   officialSyncSkipped: boolean;
@@ -37,14 +41,14 @@ export function isParticipantDsqForRound(
   statusByKey: Map<string, string>
 ): boolean {
   if (ref.participantType === "INDIVIDUAL" && ref.competitionEntryId) {
-    return statusByKey.get(`I:${ref.competitionEntryId}`) === "DSQ";
+    return statusByKey.get(marshalIndividualKey(ref.competitionEntryId)) === "DSQ";
   }
   if (ref.participantType === "TEAM" && ref.teamEntryId) {
-    const prefix = `T:${ref.teamEntryId}:`;
+    const prefix = `${marshalTeamLegacyKey(ref.teamEntryId)}:`;
     for (const [k, v] of statusByKey) {
       if (k.startsWith(prefix) && v === "DSQ") return true;
     }
-    return statusByKey.get(`T:${ref.teamEntryId}`) === "DSQ";
+    return statusByKey.get(marshalTeamLegacyKey(ref.teamEntryId)) === "DSQ";
   }
   return false;
 }

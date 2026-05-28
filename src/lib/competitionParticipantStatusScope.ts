@@ -1,4 +1,5 @@
 import type { ResultRound } from "@prisma/client";
+import { marshalStatusKeyFromParts } from "@/lib/dayOpsParticipantKeys";
 
 /** ラウンド横断で効く終了系（マーシャルラウンド別行より優先） */
 const TERMINAL_DAY_OPS = new Set<string>(["DNS", "WITHDRAWN", "DSQ"]);
@@ -21,13 +22,12 @@ export function participantStatusKeyFromParts(
   teamEntryId: string | null,
   teamMemberUserId?: string | null
 ): string | null {
-  if (participantType === "INDIVIDUAL" && competitionEntryId) {
-    return `I:${competitionEntryId}`;
-  }
-  if (participantType === "TEAM" && teamEntryId && teamMemberUserId) {
-    return `T:${teamEntryId}:${teamMemberUserId}`;
-  }
-  return null;
+  return marshalStatusKeyFromParts(
+    participantType,
+    competitionEntryId,
+    teamEntryId,
+    teamMemberUserId
+  );
 }
 
 /**

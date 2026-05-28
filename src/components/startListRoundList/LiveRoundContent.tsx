@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { LiveRoundModeBanners } from "./LiveRoundModeBanners";
 import { LiveRoundHeatMarshalDialogs } from "./LiveRoundHeatMarshalDialogs";
 import { LiveRoundDsqLink } from "./LiveRoundDsqLink";
@@ -37,9 +37,11 @@ export function LiveRoundContent({
   });
 
   const m = startListMarshal ?? null;
-  const mRef = useRef(toLiveRoundMarshalContext(m));
-  mRef.current = toLiveRoundMarshalContext(m);
   const marshalCtx = toLiveRoundMarshalContext(m);
+  const mRef = useRef(marshalCtx);
+  useEffect(() => {
+    mRef.current = marshalCtx;
+  }, [marshalCtx]);
 
   const uiMode = m?.marshalUiMode ?? "dialog";
   const resultMode = uiMode === "result";

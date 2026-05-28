@@ -1,6 +1,7 @@
 import type { ResultRound } from "@prisma/client";
 import type { StartListHeat, StartListRound, StartListRoundData } from "@/lib/startListRounds";
 import type { StartListSnapshotPayload } from "@/lib/startListSnapshot";
+import { marshalIndividualKey, marshalTeamLegacyKey } from "@/lib/dayOpsParticipantKeys";
 
 export type MarshalParticipantRef = {
   participantType: "INDIVIDUAL" | "TEAM";
@@ -176,7 +177,7 @@ export function marshalParticipantRefsForAutoDsq(
   for (const heat of heats) {
     for (const p of heat.participants ?? []) {
       if (p.kind === "INDIVIDUAL" && p.entryId) {
-        const k = `I:${p.entryId}`;
+        const k = marshalIndividualKey(p.entryId);
         if (!byKey.has(k)) {
           byKey.set(k, {
             participantType: "INDIVIDUAL",
@@ -185,7 +186,7 @@ export function marshalParticipantRefsForAutoDsq(
           });
         }
       } else if (p.kind === "TEAM" && p.teamEntryId) {
-        const k = `T:${p.teamEntryId}`;
+        const k = marshalTeamLegacyKey(p.teamEntryId);
         if (!byKey.has(k)) {
           byKey.set(k, {
             participantType: "TEAM",

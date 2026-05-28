@@ -23,18 +23,19 @@ import type { StartListSnapshotPayload } from "@/lib/startListSnapshot";
 import {
   countCalledMarshalSlotsInHeat,
   fetchParticipantStatusesForMarshalEvent,
-  fetchTeamMembersMapForTeamIds,
 } from "@/lib/marshalHeatCalledCount";
 import { prisma } from "@/server/db";
+import {
+  marshalIndividualKey,
+  marshalTeamLegacyKey,
+  marshalTeamMemberKey,
+  resultParticipantKeyFromParts,
+} from "@/lib/dayOpsParticipantKeys";
+import { isCalledLikeStatus, isTeamFullyCalled } from "@/lib/dayOpsTeamStatus";
+import { fetchTeamMembersMapForTeamIds } from "@/lib/teamMarshalExpand";
 
 function participantKeyFromResultRow(r: HeatResultCaptureRow): string | null {
-  if (r.entryType === "INDIVIDUAL" && r.competitionEntryId) {
-    return `I:${r.competitionEntryId}`;
-  }
-  if (r.entryType === "TEAM" && r.teamEntryId) {
-    return `T:${r.teamEntryId}`;
-  }
-  return null;
+  return resultParticipantKeyFromParts(r.entryType, r.competitionEntryId, r.teamEntryId);
 }
 
 export type HeatResultRowCounts = {
@@ -247,9 +248,9 @@ export async function listCalledSlotsMissingOkResultRow(opts: {
   const hasRow = new Set<string>();
   for (const r of existingRows) {
     if (r.entryType === "INDIVIDUAL" && r.competitionEntryId) {
-      hasRow.add(`I:${r.competitionEntryId}`);
+      hasRow.add(marshalIndividualKey(r.competitionEntryId));
     } else if (r.entryType === "TEAM" && r.teamEntryId) {
-      hasRow.add(`T:${r.teamEntryId}`);
+      hasRow.add(marshalTeamLegacyKey(r.teamEntryId));
     }
   }
 
@@ -270,11 +271,11 @@ export async function listCalledSlotsMissingOkResultRow(opts: {
   const out: CalledSlotMissingResult[] = [];
   for (const p of heat.participants ?? []) {
     if (p.kind === "INDIVIDUAL") {
-      const st = statusByKey.get(`I:${p.entryId}`);
+      const st = statusByKey.get(marshalIndividualKey(p.entryId));
       const stored = st?.status ?? "PENDING";
       const eff = effectiveDayOpsStatusForMarshalDisplay(stored, heatMarshalCallClosed);
-      if (eff !== "CALLED") continue;
-      const key = `I:${p.entryId}`;
+      if (!isCalledLikeStatus(eff)) continue;
+      const key = marshalIndividualKey(p.entryId);
       if (hasRow.has(key)) continue;
       const target: MarshalParticipantRef = {
         participantType: "INDIVIDUAL",
@@ -290,20 +291,20 @@ export async function listCalledSlotsMissingOkResultRow(opts: {
       const members = teamMembersByTeamId.get(p.teamEntryId) ?? [];
       let teamCalled = false;
       if (members.length === 0) {
-        const st = statusByKey.get(`T:${p.teamEntryId}`);
+        const st = statusByKey.get(marshalTeamLegacyKey(p.teamEntryId));
         const stored = st?.status ?? "PENDING";
         const eff = effectiveDayOpsStatusForMarshalDisplay(stored, heatMarshalCallClosed);
-        teamCalled = eff === "CALLED";
+        teamCalled = isCalledLikeStatus(eff);
       } else {
-        teamCalled = members.every((mem) => {
-          const st = statusByKey.get(`T:${p.teamEntryId}:${mem.userId}`);
+        const statuses = members.map((mem) => {
+          const st = statusByKey.get(marshalTeamMemberKey(p.teamEntryId, mem.userId));
           const stored = st?.status ?? "PENDING";
-          const eff = effectiveDayOpsStatusForMarshalDisplay(stored, heatMarshalCallClosed);
-          return eff === "CALLED";
+          return effectiveDayOpsStatusForMarshalDisplay(stored, heatMarshalCallClosed);
         });
+        teamCalled = isTeamFullyCalled(statuses);
       }
       if (!teamCalled) continue;
-      const key = `T:${p.teamEntryId}`;
+      const key = marshalTeamLegacyKey(p.teamEntryId);
       if (hasRow.has(key)) continue;
       const target: MarshalParticipantRef = {
         participantType: "TEAM",

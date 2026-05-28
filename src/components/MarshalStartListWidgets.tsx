@@ -5,6 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import type { HeatMarshalParticipant } from "@/components/HeatMarshalLanePanel";
 import { marshalParticipantKey } from "@/components/HeatMarshalLanePanel";
 import { isDayOpsTerminalParticipantStatus } from "@/lib/dayOpsParticipantStatusDisplay";
+import { isCalledLikeStatus } from "@/lib/dayOpsTeamStatus";
 import { cn } from "@/lib/utils";
 
 export type MarshalResultPayload = {
@@ -46,7 +47,7 @@ export function MarshalStartListLaneCheckbox({
 
   const p = participant;
   const pKey = marshalParticipantKey(p);
-  const done = p.status === "CALLED";
+  const done = isCalledLikeStatus(p.status);
   const isTerminal = isDayOpsTerminalParticipantStatus(p.status);
   const globallyBusy = marshalPendingKey !== null;
   const rowBusy = marshalPendingKey === pKey;
