@@ -653,7 +653,7 @@ export default async function OrganizationDetailPage({
                   {organization.admins.length} 名
                 </CardTitle>
                 <CardDescription className="text-[11px] sm:text-xs">
-                  管理者は大会作成・設定変更が可能です。
+                  管理メンバーは大会作成・設定変更が可能です。
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-3 sm:p-5">

@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 
 /**
  * 主催団体ダッシュボード（/organizations/[id]）の閲覧可否。
- * OrgAdmin（ADMIN / MEMBER）であれば閲覧可。編集操作は ADMIN のみ。
+ * OrgAdmin（ADMIN）であれば閲覧可。
  */
 export async function canViewOrganizationDashboardPage(
   organizationId: string,

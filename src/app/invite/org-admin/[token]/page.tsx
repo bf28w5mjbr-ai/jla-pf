@@ -7,7 +7,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { appendRedirectQuery } from "@/lib/postLoginRedirect";
-import { membershipRoleLabelJa } from "@/lib/membershipDisplay";
 
 type InvitePayload = {
   invitation?: {
@@ -177,8 +176,7 @@ export default function OrgAdminInvitePage() {
           <CardTitle>主催団体への招待</CardTitle>
           <CardDescription>
             {inv.inviterName ? `${inv.inviterName} さんから` : ""}
-            「{inv.organization.name}」の管理メンバー（
-            {membershipRoleLabelJa(inv.role)}）として招待されています。
+            「{inv.organization.name}」の管理メンバーとして招待されています。
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 sm:flex-row">

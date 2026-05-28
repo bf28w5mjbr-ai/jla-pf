@@ -7,11 +7,9 @@ import {
 
 describe("roleScopes organizer helpers", () => {
   const adminRow = [{ role: "ADMIN" as const }];
-  const memberRow = [{ role: "MEMBER" as const }];
 
-  it("hasOrgAdminAccess is ADMIN only", () => {
+  it("hasOrgAdminAccess allows ADMIN", () => {
     expect(hasOrgAdminAccess(adminRow)).toBe(true);
-    expect(hasOrgAdminAccess(memberRow)).toBe(false);
   });
 
   it("hostOrgAdminCanManageCompetition requires APPROVED", () => {

@@ -1,15 +1,36 @@
-import { prisma } from '@/lib/prisma';
+import { prisma } from "@/lib/prisma";
 import { sendPushNotificationToUser } from "@/lib/pushNotification";
+import { sendNotificationEmail } from "@/lib/email/sendNotificationEmail";
 
-export async function createNotification(params: {
+type NotificationCategory = "GENERAL" | "CLUB" | "COMPETITION" | "PAYMENT" | "SYSTEM";
+
+type CreateNotificationParams = {
   userId: string;
-  category: 'GENERAL' | 'CLUB' | 'COMPETITION' | 'PAYMENT' | 'SYSTEM';
+  category: NotificationCategory;
   type: string;
   title: string;
   body: string;
   relatedId?: string;
   linkUrl?: string;
-}) {
+  sendEmail?: boolean;
+};
+
+async function dispatchNotificationEmail(params: CreateNotificationParams): Promise<void> {
+  if (!params.sendEmail) return;
+  const user = await prisma.user.findUnique({
+    where: { id: params.userId },
+    select: { email: true, deletedAt: true },
+  });
+  if (!user || user.deletedAt) return;
+  await sendNotificationEmail({
+    to: user.email,
+    title: params.title,
+    body: params.body,
+    linkUrl: params.linkUrl,
+  });
+}
+
+export async function createNotification(params: CreateNotificationParams) {
   const notification = await prisma.notification.create({
     data: {
       userId: params.userId,
@@ -33,18 +54,15 @@ export async function createNotification(params: {
     console.error("Push notification send error:", error);
   });
 
+  // メール送信は補助チャネル。失敗しても通知作成自体は成功扱いとする。
+  void dispatchNotificationEmail(params).catch((error) => {
+    console.error("Notification email send error:", error);
+  });
+
   return notification;
 }
 
-export async function createNotificationIfAbsent(params: {
-  userId: string;
-  category: 'GENERAL' | 'CLUB' | 'COMPETITION' | 'PAYMENT' | 'SYSTEM';
-  type: string;
-  title: string;
-  body: string;
-  relatedId?: string;
-  linkUrl?: string;
-}) {
+export async function createNotificationIfAbsent(params: CreateNotificationParams) {
   if (!params.relatedId) {
     return createNotification(params);
   }

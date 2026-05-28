@@ -52,6 +52,7 @@ async function notifyClubAdminsOfMembershipApplication(
         body,
         relatedId: membershipId,
         linkUrl,
+        sendEmail: true,
       }).catch((err) => {
         console.error("Membership apply notification error:", err);
       })
@@ -299,6 +300,7 @@ export async function approveMembership(
       body: `${result.club.name}への参加が承認されました。`,
       relatedId: membershipId,
       linkUrl: appRoutes.clubs.root(clubId),
+      sendEmail: true,
     }).catch((err) => console.error("Membership approved notification error:", err));
 
     return {
@@ -389,6 +391,8 @@ export async function rejectMembership(
         ? `${result.club.name}への参加申請が却下されました。理由: ${reason}`
         : `${result.club.name}への参加申請が却下されました。`,
       relatedId: membershipId,
+      linkUrl: appRoutes.clubs.root(clubId),
+      sendEmail: true,
     }).catch((err) => console.error("Membership rejected notification error:", err));
 
     return {

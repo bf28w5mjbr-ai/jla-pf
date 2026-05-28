@@ -534,7 +534,7 @@ model OrganizationAdminInvitation {
   organizationId  String
   invitedByUserId String
   invitedUserId   String
-  role            OrgAdminRole                      @default(MEMBER)
+  role            OrgAdminRole                      @default(ADMIN)
   status          OrganizationAdminInvitationStatus @default(PENDING)
   expiresAt       DateTime
 
@@ -2104,7 +2104,6 @@ enum OrganizerSubscriptionStatus {
 
 enum OrgAdminRole {
   ADMIN // 管理者
-  MEMBER // メンバー
 }
 
 enum CompetitionStatus {

@@ -1,5 +1,5 @@
 export type ClubMembershipRole = "ADMIN" | "MEMBER" | string;
-export type OrganizationAdminRole = "ADMIN" | "MEMBER" | string;
+export type OrganizationAdminRole = "ADMIN" | string;
 
 export function isClubAdminRole(role?: ClubMembershipRole | null): boolean {
   return role === "ADMIN";
@@ -60,7 +60,7 @@ export function normalizeClubRoleForWrite(role?: string | null): "ADMIN" | "MEMB
   return "MEMBER";
 }
 
-export function normalizeOrgRoleForWrite(role?: string | null): "ADMIN" | "MEMBER" {
-  if (isOrgAdminRole(role)) return "ADMIN";
-  return "MEMBER";
+export function normalizeOrgRoleForWrite(role?: string | null): "ADMIN" {
+  void role;
+  return "ADMIN";
 }

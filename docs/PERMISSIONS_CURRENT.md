@@ -17,13 +17,13 @@
 ユーザーの実際の操作可能範囲は、以下のスコープロールで決まります。
 
 - クラブ: `Membership.role` (`ADMIN` / `MEMBER`)
-- 主催団体: `OrgAdmin.role` (`ADMIN` / `MEMBER`)。追加は `OrganizationAdminInvitation` 経由の招待→承諾
+- 主催団体: `OrgAdmin.role` (`ADMIN` のみ)。追加は `OrganizationAdminInvitation` 経由の招待→承諾
 - 協会: `AssociationAdmin.role` (`ADMIN` / `MEMBER`)
 
 補足:
 - `PF_ADMIN` は多くの管理操作を横断実行できます。
 - 協会管理者はクラブ/主催団体運営を直接代行しない設計です（`requireClubAdmin` / `requireOrgAdmin` で制限）。
-- `requireOrgAdmin()` は `OrgAdmin.role=ADMIN` のみ許可します（`MEMBER` は不可）。
+- `requireOrgAdmin()` は `OrgAdmin.role=ADMIN` のみ許可します。
 
 ## 3. 権限マトリクス（要約）
 

@@ -32,13 +32,13 @@ export async function POST(
       await requireOrgAdmin(organizationId, session.userId);
     } catch {
       return NextResponse.json(
-        { error: "メンバー招待の権限がありません" },
+        { error: "管理メンバー招待の権限がありません" },
         { status: 403 }
       );
     }
 
     const body = await request.json();
-    const { userId: bodyUserId, userEmail, email, role } = body ?? {};
+    const { userId: bodyUserId, userEmail, email } = body ?? {};
 
     const rawUserId = typeof bodyUserId === "string" ? bodyUserId.trim() : "";
     const emailFromBody =
@@ -70,12 +70,11 @@ export async function POST(
     const result = await inviteOrgAdmin(
       session.userId,
       organizationId,
-      user.id,
-      typeof role === "string" ? role : undefined
+      user.id
     );
 
     return NextResponse.json({
-      message: "招待を送信しました。相手の承諾後にメンバーとして表示されます。",
+      message: "管理メンバーへの招待を送信しました。相手の承諾後に一覧へ表示されます。",
       invitationId: result.invitationId,
     });
   } catch (error) {

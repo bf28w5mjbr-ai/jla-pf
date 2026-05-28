@@ -16,7 +16,7 @@
 ### スコープロール
 
 - クラブ: `Membership.role`（`ADMIN` / `MEMBER`）
-- 主催団体: `OrgAdmin.role`（`ADMIN` / `MEMBER`）
+- 主催団体: `OrgAdmin.role`（`ADMIN` のみ）
 - 協会: `AssociationAdmin.role`（`ADMIN` / `MEMBER`）
 
 ## 2. 基本方針
@@ -24,7 +24,7 @@
 - すべての管理操作は「ロール判定 + 対象リソースのスコープ検証」を必須にする
 - `PF_ADMIN` は多くの管理操作を横断実行できる
 - 協会管理者はクラブ/主催団体運営を直接代行しない（`requireClubAdmin` / `requireOrgAdmin` で制限）
-- `requireOrgAdmin` は `OrgAdmin.role=ADMIN` のみ許可（`MEMBER` は管理APIを実行不可）
+- `requireOrgAdmin` は `OrgAdmin.role=ADMIN` のみ許可
 - 重要操作は `AuditLog` 記録を前提とする
 
 ## 3. 代表的な操作権限

@@ -93,14 +93,13 @@ export async function assertNotLastOrgAdmin(
 export async function inviteOrgAdmin(
   actorUserId: string,
   organizationId: string,
-  invitedUserId: string,
-  roleInput?: string
+  invitedUserId: string
 ): Promise<{ invitationId: string; token: string }> {
   if (invitedUserId === actorUserId) {
     throw new OrgAdminInvitationError("SELF_INVITE", "自分自身を招待することはできません");
   }
 
-  const role = normalizeOrgRoleForWrite(roleInput ?? "MEMBER");
+  const role = normalizeOrgRoleForWrite("ADMIN");
 
   const result = await prisma.$transaction(async (tx) => {
     await assertOrgOnboardingAllowed(tx, organizationId);
@@ -177,6 +176,7 @@ export async function inviteOrgAdmin(
     body: `${result.orgName} の管理メンバーとして招待されています。`,
     relatedId: result.invitation.id,
     linkUrl: `/invite/org-admin/${result.invitation.token}`,
+    sendEmail: true,
   }).catch((err) => console.error("Org admin invite notification error:", err));
 
   return { invitationId: result.invitation.id, token: result.invitation.token };

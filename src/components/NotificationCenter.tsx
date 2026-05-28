@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { useUnreadNotificationCount } from "@/components/UnreadNotificationCountContext";
 
 type NotificationItem = {
   id: string;
@@ -26,9 +27,18 @@ type Props = {
 
 export default function NotificationCenter({ initialItems, initialUnreadCount }: Props) {
   const router = useRouter();
+  const unreadNotification = useUnreadNotificationCount();
   const [items, setItems] = useState<NotificationItem[]>(initialItems);
   const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
   const [isMarkingAll, setIsMarkingAll] = useState(false);
+
+  const setUnreadCountEverywhere = useCallback(
+    (next: number | ((prev: number) => number)) => {
+      setUnreadCount(next);
+      unreadNotification?.setUnreadCount(next);
+    },
+    [unreadNotification]
+  );
 
   const refresh = useCallback(async () => {
     try {
@@ -39,11 +49,11 @@ export default function NotificationCenter({ initialItems, initialUnreadCount }:
         unreadCount: number;
       };
       setItems(data.items);
-      setUnreadCount(data.unreadCount);
+      setUnreadCountEverywhere(data.unreadCount);
     } catch (error) {
       console.error("notification refresh error", error);
     }
-  }, []);
+  }, [setUnreadCountEverywhere]);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -57,6 +67,11 @@ export default function NotificationCenter({ initialItems, initialUnreadCount }:
   }, [items]);
 
   const markOneRead = async (id: string) => {
+    const target = items.find((item) => item.id === id);
+    if (!target || target.read) {
+      return;
+    }
+
     try {
       const res = await fetch(`/api/user/notifications/${id}`, {
         method: "PATCH",
@@ -65,7 +80,7 @@ export default function NotificationCenter({ initialItems, initialUnreadCount }:
       });
       if (!res.ok) throw new Error("failed");
       setItems((prev) => prev.map((item) => (item.id === id ? { ...item, read: true } : item)));
-      setUnreadCount((prev) => Math.max(prev - 1, 0));
+      setUnreadCountEverywhere((prev) => Math.max(prev - 1, 0));
       router.refresh();
     } catch (error) {
       console.error("mark read error", error);
@@ -74,19 +89,24 @@ export default function NotificationCenter({ initialItems, initialUnreadCount }:
   };
 
   const markAllRead = async () => {
+    const prevItems = items;
+    const prevUnreadCount = unreadCount;
     try {
       setIsMarkingAll(true);
+      setItems((prev) => prev.map((item) => ({ ...item, read: true })));
+      setUnreadCountEverywhere(0);
+
       const res = await fetch("/api/user/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode: "all", read: true }),
       });
       if (!res.ok) throw new Error("failed");
-      setItems((prev) => prev.map((item) => ({ ...item, read: true })));
-      setUnreadCount(0);
       router.refresh();
       toast.success("すべて既読にしました");
     } catch (error) {
+      setItems(prevItems);
+      setUnreadCountEverywhere(prevUnreadCount);
       console.error("mark all read error", error);
       toast.error("既読更新に失敗しました");
     } finally {

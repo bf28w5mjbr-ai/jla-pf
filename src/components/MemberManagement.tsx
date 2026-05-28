@@ -6,13 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -34,7 +27,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Loader2, UserPlus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { membershipRoleLabelJa } from "@/lib/membershipDisplay";
 
 type SearchUser = {
   id: string;
@@ -42,7 +34,7 @@ type SearchUser = {
   givenName: string;
   email: string;
 };
-import { isOrgAdminRole, normalizeOrgRoleForWrite } from "@/lib/roleScopes";
+import { isOrgAdminRole } from "@/lib/roleScopes";
 
 type Member = {
   id: string;
@@ -76,7 +68,6 @@ export default function MemberManagement({
   const [candidates, setCandidates] = useState<SearchUser[]>([]);
   const [selectedUser, setSelectedUser] = useState<SearchUser | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [addRole, setAddRole] = useState("MEMBER");
   const [addLoading, setAddLoading] = useState(false);
   const [pendingInvitations, setPendingInvitations] = useState<
     {
@@ -147,7 +138,6 @@ export default function MemberManagement({
     };
   }, [addQuery, addDialogOpen, organizationId]);
 
-  const [changeRoleLoading, setChangeRoleLoading] = useState<string | null>(null);
   const [removeLoading, setRemoveLoading] = useState<string | null>(null);
 
   const canAddMembers = isOrgAdminRole(userRole);
@@ -186,7 +176,6 @@ export default function MemberManagement({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId: selectedUser.id,
-          role: addRole,
         }),
       });
 
@@ -203,7 +192,6 @@ export default function MemberManagement({
       setAddQuery("");
       setCandidates([]);
       setSelectedUser(null);
-      setAddRole("MEMBER");
       onUpdate();
     } catch (error) {
       console.error("Add member error:", error);
@@ -212,37 +200,6 @@ export default function MemberManagement({
       );
     } finally {
       setAddLoading(false);
-    }
-  };
-
-  // 役割変更
-  const handleChangeRole = async (memberId: string, newRole: string) => {
-    try {
-      setChangeRoleLoading(memberId);
-
-      const response = await fetch(
-        `/api/organizations/${organizationId}/members/${memberId}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ role: normalizeOrgRoleForWrite(newRole) }),
-        }
-      );
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "役割の変更に失敗しました");
-      }
-
-      toast.success("役割を変更しました");
-      onUpdate();
-    } catch (error) {
-      console.error("Change role error:", error);
-      toast.error(
-        error instanceof Error ? error.message : "役割の変更に失敗しました"
-      );
-    } finally {
-      setChangeRoleLoading(null);
     }
   };
 
@@ -287,7 +244,6 @@ export default function MemberManagement({
               setAddQuery("");
               setCandidates([]);
               setSelectedUser(null);
-              setAddRole("MEMBER");
             }
           }}
         >
@@ -301,7 +257,7 @@ export default function MemberManagement({
             <DialogHeader>
               <DialogTitle>管理メンバーを招待</DialogTitle>
               <DialogDescription>
-                氏名またはメールの一部（2文字以上）で検索し、候補を選ぶと招待が送られます。相手の承諾後にメンバーとして表示されます。
+                氏名またはメールの一部（2文字以上）で検索し、候補を選ぶと管理メンバー招待が送られます。相手の承諾後に一覧へ表示されます。
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
@@ -372,18 +328,6 @@ export default function MemberManagement({
                 </p>
               ) : null}
 
-              <div>
-                <Label htmlFor="role">役割</Label>
-                <Select value={addRole} onValueChange={setAddRole}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="MEMBER">メンバー</SelectItem>
-                    <SelectItem value="ADMIN">管理者</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
             <DialogFooter>
               <Button
@@ -417,7 +361,7 @@ export default function MemberManagement({
                   {inv.invitedUser.profile?.familyName} {inv.invitedUser.profile?.givenName}
                   <span className="text-muted-foreground">（{inv.invitedUser.email}）</span>
                   <Badge variant="outline" className="ml-2 font-normal">
-                    {membershipRoleLabelJa(inv.role)}
+                    管理者
                   </Badge>
                 </span>
                 <Button
@@ -457,7 +401,6 @@ export default function MemberManagement({
       <div className="space-y-2">
         {members.map((member) => {
           const isSelf = member.userId === currentUserId;
-          const canChangeRole = canAddMembers && !isSelf;
           const canRemove = canAddMembers && !isSelf;
 
           return (
@@ -476,28 +419,9 @@ export default function MemberManagement({
               </div>
 
               <div className="flex shrink-0 items-center gap-2">
-                {canChangeRole ? (
-                  <Select
-                    value={member.role}
-                    onValueChange={(value: string) => handleChangeRole(member.id, value)}
-                    disabled={!!changeRoleLoading}
-                  >
-                    <SelectTrigger className="w-[120px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="MEMBER">メンバー</SelectItem>
-                      <SelectItem value="ADMIN">管理者</SelectItem>
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Badge
-                    variant={member.role === "ADMIN" ? "default" : "secondary"}
-                    className="font-normal"
-                  >
-                    {membershipRoleLabelJa(member.role)}
-                  </Badge>
-                )}
+                <Badge variant="default" className="font-normal">
+                  管理者
+                </Badge>
 
                 {canRemove && (
                   <AlertDialog>

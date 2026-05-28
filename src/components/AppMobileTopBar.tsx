@@ -5,18 +5,16 @@ import { Bell, Menu } from "lucide-react";
 import { BluviumWordmark } from "@/components/BluviumWordmark";
 import { appRoutes } from "@/lib/appRoutes";
 import { cn } from "@/lib/utils";
+import { useUnreadNotificationCount } from "@/components/UnreadNotificationCountContext";
 
 interface AppMobileTopBarProps {
-  unreadCount: number;
   onOpenMenu: () => void;
   isMenuOpen: boolean;
 }
 
-export function AppMobileTopBar({
-  unreadCount,
-  onOpenMenu,
-  isMenuOpen,
-}: AppMobileTopBarProps) {
+export function AppMobileTopBar({ onOpenMenu, isMenuOpen }: AppMobileTopBarProps) {
+  const unreadNotification = useUnreadNotificationCount();
+  const unreadCount = unreadNotification?.unreadCount ?? 0;
   const notificationLabel =
     unreadCount > 0 ? `通知（未読${unreadCount}件）` : "通知";
 
