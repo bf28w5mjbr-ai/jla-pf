@@ -9,6 +9,10 @@ import {
 import { isQualificationExpired } from "@/lib/qualificationTemplateRules";
 
 type TemplateWithId = { id: string; kind: string; name: string };
+const QUALIFICATION_SELF_SYNC_TX_OPTIONS = {
+  maxWait: 20_000,
+  timeout: 60_000,
+} as const;
 
 export type SyncHeldQualificationsResult =
   | { ok: true }
@@ -245,9 +249,9 @@ export async function syncUserHeldQualifications(
       });
     }
 
-    for (const q of pendingToApprove) {
-      await tx.qualificationHistory.create({
-        data: {
+    if (pendingToApprove.length > 0) {
+      await tx.qualificationHistory.createMany({
+        data: pendingToApprove.map((q) => ({
           qualificationId: q.id,
           sourceQualificationId: q.id,
           userId,
@@ -260,30 +264,35 @@ export async function syncUserHeldQualifications(
           attachmentUrl: q.attachmentUrl,
           recordOrigin: q.recordOrigin,
           changeType: "STATUS_CHANGE",
-        },
+        })),
       });
-      await tx.qualification.update({
-        where: { id: q.id },
+      await tx.qualification.updateMany({
+        where: { id: { in: pendingToApprove.map((q) => q.id) } },
         data: {
           status: "APPROVED",
         },
       });
     }
 
-    for (const templateId of toAdd) {
-      const kind = targetKindByTemplateId.get(templateId);
-      if (!kind) continue;
-      await tx.qualification.create({
-        data: {
+    const qualificationCreatePayload = toAdd
+      .map((templateId) => {
+        const kind = targetKindByTemplateId.get(templateId);
+        if (!kind) return null;
+        return {
           userId,
           templateId,
           kind,
           certNumber: null,
           issueDate: null,
           expiryDate: null,
-          status: "APPROVED",
+          status: "APPROVED" as const,
           recordOrigin: QualificationRecordOrigin.USER_APPLICATION,
-        },
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null);
+    if (qualificationCreatePayload.length > 0) {
+      await tx.qualification.createMany({
+        data: qualificationCreatePayload,
       });
     }
 
@@ -294,7 +303,7 @@ export async function syncUserHeldQualifications(
         update: { jlaMemberNumber: effectiveJlaMemberNumber },
       });
     }
-  });
+  }, QUALIFICATION_SELF_SYNC_TX_OPTIONS);
 
   await prisma.auditLog.create({
     data: {
