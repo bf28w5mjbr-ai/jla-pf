@@ -281,11 +281,10 @@ export async function syncStartListSnapshotBeforeMarshal(params: {
 
     return { refreshedEventIds: rebuildIds };
   } catch (error) {
-    safeServerErrorLog("syncStartListSnapshotBeforeMarshal", error, {
-      competitionId: params.competitionId,
-      trigger: params.trigger,
-      candidateEventIds: uniqueIds,
-    });
+    safeServerErrorLog(
+      `syncStartListSnapshotBeforeMarshal competitionId=${params.competitionId} trigger=${params.trigger} events=${uniqueIds.join(",")}`,
+      error
+    );
     return { refreshedEventIds: [] };
   }
 }

@@ -93,7 +93,13 @@ function parseArgs(): ParsedArgs {
 
 function createPrisma(): PrismaClient {
   const url = datasourceUrlForScripts();
-  return new PrismaClient(url ? { datasourceUrl: url } : {});
+  if (!url) {
+    throw new Error("DATABASE_URL または DATABASE_URL_UNPOOLED を .env に設定してください。");
+  }
+  return new PrismaClient({
+    datasourceUrl: url,
+    log: ["error", "warn"],
+  });
 }
 
 type PaymentRow = {
