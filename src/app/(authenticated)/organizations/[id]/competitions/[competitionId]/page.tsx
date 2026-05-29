@@ -20,7 +20,7 @@ import { getRequiredAuthenticatedUserId, verifySessionCached } from "@/lib/auth"
 import { prisma } from "@/server/db";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TabsContent, TabsList } from "@/components/ui/tabs";
 import CompetitionRelationsEditor from "@/components/CompetitionRelationsEditor";
 import CompetitionAnnouncementsManager from "@/components/CompetitionAnnouncementsManager";
 import CompetitionAttachmentsManager from "@/components/CompetitionAttachmentsManager";
@@ -50,7 +50,9 @@ import {
 } from "@/lib/competitionManagementTab";
 import { getCompetitionManagementAccess } from "@/lib/competitionManagementAccess";
 import CopyAbsoluteUrlButton from "@/components/public/CopyAbsoluteUrlButton";
-import CompetitionManagementTabsClient from "@/components/admin/CompetitionManagementTabsClient";
+import CompetitionManagementTabsClient, {
+  CompetitionManagementTabTrigger,
+} from "@/components/admin/CompetitionManagementTabsClient";
 type EntrySettingsEditorProps = ComponentProps<typeof CompetitionEntrySettingsEditor>;
 
 /** 大会設定タブ用（お知らせ・添付・ギャラリー・種目・年齢区分など一式） */
@@ -371,34 +373,34 @@ export default async function CompetitionDetailPage({
             className="grid h-auto w-full grid-cols-2 gap-1 bg-transparent p-0 sm:grid-cols-4"
             aria-label="大会管理のセクション"
           >
-            <TabsTrigger
+            <CompetitionManagementTabTrigger
               value="page"
               className="gap-1.5 rounded-md border border-transparent bg-background/50 px-2 py-2.5 text-xs font-medium transition-colors hover:bg-background/70 data-[state=active]:border-border data-[state=active]:bg-background data-[state=active]:shadow-sm sm:px-3 sm:text-sm"
             >
               <Settings2 className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
               <span>大会設定</span>
-            </TabsTrigger>
-            <TabsTrigger
+            </CompetitionManagementTabTrigger>
+            <CompetitionManagementTabTrigger
               value="official"
               className="gap-1.5 rounded-md border border-transparent bg-background/50 px-2 py-2.5 text-xs font-medium transition-colors hover:bg-background/70 data-[state=active]:border-border data-[state=active]:bg-background data-[state=active]:shadow-sm sm:px-3 sm:text-sm"
             >
               <UserCog className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
               <span>オフィシャル</span>
-            </TabsTrigger>
-            <TabsTrigger
+            </CompetitionManagementTabTrigger>
+            <CompetitionManagementTabTrigger
               value="entries"
               className="gap-1.5 rounded-md border border-transparent bg-background/50 px-2 py-2.5 text-xs font-medium transition-colors hover:bg-background/70 data-[state=active]:border-border data-[state=active]:bg-background data-[state=active]:shadow-sm sm:px-3 sm:text-sm"
             >
               <ClipboardList className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
               <span>エントリー</span>
-            </TabsTrigger>
-            <TabsTrigger
+            </CompetitionManagementTabTrigger>
+            <CompetitionManagementTabTrigger
               value="finance"
               className="gap-1.5 rounded-md border border-transparent bg-background/50 px-2 py-2.5 text-xs font-medium transition-colors hover:bg-background/70 data-[state=active]:border-border data-[state=active]:bg-background data-[state=active]:shadow-sm sm:px-3 sm:text-sm"
             >
               <PieChart className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
               <span>収支</span>
-            </TabsTrigger>
+            </CompetitionManagementTabTrigger>
           </TabsList>
         </div>
 

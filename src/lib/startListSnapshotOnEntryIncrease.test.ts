@@ -157,8 +157,8 @@ describe("resolveEventIdsNeedingSnapshotSync", () => {
   it("ライブ ID 集合がスナップショットと違えば対象", async () => {
     mockEventFindMany.mockResolvedValue([{ id: "ev1", type: "INDIVIDUAL" }]);
     mockEntryFindMany.mockResolvedValue([
-      { id: "e0", participantStatuses: [] },
-      { id: "e1", participantStatuses: [] },
+      { id: "e0", participantStatuses: [], items: [{ eventId: "ev1" }] },
+      { id: "e1", participantStatuses: [], items: [{ eventId: "ev1" }] },
     ]);
     const result = await resolveEventIdsNeedingSnapshotSync({
       competitionId: "c1",
@@ -170,7 +170,9 @@ describe("resolveEventIdsNeedingSnapshotSync", () => {
 
   it("件数同じでも ID が違えば対象", async () => {
     mockEventFindMany.mockResolvedValue([{ id: "ev1", type: "INDIVIDUAL" }]);
-    mockEntryFindMany.mockResolvedValue([{ id: "e9", participantStatuses: [] }]);
+    mockEntryFindMany.mockResolvedValue([
+      { id: "e9", participantStatuses: [], items: [{ eventId: "ev1" }] },
+    ]);
     const result = await resolveEventIdsNeedingSnapshotSync({
       competitionId: "c1",
       candidateEventIds: ["ev1"],
@@ -181,7 +183,10 @@ describe("resolveEventIdsNeedingSnapshotSync", () => {
 
   it("集合が一致すれば空", async () => {
     mockEventFindMany.mockResolvedValue([{ id: "ev1", type: "TEAM" }]);
-    mockTeamFindMany.mockResolvedValue([{ id: "t1" }, { id: "t2" }]);
+    mockTeamFindMany.mockResolvedValue([
+      { id: "t1", eventId: "ev1" },
+      { id: "t2", eventId: "ev1" },
+    ]);
     const result = await resolveEventIdsNeedingSnapshotSync({
       competitionId: "c1",
       candidateEventIds: ["ev1"],

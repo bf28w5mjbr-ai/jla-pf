@@ -588,141 +588,146 @@ export default async function CompetitionEntriesTabContent({
     );
   }
 
-  const competition = await prisma.competition.findUnique({
-    where: { id: competitionId },
-    select: {
-      id: true,
-      name: true,
-      organizationId: true,
-      startDate: true,
-      ageCategories: {
-        select: {
-          id: true,
-          name: true,
-          displayOrder: true,
+  const [
+    competition,
+    entries,
+    teamEntries,
+    individualApproval,
+    teamApproval,
+    individualPending,
+    teamPending,
+  ] = await Promise.all([
+    prisma.competition.findUnique({
+      where: { id: competitionId },
+      select: {
+        id: true,
+        name: true,
+        organizationId: true,
+        startDate: true,
+        ageCategories: {
+          select: {
+            id: true,
+            name: true,
+            displayOrder: true,
+          },
+          orderBy: { displayOrder: "asc" },
         },
-        orderBy: { displayOrder: "asc" },
-      },
-      events: {
-        select: {
-          id: true,
-          name: true,
-          sex: true,
-          type: true,
-          requiresEntryTime: true,
-          maxTeamEntriesPerClub: true,
-          displayOrder: true,
-          ageCategoryId: true,
+        events: {
+          select: {
+            id: true,
+            name: true,
+            sex: true,
+            type: true,
+            requiresEntryTime: true,
+            maxTeamEntriesPerClub: true,
+            displayOrder: true,
+            ageCategoryId: true,
+          },
+          orderBy: { displayOrder: "asc" },
         },
-        orderBy: { displayOrder: "asc" },
       },
-    },
-  });
+    }),
+    prisma.competitionEntry.findMany({
+      where: { competitionId },
+      select: {
+        id: true,
+        status: true,
+        totalFee: true,
+        clubIndividualFeePaidAt: true,
+        organizerPostPayApprovedAt: true,
+        organizerManualPaidAt: true,
+        createdAt: true,
+        club: { select: { name: true } },
+        user: {
+          select: {
+            email: true,
+            profile: {
+              select: {
+                familyName: true,
+                givenName: true,
+                familyNameKana: true,
+                givenNameKana: true,
+                sex: true,
+                dateOfBirth: true,
+              },
+            },
+            contact: { select: { phoneNumber: true } },
+            jlaProfile: { select: { jlaMemberNumber: true } },
+            qualifications: {
+              select: { kind: true, status: true, expiryDate: true },
+            },
+          },
+        },
+        checkoutSessions: {
+          orderBy: { createdAt: "desc" },
+          take: 15,
+          select: { status: true, createdAt: true, amount: true },
+        },
+        items: {
+          select: { eventId: true },
+        },
+        participantStatuses: {
+          select: {
+            eventId: true,
+            status: true,
+            reason: true,
+            participantType: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.teamEntry.findMany({
+      where: { competitionId },
+      include: {
+        event: {
+          select: { id: true, name: true, sex: true },
+        },
+        club: {
+          select: { name: true },
+        },
+        members: {
+          include: {
+            user: {
+              select: {
+                email: true,
+                profile: {
+                  select: {
+                    familyName: true,
+                    givenName: true,
+                    familyNameKana: true,
+                    givenNameKana: true,
+                    sex: true,
+                    dateOfBirth: true,
+                  },
+                },
+                contact: { select: { phoneNumber: true } },
+              },
+            },
+          },
+          orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+        },
+        participantStatuses: {
+          select: {
+            eventId: true,
+            status: true,
+            reason: true,
+            participantType: true,
+            teamEntryId: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+    }),
+    getActiveCsvExportApproval(competitionId, CSV_EXPORT_SCOPE.INDIVIDUAL),
+    getActiveCsvExportApproval(competitionId, CSV_EXPORT_SCOPE.TEAM),
+    getPendingCsvExportRequest(competitionId, CSV_EXPORT_SCOPE.INDIVIDUAL),
+    getPendingCsvExportRequest(competitionId, CSV_EXPORT_SCOPE.TEAM),
+  ]);
 
   if (!competition || competition.organizationId !== organizationId) {
     notFound();
   }
-
-  const entries = await prisma.competitionEntry.findMany({
-    where: { competitionId: competition.id },
-    select: {
-      id: true,
-      status: true,
-      totalFee: true,
-      clubIndividualFeePaidAt: true,
-      organizerPostPayApprovedAt: true,
-      organizerManualPaidAt: true,
-      createdAt: true,
-      club: { select: { name: true } },
-      user: {
-        select: {
-          email: true,
-          profile: {
-            select: {
-              familyName: true,
-              givenName: true,
-              familyNameKana: true,
-              givenNameKana: true,
-              sex: true,
-              dateOfBirth: true,
-            },
-          },
-          contact: { select: { phoneNumber: true } },
-          jlaProfile: { select: { jlaMemberNumber: true } },
-          qualifications: {
-            select: { kind: true, status: true, expiryDate: true },
-          },
-        },
-      },
-      checkoutSessions: {
-        orderBy: { createdAt: "desc" },
-        take: 15,
-        select: { status: true, createdAt: true, amount: true },
-      },
-      items: {
-        select: { eventId: true },
-      },
-      participantStatuses: {
-        select: {
-          eventId: true,
-          status: true,
-          reason: true,
-          participantType: true,
-        },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  const teamEntries = await prisma.teamEntry.findMany({
-    where: { competitionId: competition.id },
-    include: {
-      event: {
-        select: { id: true, name: true, sex: true },
-      },
-      club: {
-        select: { name: true },
-      },
-      members: {
-        include: {
-          user: {
-            select: {
-              email: true,
-              profile: {
-                select: {
-                  familyName: true,
-                  givenName: true,
-                  familyNameKana: true,
-                  givenNameKana: true,
-                  sex: true,
-                  dateOfBirth: true,
-                },
-              },
-              contact: { select: { phoneNumber: true } },
-            },
-          },
-        },
-        orderBy: [{ order: "asc" }, { createdAt: "asc" }],
-      },
-      participantStatuses: {
-        select: {
-          eventId: true,
-          status: true,
-          reason: true,
-          participantType: true,
-          teamEntryId: true,
-        },
-      },
-    },
-    orderBy: { createdAt: "asc" },
-  });
-
-  const [individualApproval, teamApproval, individualPending, teamPending] = await Promise.all([
-    getActiveCsvExportApproval(competition.id, CSV_EXPORT_SCOPE.INDIVIDUAL),
-    getActiveCsvExportApproval(competition.id, CSV_EXPORT_SCOPE.TEAM),
-    getPendingCsvExportRequest(competition.id, CSV_EXPORT_SCOPE.INDIVIDUAL),
-    getPendingCsvExportRequest(competition.id, CSV_EXPORT_SCOPE.TEAM),
-  ]);
 
   const eventMap = new Map(competition.events.map((e) => [e.id, e] as const));
 

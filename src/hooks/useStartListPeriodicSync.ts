@@ -49,7 +49,8 @@ export function useStartListPeriodicSync({
       inFlightRef.current = true;
       try {
         if (snapshotSync) {
-          await fetch(
+          // sync-if-needed は数十秒かかることがあるため refresh をブロックしない
+          void fetch(
             `/api/competitions/${encodeURIComponent(competitionId)}/start-list-snapshot/sync-if-needed`,
             { method: "POST", credentials: "same-origin" }
           ).catch(() => undefined);

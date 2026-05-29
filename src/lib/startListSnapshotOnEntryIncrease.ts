@@ -106,6 +106,67 @@ export async function loadLiveEligibleParticipantIdsForEvent(params: {
   return ids;
 }
 
+/** 複数種目のライブ参加者 ID を大会単位で一括取得（PERIODIC_POLL 等の N+1 回避） */
+async function loadLiveEligibleParticipantIdsForEvents(params: {
+  competitionId: string;
+  events: ReadonlyArray<{ id: string; type: EventType }>;
+}): Promise<Map<string, string[]>> {
+  const result = new Map<string, string[]>();
+  for (const ev of params.events) {
+    result.set(ev.id, []);
+  }
+
+  const teamEventIds = params.events.filter((e) => e.type === "TEAM").map((e) => e.id);
+  const individualEventIds = params.events.filter((e) => e.type === "INDIVIDUAL").map((e) => e.id);
+  const individualEventIdSet = new Set(individualEventIds);
+
+  if (teamEventIds.length > 0) {
+    const rows = await prisma.teamEntry.findMany({
+      where: { competitionId: params.competitionId, eventId: { in: teamEventIds } },
+      select: { id: true, eventId: true },
+      orderBy: [{ eventId: "asc" }, { id: "asc" }],
+    });
+    for (const row of rows) {
+      result.get(row.eventId)?.push(row.id);
+    }
+  }
+
+  if (individualEventIds.length > 0) {
+    const entries = await prisma.competitionEntry.findMany({
+      where: {
+        competitionId: params.competitionId,
+        status: "SUBMITTED",
+        ...competitionEntryEligibleForStartListWhere,
+        items: { some: { eventId: { in: individualEventIds } } },
+      },
+      select: {
+        id: true,
+        items: { select: { eventId: true } },
+        participantStatuses: {
+          where: { eventId: { in: individualEventIds } },
+          select: { eventId: true, status: true, reason: true },
+        },
+      },
+      orderBy: { id: "asc" },
+    });
+    for (const entry of entries) {
+      const eventIdsForEntry = new Set(
+        (entry.items ?? []).map((item) => item.eventId).filter((id) => individualEventIdSet.has(id))
+      );
+      for (const eventId of eventIdsForEntry) {
+        if (!hasIndividualWithdrawalForEvent(entry.participantStatuses, eventId)) {
+          result.get(eventId)?.push(entry.id);
+        }
+      }
+    }
+    for (const eventId of individualEventIds) {
+      result.get(eventId)?.sort();
+    }
+  }
+
+  return result;
+}
+
 export function countSnapshotHeatParticipants(
   payload: StartListSnapshotPayload | null,
   eventId: string
@@ -153,15 +214,14 @@ export async function resolveEventIdsNeedingSnapshotSync(params: {
   if (events.length === 0) return [];
 
   const payload = parseStartListSnapshotLooseForRoundRead(params.snapshotData);
+  const liveIdsByEventId = await loadLiveEligibleParticipantIdsForEvents({
+    competitionId: params.competitionId,
+    events,
+  });
   const outOfSync: string[] = [];
 
-  // 種目数 × 2 本の findMany を Promise.all すると接続上限（dev でも 5〜10）を超え P2024 になりやすい
   for (const ev of events) {
-    const liveIds = await loadLiveEligibleParticipantIdsForEvent({
-      competitionId: params.competitionId,
-      eventId: ev.id,
-      eventType: ev.type,
-    });
+    const liveIds = liveIdsByEventId.get(ev.id) ?? [];
     const snapshotIds = loadSnapshotHeatParticipantIds(payload, ev.id, ev.type);
     if (!participantIdSetsMatch(liveIds, snapshotIds)) {
       outOfSync.push(ev.id);

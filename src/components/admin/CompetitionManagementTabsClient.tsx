@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Tabs } from "@/components/ui/tabs";
+import { Tabs, TabsTrigger } from "@/components/ui/tabs";
 import {
-  COMPETITION_MANAGEMENT_TAB_VALUES,
   type CompetitionManagementTabValue,
 } from "@/lib/competitionManagementTab";
 
@@ -16,7 +15,6 @@ type Props = {
 
 /**
  * タブ切り替えで URL の ?tab= を更新し、ブックマーク・共有・戻る/進むと同期する。
- * 他タブの RSC を事前プリフェッチする。
  *
  * 注: Next 16 + Turbopack では `useTransition` で `router.push` を包むと
  * `Performance.measure` / `__next_root_layout_boundary__` の負のタイムスタンプ例外が出ることがあるため、
@@ -29,12 +27,6 @@ export default function CompetitionManagementTabsClient({
   const router = useRouter();
   const pathname = usePathname();
 
-  useEffect(() => {
-    for (const tab of COMPETITION_MANAGEMENT_TAB_VALUES) {
-      router.prefetch(`${pathname}?tab=${tab}`);
-    }
-  }, [pathname, router]);
-
   return (
     <Tabs
       value={activeTab}
@@ -45,5 +37,33 @@ export default function CompetitionManagementTabsClient({
     >
       {children}
     </Tabs>
+  );
+}
+
+type TabTriggerProps = {
+  value: CompetitionManagementTabValue;
+  className?: string;
+  children: ReactNode;
+};
+
+/** ホバー時のみ prefetch（全タブ一括 prefetch は重い RSC を連発するため廃止） */
+export function CompetitionManagementTabTrigger({
+  value,
+  className,
+  children,
+}: TabTriggerProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+
+  return (
+    <TabsTrigger
+      value={value}
+      className={className}
+      onPointerEnter={() => {
+        router.prefetch(`${pathname}?tab=${value}`);
+      }}
+    >
+      {children}
+    </TabsTrigger>
   );
 }
