@@ -7,6 +7,7 @@ import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
 import { getCompetitionPublishErrors } from "@/lib/competitionPublishRules";
+import { revalidateCompetitionPublicPage } from "@/lib/revalidateCompetitionPublicPage";
 import {
   isCompetitionStatus,
   validateCompetitionStatusTransition,
@@ -138,6 +139,8 @@ export async function PUT(
       where: { id },
       data: updateData,
     });
+
+    revalidateCompetitionPublicPage(id);
 
     await logAuditAction({
       action: "COMPETITION_STATUS_UPDATE",

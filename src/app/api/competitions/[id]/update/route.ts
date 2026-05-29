@@ -6,6 +6,7 @@ import {
   hostOrgAdminGateJsonError,
   requireHostOrgAdminForCompetition,
 } from "@/lib/organizerAccess";
+import { revalidateCompetitionPublicPage } from "@/lib/revalidateCompetitionPublicPage";
 
 function isOwnProp(obj: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(obj, key);
@@ -172,8 +173,9 @@ export async function PUT(
       },
     });
 
+    revalidateCompetitionPublicPage(competitionId);
+
     return NextResponse.json({
-      message: "大会を更新しました",
       competition: updatedCompetition,
     });
   } catch (error) {
