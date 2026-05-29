@@ -6,11 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  buildStartListEventRoundDisplay,
+  dedupeFrozenTabIndicesBySnapshotRound,
   formatStartListTabLabelWithHeatCount,
-  snapshotRoundForTab,
+  getSnapshotTabPanels,
 } from "@/lib/startListEventTabDisplay";
-import { LiveRoundContent } from "@/components/StartListRoundListPanels";
+import { parseStartListSettings, pickHeatSettingForEvent } from "@/lib/startListSettings";
+import { SnapshotRoundContent } from "@/components/startListRoundList/SnapshotRoundContent";
+import type { SnapshotRoundBlock } from "@/components/startListRoundList/types";
 import type { StartListEventCardProps } from "@/lib/startListEventTypes";
 import { sexLabelJa } from "@/lib/sexLabelJa";
 
@@ -20,56 +22,49 @@ export default function StartListEventPublicCard({
   event,
   scheduleLabel,
   entryCount,
-  individuals,
-  teams,
   initialSettings,
-  officialRanksByRound,
-  placementSeed,
   frozenSnapshotRounds,
-  initialParticipantStatusRows,
-  participantStatusByKey,
 }: StartListEventCardProps) {
   const eventId = event.id;
   const isTeam = event.type === "TEAM";
   const total = entryCount;
 
-  const roundDisplay = useMemo(
-    () =>
-      buildStartListEventRoundDisplay({
-        eventId,
-        initialSettings,
-        startListRoundCount: event.startListRoundCount,
-        individuals,
-        teams,
-        isTeam,
-        preliminaryHeatLaneCount: event.preliminaryHeatLaneCount,
-        officialRanksByRound,
-        placementSeed,
-        frozenSnapshotRounds,
-        heatPlanConfirmedAtIso: event.heatPlanConfirmedAtIso,
-        mode: "public",
-      }),
-    [
-      eventId,
-      initialSettings,
-      event.startListRoundCount,
-      individuals,
-      teams,
-      isTeam,
-      event.preliminaryHeatLaneCount,
-      officialRanksByRound,
-      placementSeed,
+  const publicPanels = useMemo(() => {
+    if (!frozenSnapshotRounds?.length) return [];
+    const parsed = parseStartListSettings(initialSettings);
+    const heatSetting = pickHeatSettingForEvent(parsed.eventSettings, eventId);
+    const allPanels = getSnapshotTabPanels(
       frozenSnapshotRounds,
-      event.heatPlanConfirmedAtIso,
-    ]
-  );
+      heatSetting,
+      event.startListRoundCount
+    );
+    if (!allPanels?.length) return [];
+    const tabCount = allPanels.length;
+    const visibleIndices = dedupeFrozenTabIndicesBySnapshotRound(
+      tabCount,
+      frozenSnapshotRounds
+    );
+    return visibleIndices
+      .map((i) => allPanels[i]!)
+      .filter((p) => p.block?.heats?.length)
+      .map((p) => ({
+        tabId: p.tabId,
+        label: p.label,
+        block: p.block as SnapshotRoundBlock,
+        heatCount: p.block!.heats.length,
+      }));
+  }, [
+    eventId,
+    initialSettings,
+    event.startListRoundCount,
+    frozenSnapshotRounds,
+  ]);
 
-  const { rows } = roundDisplay;
-  const publicTabCount = rows.length;
-  const liveTabsKey = `${event.startListRoundCount ?? "x"}-${roundDisplay.allTabs.map((t) => t.id).join("|")}-pub-${roundDisplay.visibleTabIndices.join(",")}`;
+  const tabsKey = publicPanels.map((p) => p.tabId).join("|");
   const archiveLabel = archiveRecordedAtIso
     ? new Date(archiveRecordedAtIso).toLocaleString("ja-JP")
     : null;
+  const withdrawnKeySet = useMemo(() => new Set<string>(), []);
 
   return (
     <Card className="overflow-hidden border-border/80 py-0 shadow-md">
@@ -116,44 +111,33 @@ export default function StartListEventPublicCard({
           <div className="rounded-md border border-dashed border-border/80 bg-muted/20 px-3 py-6 text-center">
             <p className="text-sm text-muted-foreground">この種目にエントリーはまだありません</p>
           </div>
-        ) : rows.length === 0 ? (
+        ) : publicPanels.length === 0 ? (
           <div className="rounded-lg border border-border/70 bg-muted/15 px-3 py-4 text-sm leading-relaxed text-muted-foreground">
             この種目のスタートリストはまだ公開されていません。エントリー締切後の確定、または次ラウンド確定後に表示されます。
           </div>
-        ) : rows.length === 1 ? (
+        ) : publicPanels.length === 1 ? (
           <div>
             <p className="mb-2 text-xs font-semibold text-muted-foreground">
               {formatStartListTabLabelWithHeatCount(
-                rows[0]!.tab.label,
-                isTeam ? rows[0]!.teamHeats.length : rows[0]!.individualHeats.length
+                publicPanels[0]!.label,
+                publicPanels[0]!.heatCount
               )}
             </p>
-            <LiveRoundContent
+            <SnapshotRoundContent
               eventId={eventId}
-              isTeam={isTeam}
-              individualHeats={rows[0]!.individualHeats}
-              teamHeats={rows[0]!.teamHeats}
-              marshalDisplayHeatIndices={rows[0]!.marshalDisplayHeatIndices}
-              heatAdvanceQuotas={rows[0]!.heatAdvanceQuotas}
-              participantStatusRows={
-                initialParticipantStatusRows.length > 0 ? initialParticipantStatusRows : null
-              }
-              marshalRoundForDisplay={
-                publicTabCount >= 1 ? snapshotRoundForTab(0, publicTabCount) : null
-              }
-              participantStatusByKey={participantStatusByKey}
+              roundBlock={publicPanels[0]!.block}
+              withdrawnKeySet={withdrawnKeySet}
             />
           </div>
         ) : (
-          <Tabs key={liveTabsKey} defaultValue={rows[0]!.tab.id} className="mt-1">
+          <Tabs key={tabsKey} defaultValue={publicPanels[0]!.tabId} className="mt-1">
             <TabsList className="h-auto min-h-10 w-full flex-wrap justify-start gap-1 rounded-lg bg-muted/60 p-1.5">
-              {rows.map((row) => {
-                const heatCount = isTeam ? row.teamHeats.length : row.individualHeats.length;
-                const text = formatStartListTabLabelWithHeatCount(row.tab.label, heatCount);
+              {publicPanels.map((panel) => {
+                const text = formatStartListTabLabelWithHeatCount(panel.label, panel.heatCount);
                 return (
                   <TabsTrigger
-                    key={row.tab.id}
-                    value={row.tab.id}
+                    key={panel.tabId}
+                    value={panel.tabId}
                     className="max-w-[min(100%,14rem)] shrink-0 truncate rounded-md px-2.5 py-1.5 text-xs data-[state=active]:shadow-sm sm:max-w-[16rem]"
                     title={text}
                   >
@@ -162,24 +146,12 @@ export default function StartListEventPublicCard({
                 );
               })}
             </TabsList>
-            {rows.map((row, pubIndex) => (
-              <TabsContent key={row.tab.id} value={row.tab.id} className="mt-3">
-                <LiveRoundContent
+            {publicPanels.map((panel) => (
+              <TabsContent key={panel.tabId} value={panel.tabId} className="mt-3">
+                <SnapshotRoundContent
                   eventId={eventId}
-                  isTeam={isTeam}
-                  individualHeats={row.individualHeats}
-                  teamHeats={row.teamHeats}
-                  marshalDisplayHeatIndices={row.marshalDisplayHeatIndices}
-                  heatAdvanceQuotas={row.heatAdvanceQuotas}
-                  participantStatusRows={
-                    initialParticipantStatusRows.length > 0 ? initialParticipantStatusRows : null
-                  }
-                  marshalRoundForDisplay={
-                    publicTabCount >= 1
-                      ? snapshotRoundForTab(pubIndex, publicTabCount)
-                      : null
-                  }
-                  participantStatusByKey={participantStatusByKey}
+                  roundBlock={panel.block}
+                  withdrawnKeySet={withdrawnKeySet}
                 />
               </TabsContent>
             ))}

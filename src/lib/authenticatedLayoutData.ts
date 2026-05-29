@@ -119,16 +119,51 @@ export const getAuthenticatedAppUser = cache(async (userId: string) => {
 
 /**
  * 認証レイアウト用の形へ射影（シェルは ADMIN+APPROVED のクラブ管理のみ参照）。
+ * ダッシュボード用の {@link getAuthenticatedAppUser} とは別クエリ（全ページの DB 負荷を抑える）。
  */
 export const getAuthenticatedLayoutUser = cache(async (userId: string) => {
-  const u = await getAuthenticatedAppUser(userId);
-  if (!u) return null;
-  const memberships = u.memberships.filter(
-    (m) => m.role === "ADMIN" && m.status === "APPROVED"
+  const u = await withPrismaPoolRetryOnce(() =>
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        role: true,
+        memberships: {
+          where: { role: "ADMIN", status: "APPROVED" },
+          select: {
+            clubId: true,
+            role: true,
+            club: {
+              select: {
+                id: true,
+                name: true,
+                abbreviation: true,
+              },
+            },
+          },
+        },
+        associationAdminRoles: {
+          where: { role: "ADMIN" },
+          select: { id: true },
+        },
+        orgAdminRoles: {
+          where: { role: "ADMIN" },
+          select: {
+            organization: {
+              select: {
+                id: true,
+                name: true,
+                abbreviation: true,
+              },
+            },
+          },
+        },
+      },
+    })
   );
+  if (!u) return null;
   return {
     role: u.role,
-    memberships: memberships.map((m) => ({
+    memberships: u.memberships.map((m) => ({
       clubId: m.clubId,
       role: m.role,
       club: m.club,

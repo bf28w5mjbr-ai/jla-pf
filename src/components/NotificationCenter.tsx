@@ -56,9 +56,12 @@ export default function NotificationCenter({ initialItems, initialUnreadCount }:
   }, [setUnreadCountEverywhere]);
 
   useEffect(() => {
-    const id = window.setInterval(() => {
+    const pollMs = 60_000;
+    const tick = () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       void refresh();
-    }, 30000);
+    };
+    const id = window.setInterval(tick, pollMs);
     return () => window.clearInterval(id);
   }, [refresh]);
 

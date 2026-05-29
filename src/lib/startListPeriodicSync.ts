@@ -2,11 +2,14 @@
 export const DEFAULT_START_LIST_PERIODIC_SYNC_INTERVAL_SEC = 30;
 
 /** 一般閲覧向け: refresh のみの間隔（秒）。`NEXT_PUBLIC_START_LIST_PUBLIC_REFRESH_INTERVAL_SEC` で上書き可。 */
-export const DEFAULT_START_LIST_PUBLIC_REFRESH_INTERVAL_SEC = 90;
+export const DEFAULT_START_LIST_PUBLIC_REFRESH_INTERVAL_SEC = 120;
 
 export const MIN_START_LIST_PERIODIC_SYNC_INTERVAL_SEC = 15;
 
 export const MAX_START_LIST_PERIODIC_SYNC_INTERVAL_SEC = 120;
+
+/** 一般閲覧の refresh 間隔上限（ops より長くしてよい） */
+export const MAX_START_LIST_PUBLIC_REFRESH_INTERVAL_SEC = 300;
 
 function clampStartListSyncIntervalSec(sec: number): number {
   return Math.min(
@@ -39,5 +42,8 @@ export function resolveStartListPublicRefreshIntervalSec(
       : Number.isFinite(fromEnv) && fromEnv > 0
         ? fromEnv
         : DEFAULT_START_LIST_PUBLIC_REFRESH_INTERVAL_SEC;
-  return clampStartListSyncIntervalSec(base);
+  return Math.min(
+    MAX_START_LIST_PUBLIC_REFRESH_INTERVAL_SEC,
+    Math.max(MIN_START_LIST_PERIODIC_SYNC_INTERVAL_SEC, Math.floor(base))
+  );
 }

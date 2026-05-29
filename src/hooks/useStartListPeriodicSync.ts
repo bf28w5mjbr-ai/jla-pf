@@ -22,6 +22,7 @@ export function useStartListPeriodicSync({
 }: Args) {
   const router = useRouter();
   const inFlightRef = useRef(false);
+  const lastCapturedAtRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!enabled || !competitionId) return;
@@ -49,13 +50,25 @@ export function useStartListPeriodicSync({
       inFlightRef.current = true;
       try {
         if (snapshotSync) {
-          // sync-if-needed は数十秒かかることがあるため refresh をブロックしない
           void fetch(
             `/api/competitions/${encodeURIComponent(competitionId)}/start-list-snapshot/sync-if-needed`,
             { method: "POST", credentials: "same-origin" }
           ).catch(() => undefined);
+          router.refresh();
+        } else {
+          const res = await fetch(
+            `/api/competitions/${encodeURIComponent(competitionId)}/start-list-snapshot/meta`,
+            { credentials: "same-origin" }
+          ).catch(() => null);
+          if (res?.ok) {
+            const data = (await res.json()) as { capturedAtIso?: string | null };
+            const nextCapturedAt = data.capturedAtIso ?? null;
+            if (nextCapturedAt !== lastCapturedAtRef.current) {
+              lastCapturedAtRef.current = nextCapturedAt;
+              router.refresh();
+            }
+          }
         }
-        router.refresh();
       } finally {
         inFlightRef.current = false;
         scheduleNext();

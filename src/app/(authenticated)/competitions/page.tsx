@@ -28,7 +28,7 @@ import {
 import { formatCompactJaDateRange } from "@/lib/datetimeLocal";
 import { cn } from "@/lib/utils";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 function entryVolume<T extends { _count: { entries: number; teamEntries: number } }>(
   c: T

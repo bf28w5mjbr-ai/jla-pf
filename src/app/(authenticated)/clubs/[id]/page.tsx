@@ -6,12 +6,14 @@ import { redirect } from "next/navigation";
 import { verifySessionCached } from "@/lib/auth";
 import { canViewClubDetailPage, redirectUnlessCanViewClubDetail } from "@/lib/clubAccess";
 import { prisma } from "@/server/db";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DataTable } from "@/components/ui/DataTable";
 import { isClubAdminRole } from "@/lib/roleScopes";
+import {
+  countClubMembershipsByStatus,
+  loadClubRepresentativeMemberOptions,
+} from "@/lib/clubMembersTabLoader";
 import {
   ArrowLeft,
   Calendar,
@@ -24,7 +26,6 @@ import {
 } from "lucide-react";
 import { appRoutes } from "@/lib/appRoutes";
 import { cn } from "@/lib/utils";
-import { membershipRoleLabelJa } from "@/lib/membershipDisplay";
 import { parseClubDetailTab } from "@/lib/clubDetailTab";
 import ClubDetailTabsClient from "@/components/ClubDetailTabsClient";
 import {
@@ -33,7 +34,6 @@ import {
   ClubLogoUploadLazy,
   ClubRepresentativeSelectorLazy,
   LeaveClubButtonLazy,
-  MemberActionsLazy,
 } from "./_components/clubDynamicClients";
 import {
   ClubCompetitionSectionCount,
@@ -41,21 +41,10 @@ import {
 } from "./_components/ClubCompetitionSectionCount";
 import { ClubCompetitionsTabPanel } from "./_components/ClubCompetitionsTabPanel";
 import { ClubCompetitionsTabSkeleton } from "./_components/ClubCompetitionsTabSkeleton";
+import { ClubMembersTabPanel } from "./_components/ClubMembersTabPanel";
+import { ClubMembersTabSkeleton } from "./_components/ClubMembersTabSkeleton";
 
 export const dynamic = "force-dynamic";
-
-function membershipStatusLabel(status: string): string {
-  switch (status) {
-    case "APPROVED":
-      return "承認済み";
-    case "PENDING":
-      return "承認待ち";
-    case "REJECTED":
-      return "却下";
-    default:
-      return status;
-  }
-}
 
 export async function generateMetadata({
   params,
@@ -103,37 +92,33 @@ export default async function ClubDetailPage({
 
   await redirectUnlessCanViewClubDetail(id, sess.userId);
 
-  const club = await prisma.club.findUnique({
-    where: { id },
-    include: {
-      creator: {
-        select: {
-          profile: { select: { familyName: true, givenName: true } },
-        },
-      },
-      memberships: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              email: true,
-              profile: { select: { familyName: true, givenName: true } },
-            },
+  const [club, userMembership, membershipCounts] = await Promise.all([
+    prisma.club.findUnique({
+      where: { id },
+      include: {
+        creator: {
+          select: {
+            profile: { select: { familyName: true, givenName: true } },
           },
         },
-        orderBy: [{ role: "asc" }, { createdAt: "desc" }],
       },
-    },
-  });
+    }),
+    prisma.membership.findFirst({
+      where: { clubId: id, userId: sess.userId },
+      select: { id: true, userId: true, role: true, status: true },
+    }),
+    countClubMembershipsByStatus(id),
+  ]);
 
   if (!club) {
     redirect(appRoutes.clubs.list());
   }
 
-  const userMembership = club.memberships.find((m) => m.userId === sess.userId);
   const isClubAdmin = !!(userMembership && isClubAdminRole(userMembership.role));
-  const approvedMembers = club.memberships.filter((m) => m.status === "APPROVED");
-  const pendingMembers = club.memberships.filter((m) => m.status === "PENDING");
+  const approvedMemberCount = membershipCounts.approved;
+  const representativeMemberOptions = isClubAdmin
+    ? await loadClubRepresentativeMemberOptions(id)
+    : [];
 
   const clubStatusLabel = {
     APPROVED: "運用中",
@@ -219,10 +204,7 @@ export default async function ClubDetailPage({
                       .filter(Boolean)
                       .join(" ") || null
                   }
-                  members={approvedMembers.map((m) => ({
-                    userId: m.userId,
-                    name: `${m.user.profile?.familyName ?? ""} ${m.user.profile?.givenName ?? ""}`.trim(),
-                  }))}
+                  members={representativeMemberOptions}
                 />
               </div>
             </div>
@@ -280,7 +262,7 @@ export default async function ClubDetailPage({
                 <div>
                   <span className="text-[11px] font-medium text-muted-foreground">メンバー</span>
                   <p className="text-xs font-semibold tabular-nums text-foreground sm:text-sm">
-                    {approvedMembers.length.toLocaleString("ja-JP")}
+                    {approvedMemberCount.toLocaleString("ja-JP")}
                     <span className="ml-1 text-[10px] font-normal text-muted-foreground sm:text-xs">名</span>
                   </p>
                 </div>
@@ -368,7 +350,7 @@ export default async function ClubDetailPage({
                 <Users className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
                 <span>メンバー</span>
                 <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground data-[state=active]:bg-background">
-                  {approvedMembers.length}
+                  {approvedMemberCount}
                 </span>
               </TabsTrigger>
               <TabsTrigger
@@ -404,124 +386,11 @@ export default async function ClubDetailPage({
           )}
 
           <div className="space-y-6">
-            <div className="flex items-center gap-2 border-b border-border/60 pb-2">
-              <Users className="h-5 w-5 text-primary" aria-hidden />
-              <h2 className="text-lg font-semibold tracking-tight text-foreground">メンバー管理</h2>
-            </div>
-
-            {isClubAdmin && pendingMembers.length > 0 && (
-              <Card padding="none">
-                <CardHeader>
-                  <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-                    <span>参加申請</span>
-                    <Badge variant="secondary" className="tabular-nums">
-                      {pendingMembers.length} 件
-                    </Badge>
-                  </CardTitle>
-                </CardHeader>
-                <DataTable
-                  data={pendingMembers}
-                  columns={[
-                    {
-                      header: "氏名",
-                      accessor: (m) => `${m.user.profile?.familyName ?? ""} ${m.user.profile?.givenName ?? ""}`.trim(),
-                      className: "font-medium text-foreground",
-                    },
-                    {
-                      header: "メール",
-                      accessor: (m) => m.user.email,
-                      className: "font-mono text-sm text-muted-foreground",
-                    },
-                    {
-                      header: "申請日",
-                      accessor: (m) => new Date(m.createdAt).toLocaleDateString("ja-JP"),
-                      className: "text-sm text-muted-foreground",
-                    },
-                    {
-                      header: "操作",
-                      accessor: (m) => (
-                        <MemberActionsLazy
-                          membershipId={m.id}
-                          clubId={club.id}
-                          status={m.status}
-                          role={m.role}
-                          currentUserId={sess.userId}
-                          targetUserId={m.userId}
-                          currentUserRole={userMembership?.role || "MEMBER"}
-                        />
-                      ),
-                    },
-                  ]}
-                  keyExtractor={(m) => m.id}
-                  emptyMessage="申請はありません"
-                />
-              </Card>
-            )}
-
-            <Card padding="none">
-              <CardHeader>
-                <CardTitle className="text-base">メンバー一覧</CardTitle>
-              </CardHeader>
-              <DataTable
-                data={approvedMembers}
-                columns={[
-                  {
-                    header: "氏名",
-                    accessor: (m) => `${m.user.profile?.familyName ?? ""} ${m.user.profile?.givenName ?? ""}`.trim(),
-                    className: "font-medium text-foreground",
-                  },
-                  {
-                    header: "役割",
-                    accessor: (m) => (
-                      <Badge
-                        variant={isClubAdminRole(m.role) ? "default" : "secondary"}
-                        className="font-normal"
-                      >
-                        {membershipRoleLabelJa(m.role)}
-                      </Badge>
-                    ),
-                  },
-                  {
-                    header: "ステータス",
-                    accessor: (m) => (
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          m.status === "APPROVED" &&
-                            "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100",
-                          m.status === "PENDING" &&
-                            "border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100",
-                          m.status === "REJECTED" &&
-                            "border-red-200 bg-red-50 text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100"
-                        )}
-                      >
-                        {membershipStatusLabel(m.status)}
-                      </Badge>
-                    ),
-                  },
-                  ...(isClubAdmin
-                    ? [
-                        {
-                          header: "操作",
-                          accessor: (m: (typeof club.memberships)[0]) => (
-                            <MemberActionsLazy
-                              membershipId={m.id}
-                              clubId={club.id}
-                              status={m.status}
-                              role={m.role}
-                              currentUserId={sess.userId}
-                              targetUserId={m.userId}
-                              currentUserRole={userMembership?.role || "MEMBER"}
-                            />
-                          ),
-                        },
-                      ]
-                    : []),
-                ]}
-                keyExtractor={(m) => m.id}
-                emptyMessage="メンバーがいません"
-              />
-            </Card>
+            {activeTab === "members" ? (
+              <Suspense fallback={<ClubMembersTabSkeleton />}>
+                <ClubMembersTabPanel clubId={club.id} currentUserId={sess.userId} />
+              </Suspense>
+            ) : null}
           </div>
         </TabsContent>
 

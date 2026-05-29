@@ -140,6 +140,8 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: [
       "lucide-react",
+      "sonner",
+      "date-fns",
       "@radix-ui/react-alert-dialog",
       "@radix-ui/react-checkbox",
       "@radix-ui/react-dialog",
