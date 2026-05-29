@@ -90,16 +90,19 @@ export function LiveRoundHeatMarshalDialogs({
             <AlertDialogCancel type="button" disabled={heatCloseBusy}>
               キャンセル
             </AlertDialogCancel>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={heatCloseBusy || heatCloseTarget === null}
-              onClick={() =>
-                heatCloseTarget !== null ? void runHeatMarshalClose(heatCloseTarget) : undefined
-              }
-            >
-              {heatCloseBusy ? "処理中…" : "実行する"}
-            </Button>
+            <AlertDialogAction asChild>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={heatCloseBusy || heatCloseTarget === null}
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (heatCloseTarget !== null) void runHeatMarshalClose(heatCloseTarget);
+                }}
+              >
+                {heatCloseBusy ? "処理中…" : "実行する"}
+              </Button>
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -389,7 +389,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
         !heatCallClosed &&
         !localConfirmedHeats.includes(displayHeatNumber) ? (
           <p className="mt-1 text-[10px] text-amber-800 dark:text-amber-200">
-            マーシャル締切後にリザルトを記録できます。「マーシャル締切」を実行してください。
+            マーシャル締切後にリザルトを記録できます。上部の表示モードで「マーシャル」に切り替え、ヒート見出しの「マーシャル締切」から実行してください。
           </p>
         ) : null}
         {resultCaptureVisible &&
@@ -890,7 +890,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
         !heatCallClosed &&
         !localConfirmedHeats.includes(displayHeatNumber) ? (
           <p className="mt-1 text-[10px] text-amber-800 dark:text-amber-200">
-            マーシャル締切後にリザルトを記録できます。「マーシャル締切」を実行してください。
+            マーシャル締切後にリザルトを記録できます。上部の表示モードで「マーシャル」に切り替え、ヒート見出しの「マーシャル締切」から実行してください。
           </p>
         ) : null}
         {resultCaptureVisible &&

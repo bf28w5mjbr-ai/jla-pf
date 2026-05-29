@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED } from "@/lib/dayOpsParticipantStatusDisplay";
 
 const DAY_OPS_POLL_INTERVAL_NORMAL_MS = 20_000;
-const DAY_OPS_POLL_INTERVAL_SYNC_MS = 4_500;
+const DAY_OPS_POLL_INTERVAL_SYNC_MS = 2_500;
 
 type Args = {
   enabled: boolean;

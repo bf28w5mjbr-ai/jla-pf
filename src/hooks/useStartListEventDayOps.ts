@@ -11,6 +11,8 @@ import type {
   StartListMarshalViewMode,
   StartListEventParticipantStatusRow,
 } from "@/lib/startListEventTypes";
+import { applyMarshalDraftOpsToHeats } from "@/components/startListRoundList/panelHelpers";
+import type { MarshalDraftOp } from "@/hooks/liveRound/types";
 import { useDayOpsStartListPolling } from "@/hooks/useDayOpsStartListPolling";
 import { dispatchJlaDayOpsParticipantStatusChanged } from "@/lib/dayOpsParticipantStatusDisplay";
 import { measureDayOpsAsync } from "@/lib/dayOpsMetrics";
@@ -320,20 +322,31 @@ export function useStartListEventDayOps({
     return m;
   }, [listMarshalHeats]);
 
-  const onMarshalSuccess = useCallback(async () => {
-    await refreshDayOpsParticipantPoll();
-    await refetchListMarshalHeats();
-    await refetchResultCapture();
-    router.refresh();
-    dispatchJlaDayOpsParticipantStatusChanged(competitionId, eventId);
-  }, [
-    refreshDayOpsParticipantPoll,
-    refetchListMarshalHeats,
-    refetchResultCapture,
-    router,
-    competitionId,
-    eventId,
-  ]);
+  const onMarshalSuccess = useCallback(
+    async (appliedOps?: ReadonlyArray<MarshalDraftOp>) => {
+      if (appliedOps?.length) {
+        const patchByKey = Object.fromEntries(appliedOps.map((o) => [o.opKey, o]));
+        setListMarshalHeats((prev) =>
+          prev?.length ? applyMarshalDraftOpsToHeats(prev, patchByKey) : prev
+        );
+      }
+      dispatchJlaDayOpsParticipantStatusChanged(competitionId, eventId);
+      await Promise.all([
+        refreshDayOpsParticipantPoll(),
+        refetchListMarshalHeats(),
+        refetchResultCapture(),
+      ]);
+      router.refresh();
+    },
+    [
+      refreshDayOpsParticipantPoll,
+      refetchListMarshalHeats,
+      refetchResultCapture,
+      router,
+      competitionId,
+      eventId,
+    ]
+  );
 
   const getViewModeForTab = useCallback(
     (tabId: string): StartListMarshalViewMode => marshalViewModeByTab[tabId] ?? "normal",

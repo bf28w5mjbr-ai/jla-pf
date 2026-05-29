@@ -74,6 +74,7 @@ export function LiveRoundContent({
     queueMarshalDraftToggle,
     discardMarshalDrafts,
     submitMarshalDrafts,
+    flushMarshalDraftsBeforeHeatClose,
     patchHeatCallClosed,
     patchHeatCallReopened,
     patchLaneCalled,
@@ -140,9 +141,7 @@ export function LiveRoundContent({
   } = useLiveRoundHeatMarshalActions({
     eventId,
     m: marshalCtx,
-    marshalDraftOps,
-    setMarshalDraftOps,
-    setMarshalDraftErrors,
+    flushMarshalDraftsBeforeHeatClose,
     patchHeatCallClosed,
     patchHeatCallReopened,
   });

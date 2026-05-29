@@ -1,26 +1,21 @@
 "use client";
 
-import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { postParticipantStatusesBulk } from "@/lib/heatMarshalApi";
 import { deleteHeatOperationDraftFireAndForget } from "@/lib/dayOpsHeatOperationDraftSync";
-import type { LiveRoundMarshalContext, MarshalDraftOp } from "@/hooks/liveRound/types";
+import type { LiveRoundMarshalContext } from "@/hooks/liveRound/types";
 
 export function useLiveRoundHeatMarshalActions(args: {
   eventId: string;
   m: LiveRoundMarshalContext;
-  marshalDraftOps: Record<string, MarshalDraftOp>;
-  setMarshalDraftOps: Dispatch<SetStateAction<Record<string, MarshalDraftOp>>>;
-  setMarshalDraftErrors: Dispatch<SetStateAction<Record<string, string>>>;
+  flushMarshalDraftsBeforeHeatClose?: (displayHeatNumber: number) => Promise<boolean>;
   patchHeatCallClosed: (heatIndex1Based: number) => void;
   patchHeatCallReopened: (heatIndex1Based: number) => void;
 }) {
   const {
     eventId,
     m,
-    marshalDraftOps,
-    setMarshalDraftOps,
-    setMarshalDraftErrors,
+    flushMarshalDraftsBeforeHeatClose,
     patchHeatCallClosed,
     patchHeatCallReopened,
   } = args;
@@ -32,34 +27,16 @@ export function useLiveRoundHeatMarshalActions(args: {
 
   const runHeatMarshalClose = useCallback(
     async (displayHeatNumber: number) => {
-      if (!m) return;
+      if (!m) {
+        toast.error("マーシャル状態を読み込み中です。しばらく待ってから再度お試しください。");
+        return;
+      }
       setHeatCloseBusy(true);
       try {
-        const draftForHeat = Object.values(marshalDraftOps).filter(
-          (op) => op.heatIndex === displayHeatNumber
-        );
-        if (draftForHeat.length > 0) {
-          const bulkResult = await postParticipantStatusesBulk(m.competitionId, draftForHeat);
-          const failedMap: Record<string, string> = {};
-          for (const f of bulkResult.failed) failedMap[f.opKey] = f.error;
-          setMarshalDraftErrors((prev) => ({ ...prev, ...failedMap }));
-          if (bulkResult.failed.length > 0) {
-            toast.error("未確定チェックの反映に失敗したため、締切を中止しました");
-            return;
-          }
-          const successKeys = new Set(bulkResult.success.map((s) => s.opKey));
-          setMarshalDraftOps((prev) => {
-            if (successKeys.size === 0) return prev;
-            const next = { ...prev };
-            for (const key of successKeys) delete next[key];
-            return next;
-          });
-          setMarshalDraftErrors((prev) => {
-            if (successKeys.size === 0) return prev;
-            const next = { ...prev };
-            for (const key of successKeys) delete next[key];
-            return next;
-          });
+        const draftsFlushed = (await flushMarshalDraftsBeforeHeatClose?.(displayHeatNumber)) ?? true;
+        if (!draftsFlushed) {
+          toast.error("未確定チェックの反映に失敗したため、締切を中止しました");
+          return;
         }
 
         const putRes = await fetch(`/api/competitions/${m.competitionId}/day-ops/heat-marshal`, {
@@ -94,7 +71,7 @@ export function useLiveRoundHeatMarshalActions(args: {
         setHeatCloseBusy(false);
       }
     },
-    [m, marshalDraftOps, eventId, patchHeatCallClosed, setMarshalDraftErrors, setMarshalDraftOps]
+    [m, eventId, flushMarshalDraftsBeforeHeatClose, patchHeatCallClosed]
   );
 
   const runHeatMarshalReopen = useCallback(

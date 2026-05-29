@@ -257,7 +257,7 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
         : null;
     return (
       <LiveRoundContent
-        key={`sl-${event.id}-${index}-${viewModeForRow}`}
+        key={`sl-${event.id}-${index}`}
         eventId={event.id}
         isTeam={isTeam}
         heatPlanConfirmedForDsq={heatPlanConfirmed}

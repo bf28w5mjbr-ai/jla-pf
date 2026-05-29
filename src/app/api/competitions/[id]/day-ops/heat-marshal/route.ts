@@ -10,6 +10,7 @@ import {
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
 import {
   getRoundDataFromSnapshot,
+  heatIndexMatchesSnapshot,
   isEventPresentInSnapshot,
   listMarshalRoundsInSnapshotForEvent,
 } from "@/lib/heatMarshalFromSnapshot";
@@ -343,9 +344,12 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const snapshot = await loadStartListSnapshotPayload(competitionId);
+    const snapshot =
+      (await loadStartListSnapshotPayload(competitionId)) ??
+      (await loadStartListSnapshotPayloadLoose(competitionId));
     const roundData = getRoundDataFromSnapshot(snapshot, eventId, round);
-    const heatExists = roundData?.heats.some((h) => h.heatIndex === heatIndex) ?? false;
+    const heatExists =
+      roundData?.heats.some((h) => heatIndexMatchesSnapshot(heatIndex, h.heatIndex)) ?? false;
     if (isClosed && !heatExists) {
       return NextResponse.json(
         { error: "スタートリストに該当ヒートがありません。スナップショットを確認してください。" },

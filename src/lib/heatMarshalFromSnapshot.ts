@@ -97,11 +97,16 @@ export function findHeatIndexInRound(
   return null;
 }
 
+/** JSON 由来の heatIndex が string でも一致する（PUT 検証・表示突合） */
+export function heatIndexMatchesSnapshot(a: number, b: unknown): boolean {
+  return Number(a) === Number(b);
+}
+
 export function getHeatFromRoundData(
   roundData: StartListRoundData | undefined,
   heatIndex: number
 ): StartListHeat | undefined {
-  return (roundData?.heats ?? []).find((h) => h.heatIndex === heatIndex);
+  return (roundData?.heats ?? []).find((h) => heatIndexMatchesSnapshot(heatIndex, h.heatIndex));
 }
 
 /** ヒート内の並び順をレーン番号（1始まり）として扱う */

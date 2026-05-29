@@ -34,7 +34,7 @@ export type LiveRoundMarshalContext = {
   marshalRoundMismatch?: boolean;
   isCallClosed: boolean;
   marshalUiMode?: "dialog" | "inline" | "result";
-  onMarshalSuccess: () => void | Promise<void>;
+  onMarshalSuccess: (appliedOps?: ReadonlyArray<MarshalDraftOp>) => void | Promise<void>;
   resultCapture?: {
     rows: import("@/lib/heatResultCaptureApi").HeatResultCaptureRow[];
     locked: boolean;
