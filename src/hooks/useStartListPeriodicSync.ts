@@ -29,7 +29,7 @@ export function useStartListPeriodicSync({
     const ms = resolveStartListPeriodicSyncIntervalSec(intervalSec) * 1000;
 
     let cancelled = false;
-    let timerId: ReturnType<typeof setTimeout> | undefined;
+    let timerId: number | undefined;
 
     const scheduleNext = () => {
       if (cancelled) return;

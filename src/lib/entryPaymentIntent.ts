@@ -128,7 +128,7 @@ export async function listUnpaidIntentEmailTargets(
 
 /** 出場意思メールの対象判定（listUnpaidIntentEmailTargets と同じ） */
 export function entryQualifiesForUnpaidIntentEmail(entry: {
-  status: string;
+  status: EntryLike["status"];
   totalFee: number;
   clubIndividualFeePaidAt: Date | null;
   organizerPostPayApprovedAt: Date | null;
@@ -150,7 +150,7 @@ export type IntentCampaignTokenSummaryInput = {
   deadlineDnsAppliedAt: Date | null;
   emailDeliveredAt: Date | null;
   entry: {
-    status: string;
+    status: EntryLike["status"];
     totalFee: number;
     clubIndividualFeePaidAt: Date | null;
     organizerPostPayApprovedAt: Date | null;
