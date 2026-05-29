@@ -7,6 +7,10 @@ import {
   requireHostOrgAdminForCompetition,
 } from "@/lib/organizerAccess";
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
+import {
+  eventHasMarshalCallClosedRound,
+  getMarshalActiveRoundsForEvents,
+} from "@/lib/marshalRoundSettingsLock";
 import { START_LIST_STEP1_LOCKED_AFTER_MARSHAL_MESSAGE } from "@/lib/startListStep1Messages";
 
 type RouteContext = { params: Promise<{ id: string; eventId: string }> };
@@ -45,7 +49,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ message: "種目が見つかりません" }, { status: 404 });
     }
 
-    if (event.marshalStartedAt) {
+    const marshalLockedMap = await getMarshalActiveRoundsForEvents(prisma, competitionId, [
+      eventId,
+    ]);
+    if (eventHasMarshalCallClosedRound(marshalLockedMap, eventId)) {
       return NextResponse.json(
         { message: START_LIST_STEP1_LOCKED_AFTER_MARSHAL_MESSAGE },
         { status: 409 }

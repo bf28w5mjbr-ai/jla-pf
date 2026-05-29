@@ -8,6 +8,16 @@ export function resolveResendRegistrationFrom(): string {
   return process.env.REGISTRATION_EMAIL_FROM?.trim() || DEFAULT_RESEND_FROM;
 }
 
+/** 大会運用・未決済確認など参加者向けトランザクションメール */
+export function resolveTransactionalEmailFrom(): string {
+  return (
+    process.env.EMAIL_FROM?.trim() ||
+    process.env.COMPETITION_INQUIRY_EMAIL_FROM?.trim() ||
+    process.env.REGISTRATION_EMAIL_FROM?.trim() ||
+    DEFAULT_RESEND_FROM
+  );
+}
+
 /** Resend のテスト用 From（未検証ドメイン時のフォールバック）か */
 export function isResendOnboardingFrom(from: string): boolean {
   return from.toLowerCase().includes("onboarding@resend.dev");

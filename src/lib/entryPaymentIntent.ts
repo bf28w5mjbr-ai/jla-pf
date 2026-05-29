@@ -126,6 +126,92 @@ export async function listUnpaidIntentEmailTargets(
   return { targets, skippedNoEmail };
 }
 
+/** 出場意思メールの対象判定（listUnpaidIntentEmailTargets と同じ） */
+export function entryQualifiesForUnpaidIntentEmail(entry: {
+  status: string;
+  totalFee: number;
+  clubIndividualFeePaidAt: Date | null;
+  organizerPostPayApprovedAt: Date | null;
+  organizerManualPaidAt: Date | null;
+  items: { eventId: string }[];
+  participantStatuses: { eventId: string; status: string; reason: string | null }[];
+  checkoutSessions: { status: string }[];
+}): boolean {
+  if (entry.status !== "SUBMITTED" || entry.totalFee <= 0) return false;
+  const like = entryLikeFromRow(entry);
+  if (isEntryFeeSettled(like)) return false;
+  if (isFullyWithdrawnIndividual(entry)) return false;
+  return true;
+}
+
+export type IntentCampaignTokenSummaryInput = {
+  choice: EntryPaymentIntentChoice | null;
+  respondedAt: Date | null;
+  deadlineDnsAppliedAt: Date | null;
+  emailDeliveredAt: Date | null;
+  entry: {
+    status: string;
+    totalFee: number;
+    clubIndividualFeePaidAt: Date | null;
+    organizerPostPayApprovedAt: Date | null;
+    organizerManualPaidAt: Date | null;
+    items: { eventId: string }[];
+    participantStatuses: { eventId: string; status: string; reason: string | null }[];
+    checkoutSessions: { status: string }[];
+  };
+};
+
+export type IntentCampaignSummary = {
+  totalTokens: number;
+  participateCount: number;
+  withdrawCount: number;
+  /** トークン上は未回答 */
+  tokenPendingCount: number;
+  /** 出場意思の回答がまだ必要（未決済かつメール対象相当） */
+  actionRequiredCount: number;
+  deadlineDnsFlagCount: number;
+  emailDeliveredCount: number;
+  emailUndeliveredCount: number;
+};
+
+export function summarizeIntentCampaignTokens(
+  tokens: IntentCampaignTokenSummaryInput[]
+): IntentCampaignSummary {
+  let participateCount = 0;
+  let withdrawCount = 0;
+  let tokenPendingCount = 0;
+  let actionRequiredCount = 0;
+  let deadlineDnsFlagCount = 0;
+  let emailDeliveredCount = 0;
+  let emailUndeliveredCount = 0;
+
+  for (const t of tokens) {
+    if (t.choice === "PARTICIPATE") participateCount += 1;
+    if (t.choice === "WITHDRAW") withdrawCount += 1;
+    if (t.respondedAt == null && t.deadlineDnsAppliedAt == null) tokenPendingCount += 1;
+    if (t.deadlineDnsAppliedAt != null) deadlineDnsFlagCount += 1;
+    if (t.emailDeliveredAt != null) emailDeliveredCount += 1;
+    else emailUndeliveredCount += 1;
+
+    const needsResponse =
+      t.respondedAt == null &&
+      t.deadlineDnsAppliedAt == null &&
+      entryQualifiesForUnpaidIntentEmail(t.entry);
+    if (needsResponse) actionRequiredCount += 1;
+  }
+
+  return {
+    totalTokens: tokens.length,
+    participateCount,
+    withdrawCount,
+    tokenPendingCount,
+    actionRequiredCount,
+    deadlineDnsFlagCount,
+    emailDeliveredCount,
+    emailUndeliveredCount,
+  };
+}
+
 export async function approveEntryViaParticipantIntent(
   tx: Tx,
   entryId: string

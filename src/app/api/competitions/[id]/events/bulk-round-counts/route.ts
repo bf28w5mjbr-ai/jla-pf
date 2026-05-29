@@ -7,6 +7,10 @@ import {
   requireHostOrgAdminForCompetition,
 } from "@/lib/organizerAccess";
 import { syncStartListSettingsRoundTabsForEvents } from "@/lib/startListRoundCountSync";
+import {
+  eventHasMarshalCallClosedRound,
+  getMarshalActiveRoundsForEvents,
+} from "@/lib/marshalRoundSettingsLock";
 
 /**
  * 種目表保存など: ラウンド数だけを複数行まとめて更新（startListSettings の競合を避ける）。
@@ -85,18 +89,23 @@ export async function POST(
 
     const events = await prisma.event.findMany({
       where: { id: { in: items.map((i) => i.eventId) } },
-      select: { id: true, competitionId: true, marshalStartedAt: true },
+      select: { id: true, competitionId: true },
     });
     if (events.length !== items.length) {
       return NextResponse.json({ message: "種目が見つかりません" }, { status: 404 });
     }
+    const marshalLockedMap = await getMarshalActiveRoundsForEvents(
+      prisma,
+      competitionId,
+      items.map((i) => i.eventId)
+    );
     for (const e of events) {
       if (e.competitionId !== competitionId) {
         return NextResponse.json({ message: "種目が見つかりません" }, { status: 404 });
       }
-      if (e.marshalStartedAt) {
+      if (eventHasMarshalCallClosedRound(marshalLockedMap, e.id)) {
         return NextResponse.json(
-          { message: "マーシャル開始後はスタートリストのラウンド数を変更できません" },
+          { message: "マーシャル締切済みのため、スタートリストのラウンド数を変更できません" },
           { status: 409 }
         );
       }

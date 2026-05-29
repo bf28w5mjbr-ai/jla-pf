@@ -4,6 +4,7 @@ import { prisma } from "@/server/db";
 import CompetitionHostInviteEntryPanel from "@/components/admin/CompetitionHostInviteEntryPanel";
 import CompetitionEntryPostPayActions from "@/components/admin/CompetitionEntryPostPayActions";
 import CompetitionUnpaidIntentBulkMailPanel from "@/components/admin/CompetitionUnpaidIntentBulkMailPanel";
+import { listUnpaidIntentEmailTargets } from "@/lib/entryPaymentIntent";
 import {
   buildClubPrepaidIndividualPaymentOwnerId,
   buildTeamEntryPaymentOwnerId,
@@ -1023,34 +1024,60 @@ export default async function CompetitionEntriesTabContent({
       maxTeamEntriesPerClub: e.maxTeamEntriesPerClub,
     }));
 
-  const latestIntentCampaign = await prisma.competitionUnpaidEntryIntentCampaign.findFirst({
-    where: { competitionId: competition.id },
-    orderBy: { sentAt: "desc" },
-    select: {
-      id: true,
-      sentAt: true,
-      responseDeadlineAt: true,
-      tokens: {
-        select: { choice: true, respondedAt: true, deadlineDnsAppliedAt: true },
+  const [latestIntentCampaign, unpaidIntentTargets] = await Promise.all([
+    prisma.competitionUnpaidEntryIntentCampaign.findFirst({
+      where: { competitionId: competition.id },
+      orderBy: { sentAt: "desc" },
+      select: {
+        id: true,
+        sentAt: true,
+        responseDeadlineAt: true,
+        tokens: {
+          select: {
+            entryId: true,
+            choice: true,
+            respondedAt: true,
+            deadlineDnsAppliedAt: true,
+            emailDeliveredAt: true,
+          },
+        },
       },
-    },
-  });
+    }),
+    listUnpaidIntentEmailTargets(prisma, competition.id),
+  ]);
+
+  const unpaidIntentTargetEntryIds = new Set(
+    unpaidIntentTargets.targets.map((t) => t.entryId)
+  );
 
   const initialIntentCampaign = latestIntentCampaign
-    ? {
-        id: latestIntentCampaign.id,
-        sentAt: latestIntentCampaign.sentAt.toISOString(),
-        responseDeadlineAt: latestIntentCampaign.responseDeadlineAt.toISOString(),
-        totalTokens: latestIntentCampaign.tokens.length,
-        participateCount: latestIntentCampaign.tokens.filter((t) => t.choice === "PARTICIPATE")
-          .length,
-        withdrawCount: latestIntentCampaign.tokens.filter((t) => t.choice === "WITHDRAW").length,
-        deadlineDnsCount: latestIntentCampaign.tokens.filter((t) => t.deadlineDnsAppliedAt != null)
-          .length,
-        pendingCount: latestIntentCampaign.tokens.filter(
+    ? (() => {
+        const tokens = latestIntentCampaign.tokens;
+        const tokenPendingCount = tokens.filter(
           (t) => t.respondedAt == null && t.deadlineDnsAppliedAt == null
-        ).length,
-      }
+        ).length;
+        const actionRequiredCount = tokens.filter(
+          (t) =>
+            t.respondedAt == null &&
+            t.deadlineDnsAppliedAt == null &&
+            unpaidIntentTargetEntryIds.has(t.entryId)
+        ).length;
+        const emailUndeliveredCount = tokens.filter((t) => t.emailDeliveredAt == null).length;
+        return {
+          id: latestIntentCampaign.id,
+          sentAt: latestIntentCampaign.sentAt.toISOString(),
+          responseDeadlineAt: latestIntentCampaign.responseDeadlineAt.toISOString(),
+          totalTokens: tokens.length,
+          participateCount: tokens.filter((t) => t.choice === "PARTICIPATE").length,
+          withdrawCount: tokens.filter((t) => t.choice === "WITHDRAW").length,
+          deadlineDnsCount: tokens.filter((t) => t.deadlineDnsAppliedAt != null).length,
+          pendingCount: tokenPendingCount,
+          actionRequiredCount,
+          emailDeliveredCount: tokens.filter((t) => t.emailDeliveredAt != null).length,
+          emailUndeliveredCount,
+          currentUnpaidTargetCount: unpaidIntentTargets.targets.length,
+        };
+      })()
     : null;
 
   return (

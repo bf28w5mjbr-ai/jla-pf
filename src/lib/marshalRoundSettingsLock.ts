@@ -36,11 +36,14 @@ export function isMarshalRoundLocked(
   return round != null && lockedRounds.includes(round);
 }
 
+export type MarshalCallClosedRoundsByEventId = Map<string, Set<ResultRound>>;
+
+/** マーシャル締切（callClosedAt）済みヒートがあるラウンドを種目ごとに返す */
 export async function getMarshalActiveRoundsForEvents(
-  prisma: Pick<PrismaClient, "competitionHeatMarshalState" | "competitionParticipantStatus">,
+  prisma: Pick<PrismaClient, "competitionHeatMarshalState">,
   competitionId: string,
   eventIds: readonly string[]
-): Promise<Map<string, Set<ResultRound>>> {
+): Promise<MarshalCallClosedRoundsByEventId> {
   const out = new Map<string, Set<ResultRound>>();
   const uniqueIds = [...new Set(eventIds.filter((id) => id.length > 0))];
   if (uniqueIds.length === 0) return out;
@@ -49,29 +52,34 @@ export async function getMarshalActiveRoundsForEvents(
     out.set(id, new Set());
   }
 
-  const [marshalRows, statusRows] = await Promise.all([
-    prisma.competitionHeatMarshalState.findMany({
-      where: { competitionId, eventId: { in: uniqueIds } },
-      select: { eventId: true, round: true },
-    }),
-    prisma.competitionParticipantStatus.findMany({
-      where: {
-        competitionId,
-        eventId: { in: uniqueIds },
-        OR: [{ status: { not: "PENDING" } }, { calledAt: { not: null } }],
-      },
-      select: { eventId: true, marshalRound: true },
-    }),
-  ]);
+  const marshalRows = await prisma.competitionHeatMarshalState.findMany({
+    where: {
+      competitionId,
+      eventId: { in: uniqueIds },
+      callClosedAt: { not: null },
+    },
+    select: { eventId: true, round: true },
+  });
 
   for (const row of marshalRows) {
     out.get(row.eventId)?.add(row.round);
   }
-  for (const row of statusRows) {
-    out.get(row.eventId)?.add(row.marshalRound);
-  }
 
   return out;
+}
+
+export function eventHasMarshalCallClosedRound(
+  lockedMap: MarshalCallClosedRoundsByEventId,
+  eventId: string
+): boolean {
+  return (lockedMap.get(eventId)?.size ?? 0) > 0;
+}
+
+export function eventHeatRoundMarshalCallClosed(
+  lockedMap: MarshalCallClosedRoundsByEventId,
+  eventId: string
+): boolean {
+  return lockedMap.get(eventId)?.has("HEAT") ?? false;
 }
 
 export function findLockedTabSettingViolation(params: {
@@ -85,7 +93,7 @@ export function findLockedTabSettingViolation(params: {
     params;
 
   if (lockedRounds.size > 0 && previousRoundCount !== nextRoundCount) {
-    return "マーシャル開始済みのラウンドがあるため、スタートリストのラウンド数を変更できません";
+    return "マーシャル締切済みのラウンドがあるため、スタートリストのラウンド数を変更できません";
   }
 
   const prevTabs = resolveRoundTabsForEvent({
@@ -106,7 +114,7 @@ export function findLockedTabSettingViolation(params: {
     const round = snapshotRoundForTab(i, nextRoundCount);
     if (!round) continue;
     if (lockedRounds.has(round)) {
-      return `${marshalRoundLabelJa(round)}はマーシャル開始済みのため、ヒート分割・最大レーンを変更できません`;
+      return `${marshalRoundLabelJa(round)}はマーシャル締切済みのため、ヒート分割・最大レーンを変更できません`;
     }
   }
 

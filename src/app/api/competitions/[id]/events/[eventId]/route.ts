@@ -26,6 +26,11 @@ import {
   roundScheduledStartsToPrismaJson,
 } from "@/lib/eventRoundScheduledStarts";
 import { parseMaxLanesPerHeat } from "@/lib/maxLanesPerHeat";
+import {
+  eventHasMarshalCallClosedRound,
+  eventHeatRoundMarshalCallClosed,
+  getMarshalActiveRoundsForEvents,
+} from "@/lib/marshalRoundSettingsLock";
 import { syncStartListSettingsRoundTabsForEvent } from "@/lib/startListRoundCountSync";
 import { parseEligibleBirthDateInput } from "@/lib/eligibleBirthDateInput";
 import { eventBirthFieldsFromAgeCategory } from "@/lib/competitionAgeCategorySync";
@@ -750,9 +755,12 @@ export async function PATCH(
         );
       }
 
-      if (event.marshalStartedAt) {
+      const marshalLockedMap = await getMarshalActiveRoundsForEvents(prisma, competitionId, [
+        eventId,
+      ]);
+      if (eventHasMarshalCallClosedRound(marshalLockedMap, eventId)) {
         return NextResponse.json(
-          { message: "マーシャル開始後はスタートリストのラウンド数を変更できません" },
+          { message: "マーシャル締切済みのため、スタートリストのラウンド数を変更できません" },
           { status: 409 }
         );
       }
@@ -835,9 +843,12 @@ export async function PATCH(
         return NextResponse.json({ message: laneInvalidMessage }, { status: 400 });
       }
 
-      if (event.marshalStartedAt) {
+      const marshalLockedMap = await getMarshalActiveRoundsForEvents(prisma, competitionId, [
+        eventId,
+      ]);
+      if (eventHeatRoundMarshalCallClosed(marshalLockedMap, eventId)) {
         return NextResponse.json(
-          { message: "マーシャル開始後は1レースあたりの最大レーン数を変更できません" },
+          { message: "予選（HEAT）がマーシャル締切済みのため、1レースあたりの最大レーン数を変更できません" },
           { status: 409 }
         );
       }

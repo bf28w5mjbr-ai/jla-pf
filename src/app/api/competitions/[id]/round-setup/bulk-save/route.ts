@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { validateEventSettingsRoundTabHeatMonotonic } from "@/lib/startListEventHeatValidation";
 import { mergeEventSettingsForMarshalCompare } from "@/lib/eventHeatPlanMarshal";
-import { assertHeatSettingsUnchangedForMarshalActiveRounds } from "@/lib/marshalRoundSettingsLock";
+import { assertHeatSettingsUnchangedForMarshalActiveRounds, eventHasMarshalCallClosedRound, getMarshalActiveRoundsForEvents } from "@/lib/marshalRoundSettingsLock";
 import { competitionEntryEligibleForStartListWhere } from "@/lib/entryCheckoutSessionPaid";
 import { prisma } from "@/server/db";
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
@@ -208,11 +208,22 @@ export async function POST(
       nextEventSettings: mergedEventSettings,
     });
 
+    const itemEventIds = items.map((i) => i.eventId);
+    const marshalLockedMap = await getMarshalActiveRoundsForEvents(
+      prisma,
+      competitionId,
+      itemEventIds
+    );
+    const marshalCallClosedEventIds = new Set(
+      itemEventIds.filter((id) => eventHasMarshalCallClosedRound(marshalLockedMap, id))
+    );
+
     const confirmEventIds = resolveRoundSetupConfirmEventIds({
       requestedIds: body?.confirmEventIds,
-      itemsEventIds: items.map((i) => i.eventId),
+      itemsEventIds: itemEventIds,
       allEventIds: eventIdSet,
       eventsById,
+      marshalCallClosedEventIds,
     });
 
     const now = new Date();
@@ -220,7 +231,7 @@ export async function POST(
     for (const eventId of confirmEventIds) {
       const ev = eventsById.get(eventId);
       if (!ev) continue;
-      if (ev.marshalStartedAt) {
+      if (eventHasMarshalCallClosedRound(marshalLockedMap, eventId)) {
         confirmResults.push({
           eventId,
           ok: false,

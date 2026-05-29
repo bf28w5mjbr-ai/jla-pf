@@ -354,7 +354,8 @@ export async function loadStartListEventPage(input: {
         isOrgAdmin,
         showVenueOps,
       },
-      softRefreshIntervalSec: viewMode === "public" ? 25 : undefined,
+      periodicSyncEnabled: true,
+      periodicSnapshotSync: true,
     },
   };
 }

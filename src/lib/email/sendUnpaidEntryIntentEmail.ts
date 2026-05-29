@@ -1,6 +1,9 @@
 import { getPublicAppUrl } from "@/lib/appBaseUrl";
 import { maskEmailForHint } from "@/lib/email/maskEmail";
-import { resolveResendRegistrationFrom } from "@/lib/email/resendRegistrationOtp";
+import {
+  isResendOnboardingFrom,
+  resolveTransactionalEmailFrom,
+} from "@/lib/email/resendRegistrationOtp";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
@@ -20,7 +23,12 @@ export async function sendUnpaidEntryIntentEmail(
     throw new Error("RESEND_API_KEY が未設定です");
   }
 
-  const from = resolveResendRegistrationFrom();
+  const from = resolveTransactionalEmailFrom();
+  if (isResendOnboardingFrom(from)) {
+    console.warn(
+      "[Resend] unpaid entry intent: テスト用送信元のため外部宛に届かない可能性があります。EMAIL_FROM を検証済みドメインに設定してください。"
+    );
+  }
   const subject = `【${params.competitionName}】エントリー費のお支払い・出場意思のご確認`;
 
   const text = [
@@ -59,7 +67,14 @@ export async function sendUnpaidEntryIntentEmail(
 
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`Resend が失敗しました (${res.status}): ${body.slice(0, 500)}`);
+    let hint = "";
+    if (res.status === 403 && body.includes("verify a domain")) {
+      hint =
+        " 環境変数 EMAIL_FROM を Resend で検証済みのドメインの送信元に設定してください（テスト用 onboarding@resend.dev では外部宛に送れません）。";
+    } else if (res.status === 429) {
+      hint = " 送信間隔を空けて再試行してください。";
+    }
+    throw new Error(`Resend が失敗しました (${res.status}): ${body.slice(0, 500)}${hint}`);
   }
 
   const json = (await res.json().catch(() => null)) as { data?: { id?: string } } | null;

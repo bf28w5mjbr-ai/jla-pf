@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo } from "react";
 import { Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,23 +27,10 @@ export default function StartListEventPublicCard({
   frozenSnapshotRounds,
   initialParticipantStatusRows,
   participantStatusByKey,
-  softRefreshIntervalSec,
 }: StartListEventCardProps) {
-  const router = useRouter();
   const eventId = event.id;
   const isTeam = event.type === "TEAM";
   const total = isTeam ? teams.length : individuals.length;
-
-  useEffect(() => {
-    const sec = softRefreshIntervalSec;
-    if (sec == null || sec < 15) return;
-    const ms = Math.min(sec * 1000, 120_000);
-    const id = window.setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      router.refresh();
-    }, ms);
-    return () => window.clearInterval(id);
-  }, [softRefreshIntervalSec, router]);
 
   const roundDisplay = useMemo(
     () =>

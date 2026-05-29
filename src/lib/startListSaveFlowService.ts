@@ -85,20 +85,22 @@ export async function runSnapshotCaptureForSettings(
 export type RoundSetupConfirmableEvent = {
   id: string;
   startListHeatPlanConfirmedAt: Date | null;
-  marshalStartedAt: Date | null;
 };
 
 /**
  * 一括保存時にステップ1確定対象とする eventId を解決する。
- * `requestedIds` が有効ならそれを優先、未指定時は「未確定かつ未マーシャル」の dirty items を対象にする。
+ * `requestedIds` が有効ならそれを優先、未指定時は「未確定かつマーシャル締切前」の dirty items を対象にする。
  */
 export function resolveRoundSetupConfirmEventIds(args: {
   requestedIds: unknown;
   itemsEventIds: string[];
   allEventIds: Set<string>;
   eventsById: Map<string, RoundSetupConfirmableEvent>;
+  marshalCallClosedEventIds?: ReadonlySet<string>;
 }): string[] {
-  const { requestedIds, itemsEventIds, allEventIds, eventsById } = args;
+  const { requestedIds, itemsEventIds, allEventIds, eventsById, marshalCallClosedEventIds } =
+    args;
+  const isMarshalLocked = (id: string) => marshalCallClosedEventIds?.has(id) ?? false;
   if (Array.isArray(requestedIds) && requestedIds.length > 0) {
     return requestedIds.filter(
       (id): id is string => typeof id === "string" && allEventIds.has(id)
@@ -106,6 +108,6 @@ export function resolveRoundSetupConfirmEventIds(args: {
   }
   return itemsEventIds.filter((id) => {
     const ev = eventsById.get(id);
-    return Boolean(ev && !ev.startListHeatPlanConfirmedAt && !ev.marshalStartedAt);
+    return Boolean(ev && !ev.startListHeatPlanConfirmedAt && !isMarshalLocked(id));
   });
 }

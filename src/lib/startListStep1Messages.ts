@@ -5,4 +5,4 @@ export const START_LIST_STEP1_REQUIRED_SHORT_MESSAGE =
   "先にスタートリストのステップ1を確定してください。";
 
 export const START_LIST_STEP1_LOCKED_AFTER_MARSHAL_MESSAGE =
-  "マーシャル開始後はステップ1の状態を変更できません";
+  "マーシャル締切済みのため、ステップ1の状態を変更できません";

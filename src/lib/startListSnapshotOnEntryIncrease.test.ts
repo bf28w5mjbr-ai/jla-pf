@@ -11,17 +11,20 @@ import {
   resolveEventIdsNeedingSnapshotSync,
 } from "@/lib/startListSnapshotOnEntryIncrease";
 
-const { mockEventFindMany, mockEntryFindMany, mockTeamFindMany } = vi.hoisted(() => ({
-  mockEventFindMany: vi.fn(),
-  mockEntryFindMany: vi.fn(),
-  mockTeamFindMany: vi.fn(),
-}));
+const { mockEventFindMany, mockEntryFindMany, mockTeamFindMany, mockHeatMarshalStateFindMany } =
+  vi.hoisted(() => ({
+    mockEventFindMany: vi.fn(),
+    mockEntryFindMany: vi.fn(),
+    mockTeamFindMany: vi.fn(),
+    mockHeatMarshalStateFindMany: vi.fn(),
+  }));
 
 vi.mock("@/server/db", () => ({
   prisma: {
     event: { findMany: mockEventFindMany },
     competitionEntry: { findMany: mockEntryFindMany },
     teamEntry: { findMany: mockTeamFindMany },
+    competitionHeatMarshalState: { findMany: mockHeatMarshalStateFindMany },
   },
 }));
 
@@ -137,16 +140,18 @@ describe("collectEventIdsFromEntrySavePayload", () => {
 describe("resolveEventIdsNeedingSnapshotSync", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockHeatMarshalStateFindMany.mockResolvedValue([]);
   });
 
-  it("marshal 開始済み種目は対象外", async () => {
-    mockEventFindMany.mockResolvedValue([]);
+  it("HEAT マーシャル締切済み種目は対象外", async () => {
+    mockHeatMarshalStateFindMany.mockResolvedValue([{ eventId: "ev1", round: "HEAT" }]);
     const result = await resolveEventIdsNeedingSnapshotSync({
       competitionId: "c1",
       candidateEventIds: ["ev1"],
       snapshotData: minimalSnapshot("ev1", ["e0"]),
     });
     expect(result).toEqual([]);
+    expect(mockEventFindMany).not.toHaveBeenCalled();
   });
 
   it("ライブ ID 集合がスナップショットと違えば対象", async () => {

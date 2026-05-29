@@ -11,10 +11,11 @@
 | `POST /api/competitions/{id}/round-setup/bulk-save` | ラウンド設定カードの一括保存 | あり（roundCount + roundTabs） | 既定で実施（`captureSnapshot !== false`） | 未確定種目を自動確定可 |
 | `PUT /api/competitions/{id}/start-list-settings` | 旧来/運用系の設定保存 | あり（startListSettings） | `captureSnapshot === true` のとき実施 | なし |
 | `POST /api/competitions/{id}/start-list-snapshot/capture` | 手動で記録更新のみ | なし | 常に実施 | なし |
+| `POST /api/competitions/{id}/start-list-snapshot/sync-if-needed` | 定期・手動の差分同期 | なし | ずれた種目のみ | なし |
 
 ## 1.1 マーシャル前の自動スナップショット同期
 
-`src/lib/startListSnapshotOnEntryIncrease.ts` の `syncStartListSnapshotBeforeMarshal` が、**既にスナップショット記録がある大会**で、種目ごとの**ライブ成立参加者 ID 集合**と **HEAT スナップショット上の ID 集合**が一致しないとき、その種目の HEAT だけを部分再計算する（`marshalStartedAt` 未設定のみ）。故意のシャッフル UI は設けない。
+`src/lib/startListSnapshotOnEntryIncrease.ts` の `syncStartListSnapshotBeforeMarshal` が、**既にスナップショット記録がある大会**で、種目ごとの**ライブ成立参加者 ID 集合**と **HEAT スナップショット上の ID 集合**が一致しないとき、その種目の HEAT だけを部分再計算する（**HEAT ラウンド内のいずれかのヒートがマーシャル締切済みでない**種目のみ）。故意のシャッフル UI は設けない。
 
 | トリガー | 入口例 |
 | --- | --- |
@@ -30,12 +31,21 @@
 **自動同期しない例**
 
 - スナップショット未作成（初回は従来どおり手動 capture または bulk-save）
-- 種目の `marshalStartedAt` 設定済み
+- 種目の **HEAT ラウンド**にマーシャル締切（`callClosedAt`）済みヒートがある
 - ライブとスナップショットの参加者 ID 集合が既に一致（`ALREADY_IN_SYNC`）
 
 監査ログ `COMPETITION_START_LIST_SNAPSHOT_CAPTURE` には `autoBeforeMarshalSync: true` と `syncTrigger` が付く。
 
 マーシャル前でも同期のたびに該当種目の **HEAT は全員分再シャッフル**される（SEMI/FINAL は維持）。
+
+## 1.2 スタートリスト画面の定期同期（全体）
+
+大会のスタートリストタブ（[`StartListEventIndexBars`](src/components/StartListEventIndexBars.tsx)）および種目詳細（[`StartListEventUnifiedCard`](src/components/StartListEventUnifiedCard.tsx)）は、表示中タブが visible のとき **約 30 秒ごと**（`NEXT_PUBLIC_START_LIST_SYNC_INTERVAL_SEC` で 15〜120 に変更可）に次を実行する。
+
+1. `POST /api/competitions/{id}/start-list-snapshot/sync-if-needed` — 全会種目を対象に、HEAT 締切前かつスナップショットとライブ参加者 ID がずれている種目だけ HEAT を再生成（`syncTrigger: PERIODIC_POLL`）
+2. `router.refresh()` — SSR 再取得（エントリー件数・表示を最新化）
+
+スタートリスト閲覧権限（公開設定 or 主催管理者 or 当日運用アンロック）がない場合は API は 403。
 
 ## 2. 共通化した責務
 

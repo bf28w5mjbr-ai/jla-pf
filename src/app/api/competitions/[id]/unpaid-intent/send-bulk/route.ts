@@ -8,15 +8,7 @@ import {
 } from "@/lib/organizerAccess";
 import { logAuditAction, getRequestContext } from "@/lib/auditLog";
 import { listUnpaidIntentEmailTargets } from "@/lib/entryPaymentIntent";
-import {
-  buildPaymentIntentPublicUrl,
-  sendUnpaidEntryIntentEmail,
-} from "@/lib/email/sendUnpaidEntryIntentEmail";
-import {
-  computePaymentIntentTokenExpiresAt,
-  generatePaymentIntentRawToken,
-  hashPaymentIntentToken,
-} from "@/lib/paymentIntentToken";
+import { runInitialUnpaidIntentBulkSend } from "@/lib/unpaidEntryIntentCampaignSend";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -51,137 +43,116 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   try {
-  const { targets, skippedNoEmail } = await listUnpaidIntentEmailTargets(prisma, competitionId);
+    const { targets, skippedNoEmail } = await listUnpaidIntentEmailTargets(prisma, competitionId);
 
-  if (!deadlineRaw && !previewOnly) {
-    return NextResponse.json(
-      { message: "回答期限（responseDeadlineAt）を指定してください" },
-      { status: 400 }
-    );
-  }
+    if (!deadlineRaw && !previewOnly) {
+      return NextResponse.json(
+        { message: "回答期限（responseDeadlineAt）を指定してください" },
+        { status: 400 }
+      );
+    }
 
-  const responseDeadlineAt = deadlineRaw ? new Date(deadlineRaw) : null;
-  if (responseDeadlineAt && Number.isNaN(responseDeadlineAt.getTime())) {
-    return NextResponse.json({ message: "回答期限の形式が不正です" }, { status: 400 });
-  }
-  if (responseDeadlineAt && responseDeadlineAt.getTime() <= Date.now()) {
-    return NextResponse.json({ message: "回答期限は未来の日時を指定してください" }, { status: 400 });
-  }
+    const responseDeadlineAt = deadlineRaw ? new Date(deadlineRaw) : null;
+    if (responseDeadlineAt && Number.isNaN(responseDeadlineAt.getTime())) {
+      return NextResponse.json({ message: "回答期限の形式が不正です" }, { status: 400 });
+    }
+    if (responseDeadlineAt && responseDeadlineAt.getTime() <= Date.now()) {
+      return NextResponse.json({ message: "回答期限は未来の日時を指定してください" }, { status: 400 });
+    }
 
-  if (previewOnly || !responseDeadlineAt) {
-    return NextResponse.json({
-      preview: true,
-      targetCount: targets.length,
-      skippedNoEmail,
-    });
-  }
-
-  if (!process.env.RESEND_API_KEY?.trim()) {
-    return NextResponse.json(
-      { message: "メール送信が設定されていません（RESEND_API_KEY）" },
-      { status: 503 }
-    );
-  }
-
-  const competition = await prisma.competition.findUnique({
-    where: { id: competitionId },
-    select: { name: true },
-  });
-  if (!competition) {
-    return NextResponse.json({ message: "大会が見つかりません" }, { status: 404 });
-  }
-
-  if (targets.length === 0) {
-    return NextResponse.json(
-      { message: "送信対象の未決済エントリーがありません", skippedNoEmail },
-      { status: 400 }
-    );
-  }
-
-  const deadlineLabel = responseDeadlineAt.toLocaleString("ja-JP", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-  const sentAt = new Date();
-  const expiresAt = computePaymentIntentTokenExpiresAt(responseDeadlineAt);
-
-  const campaign = await prisma.competitionUnpaidEntryIntentCampaign.create({
-    data: {
-      competitionId,
-      responseDeadlineAt,
-      sentAt,
-      sentByUserId: session.userId,
-    },
-  });
-
-  let sentCount = 0;
-  let failedCount = 0;
-  const failures: { entryId: string; error: string }[] = [];
-
-  for (const target of targets) {
-    const rawToken = generatePaymentIntentRawToken();
-    const tokenHash = hashPaymentIntentToken(rawToken);
-    const intentUrl = buildPaymentIntentPublicUrl(competitionId, rawToken);
-
-    try {
-      await prisma.competitionEntryPaymentIntentToken.create({
-        data: {
-          campaignId: campaign.id,
-          entryId: target.entryId,
-          tokenHash,
-          expiresAt,
-          lastEmailSentAt: sentAt,
-        },
-      });
-
-      await sendUnpaidEntryIntentEmail({
-        to: target.email,
-        competitionName: competition.name,
-        participantName: target.fullName,
-        responseDeadlineLabel: deadlineLabel,
-        intentUrl,
-      });
-      sentCount += 1;
-    } catch (err) {
-      failedCount += 1;
-      failures.push({
-        entryId: target.entryId,
-        error: err instanceof Error ? err.message : "送信失敗",
+    if (previewOnly || !responseDeadlineAt) {
+      return NextResponse.json({
+        preview: true,
+        targetCount: targets.length,
+        skippedNoEmail,
       });
     }
-  }
 
-  await logAuditAction({
-    action: "COMPETITION_UNPAID_INTENT_BULK_SENT",
-    actorType: "USER",
-    actorKey: session.userId,
-    actorUserId: session.userId,
-    targetType: "CompetitionUnpaidEntryIntentCampaign",
-    targetId: campaign.id,
-    result: failedCount === 0 ? "SUCCESS" : "FAILURE",
-    metadata: {
+    if (!process.env.RESEND_API_KEY?.trim()) {
+      return NextResponse.json(
+        { message: "メール送信が設定されていません（RESEND_API_KEY）" },
+        { status: 503 }
+      );
+    }
+
+    const existingCampaign = await prisma.competitionUnpaidEntryIntentCampaign.findFirst({
+      where: { competitionId },
+      select: { id: true },
+    });
+    if (existingCampaign) {
+      return NextResponse.json(
+        {
+          message:
+            "この大会では既に出場意思確認メールを送信済みです。「未達分を再送」から再送してください。",
+          campaignId: existingCampaign.id,
+        },
+        { status: 409 }
+      );
+    }
+
+    const competition = await prisma.competition.findUnique({
+      where: { id: competitionId },
+      select: { name: true },
+    });
+    if (!competition) {
+      return NextResponse.json({ message: "大会が見つかりません" }, { status: 404 });
+    }
+
+    if (targets.length === 0) {
+      return NextResponse.json(
+        { message: "送信対象の未決済エントリーがありません", skippedNoEmail },
+        { status: 400 }
+      );
+    }
+
+    const result = await runInitialUnpaidIntentBulkSend(prisma, {
       competitionId,
-      targetCount: targets.length,
-      sentCount,
-      failedCount,
-      skippedNoEmail,
-      responseDeadlineAt: responseDeadlineAt.toISOString(),
-    },
-    request: getRequestContext(request),
-  });
+      competitionName: competition.name,
+      responseDeadlineAt,
+      sentByUserId: session.userId,
+      targets,
+    });
 
-  return NextResponse.json({
-    message: `メールを ${sentCount} 件送信しました${failedCount > 0 ? `（失敗 ${failedCount} 件）` : ""}`,
-    campaignId: campaign.id,
-    sentCount,
-    failedCount,
-    skippedNoEmail,
-    failures: failures.slice(0, 20),
-  });
+    if (result.sentCount === 0 && result.failedCount > 0) {
+      await prisma.competitionUnpaidEntryIntentCampaign.delete({
+        where: { id: result.campaignId },
+      });
+    }
+
+    await logAuditAction({
+      action: "COMPETITION_UNPAID_INTENT_BULK_SENT",
+      actorType: "USER",
+      actorKey: session.userId,
+      actorUserId: session.userId,
+      targetType: "CompetitionUnpaidEntryIntentCampaign",
+      targetId: result.campaignId,
+      result: result.failedCount === 0 ? "SUCCESS" : "FAILURE",
+      metadata: {
+        competitionId,
+        targetCount: targets.length,
+        sentCount: result.sentCount,
+        failedCount: result.failedCount,
+        skippedNoEmail,
+        responseDeadlineAt: responseDeadlineAt.toISOString(),
+      },
+      request: getRequestContext(request),
+    });
+
+    const status = result.failedCount > 0 ? 207 : 200;
+    return NextResponse.json(
+      {
+        message:
+          result.sentCount === 0
+            ? `メール送信に失敗しました（${result.failedCount} 件）`
+            : `メールを ${result.sentCount} 件送信しました${result.failedCount > 0 ? `（失敗 ${result.failedCount} 件）` : ""}`,
+        campaignId: result.sentCount === 0 ? undefined : result.campaignId,
+        sentCount: result.sentCount,
+        failedCount: result.failedCount,
+        skippedNoEmail,
+        failures: result.failures.slice(0, 20),
+      },
+      { status }
+    );
   } catch (e) {
     return jsonInternalError500(
       "POST api/competitions/[id]/unpaid-intent/send-bulk/route.ts",

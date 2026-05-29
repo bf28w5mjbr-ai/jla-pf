@@ -131,7 +131,8 @@
 - `POST /api/competitions/[id]/entries/[entryId]/post-pay/approve`（OrgAdmin: 未決済エントリーを後払い承認で成立）
 - `POST /api/competitions/[id]/entries/[entryId]/post-pay/revoke`（OrgAdmin: 未入金のみ後払い承認を取り消し）
 - `POST /api/competitions/[id]/entries/[entryId]/manual-payment`（OrgAdmin: 後払い承認済み・未入金の手動入金記録。JSON `{ note?: string }`）
-- `POST /api/competitions/[id]/unpaid-intent/send-bulk`（OrgAdmin: **主催の通常操作**。未決済者への出場意思確認メール一括送信。`{ preview?: true }` または `{ responseDeadlineAt: ISO }`。送信後は参加者回答・期限後 DNS が自動）
+- `POST /api/competitions/[id]/unpaid-intent/send-bulk`（OrgAdmin: **主催の通常操作**。未決済者への出場意思確認メール一括送信。`{ preview?: true }` または `{ responseDeadlineAt: ISO }`。送信後は参加者回答・期限後 DNS が自動。`EMAIL_FROM` は Resend 検証済みドメイン必須）
+- `POST /api/competitions/[id]/unpaid-intent/resend-failed`（OrgAdmin: 未達メールの再送＋キャンペーン後の新規未決済への追加送信。任意で `{ responseDeadlineAt: ISO }` で期限更新）
 - `POST /api/competitions/[id]/unpaid-intent/process-deadline`（期限後 DNS の手動実行。本番は Cron に任せ、OrgAdmin または `Authorization: Bearer $CRON_SECRET`・ローカル開発用）
 - `GET` / `POST /api/competitions/[id]/entry/payment-intent`（トークンリンクからの出場/棄権回答・公開）
 - `GET /api/cron/unpaid-entry-intent-deadline`（Vercel Cron・15分間隔・`CRON_SECRET` 必須。全大会の期限切れキャンペーンを処理）

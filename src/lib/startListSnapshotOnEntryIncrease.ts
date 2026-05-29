@@ -7,6 +7,10 @@ import {
   getRoundDataFromSnapshot,
   parseStartListSnapshotLooseForRoundRead,
 } from "@/lib/heatMarshalFromSnapshot";
+import {
+  eventHeatRoundMarshalCallClosed,
+  getMarshalActiveRoundsForEvents,
+} from "@/lib/marshalRoundSettingsLock";
 import { replaceCompetitionStartListSnapshotWithAudit } from "@/lib/replaceStartListSnapshotWithAudit";
 import { safeServerErrorLog } from "@/lib/safeServerLog";
 import type { StartListSnapshotPayload } from "@/lib/startListSnapshot";
@@ -19,7 +23,8 @@ export type StartListSnapshotBeforeMarshalSyncTrigger =
   | "STRIPE_CHECKOUT"
   | "ENTRY_WITHDRAW"
   | "ENTRY_CANCEL"
-  | "POST_PAY_REVOKE";
+  | "POST_PAY_REVOKE"
+  | "PERIODIC_POLL";
 
 /** @deprecated Use {@link StartListSnapshotBeforeMarshalSyncTrigger} */
 export type StartListSnapshotEntryIncreaseTrigger = StartListSnapshotBeforeMarshalSyncTrigger;
@@ -128,11 +133,20 @@ export async function resolveEventIdsNeedingSnapshotSync(params: {
   const uniqueIds = [...new Set(params.candidateEventIds.filter((id) => id.length > 0))];
   if (uniqueIds.length === 0) return [];
 
+  const marshalLockedMap = await getMarshalActiveRoundsForEvents(
+    prisma,
+    params.competitionId,
+    uniqueIds
+  );
+  const syncEligibleIds = uniqueIds.filter(
+    (id) => !eventHeatRoundMarshalCallClosed(marshalLockedMap, id)
+  );
+  if (syncEligibleIds.length === 0) return [];
+
   const events = await prisma.event.findMany({
     where: {
       competitionId: params.competitionId,
-      id: { in: uniqueIds },
-      marshalStartedAt: null,
+      id: { in: syncEligibleIds },
     },
     select: { id: true, type: true },
   });

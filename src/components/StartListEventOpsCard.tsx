@@ -63,7 +63,9 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
 
   const isTeam = event.type === "TEAM";
   const total = isTeam ? teams.length : individuals.length;
-  const heatLockedByMarshal = Boolean(event.marshalStartedAtIso);
+  const heatLockedByMarshal =
+    roundHeatBarItems?.find((e) => e.id === event.id)?.marshalLockedRounds?.includes("HEAT") ??
+    false;
   const heatPlanConfirmed = Boolean(event.heatPlanConfirmedAtIso);
 
   const effectivePreliminaryLanesForPreview =
@@ -467,7 +469,7 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
           <div className="space-y-2 border-t border-border/50 px-2.5 py-2.5 text-xs leading-relaxed text-muted-foreground">
             <p>
               <span className="font-medium text-foreground">ラウンド・ヒート・レーン</span>
-              ：大会ページのスタートリスト（種目一覧のラウンド設定）で「ヒート・レーンを保存」まで完了すると当日運用に進めます。マーシャル開始後は分割変更不可。
+              ：大会ページのスタートリスト（種目一覧のラウンド設定）で「ヒート・レーンを保存」まで完了すると当日運用に進めます。マーシャル締切済みのラウンドは分割変更不可。
             </p>
             <p>
               <span className="font-medium text-foreground">ステップ2</span>

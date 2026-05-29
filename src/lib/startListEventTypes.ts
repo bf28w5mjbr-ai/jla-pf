@@ -70,6 +70,12 @@ export type StartListEventCardProps = {
   initialRoundIndex: number | null;
   roundHeatBarItems: StartListEventBarItem[] | null;
   permissions: StartListEventCardPermissions;
-  /** public のみ: SSR 再取得間隔（秒）。15 未満は無効 */
+  /** 定期 sync + refresh を有効にする（既定 true） */
+  periodicSyncEnabled?: boolean;
+  /** refresh 前に sync-if-needed API を呼ぶ（既定 true） */
+  periodicSnapshotSync?: boolean;
+  /** 同期間隔（秒）。未指定時は 30 秒（環境変数で上書き可） */
+  periodicSyncIntervalSec?: number;
+  /** @deprecated {@link periodicSyncIntervalSec} */
   softRefreshIntervalSec?: number;
 };

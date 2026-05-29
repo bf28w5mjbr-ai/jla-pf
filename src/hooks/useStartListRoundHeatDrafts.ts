@@ -203,7 +203,7 @@ export function useStartListRoundHeatDrafts({
           }
         }
 
-        if (!e.startListHeatPlanConfirmedAt && !e.marshalStartedAt) {
+        if (!e.startListHeatPlanConfirmedAt && !(e.marshalLockedRounds?.length ?? 0)) {
           needsConfirm.push(e);
         }
       }
@@ -271,7 +271,7 @@ export function useStartListRoundHeatDrafts({
         return;
       }
       if (dirty.marshalRoundBlocked.length > 0) {
-        toast.error("マーシャル開始済みのラウンドは変更できません");
+        toast.error("マーシャル締切済みのラウンドは変更できません");
         return;
       }
 
@@ -297,7 +297,7 @@ export function useStartListRoundHeatDrafts({
       });
 
       const confirmEventIds = dirtyEvents
-        .filter((e) => !e.startListHeatPlanConfirmedAt && !e.marshalStartedAt)
+        .filter((e) => !e.startListHeatPlanConfirmedAt && !(e.marshalLockedRounds?.length ?? 0))
         .map((e) => e.id);
 
       setBulkSaving(true);

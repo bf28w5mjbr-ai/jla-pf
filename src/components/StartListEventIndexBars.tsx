@@ -28,6 +28,7 @@ import {
   type HeatSetting,
 } from "@/lib/startListSettings";
 import { useStartListRoundHeatDrafts } from "@/hooks/useStartListRoundHeatDrafts";
+import { useStartListPeriodicSync } from "@/hooks/useStartListPeriodicSync";
 import { StartListRoundSettingsCard } from "@/components/StartListRoundSettingsCard";
 import { StartListScheduleCard } from "@/components/StartListScheduleCard";
 
@@ -148,6 +149,13 @@ export default function StartListEventIndexBars({
   canEditRoundCount = false,
 }: Props) {
   const router = useRouter();
+
+  useStartListPeriodicSync({
+    competitionId,
+    enabled: true,
+    snapshotSync: true,
+  });
+
   const compStart = useMemo(() => new Date(competitionStartDate), [competitionStartDate]);
   const compEnd = useMemo(() => new Date(competitionEndDate), [competitionEndDate]);
   const competitionDays = useMemo(

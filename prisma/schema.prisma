@@ -1220,9 +1220,11 @@ model CompetitionEntryPaymentIntentToken {
   tokenHash      String                    @unique
   expiresAt      DateTime
   choice              EntryPaymentIntentChoice?
-  respondedAt         DateTime?
+  respondedAt          DateTime?
   deadlineDnsAppliedAt DateTime?
-  lastEmailSentAt     DateTime?
+  lastEmailSentAt      DateTime?
+  /// Resend 受付成功時のみセット（未達は null＝再送対象）
+  emailDeliveredAt     DateTime?
 
   campaign CompetitionUnpaidEntryIntentCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   entry    CompetitionEntry                     @relation(fields: [entryId], references: [id], onDelete: Cascade)
