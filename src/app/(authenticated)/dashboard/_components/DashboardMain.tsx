@@ -23,6 +23,11 @@ import DashboardProfilePhoto from "@/components/DashboardProfilePhoto";
 import NfcTagManager from "@/components/NfcTagManager";
 import EntryWithdrawRequestButton from "@/components/EntryWithdrawRequestButton";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
+import {
+  buildWithdrawableEventOptions,
+  filterIndividualEventIdsFromEntry,
+  hasSelectableWithdrawEvents,
+} from "@/lib/entryWithdrawalRequest";
 import { QualificationRecordOrigin } from "@prisma/client";
 import { cn } from "@/lib/utils";
 
@@ -65,6 +70,14 @@ export async function DashboardMain({ userId }: { userId: string }) {
             name: true,
             status: true,
             startDate: true,
+            startListSettings: true,
+            events: {
+              select: {
+                id: true,
+                name: true,
+                type: true,
+              },
+            },
           },
         },
         checkoutSessions: {
@@ -431,24 +444,24 @@ export async function DashboardMain({ userId }: { userId: string }) {
                 const canIssueReceipt = userStatus.businessEstablished && entry.status !== "CANCELLED";
                 const isResultPublished =
                   entry.competition.status === "COMPLETED" || entry.competition.status === "ONGOING";
-                const eventIds = [...new Set(entry.items.map((item) => item.eventId))];
-                const withdrawnEventIds = new Set(
-                  entry.participantStatuses
-                    .filter(
-                      (status) =>
-                        status.status === "DNS" &&
-                        typeof status.reason === "string" &&
-                        status.reason.includes("棄権")
-                    )
-                    .map((status) => status.eventId)
+                const eventTypeById = new Map(
+                  entry.competition.events.map((event) => [event.id, event.type])
                 );
-                const hasWithdrawRequest = withdrawnEventIds.size > 0;
-                const fullyWithdrawn =
-                  eventIds.length > 0 && eventIds.every((eventId) => withdrawnEventIds.has(eventId));
+                const eventLabelById = new Map(
+                  entry.competition.events.map((event) => [event.id, event.name])
+                );
+                const withdrawableEvents = buildWithdrawableEventOptions({
+                  individualEventIds: filterIndividualEventIdsFromEntry(entry.items, eventTypeById),
+                  eventLabelById,
+                  participantStatuses: entry.participantStatuses,
+                  startListSettings: entry.competition.startListSettings,
+                });
+                const withdrawnCount = withdrawableEvents.filter((event) => event.alreadyWithdrawn)
+                  .length;
+                const hasWithdrawRequest = withdrawnCount > 0;
                 const canRequestWithdraw =
                   entry.status !== "CANCELLED" &&
-                  eventIds.length > 0 &&
-                  !fullyWithdrawn &&
+                  hasSelectableWithdrawEvents(withdrawableEvents) &&
                   (entry.competition.status === "PUBLISHED" || entry.competition.status === "ONGOING");
 
                 return (
@@ -468,7 +481,7 @@ export async function DashboardMain({ userId }: { userId: string }) {
                           </p>
                           <p className="mt-0.5 text-xs text-muted-foreground">
                             状態: {userStatus.userLabel}
-                            {hasWithdrawRequest ? ` / 棄権申請済み（${withdrawnEventIds.size}種目）` : ""}
+                            {hasWithdrawRequest ? ` / 棄権申請済み（${withdrawnCount}種目）` : ""}
                             {" / "}
                             参加費: ¥{entry.totalFee.toLocaleString()}
                           </p>
@@ -503,6 +516,7 @@ export async function DashboardMain({ userId }: { userId: string }) {
                           <EntryWithdrawRequestButton
                             competitionId={entry.competition.id}
                             entryId={entry.id}
+                            withdrawableEvents={withdrawableEvents}
                           />
                         ) : null}
                       </div>

@@ -48,6 +48,7 @@ import type { EntryReceiptForClient } from "@/lib/entryCompletionReceipt";
 import EntryDetailsSummary from "@/components/EntryDetailsSummary";
 import { EntryPaymentConfirmPoller } from "@/components/competitions/EntryPaymentConfirmPoller";
 import EntryWithdrawRequestButton from "@/components/EntryWithdrawRequestButton";
+import type { WithdrawableEventOption } from "@/lib/entryWithdrawalRequest";
 import type { ExplanationDensity } from "@/lib/explanation";
 import { fieldHintClass, sectionLeadClass } from "@/lib/explanation";
 import { userFacingApiErrorMessage } from "@/lib/userFacingApiError";
@@ -159,6 +160,7 @@ type CompetitionEntryFormProps = {
   entryEstablished?: boolean;
   entryIdForActions?: string | null;
   canRequestWithdraw?: boolean;
+  withdrawableEvents?: WithdrawableEventOption[];
   /** 棄権申請が付いた種目数（表示用） */
   entryWithdrawAppliedCount?: number;
   initialEntry?: {
@@ -209,6 +211,7 @@ export default function CompetitionEntryForm({
   entryEstablished = false,
   entryIdForActions = null,
   canRequestWithdraw = false,
+  withdrawableEvents = [],
   entryWithdrawAppliedCount = 0,
   initialEntry,
   entryPledge = null,
@@ -904,6 +907,7 @@ export default function CompetitionEntryForm({
                     <EntryWithdrawRequestButton
                       competitionId={competitionId}
                       entryId={entryIdForActions}
+                      withdrawableEvents={withdrawableEvents}
                       className="h-10 w-full text-sm sm:h-9 sm:w-auto"
                     />
                   ) : null}

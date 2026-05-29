@@ -46,6 +46,11 @@ import {
 import { meetsCompetitionEventAgeEligibility } from "@/lib/competitionEventAgeEligibility";
 import { getStripeProcessingFeeBpsFromEnv } from "@/lib/stripeProcessingFee";
 import { reconcileTeamOnlyIntentZeroTotalFeeEntry } from "@/lib/teamOnlyIntentZeroFeeReconcile";
+import {
+  buildWithdrawableEventOptions,
+  filterIndividualEventIdsFromEntry,
+  hasSelectableWithdrawEvents,
+} from "@/lib/entryWithdrawalRequest";
 
 type CompetitionEntryFormProps = ComponentProps<typeof CompetitionEntryForm>;
 
@@ -179,6 +184,7 @@ export default async function CompetitionEntryPage({
         orderBy: { createdAt: "desc" },
       },
       participantStatuses: {
+        where: { participantType: "INDIVIDUAL" },
         select: {
           eventId: true,
           status: true,
@@ -753,29 +759,26 @@ export default async function CompetitionEntryPage({
     existingEntry && entryUserFacing?.businessEstablished && !entryCancelled
   );
 
-  const entryEventIds = existingEntry
-    ? [...new Set(existingEntry.items.map((item) => item.eventId))]
+  const eventLabelById = new Map(competition.events.map((event) => [event.id, event.name]));
+  const individualEventIdsForWithdraw = existingEntry
+    ? filterIndividualEventIdsFromEntry(existingEntry.items, competitionEventTypeById)
     : [];
-  const withdrawnForEntryEventIds = new Set(
-    (existingEntry?.participantStatuses ?? [])
-      .filter(
-        (row) =>
-          row.status === "DNS" &&
-          typeof row.reason === "string" &&
-          row.reason.includes("棄権")
-      )
-      .map((row) => row.eventId)
-  );
-  const fullyWithdrawnFromEntry =
-    entryEventIds.length > 0 && entryEventIds.every((id) => withdrawnForEntryEventIds.has(id));
+  const withdrawableEvents = existingEntry
+    ? buildWithdrawableEventOptions({
+        individualEventIds: individualEventIdsForWithdraw,
+        eventLabelById,
+        participantStatuses: existingEntry.participantStatuses,
+        startListSettings: competition.startListSettings,
+      })
+    : [];
   const canRequestWithdraw = Boolean(
     existingEntry &&
       !entryCancelled &&
-      entryEventIds.length > 0 &&
-      !fullyWithdrawnFromEntry &&
+      hasSelectableWithdrawEvents(withdrawableEvents) &&
       (competition.status === "PUBLISHED" || competition.status === "ONGOING")
   );
-  const entryWithdrawAppliedCount = withdrawnForEntryEventIds.size;
+  const entryWithdrawAppliedCount = withdrawableEvents.filter((event) => event.alreadyWithdrawn)
+    .length;
 
   const pledgeMarkdown = (competition.entryPledgeText ?? "").trim();
   const entryPledgeActive =
@@ -1065,6 +1068,7 @@ export default async function CompetitionEntryPage({
         entryEstablished={entryEstablished}
         entryIdForActions={existingEntry?.id ?? null}
         canRequestWithdraw={canRequestWithdraw}
+        withdrawableEvents={withdrawableEvents}
         entryWithdrawAppliedCount={entryWithdrawAppliedCount}
         entryPledge={
           entryPledgeActive

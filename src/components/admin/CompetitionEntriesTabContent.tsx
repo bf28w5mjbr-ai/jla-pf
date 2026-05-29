@@ -609,6 +609,7 @@ export default async function CompetitionEntriesTabContent({
           sex: true,
           type: true,
           requiresEntryTime: true,
+          maxTeamEntriesPerClub: true,
           displayOrder: true,
           ageCategoryId: true,
         },
@@ -1013,6 +1014,15 @@ export default async function CompetitionEntriesTabContent({
       requiresEntryTime: e.requiresEntryTime,
     }));
 
+  const teamEventOptions = competition.events
+    .filter((e) => e.type === "TEAM")
+    .map((e) => ({
+      id: e.id,
+      name: e.name,
+      sex: e.sex,
+      maxTeamEntriesPerClub: e.maxTeamEntriesPerClub,
+    }));
+
   const latestIntentCampaign = await prisma.competitionUnpaidEntryIntentCampaign.findFirst({
     where: { competitionId: competition.id },
     orderBy: { sentAt: "desc" },
@@ -1048,6 +1058,7 @@ export default async function CompetitionEntriesTabContent({
       <CompetitionHostInviteEntryPanel
         competitionId={competitionId}
         individualEvents={individualEventOptions}
+        teamEvents={teamEventOptions}
       />
 
       <CompetitionUnpaidIntentBulkMailPanel

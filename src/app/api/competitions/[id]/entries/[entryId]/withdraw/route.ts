@@ -2,7 +2,12 @@ import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { isCallClosedForEvent } from "@/lib/dayOpsCallWindow";
+import {
+  filterIndividualEventIdsFromEntry,
+  parseWithdrawEventIds,
+  resolveWithdrawProcessingEventIds,
+  resolveWithdrawTargetEventIds,
+} from "@/lib/entryWithdrawalRequest";
 
 type RouteContext = {
   params: Promise<{ id: string; entryId: string }>;
@@ -18,7 +23,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ message: "認証が必要です" }, { status: 401 });
     }
 
-    const body = (await request.json().catch(() => ({}))) as { reason?: unknown };
+    const body = (await request.json().catch(() => ({}))) as {
+      reason?: unknown;
+      eventIds?: unknown;
+    };
+    const parsedEventIds = parseWithdrawEventIds(body);
+    if (!parsedEventIds.ok) {
+      return NextResponse.json({ message: parsedEventIds.message }, { status: 400 });
+    }
+
     const reason =
       typeof body.reason === "string" && body.reason.trim().length > 0
         ? body.reason.trim().slice(0, 500)
@@ -37,11 +50,28 @@ export async function POST(request: NextRequest, context: RouteContext) {
           select: {
             status: true,
             startListSettings: true,
+            events: {
+              select: {
+                id: true,
+                name: true,
+                type: true,
+              },
+            },
           },
         },
         items: {
           select: {
             eventId: true,
+          },
+        },
+        participantStatuses: {
+          where: {
+            participantType: "INDIVIDUAL",
+          },
+          select: {
+            eventId: true,
+            status: true,
+            reason: true,
           },
         },
       },
@@ -60,19 +90,29 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ message: "大会終了後は棄権申請できません" }, { status: 400 });
     }
 
-    const eventIds = [...new Set(entry.items.map((item) => item.eventId))];
-    if (eventIds.length === 0) {
-      return NextResponse.json({ message: "申請対象の種目がありません" }, { status: 400 });
+    const eventTypeById = new Map(entry.competition.events.map((event) => [event.id, event.type]));
+    const eventLabelById = new Map(entry.competition.events.map((event) => [event.id, event.name]));
+    const allowedIndividualEventIds = filterIndividualEventIdsFromEntry(entry.items, eventTypeById);
+
+    const targetResolved = resolveWithdrawTargetEventIds({
+      requestedEventIds: parsedEventIds.eventIds,
+      allowedIndividualEventIds,
+    });
+    if (!targetResolved.ok) {
+      return NextResponse.json({ message: targetResolved.message }, { status: 400 });
     }
-    const hasClosedCallEvent = eventIds.some((eventId) =>
-      isCallClosedForEvent(entry.competition.startListSettings, eventId)
-    );
-    if (hasClosedCallEvent) {
-      return NextResponse.json(
-        { message: "該当レースは召集締切済みのため、本人からの棄権申請はできません" },
-        { status: 400 }
-      );
+
+    const processingResolved = resolveWithdrawProcessingEventIds({
+      targetEventIds: targetResolved.eventIds,
+      participantStatuses: entry.participantStatuses,
+      startListSettings: entry.competition.startListSettings,
+      eventLabelById,
+    });
+    if (!processingResolved.ok) {
+      return NextResponse.json({ message: processingResolved.message }, { status: 400 });
     }
+
+    const eventIds = processingResolved.eventIds;
 
     const updatedCount = await prisma.$transaction(async (tx) => {
       let count = 0;

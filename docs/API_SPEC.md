@@ -127,6 +127,7 @@
 
 ### 大会：エントリー / チーム請求とクラブ個人枠請求（分離）
 - `POST /api/competitions/[id]/entries`（`clubIndividualFeePaidAt`・クラブ先払い枠／締切後一括の扱い。詳細は `route.ts`）
+- `POST /api/competitions/[id]/entries/[entryId]/withdraw`（本人: 個人種目の棄権申請。JSON `{ eventIds: string[]; reason?: string }`。`eventIds` 必須・1件以上。エントリー内の個人種目のみ選択可。召集締切済み種目は 400。既に棄権済みの種目はスキップし、処理対象がなければ 400）
 - `POST /api/competitions/[id]/entries/[entryId]/post-pay/approve`（OrgAdmin: 未決済エントリーを後払い承認で成立）
 - `POST /api/competitions/[id]/entries/[entryId]/post-pay/revoke`（OrgAdmin: 未入金のみ後払い承認を取り消し）
 - `POST /api/competitions/[id]/entries/[entryId]/manual-payment`（OrgAdmin: 後払い承認済み・未入金の手動入金記録。JSON `{ note?: string }`）

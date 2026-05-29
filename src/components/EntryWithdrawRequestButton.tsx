@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -12,12 +14,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import type { WithdrawableEventOption } from "@/lib/entryWithdrawalRequest";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 type Props = {
   competitionId: string;
   entryId: string;
+  withdrawableEvents: WithdrawableEventOption[];
   disabled?: boolean;
   className?: string;
 };
@@ -25,6 +29,7 @@ type Props = {
 export default function EntryWithdrawRequestButton({
   competitionId,
   entryId,
+  withdrawableEvents,
   disabled = false,
   className,
 }: Props) {
@@ -32,13 +37,38 @@ export default function EntryWithdrawRequestButton({
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
+
+  const selectableEvents = useMemo(
+    () => withdrawableEvents.filter((event) => !event.alreadyWithdrawn && !event.callClosed),
+    [withdrawableEvents]
+  );
+
+  const selectedLabels = useMemo(
+    () =>
+      selectedEventIds
+        .map((id) => withdrawableEvents.find((event) => event.eventId === id)?.label ?? id)
+        .filter(Boolean),
+    [selectedEventIds, withdrawableEvents]
+  );
+
+  const resetDialogState = () => {
+    setStep(1);
+    setSelectedEventIds([]);
+  };
 
   const closeDialog = () => {
     setOpen(false);
-    setStep(1);
+    resetDialogState();
   };
 
-  const submitWithdraw = async (reason: string) => {
+  const toggleEvent = (eventId: string, checked: boolean) => {
+    setSelectedEventIds((prev) =>
+      checked ? [...prev, eventId] : prev.filter((id) => id !== eventId)
+    );
+  };
+
+  const submitWithdraw = async (reason: string, eventIds: string[]) => {
     setIsSubmitting(true);
     try {
       const response = await fetch(
@@ -46,7 +76,7 @@ export default function EntryWithdrawRequestButton({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reason }),
+          body: JSON.stringify({ reason, eventIds }),
         }
       );
       const data = await response.json();
@@ -65,11 +95,14 @@ export default function EntryWithdrawRequestButton({
   };
 
   const handleConfirmSend = () => {
+    const eventIds = [...selectedEventIds];
     closeDialog();
     const reasonInput = window.prompt("棄権理由（任意）", "");
     if (reasonInput === null) return;
-    void submitWithdraw(reasonInput);
+    void submitWithdraw(reasonInput, eventIds);
   };
+
+  const canProceed = selectedEventIds.length > 0;
 
   return (
     <>
@@ -78,9 +111,9 @@ export default function EntryWithdrawRequestButton({
         variant="destructive"
         size="sm"
         className={cn(className)}
-        disabled={disabled || isSubmitting}
+        disabled={disabled || isSubmitting || selectableEvents.length === 0}
         onClick={() => {
-          setStep(1);
+          resetDialogState();
           setOpen(true);
         }}
       >
@@ -91,7 +124,7 @@ export default function EntryWithdrawRequestButton({
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
-          if (!next) setStep(1);
+          if (!next) resetDialogState();
         }}
       >
         <AlertDialogContent className="max-w-md">
@@ -100,14 +133,44 @@ export default function EntryWithdrawRequestButton({
               <>
                 <AlertDialogTitle>棄権申請</AlertDialogTitle>
                 <AlertDialogDescription asChild>
-                  <div className="space-y-2 text-sm text-muted-foreground">
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <p>棄権する種目を選択してください（個人種目のみ）。</p>
+                    <ul className="space-y-2 rounded-md border border-border/80 bg-muted/20 p-3">
+                      {withdrawableEvents.map((event) => {
+                        const isSelectable = !event.alreadyWithdrawn && !event.callClosed;
+                        const checkboxId = `withdraw-event-${entryId}-${event.eventId}`;
+                        return (
+                          <li key={event.eventId} className="flex items-start gap-2">
+                            <Checkbox
+                              id={checkboxId}
+                              checked={selectedEventIds.includes(event.eventId)}
+                              disabled={!isSelectable}
+                              onCheckedChange={(checked) =>
+                                toggleEvent(event.eventId, checked === true)
+                              }
+                            />
+                            <div className="min-w-0 flex-1">
+                              <Label
+                                htmlFor={checkboxId}
+                                className={cn(
+                                  "text-sm font-medium leading-snug",
+                                  !isSelectable && "text-muted-foreground"
+                                )}
+                              >
+                                {event.label}
+                              </Label>
+                              {event.alreadyWithdrawn ? (
+                                <p className="text-xs text-muted-foreground">棄権申請済み</p>
+                              ) : event.callClosed ? (
+                                <p className="text-xs text-muted-foreground">召集締切済み</p>
+                              ) : null}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
                     <p>
-                      このエントリーに含まれる<strong className="text-foreground">個人種目</strong>
-                      について、棄権の申請を行います。
-                    </p>
-                    <p>
-                      主催者の確認のうえ、種目が棄権扱いとなる場合があります。誤操作を防ぐため、次の画面で
-                      <strong className="text-foreground">内容を再確認</strong>してください。
+                      次の画面で内容を再確認します。送信後はこの画面から取り消せません。
                     </p>
                   </div>
                 </AlertDialogDescription>
@@ -118,11 +181,13 @@ export default function EntryWithdrawRequestButton({
                 <AlertDialogDescription asChild>
                   <div className="space-y-2 text-sm text-muted-foreground">
                     <p className="font-medium text-foreground">
-                      本当に棄権申請を送信しますか？
+                      次の種目について棄権申請を送信します。
                     </p>
-                    <p>
-                      送信後はこの画面から取り消すことはできません。主催者の対応や大会規定に沿って処理されます。
-                    </p>
+                    <ul className="list-inside list-disc text-foreground">
+                      {selectedLabels.map((label) => (
+                        <li key={label}>{label}</li>
+                      ))}
+                    </ul>
                     <p>続けると、棄権理由の入力（任意）に進みます。</p>
                   </div>
                 </AlertDialogDescription>
@@ -133,7 +198,7 @@ export default function EntryWithdrawRequestButton({
             {step === 1 ? (
               <>
                 <AlertDialogCancel type="button">キャンセル</AlertDialogCancel>
-                <Button type="button" onClick={() => setStep(2)}>
+                <Button type="button" disabled={!canProceed} onClick={() => setStep(2)}>
                   次へ（確認）
                 </Button>
               </>

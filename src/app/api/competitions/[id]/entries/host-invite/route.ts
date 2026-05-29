@@ -7,10 +7,16 @@ import {
   requireHostOrgAdminForCompetition,
 } from "@/lib/organizerAccess";
 import { logAuditAction, getRequestContext } from "@/lib/auditLog";
+import {
+  applyHostInviteTeamAdditions,
+  assertHostInviteEventCountLimits,
+  buildHostInviteSnapshot,
+  clubTeamNameBaseFromApprovedClub,
+  HostInviteValidationError,
+  parseHostInviteBody,
+} from "@/lib/hostInviteEntry";
 
 type RouteContext = { params: Promise<{ id: string }> };
-
-const HOST_SNAPSHOT_SOURCE = "HOST_INVITE" as const;
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const { id: competitionId } = await context.params;
@@ -25,16 +31,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
     body = await request.json();
   } catch {
     return NextResponse.json({ message: "JSON が不正です" }, { status: 400 });
-  }
-
-  const b = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
-  const targetUserId = typeof b.userId === "string" ? b.userId.trim() : "";
-  const itemsRaw = Array.isArray(b.items) ? b.items : null;
-  if (!targetUserId || !itemsRaw || itemsRaw.length === 0) {
-    return NextResponse.json(
-      { message: "対象ユーザーと種目（1つ以上）を指定してください" },
-      { status: 400 }
-    );
   }
 
   try {
@@ -65,6 +61,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           minAge: true,
           maxAge: true,
           requiresEntryTime: true,
+          maxTeamEntriesPerClub: true,
         },
       },
     },
@@ -81,6 +78,75 @@ export async function POST(request: NextRequest, context: RouteContext) {
     );
   }
 
+  const eventMap = new Map(competition.events.map((e) => [e.id, e]));
+
+  let payload;
+  try {
+    payload = parseHostInviteBody(body, eventMap);
+  } catch (e) {
+    if (e instanceof HostInviteValidationError) {
+      return NextResponse.json({ message: e.message }, { status: 400 });
+    }
+    throw e;
+  }
+
+  if (payload.mode === "team") {
+    const club = await prisma.club.findUnique({
+      where: { id: payload.clubId },
+      select: { id: true, status: true, abbreviation: true, name: true },
+    });
+    if (!club || club.status !== "APPROVED") {
+      return NextResponse.json({ message: "クラブが見つかりません" }, { status: 404 });
+    }
+
+    const clubBase = clubTeamNameBaseFromApprovedClub(club);
+
+    try {
+      const result = await prisma.$transaction(async (tx) =>
+        applyHostInviteTeamAdditions(tx, {
+          competitionId,
+          clubId: payload.clubId,
+          clubBase,
+          additions: payload.additions,
+          eventMap,
+        })
+      );
+
+      await logAuditAction({
+        action: "COMPETITION_HOST_INVITE_ENTRY",
+        actorType: "USER",
+        actorKey: session.userId,
+        actorUserId: session.userId,
+        targetType: "Club",
+        targetId: payload.clubId,
+        result: "SUCCESS",
+        metadata: {
+          competitionId,
+          mode: "team",
+          clubId: payload.clubId,
+          additions: payload.additions,
+          createdTeamEntryIds: result.createdTeamEntryIds,
+          createdCount: result.createdCount,
+          notes: payload.notes,
+        },
+        request: getRequestContext(request),
+      });
+
+      return NextResponse.json({
+        message: "チームエントリーを追加しました",
+        createdCount: result.createdCount,
+      });
+    } catch (e) {
+      if (e instanceof HostInviteValidationError) {
+        return NextResponse.json({ message: e.message }, { status: 400 });
+      }
+      return jsonInternalError500(
+        "POST api/competitions/[id]/entries/host-invite/route.ts team",
+        e
+      );
+    }
+  }
+
   if (competition.entryPledgeEnabled && !(competition.entryPledgeText ?? "").trim()) {
     return NextResponse.json(
       { message: "誓約が有効ですが文言が未設定のため、招待エントリーを登録できません" },
@@ -95,74 +161,30 @@ export async function POST(request: NextRequest, context: RouteContext) {
       ? competition.maxEventEntriesPerPerson
       : null;
 
-  const eventMap = new Map(competition.events.map((e) => [e.id, e]));
+  const uniqueEventCount = new Set(payload.items.map((i) => i.eventId)).size;
 
-  type ParsedItem = { eventId: string; entryTime: string | null };
-  const parsedItems: ParsedItem[] = [];
-  for (const row of itemsRaw) {
-    if (!row || typeof row !== "object") continue;
-    const r = row as Record<string, unknown>;
-    const eventId = typeof r.eventId === "string" ? r.eventId.trim() : "";
-    if (!eventId) continue;
-    const ev = eventMap.get(eventId);
-    if (!ev || ev.type !== "INDIVIDUAL") {
-      return NextResponse.json({ message: "個人種目のみ指定できます" }, { status: 400 });
+  try {
+    assertHostInviteEventCountLimits({
+      uniqueEventCount,
+      allowMultiple,
+      maxPerPerson,
+    });
+  } catch (e) {
+    if (e instanceof HostInviteValidationError) {
+      return NextResponse.json({ message: e.message }, { status: 400 });
     }
-    const entryTime =
-      r.entryTime == null ? null : String(r.entryTime).trim() || null;
-    if (ev.requiresEntryTime && (!entryTime || !entryTime.length)) {
-      return NextResponse.json(
-        { message: `「${ev.name}」のエントリータイムが必要です` },
-        { status: 400 }
-      );
-    }
-    parsedItems.push({ eventId, entryTime });
+    throw e;
   }
-
-  const dedupedByEvent = new Map<string, ParsedItem>();
-  for (const item of parsedItems) {
-    dedupedByEvent.set(item.eventId, item);
-  }
-  const parsedItemsUnique = [...dedupedByEvent.values()];
-
-  if (parsedItemsUnique.length === 0) {
-    return NextResponse.json({ message: "有効な種目がありません" }, { status: 400 });
-  }
-
-  const uniqueEventIds = [...new Set(parsedItemsUnique.map((i) => i.eventId))];
-  if (!allowMultiple && uniqueEventIds.length > 1) {
-    return NextResponse.json(
-      { message: "この大会は1種目のみ選択可能です" },
-      { status: 400 }
-    );
-  }
-  if (allowMultiple && maxPerPerson !== null && uniqueEventIds.length > maxPerPerson) {
-    return NextResponse.json(
-      { message: `この大会は${maxPerPerson}種目まで選択可能です` },
-      { status: 400 }
-    );
-  }
-
-  const notes =
-    typeof b.notes === "string" && b.notes.trim().length > 0
-      ? b.notes.trim().slice(0, 2000)
-      : null;
 
   const targetUser = await prisma.user.findUnique({
-    where: { id: targetUserId },
+    where: { id: payload.targetUserId },
     select: { id: true },
   });
   if (!targetUser) {
     return NextResponse.json({ message: "ユーザーが見つかりません" }, { status: 404 });
   }
 
-  const entrySnapshot = {
-    notes,
-    items: parsedItemsUnique,
-    teamEntries: [] as { eventId: string; teamName: string }[],
-    clubId: null as string | null,
-    registrationSource: HOST_SNAPSHOT_SOURCE,
-  };
+  const entrySnapshot = buildHostInviteSnapshot(payload);
 
   const pledgeEnabled = competition.entryPledgeEnabled ?? false;
   const pledgeText = (competition.entryPledgeText ?? "").trim();
@@ -174,7 +196,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const existing = await tx.competitionEntry.findFirst({
         where: {
           competitionId,
-          userId: targetUserId,
+          userId: payload.targetUserId,
           status: "SUBMITTED",
         },
         select: { id: true },
@@ -186,14 +208,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const entry = await tx.competitionEntry.create({
         data: {
           competitionId,
-          userId: targetUserId,
+          userId: payload.targetUserId,
           clubId: null,
           totalFee: 0,
           status: "SUBMITTED",
           pledgeAcceptedAt: invitePledgeAt,
           pledgeTextSnapshot: invitePledgeSnapshot,
           items: {
-            create: parsedItemsUnique.map((item) => ({
+            create: payload.items.map((item) => ({
               eventId: item.eventId,
               entryTime: item.entryTime,
             })),
@@ -216,13 +238,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
       actorType: "USER",
       actorKey: session.userId,
       actorUserId: session.userId,
-      targetUserId: targetUserId,
+      targetUserId: payload.targetUserId,
       targetType: "CompetitionEntry",
       targetId: entryId,
       result: "SUCCESS",
       metadata: {
         competitionId,
-        eventCount: uniqueEventIds.length,
+        mode: "individual",
+        eventCount: uniqueEventCount,
       },
       request: getRequestContext(request),
     });
@@ -232,14 +255,20 @@ export async function POST(request: NextRequest, context: RouteContext) {
       entryId,
     });
   } catch (e) {
+    if (e instanceof HostInviteValidationError) {
+      return NextResponse.json({ message: e.message }, { status: 400 });
+    }
     if (e instanceof Error && e.message === "ALREADY_ENTERED") {
       return NextResponse.json(
-        { message: "このユーザーは既にエントリー済みです。種目の追加は公開のエントリー画面から案内するか、一度取消してからやり直してください。" },
+        {
+          message:
+            "このユーザーは既にエントリー済みです。種目の追加は公開のエントリー画面から案内するか、一度取消してからやり直してください。",
+        },
         { status: 409 }
       );
     }
     return jsonInternalError500(
-      "POST api/competitions/[id]/entries/host-invite/route.ts",
+      "POST api/competitions/[id]/entries/host-invite/route.ts individual",
       e
     );
   }
