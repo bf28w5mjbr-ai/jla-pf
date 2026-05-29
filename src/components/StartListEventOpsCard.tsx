@@ -26,6 +26,11 @@ import { StartListMarshalModeBar } from "@/components/StartListMarshalModeBar";
 import { useStartListEventDayOps } from "@/hooks/useStartListEventDayOps";
 import type { StartListEventCardProps, StartListMarshalViewMode } from "@/lib/startListEventTypes";
 import { sexLabelJa } from "@/lib/sexLabelJa";
+import { CompetitionEntriesSpreadsheetExportButton } from "@/components/admin/CompetitionEntriesSpreadsheetExportButton";
+import {
+  buildStartListEventCsvHeaders,
+  flattenStartListEventRoundDisplayToCsvRows,
+} from "@/lib/startListEventCsvExport";
 
 export default function StartListEventOpsCard(props: StartListEventCardProps) {
   const {
@@ -96,6 +101,12 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
       event.heatPlanConfirmedAtIso,
     ]
   );
+
+  const csvExport = useMemo(() => {
+    const headers = buildStartListEventCsvHeaders(isTeam);
+    const rows = flattenStartListEventRoundDisplayToCsvRows(roundDisplay, isTeam);
+    return { headers, rows };
+  }, [roundDisplay, isTeam]);
 
   const tabs = roundDisplay.allTabs;
   const liveHeatsByTab = roundDisplay.rows.map((r) => ({
@@ -333,6 +344,12 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
                 分割固定
               </Badge>
             ) : null}
+            <CompetitionEntriesSpreadsheetExportButton
+              csvHeaders={csvExport.headers}
+              csvRows={csvExport.rows}
+              fileNameBase={`${competitionName}_${event.name}_スタートリスト`}
+              label="CSVダウンロード"
+            />
           </div>
         </div>
         {archiveLabel ? (
