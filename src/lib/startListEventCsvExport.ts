@@ -86,6 +86,9 @@ export function flattenStartListEventRoundDisplayToCsvRows(
 ): string[][] {
   const rows: string[][] = [];
   for (const row of roundDisplay.rows) {
+    if (row.displaySource !== "snapshotHeat" && row.displaySource !== "snapshotResult") {
+      continue;
+    }
     rows.push(...flattenRoundRowToCsvRows(row, isTeam));
   }
   return rows;

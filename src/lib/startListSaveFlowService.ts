@@ -10,6 +10,8 @@ export type SnapshotCapturePayload =
       wasUpdate: boolean;
       skipped?: boolean;
       partialRebuild?: boolean;
+      tailInvalidated?: boolean;
+      tailInvalidatedMessage?: string;
     }
   | { ok: false; error: string };
 
@@ -54,12 +56,20 @@ export async function runSnapshotCaptureForSettings(
       sessionUserId,
       onlyRebuildEventIds: heatPlanChangedIds,
     });
+    const tailInvalidated = Boolean(snap.droppedResultBasedTail?.length);
     return {
       ok: true,
       snapshotId: snap.snapshotId,
       wasUpdate: snap.wasUpdate,
       skipped: snap.skipped,
       partialRebuild: snap.partialRebuild,
+      ...(tailInvalidated
+        ? {
+            tailInvalidated: true,
+            tailInvalidatedMessage:
+              "先頭ラウンドの記録を更新したため、前ラ結果に基づく次ラウンド記録を削除しました。",
+          }
+        : {}),
     };
   } catch (snapErr) {
     return {

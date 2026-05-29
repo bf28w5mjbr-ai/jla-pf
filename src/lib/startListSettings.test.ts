@@ -356,6 +356,18 @@ describe("normalizeRoundTabs", () => {
     });
     expect(tabs[0]!.maxLanesPerHeat).toBe(7);
   });
+
+  it("32 を超える maxLanesPerHeat も保持する", () => {
+    const tabs = normalizeRoundTabs({
+      roundTabs: [
+        { id: "1", label: "h", mode: "count", heatCount: "2", heatSize: "", maxLanesPerHeat: 50 },
+      ],
+      mode: "count",
+      heatCount: "2",
+      heatSize: "",
+    });
+    expect(tabs[0]!.maxLanesPerHeat).toBe(50);
+  });
 });
 
 describe("resolveTabMaxLanes", () => {
@@ -372,6 +384,18 @@ describe("resolveTabMaxLanes", () => {
     expect(
       resolveTabMaxLanes({ id: "x", label: "q", mode: "count", heatCount: "1", heatSize: "" }, 10)
     ).toBe(10);
+  });
+
+  it("32 を超える上書き・既定値もそのまま返す", () => {
+    expect(
+      resolveTabMaxLanes(
+        { id: "x", label: "q", mode: "count", heatCount: "1", heatSize: "", maxLanesPerHeat: 50 },
+        16
+      )
+    ).toBe(50);
+    expect(
+      resolveTabMaxLanes({ id: "x", label: "q", mode: "count", heatCount: "1", heatSize: "" }, 100)
+    ).toBe(100);
   });
 });
 

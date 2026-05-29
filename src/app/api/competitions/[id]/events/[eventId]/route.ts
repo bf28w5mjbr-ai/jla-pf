@@ -25,6 +25,7 @@ import {
   pruneRoundScheduledStarts,
   roundScheduledStartsToPrismaJson,
 } from "@/lib/eventRoundScheduledStarts";
+import { parseMaxLanesPerHeat } from "@/lib/maxLanesPerHeat";
 import { syncStartListSettingsRoundTabsForEvent } from "@/lib/startListRoundCountSync";
 import { parseEligibleBirthDateInput } from "@/lib/eligibleBirthDateInput";
 import { eventBirthFieldsFromAgeCategory } from "@/lib/competitionAgeCategorySync";
@@ -809,37 +810,29 @@ export async function PATCH(
 
       const laneVal = raw.preliminaryHeatLaneCount;
       let nextLanes: number | null;
+      const laneInvalidMessage =
+        "1レースあたりの最大レーン数は1以上の整数、または未設定（空）にしてください";
       if (laneVal === null || laneVal === "") {
         nextLanes = null;
       } else if (typeof laneVal === "number" && Number.isInteger(laneVal)) {
-        nextLanes = laneVal;
+        nextLanes = parseMaxLanesPerHeat(laneVal) ?? null;
+        if (nextLanes === null) {
+          return NextResponse.json({ message: laneInvalidMessage }, { status: 400 });
+        }
       } else if (typeof laneVal === "string") {
         const t = laneVal.trim();
         if (t === "") {
           nextLanes = null;
         } else if (/^\d+$/.test(t)) {
-          nextLanes = parseInt(t, 10);
+          nextLanes = parseMaxLanesPerHeat(parseInt(t, 10)) ?? null;
+          if (nextLanes === null) {
+            return NextResponse.json({ message: laneInvalidMessage }, { status: 400 });
+          }
         } else {
-          return NextResponse.json(
-            {
-              message:
-                "1レースあたりの最大レーン数は1〜32の整数、または未設定（空）にしてください",
-            },
-            { status: 400 }
-          );
+          return NextResponse.json({ message: laneInvalidMessage }, { status: 400 });
         }
       } else {
-        return NextResponse.json(
-          { message: "1レースあたりの最大レーン数は1〜32の整数、または未設定（空）にしてください" },
-          { status: 400 }
-        );
-      }
-
-      if (nextLanes !== null && (nextLanes < 1 || nextLanes > 32)) {
-        return NextResponse.json(
-          { message: "1レースあたりの最大レーン数は1〜32の範囲で指定してください" },
-          { status: 400 }
-        );
+        return NextResponse.json({ message: laneInvalidMessage }, { status: 400 });
       }
 
       if (event.marshalStartedAt) {

@@ -5,6 +5,7 @@ import { LiveRoundModeBanners } from "./LiveRoundModeBanners";
 import { LiveRoundHeatMarshalDialogs } from "./LiveRoundHeatMarshalDialogs";
 import { LiveRoundDsqLink } from "./LiveRoundDsqLink";
 import { LiveRoundHeatSection } from "./LiveRoundHeatSection";
+import { LiveRoundStructurePreview } from "./LiveRoundStructurePreview";
 import { useLiveRoundParticipantStatus } from "@/hooks/liveRound/useLiveRoundParticipantStatus";
 import { useMarshalDraftOps } from "@/hooks/liveRound/useMarshalDraftOps";
 import { useResultCaptureDraft } from "@/hooks/liveRound/useResultCaptureDraft";
@@ -26,6 +27,9 @@ export function LiveRoundContent({
   participantStatusRows,
   marshalRoundForDisplay,
   heatPlanConfirmedForDsq = false,
+  displaySource,
+  previewEstimatedParticipants,
+  previewMaxLanesPerHeat,
 }: LiveRoundContentProps) {
   const snapshotHeatIndexForRow = (rowIdx: number) =>
     marshalDisplayHeatIndices?.[rowIdx] ?? rowIdx + 1;
@@ -160,6 +164,21 @@ export function LiveRoundContent({
     setResultCapturePendingKey,
     tieNextHeatIndexRef,
   });
+
+  const heats = isTeam ? teamHeats : individualHeats;
+  const previewStructure = displaySource === "previewStructure";
+
+  if (previewStructure) {
+    return (
+      <LiveRoundStructurePreview
+        heatCount={heats.length}
+        marshalDisplayHeatIndices={marshalDisplayHeatIndices ?? []}
+        previewEstimatedParticipants={previewEstimatedParticipants}
+        previewMaxLanesPerHeat={previewMaxLanesPerHeat}
+        displaySource={displaySource}
+      />
+    );
+  }
 
   return (
     <div className="space-y-1.5">

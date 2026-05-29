@@ -44,6 +44,10 @@ describe("computeHeatCountFromMaxLanes", () => {
     expect(computeHeatCountFromMaxLanes(3, 8)).toBe(1);
     expect(computeHeatCountFromMaxLanes(9, 8)).toBe(2);
   });
+
+  it("32 を超える最大レーン数もそのまま使う", () => {
+    expect(computeHeatCountFromMaxLanes(100, 50)).toBe(2);
+  });
 });
 
 describe("enforceMinHeatCountForMaxLanes", () => {

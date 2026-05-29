@@ -2,6 +2,7 @@
 
 import { Input } from "@/components/ui/input";
 import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
+import { isMarshalRoundLocked } from "@/lib/marshalRoundSettingsLock";
 import type { StartListRoundTab } from "@/lib/startListSettings";
 import { sexLabelJa } from "@/lib/sexLabelJa";
 
@@ -26,6 +27,11 @@ export function StartListEventRoundSettingsRow({
   onUpdateHeatTab,
   isDirty = false,
 }: StartListEventRoundSettingsRowProps) {
+  const roundCount = parseInt(roundCountValue, 10);
+  const effectiveRoundCount =
+    Number.isInteger(roundCount) && roundCount >= 1 && roundCount <= 32 ? roundCount : 1;
+  const roundCountLocked = (event.marshalLockedRounds?.length ?? 0) > 0;
+
   const entryMeta =
     typeof event.preliminaryHeatLaneCount === "number"
       ? `エントリー ${event.entryCount ?? 0} 件 · 最大レーン ${event.preliminaryHeatLaneCount}`
@@ -64,7 +70,7 @@ export function StartListEventRoundSettingsRow({
             aria-label={`${event.name} のスタートリストのラウンド数`}
             value={roundCountValue}
             onChange={(e) => onRoundCountChange(e.target.value)}
-            disabled={heatUiLocked}
+            disabled={heatUiLocked || roundCountLocked}
           />
         </div>
       </div>
@@ -74,7 +80,13 @@ export function StartListEventRoundSettingsRow({
             ラウンドごとのヒート数・最大レーン（空の最大レーンは種目の既定）
           </p>
           <ul className="divide-y divide-border/40">
-            {displayTabs.map((tab, tabIdx) => (
+            {displayTabs.map((tab, tabIdx) => {
+              const tabLocked = isMarshalRoundLocked(
+                event.marshalLockedRounds,
+                tabIdx,
+                effectiveRoundCount
+              );
+              return (
               <li
                 key={tab.id}
                 className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1 first:pt-0 last:pb-0"
@@ -92,20 +104,19 @@ export function StartListEventRoundSettingsRow({
                   onChange={(e) =>
                     onUpdateHeatTab(tabIdx, { heatCount: e.target.value, mode: "count" })
                   }
-                  disabled={heatUiLocked}
+                  disabled={heatUiLocked || tabLocked}
                 />
                 <span className="text-[10px] text-muted-foreground">最大レーン</span>
                 <Input
                   numericInput="integer"
                   min={1}
-                  max={32}
                   title="最大レーン（空なら種目の既定）"
                   placeholder={
                     typeof event.preliminaryHeatLaneCount === "number"
                       ? String(event.preliminaryHeatLaneCount)
                       : "—"
                   }
-                  className="h-7 w-11 px-1 text-center text-[11px] tabular-nums"
+                  className="h-7 w-14 px-1 text-center text-[11px] tabular-nums"
                   value={
                     typeof tab.maxLanesPerHeat === "number" ? String(tab.maxLanesPerHeat) : ""
                   }
@@ -116,14 +127,15 @@ export function StartListEventRoundSettingsRow({
                       return;
                     }
                     const v = parseInt(t, 10);
-                    if (Number.isInteger(v) && v >= 1 && v <= 32) {
+                    if (Number.isInteger(v) && v >= 1 && Number.isSafeInteger(v)) {
                       onUpdateHeatTab(tabIdx, { maxLanesPerHeat: v });
                     }
                   }}
-                  disabled={heatUiLocked}
+                  disabled={heatUiLocked || tabLocked}
                 />
               </li>
-            ))}
+              );
+            })}
           </ul>
           {event.startListHeatPlanConfirmedAt ? (
             <p className="mt-1 text-[10px] text-muted-foreground">ヒート・レーン確定済み</p>

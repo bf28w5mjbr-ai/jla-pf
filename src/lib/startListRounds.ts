@@ -177,7 +177,7 @@ export function computeAdvanceCountsByLaneSlotsPerHeat(
 ): number[] {
   const n = Math.max(0, Math.floor(heatCount));
   if (n === 0) return [];
-  const L = Math.min(64, Math.max(1, Math.floor(maxLanesPerHeat)));
+  const L = Math.max(1, Math.floor(maxLanesPerHeat));
   const uniformSizes = Array.from({ length: n }, () => L);
   return computeAdvanceCountsEqualAcrossHeats(uniformSizes, capacity);
 }
@@ -292,7 +292,7 @@ export function computeHeatCountFromMaxLanes(
   if (typeof maxLanesPerHeat !== "number" || !Number.isFinite(maxLanesPerHeat)) {
     return null;
   }
-  const L = Math.min(64, Math.max(1, Math.floor(maxLanesPerHeat)));
+  const L = Math.max(1, Math.floor(maxLanesPerHeat));
   return Math.max(1, Math.ceil(total / L));
 }
 
@@ -317,7 +317,7 @@ export function enforceMinHeatCountForMaxLanes(
   ) {
     return Math.min(64, safeBase);
   }
-  const L = Math.min(64, Math.max(1, Math.floor(maxLanesPerHeat)));
+  const L = Math.max(1, Math.floor(maxLanesPerHeat));
   const minHeats = Math.max(1, Math.ceil(total / L));
   return Math.min(64, Math.max(safeBase, minHeats));
 }
@@ -335,7 +335,7 @@ export function effectiveHeatSettingForFirstStartListRound(
     Number.isFinite(maxLanesPerHeat) &&
     maxLanesPerHeat >= 1
   ) {
-    const L = Math.min(64, Math.floor(maxLanesPerHeat));
+    const L = Math.max(1, Math.floor(maxLanesPerHeat));
     return { mode: "size", heatSize: String(Math.max(1, L)), heatCount: "1" };
   }
   return { mode: tab.mode, heatCount: tab.heatCount, heatSize: tab.heatSize };

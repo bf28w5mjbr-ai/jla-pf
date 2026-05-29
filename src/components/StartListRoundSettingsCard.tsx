@@ -104,7 +104,7 @@ export function StartListRoundSettingsCard({
         <p className="text-[10px] leading-snug text-muted-foreground">{hintText ?? defaultHint}</p>
         {focusEventId && visibleEvents[0]?.startListHeatPlanConfirmedAt ? (
           <p className="mt-1 text-[10px] leading-snug text-amber-900 dark:text-amber-100">
-            ヒート・レーンは確定済みですが、内容を変えて再保存できます。当日運用や記録に影響するので注意してください。マーシャル開始後は、分割やラウンド数の変更がサーバーで拒否されることがあります。
+            ヒート・レーンは確定済みですが、内容を変えて再保存できます。保存するとスタートリスト記録（公開・マーシャル）も更新されます。2ラウンド目以降は進出者未確定の試算（枠のみ）です。マーシャル開始済みのラウンドは編集できません。
           </p>
         ) : null}
       </CardHeader>
@@ -161,7 +161,7 @@ export function StartListRoundSettingsCard({
             )}
             {dirtyState.marshalRoundBlocked.length > 0 ? (
               <span className="mt-0.5 block text-amber-700 dark:text-amber-300">
-                マーシャル開始済みの種目はラウンド数を変更できません
+                マーシャル開始済みのラウンドは変更できません
               </span>
             ) : null}
           </div>

@@ -60,18 +60,46 @@ export type ReplaceStartListSnapshotResult = {
   skipped?: boolean;
   /** 種目の一部だけヒートを再計算した */
   partialRebuild?: boolean;
+  /** HEAT 頭差し替え時に破棄した RESULT_BASED 次ラウンド */
+  droppedResultBasedTail?: Array<{
+    eventId: string;
+    rounds: StartListRoundData["round"][];
+  }>;
 };
 
-/** 先頭ラウンド（HEAT）だけ差し替え、既存の次ラウンド以降を残す */
-function mergeNewHeatHeadOntoPreviousTailForEvent(
+/** 先頭ラウンド（HEAT）だけ差し替え、RESULT_BASED の tail は破棄してそれ以外を残す */
+export function mergeNewHeatHeadOntoPreviousTailForEvent(
+  old: SnapshotEvent | undefined,
+  freshForEvent: SnapshotEvent
+): { event: SnapshotEvent; droppedResultBasedRounds: StartListRoundData["round"][] } {
+  const head = freshForEvent.rounds[0];
+  if (!head) {
+    return { event: freshForEvent, droppedResultBasedRounds: [] };
+  }
+  if (!old?.rounds || old.rounds.length <= 1) {
+    return { event: freshForEvent, droppedResultBasedRounds: [] };
+  }
+  const tail = old.rounds.slice(1);
+  const kept: StartListRoundData[] = [];
+  const dropped: StartListRoundData["round"][] = [];
+  for (const round of tail) {
+    if (round.generatedBy === "RESULT_BASED") {
+      dropped.push(round.round);
+    } else {
+      kept.push(round);
+    }
+  }
+  return {
+    event: { ...freshForEvent, rounds: [head, ...kept] },
+    droppedResultBasedRounds: dropped,
+  };
+}
+
+function mergeNewHeatHeadOntoPreviousTailForEventLegacy(
   old: SnapshotEvent | undefined,
   freshForEvent: SnapshotEvent
 ): SnapshotEvent {
-  if (!old?.rounds || old.rounds.length <= 1) return freshForEvent;
-  const [, ...tail] = old.rounds;
-  const head = freshForEvent.rounds[0];
-  if (!head) return freshForEvent;
-  return { ...freshForEvent, rounds: [head, ...tail] };
+  return mergeNewHeatHeadOntoPreviousTailForEvent(old, freshForEvent).event;
 }
 
 /** 手動記録で HEAT を差し替えつつ、既存の次ラウンド以降（進行生成済み）を残す */
@@ -83,7 +111,9 @@ function mergeSnapshotPreservingTailRounds(
   const p = previous as { events?: SnapshotEvent[] };
   if (!Array.isArray(p.events)) return next;
   const prevById = new Map(p.events.map((e) => [e.eventId, e]));
-  const events = next.events.map((ev) => mergeNewHeatHeadOntoPreviousTailForEvent(prevById.get(ev.eventId), ev));
+  const events = next.events.map((ev) =>
+    mergeNewHeatHeadOntoPreviousTailForEventLegacy(prevById.get(ev.eventId), ev)
+  );
   return { ...next, events };
 }
 
@@ -102,13 +132,38 @@ function mergePartialFreshSnapshotPreservingTailRounds(
   for (const id of orderedEventIds) {
     const freshEv = freshById.get(id);
     if (freshEv) {
-      events.push(mergeNewHeatHeadOntoPreviousTailForEvent(prevById.get(id), freshEv));
+      events.push(
+        mergeNewHeatHeadOntoPreviousTailForEvent(prevById.get(id), freshEv).event
+      );
     } else {
       const old = prevById.get(id);
       if (old) events.push(old);
     }
   }
   return { version: 1, capturedAt: freshPartial.capturedAt, events };
+}
+
+function collectDroppedResultBasedTailFromMerge(
+  previous: unknown,
+  fresh: StartListSnapshotPayload,
+  mergedEventIds: readonly string[]
+): ReplaceStartListSnapshotResult["droppedResultBasedTail"] {
+  if (!previous || typeof previous !== "object") return undefined;
+  const p = previous as { events?: SnapshotEvent[] };
+  if (!Array.isArray(p.events)) return undefined;
+  const prevById = new Map(p.events.map((e) => [e.eventId, e]));
+  const freshById = new Map(fresh.events.map((e) => [e.eventId, e]));
+  const out: NonNullable<ReplaceStartListSnapshotResult["droppedResultBasedTail"]> = [];
+  for (const eventId of mergedEventIds) {
+    const prev = prevById.get(eventId);
+    const freshEv = freshById.get(eventId);
+    if (!prev || !freshEv) continue;
+    const { droppedResultBasedRounds } = mergeNewHeatHeadOntoPreviousTailForEvent(prev, freshEv);
+    if (droppedResultBasedRounds.length > 0) {
+      out.push({ eventId, rounds: droppedResultBasedRounds });
+    }
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 async function countPendingEntryCheckoutSessions(competitionId: string): Promise<number> {
@@ -487,6 +542,12 @@ export async function replaceCompetitionStartListSnapshot(params: {
       : mergeSnapshotPreservingTailRounds(existing!.data, fresh)
     : mergeSnapshotPreservingTailRounds(undefined, fresh);
 
+  const droppedResultBasedTail = collectDroppedResultBasedTailFromMerge(
+    hasUsablePrior ? existing!.data : undefined,
+    fresh,
+    usePartial ? rebuildIds : fresh.events.map((e) => e.eventId)
+  );
+
   const now = new Date();
   const partialRebuild = Boolean(usePartial);
 
@@ -504,6 +565,7 @@ export async function replaceCompetitionStartListSnapshot(params: {
       snapshotId: existing.id,
       wasUpdate: true,
       partialRebuild,
+      ...(droppedResultBasedTail?.length ? { droppedResultBasedTail } : {}),
     };
   }
 
@@ -521,6 +583,7 @@ export async function replaceCompetitionStartListSnapshot(params: {
     snapshotId: created.id,
     wasUpdate: false,
     partialRebuild,
+    ...(droppedResultBasedTail?.length ? { droppedResultBasedTail } : {}),
   };
 }
 

@@ -65,6 +65,8 @@ import {
 } from "@/lib/competitionEntryAgeTiered";
 import { renderRequiredQualificationsSummary } from "@/lib/competitionParticipationSummaries";
 import { sortEventsByScheduleTabs } from "@/lib/competitionScheduleTabDisplay";
+import { getMarshalActiveRoundsForEvents } from "@/lib/marshalRoundSettingsLock";
+import { prisma } from "@/server/db";
 import { parseScheduleRowOrderByDayJson } from "@/lib/scheduleRowOrder";
 import { firstCompetitionScheduleDayKey } from "@/lib/competitionScheduleDays";
 
@@ -129,6 +131,15 @@ export default async function CompetitionDetailPage({
           competition.events.map((e) => ({ id: e.id, type: e.type }))
         )
       : {};
+
+  const marshalLockedRoundsByEventId =
+    activeTab === "start-list" && competition.events.length > 0
+      ? await getMarshalActiveRoundsForEvents(
+          prisma,
+          id,
+          competition.events.map((e) => e.id)
+        )
+      : new Map<string, Set<"HEAT" | "SEMI" | "FINAL">>();
 
   const dayOpsUnlockConfigured = Boolean(competition.dayOpsAccessSecretHash);
 
@@ -888,6 +899,9 @@ export default async function CompetitionDetailPage({
                     preliminaryHeatLaneCount: event.preliminaryHeatLaneCount,
                     startListHeatPlanConfirmedAt: event.startListHeatPlanConfirmedAt,
                     marshalStartedAt: event.marshalStartedAt,
+                    marshalLockedRounds: [
+                      ...(marshalLockedRoundsByEventId.get(event.id) ?? new Set()),
+                    ],
                   }))}
                   initialStartListSettings={competition.startListSettings}
                   canReorder={canEditPublishedSchedule}

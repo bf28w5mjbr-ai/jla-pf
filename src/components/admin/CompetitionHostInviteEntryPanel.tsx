@@ -91,7 +91,7 @@ export default function CompetitionHostInviteEntryPanel({
   const [clubResults, setClubResults] = useState<SearchClub[]>([]);
   const [selectedClub, setSelectedClub] = useState<SearchClub | null>(null);
   const [existingByEvent, setExistingByEvent] = useState<Record<string, ClubTeamStatus>>({});
-  const [additionsByEvent, setAdditionsByEvent] = useState<Record<string, number>>({});
+  const [targetCountsByEvent, setTargetCountsByEvent] = useState<Record<string, number>>({});
   const [clubTeamsLoading, setClubTeamsLoading] = useState(false);
 
   const [notes, setNotes] = useState("");
@@ -192,7 +192,7 @@ export default function CompetitionHostInviteEntryPanel({
   useEffect(() => {
     if (!selectedClub) {
       setExistingByEvent({});
-      setAdditionsByEvent({});
+      setTargetCountsByEvent({});
       return;
     }
     let cancelled = false;
@@ -207,7 +207,7 @@ export default function CompetitionHostInviteEntryPanel({
         if (!res.ok) {
           toast.error(typeof data.error === "string" ? data.error : "登録状況の取得に失敗しました");
           setExistingByEvent({});
-          setAdditionsByEvent({});
+          setTargetCountsByEvent({});
           return;
         }
         const byEvent =
@@ -215,7 +215,11 @@ export default function CompetitionHostInviteEntryPanel({
             ? (data.byEvent as Record<string, ClubTeamStatus>)
             : {};
         setExistingByEvent(byEvent);
-        setAdditionsByEvent({});
+        const initialTargets: Record<string, number> = {};
+        for (const e of teamEvents) {
+          initialTargets[e.id] = byEvent[e.id]?.count ?? 0;
+        }
+        setTargetCountsByEvent(initialTargets);
       } finally {
         if (!cancelled) setClubTeamsLoading(false);
       }
@@ -223,7 +227,7 @@ export default function CompetitionHostInviteEntryPanel({
     return () => {
       cancelled = true;
     };
-  }, [selectedClub, competitionId]);
+  }, [selectedClub, competitionId, teamEvents]);
 
   const resetIndividualForm = () => {
     setSelectedUser(null);
@@ -237,7 +241,7 @@ export default function CompetitionHostInviteEntryPanel({
   const resetTeamForm = () => {
     setSelectedClub(null);
     setExistingByEvent({});
-    setAdditionsByEvent({});
+    setTargetCountsByEvent({});
     setClubQ("");
     setClubResults([]);
   };
@@ -272,14 +276,10 @@ export default function CompetitionHostInviteEntryPanel({
     setMode(next);
   };
 
-  const setAddCountForEvent = (eventId: string, rawNext: number, maxAdd: number | null) => {
-    setAdditionsByEvent((prev) => {
+  const setTargetCountForEvent = (eventId: string, rawNext: number, cap: number | null) => {
+    setTargetCountsByEvent((prev) => {
       let next = Math.max(0, Math.floor(Number.isFinite(rawNext) ? rawNext : 0));
-      if (maxAdd != null) next = Math.min(next, maxAdd);
-      if (next === 0) {
-        const { [eventId]: _removed, ...rest } = prev;
-        return rest;
-      }
+      if (cap != null) next = Math.min(next, cap);
       return { ...prev, [eventId]: next };
     });
   };
@@ -289,12 +289,16 @@ export default function CompetitionHostInviteEntryPanel({
     [individualEvents, selectedEventIds]
   );
 
-  const teamAdditionsList = useMemo(
+  const teamAdjustmentsList = useMemo(
     () =>
       teamEvents
-        .map((e) => ({ event: e, addCount: additionsByEvent[e.id] ?? 0 }))
-        .filter((row) => row.addCount > 0),
-    [teamEvents, additionsByEvent]
+        .map((e) => {
+          const existing = existingByEvent[e.id]?.count ?? 0;
+          const targetCount = targetCountsByEvent[e.id] ?? existing;
+          return { event: e, targetCount, existing };
+        })
+        .filter((row) => row.targetCount !== row.existing),
+    [teamEvents, existingByEvent, targetCountsByEvent]
   );
 
   const canSubmitIndividual =
@@ -304,7 +308,7 @@ export default function CompetitionHostInviteEntryPanel({
       (e) => !e.requiresEntryTime || (entryTimes[e.id]?.trim()?.length ?? 0) > 0
     );
 
-  const canSubmitTeam = selectedClub && teamAdditionsList.length > 0 && !clubTeamsLoading;
+  const canSubmitTeam = selectedClub && teamAdjustmentsList.length > 0 && !clubTeamsLoading;
 
   const handleSubmitIndividual = async () => {
     if (!selectedUser || !canSubmitIndividual) return;
@@ -344,9 +348,9 @@ export default function CompetitionHostInviteEntryPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clubId: selectedClub.id,
-          additions: teamAdditionsList.map(({ event, addCount }) => ({
+          adjustments: teamAdjustmentsList.map(({ event, targetCount }) => ({
             eventId: event.id,
-            addCount,
+            targetCount,
           })),
           notes: notes.trim() || undefined,
         }),
@@ -428,7 +432,7 @@ export default function CompetitionHostInviteEntryPanel({
           <div className="min-w-0">
             <h3 className="text-sm font-semibold text-foreground">招待・手動エントリー</h3>
             <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-              個人種目は登録済みユーザーを検索して追加します。チーム種目はクラブを選び、種目ごとに追加する組数を指定します（参加費なし・主催登録）。チーム名はクラブ略称から自動設定されます。メンバー割当はクラブのチーム管理画面で行います。
+              個人種目は登録済みユーザーを検索して追加します。チーム種目はクラブを選び、種目ごとの登録組数を変更できます（エントリー締切後も可・参加費なし・主催登録）。減らす場合は末尾のチームから削除されます。マーシャル締切済みのチームは削除できません。チーム名はクラブ略称から自動設定されます。メンバー割当はクラブのチーム管理画面で行います。
             </p>
           </div>
         </div>
@@ -503,8 +507,8 @@ export default function CompetitionHostInviteEntryPanel({
               clubTeamsLoading={clubTeamsLoading}
               teamEvents={teamEvents}
               existingByEvent={existingByEvent}
-              additionsByEvent={additionsByEvent}
-              setAddCountForEvent={setAddCountForEvent}
+              targetCountsByEvent={targetCountsByEvent}
+              setTargetCountForEvent={setTargetCountForEvent}
               notes={notes}
               setNotes={setNotes}
               canSubmit={!!canSubmitTeam}
@@ -717,8 +721,8 @@ function TeamClubInviteForm({
   clubTeamsLoading,
   teamEvents,
   existingByEvent,
-  additionsByEvent,
-  setAddCountForEvent,
+  targetCountsByEvent,
+  setTargetCountForEvent,
   notes,
   setNotes,
   canSubmit,
@@ -735,8 +739,8 @@ function TeamClubInviteForm({
   clubTeamsLoading: boolean;
   teamEvents: HostInviteTeamEventOption[];
   existingByEvent: Record<string, ClubTeamStatus>;
-  additionsByEvent: Record<string, number>;
-  setAddCountForEvent: (eventId: string, next: number, maxAdd: number | null) => void;
+  targetCountsByEvent: Record<string, number>;
+  setTargetCountForEvent: (eventId: string, next: number, cap: number | null) => void;
   notes: string;
   setNotes: (v: string) => void;
   canSubmit: boolean;
@@ -806,9 +810,9 @@ function TeamClubInviteForm({
       {selectedClub ? (
         <div className="space-y-2">
           <div>
-            <p className="text-xs font-medium text-muted-foreground">チーム種目ごとの追加</p>
+            <p className="text-xs font-medium text-muted-foreground">チーム種目ごとの登録組数</p>
             <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-              登録済みの組数を確認し、今回追加する組数を指定してください。チーム名はクラブ略称（なければ正式名）から自動設定されます。
+              種目ごとの登録組数を指定してください（0 組も可）。減らす場合は末尾のチームから削除されます。チーム名はクラブ略称（なければ正式名）から自動設定されます。
             </p>
           </div>
           {clubTeamsLoading ? (
@@ -821,14 +825,14 @@ function TeamClubInviteForm({
               {teamEvents.map((event) => {
                 const existing = existingByEvent[event.id]?.count ?? 0;
                 const existingNames = existingByEvent[event.id]?.teamNames ?? [];
-                const addCount = additionsByEvent[event.id] ?? 0;
+                const targetCount = targetCountsByEvent[event.id] ?? existing;
                 const cap =
                   typeof event.maxTeamEntriesPerClub === "number" &&
                   event.maxTeamEntriesPerClub >= 1
                     ? event.maxTeamEntriesPerClub
                     : null;
-                const maxAdd = cap != null ? Math.max(0, cap - existing) : null;
-                const atCap = maxAdd != null && maxAdd === 0;
+                const atCap = cap != null && targetCount >= cap;
+                const isDirty = targetCount !== existing;
                 const previewRaw = existingNames.join(", ");
                 const preview =
                   previewRaw.length > 72 ? `${previewRaw.slice(0, 72)}…` : previewRaw || "—";
@@ -845,16 +849,16 @@ function TeamClubInviteForm({
                           {cap != null ? (
                             <span className="text-[11px] tabular-nums text-muted-foreground">
                               上限 {cap} 組
-                              {atCap ? (
-                                <span className="ml-1 font-medium text-amber-800 dark:text-amber-200">
-                                  （上限）
-                                </span>
-                              ) : null}
                             </span>
+                          ) : null}
+                          {isDirty ? (
+                            <Badge variant="outline" className="text-[10px] font-normal">
+                              変更
+                            </Badge>
                           ) : null}
                         </div>
                         <p className="mt-0.5 text-[11px] text-muted-foreground">
-                          登録済み{" "}
+                          現在{" "}
                           <span className="font-medium tabular-nums text-foreground">{existing}</span> 組
                           {previewRaw ? (
                             <span className="ml-1 truncate" title={previewRaw}>
@@ -864,30 +868,44 @@ function TeamClubInviteForm({
                         </p>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-0.5">
-                        <span className="text-[10px] font-medium text-muted-foreground">今回追加</span>
+                        <span className="text-[10px] font-medium text-muted-foreground">登録組数</span>
                         <div className="flex items-center gap-1">
                           <Button
                             type="button"
                             variant="outline"
                             size="icon"
                             className="h-8 w-8"
-                            disabled={atCap || addCount <= 0}
-                            onClick={() => setAddCountForEvent(event.id, addCount - 1, maxAdd)}
-                            aria-label={`${event.name}の追加組数を1減らす`}
+                            disabled={targetCount <= 0}
+                            onClick={() => setTargetCountForEvent(event.id, targetCount - 1, cap)}
+                            aria-label={`${event.name}の登録組数を1減らす`}
                           >
                             <Minus className="h-3.5 w-3.5" />
                           </Button>
-                          <span className="min-w-[2rem] text-center text-sm font-semibold tabular-nums">
-                            {addCount}
-                          </span>
+                          <Input
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            max={cap ?? undefined}
+                            value={targetCount}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value, 10);
+                              setTargetCountForEvent(
+                                event.id,
+                                Number.isNaN(v) ? 0 : v,
+                                cap
+                              );
+                            }}
+                            className="h-8 w-[3.25rem] px-1 text-center text-sm tabular-nums"
+                            aria-label={`${event.name}の登録組数`}
+                          />
                           <Button
                             type="button"
                             variant="outline"
                             size="icon"
                             className="h-8 w-8"
-                            disabled={atCap || (maxAdd != null && addCount >= maxAdd)}
-                            onClick={() => setAddCountForEvent(event.id, addCount + 1, maxAdd)}
-                            aria-label={`${event.name}の追加組数を1増やす`}
+                            disabled={atCap}
+                            onClick={() => setTargetCountForEvent(event.id, targetCount + 1, cap)}
+                            aria-label={`${event.name}の登録組数を1増やす`}
                           >
                             <Plus className="h-3.5 w-3.5" />
                           </Button>
@@ -920,7 +938,7 @@ function TeamClubInviteForm({
             登録中…
           </>
         ) : (
-          "チームを追加する"
+          "組数を更新する"
         )}
       </Button>
     </>

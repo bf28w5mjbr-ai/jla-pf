@@ -1,7 +1,6 @@
-import type { PrismaClient } from "@prisma/client";
 import { prisma } from "@/server/db";
 import type { HeatSetting } from "@/lib/startListSettings";
-import { normalizeRoundTabs, parseStartListSettings } from "@/lib/startListSettings";
+import { normalizeRoundTabs } from "@/lib/startListSettings";
 
 const EMPTY_HEAT: HeatSetting = { mode: "count", heatCount: "1", heatSize: "" };
 
@@ -14,6 +13,7 @@ export function heatPlanSplitFingerprint(setting: HeatSetting | undefined): stri
       mode: t.mode,
       heatCount: String(t.heatCount ?? "").trim(),
       heatSize: String(t.heatSize ?? "").trim(),
+      maxLanesPerHeat: t.maxLanesPerHeat ?? null,
       auto: false,
     }))
   );
@@ -29,29 +29,6 @@ export function mergeEventSettingsForMarshalCompare(params: {
     out[id] = params.proposed[id] ?? params.previous[id] ?? EMPTY_HEAT;
   }
   return out;
-}
-
-export async function assertHeatSettingsUnchangedForMarshalLockedEvents(params: {
-  prisma: PrismaClient;
-  competitionId: string;
-  previousEnvelope: ReturnType<typeof parseStartListSettings>;
-  nextEventSettings: Record<string, HeatSetting>;
-}): Promise<{ ok: true } | { ok: false; message: string }> {
-  const locked = await params.prisma.event.findMany({
-    where: { competitionId: params.competitionId, marshalStartedAt: { not: null } },
-    select: { id: true },
-  });
-  for (const { id } of locked) {
-    const prev = params.previousEnvelope.eventSettings[id] ?? EMPTY_HEAT;
-    const next = params.nextEventSettings[id] ?? EMPTY_HEAT;
-    if (heatPlanSplitFingerprint(prev) !== heatPlanSplitFingerprint(next)) {
-      return {
-        ok: false,
-        message: "マーシャル開始後はラウンド設定のヒート分割を変更できません",
-      };
-    }
-  }
-  return { ok: true };
 }
 
 type EventDelegate = typeof prisma.event;

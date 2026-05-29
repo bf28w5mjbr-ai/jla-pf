@@ -8,13 +8,12 @@ import {
 } from "@/lib/startListEventHeatValidation";
 import {
   buildStartListSettingsPayload,
+  normalizeRoundTabs,
   parseStartListSettings,
   type HeatSetting,
 } from "@/lib/startListSettings";
-import {
-  assertHeatSettingsUnchangedForMarshalLockedEvents,
-  mergeEventSettingsForMarshalCompare,
-} from "@/lib/eventHeatPlanMarshal";
+import { mergeEventSettingsForMarshalCompare } from "@/lib/eventHeatPlanMarshal";
+import { assertHeatSettingsUnchangedForMarshalActiveRounds } from "@/lib/marshalRoundSettingsLock";
 import { competitionEntryEligibleForStartListWhere } from "@/lib/entryCheckoutSessionPaid";
 import { prisma } from "@/server/db";
 import { hostOrgAdminCanManageCompetition } from "@/lib/roleScopes";
@@ -48,7 +47,7 @@ export async function PUT(
           },
         },
         events: {
-          select: { id: true, type: true, preliminaryHeatLaneCount: true },
+          select: { id: true, type: true, preliminaryHeatLaneCount: true, startListRoundCount: true },
           orderBy: { displayOrder: "asc" },
         },
       },
@@ -185,11 +184,24 @@ export async function PUT(
       return NextResponse.json({ message: monotonic.message }, { status: 400 });
     }
 
-    const marshalGate = await assertHeatSettingsUnchangedForMarshalLockedEvents({
+    const marshalGate = await assertHeatSettingsUnchangedForMarshalActiveRounds({
       prisma,
       competitionId,
-      previousEnvelope: existingParsed,
-      nextEventSettings: nextEventSettingsForMarshalGate,
+      changes: eventIdList.map((eventId) => {
+        const ev = competition.events.find((e) => e.id === eventId);
+        const previousRoundCount = ev?.startListRoundCount ?? 1;
+        const nextTabsLen = normalizeRoundTabs(
+          nextEventSettingsForMarshalGate[eventId] ?? {}
+        ).length;
+        const nextRoundCount = Math.min(32, Math.max(1, nextTabsLen || 1));
+        return {
+          eventId,
+          previousSetting: existingParsed.eventSettings[eventId],
+          nextSetting: nextEventSettingsForMarshalGate[eventId],
+          previousRoundCount,
+          nextRoundCount,
+        };
+      }),
     });
     if (!marshalGate.ok) {
       return NextResponse.json({ message: marshalGate.message }, { status: 409 });

@@ -321,7 +321,7 @@ export function HeatAdvanceQuotaLabel({
     );
   }
   return (
-    <span className="ml-1.5 font-normal text-gray-600 dark:text-gray-400">· アップ {quota} 名</span>
+    <span className="ml-1.5 font-normal text-gray-600 dark:text-gray-400">· 按分試算 {quota} 名</span>
   );
 }
 

@@ -8,10 +8,11 @@ import {
 } from "@/lib/organizerAccess";
 import { logAuditAction, getRequestContext } from "@/lib/auditLog";
 import {
-  applyHostInviteTeamAdditions,
+  applyHostInviteTeamAdjustments,
   assertHostInviteEventCountLimits,
   buildHostInviteSnapshot,
   clubTeamNameBaseFromApprovedClub,
+  formatHostInviteTeamAdjustResultMessage,
   HostInviteValidationError,
   parseHostInviteBody,
 } from "@/lib/hostInviteEntry";
@@ -104,11 +105,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     try {
       const result = await prisma.$transaction(async (tx) =>
-        applyHostInviteTeamAdditions(tx, {
+        applyHostInviteTeamAdjustments(tx, {
           competitionId,
           clubId: payload.clubId,
           clubBase,
-          additions: payload.additions,
+          adjustments: payload.adjustments,
           eventMap,
         })
       );
@@ -125,9 +126,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
           competitionId,
           mode: "team",
           clubId: payload.clubId,
-          additions: payload.additions,
+          adjustments: payload.adjustments,
           createdTeamEntryIds: result.createdTeamEntryIds,
+          deletedTeamEntryIds: result.deletedTeamEntryIds,
           createdCount: result.createdCount,
+          deletedCount: result.deletedCount,
           notes: payload.notes,
         },
         request: getRequestContext(request),
@@ -135,15 +138,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
       await syncStartListSnapshotBeforeMarshal({
         competitionId,
-        candidateEventIds: payload.additions.map((a) => a.eventId),
+        candidateEventIds: payload.adjustments.map((a) => a.eventId),
         createdByUserId: session.userId,
         trigger: "HOST_INVITE",
         request,
       });
 
       return NextResponse.json({
-        message: "チームエントリーを追加しました",
+        message: formatHostInviteTeamAdjustResultMessage(result),
         createdCount: result.createdCount,
+        deletedCount: result.deletedCount,
       });
     } catch (e) {
       if (e instanceof HostInviteValidationError) {

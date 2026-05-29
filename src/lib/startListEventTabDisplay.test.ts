@@ -36,7 +36,7 @@ describe("getLiveHeatsByTab", () => {
     expect(rows[1]!.individualHeats.length).toBe(2);
   });
 
-  it("2本目タブは最大レーンに合わせて進出上限人数だけを分割し、1ヒートあたり L 人を超えない", () => {
+  it("2本目タブは未凍結時は枠のみ（選手名なし）でヒート数は維持する", () => {
     const liveTabs = [
       { id: "a", label: "h", mode: "count" as const, heatCount: "5", heatSize: "" },
       { id: "b", label: "f", mode: "count" as const, heatCount: "2", heatSize: "" },
@@ -60,14 +60,14 @@ describe("getLiveHeatsByTab", () => {
       heatPlanStep1Confirmed: false,
       eventHeatSetting: { roundTabs: liveTabs, mode: "count", heatCount: "5", heatSize: "" },
     });
-    const L = 8;
-    const second = rows[1]!.individualHeats;
-    expect(second.length).toBe(2);
-    expect(second.every((h) => h.length <= L)).toBe(true);
-    expect(second.reduce((a, h) => a + h.length, 0)).toBe(Math.min(2 * L, 40));
+    const second = rows[1]!;
+    expect(second.individualHeats.length).toBe(2);
+    expect(second.individualHeats.every((h) => h.length === 0)).toBe(true);
+    expect(second.previewEstimatedParticipants).toBe(16);
+    expect(second.previewMaxLanesPerHeat).toBe(8);
   });
 
-  it("2本目タブだけ最大レーンを狭めると、進出上限はそのタブの L×ヒート数になる", () => {
+  it("2本目タブだけ最大レーンを狭めると previewEstimatedParticipants が L×ヒート数になる", () => {
     const liveTabs = [
       { id: "a", label: "h", mode: "count" as const, heatCount: "5", heatSize: "" },
       {
@@ -98,10 +98,11 @@ describe("getLiveHeatsByTab", () => {
       heatPlanStep1Confirmed: false,
       eventHeatSetting: { roundTabs: liveTabs, mode: "count", heatCount: "5", heatSize: "" },
     });
-    const second = rows[1]!.individualHeats;
-    expect(second.length).toBe(2);
-    expect(second.every((h) => h.length <= 8)).toBe(true);
-    expect(second.reduce((a, h) => a + h.length, 0)).toBe(16);
+    const second = rows[1]!;
+    expect(second.individualHeats.length).toBe(2);
+    expect(second.individualHeats.every((h) => h.length === 0)).toBe(true);
+    expect(second.previewEstimatedParticipants).toBe(16);
+    expect(second.previewMaxLanesPerHeat).toBe(8);
   });
 
   it("凍結スナップショットでヒート配列が heatIndex 順でなくても、表示行と marshalDisplayHeatIndices が一致する", () => {
@@ -434,6 +435,10 @@ describe("buildStartListEventRoundDisplay", () => {
     expect(d.allTabs).toHaveLength(2);
     expect(d.visibleTabIndices).toEqual([0, 1]);
     expect(d.rows).toHaveLength(2);
+    expect(d.rows[0]!.displaySource).toBe("liveEntry");
+    expect(d.rows[1]!.displaySource).toBe("previewStructure");
+    expect(d.rows[1]!.individualHeats.every((h) => h.length === 0)).toBe(true);
+    expect(d.rows[1]!.individualHeats.length).toBeGreaterThan(0);
   });
 
   it("public mode filters to frozen snapshot rounds only", () => {

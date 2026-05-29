@@ -6,6 +6,10 @@ import { toast } from "sonner";
 import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
 import { clampRoundTabsToNonIncreasingHeatCounts } from "@/lib/startListEventHeatValidation";
 import {
+  isMarshalRoundLocked,
+  roundTabSplitFingerprint,
+} from "@/lib/marshalRoundSettingsLock";
+import {
   parseStartListSettings,
   resolveRoundTabsForEvent,
   type HeatSetting,
@@ -45,14 +49,7 @@ function mergedHeatSettingForEvent(
 }
 
 function roundTabsDraftFingerprint(tabs: StartListRoundTab[]): string {
-  return JSON.stringify(
-    tabs.map((t) => ({
-      mode: t.mode,
-      heatCount: String(t.heatCount ?? "").trim(),
-      heatSize: String(t.heatSize ?? "").trim(),
-      maxLanesPerHeat: t.maxLanesPerHeat ?? null,
-    }))
-  );
+  return JSON.stringify(tabs.map((t) => roundTabSplitFingerprint(t)));
 }
 
 export type RoundSettingsDirtyState = {
@@ -166,7 +163,7 @@ export function useStartListRoundHeatDrafts({
         const savedN = savedRoundCount(e);
         if (draftN !== savedN) {
           roundDirty.push(e);
-          if (e.marshalStartedAt) {
+          if ((e.marshalLockedRounds?.length ?? 0) > 0) {
             marshalRoundBlocked.push(e);
           }
         }
@@ -190,6 +187,19 @@ export function useStartListRoundHeatDrafts({
         if (savedFp !== draftFp || draftN !== savedN) {
           if (!heatDirty.some((x) => x.id === e.id)) {
             heatDirty.push(e);
+          }
+        }
+
+        const tabCount = Math.max(savedTabs.length, draftTabs.length, draftN, savedN);
+        for (let i = 0; i < tabCount; i += 1) {
+          if (roundTabSplitFingerprint(savedTabs[i]) === roundTabSplitFingerprint(draftTabs[i])) {
+            continue;
+          }
+          if (isMarshalRoundLocked(e.marshalLockedRounds, i, draftN)) {
+            if (!marshalRoundBlocked.some((x) => x.id === e.id)) {
+              marshalRoundBlocked.push(e);
+            }
+            break;
           }
         }
 
@@ -261,7 +271,7 @@ export function useStartListRoundHeatDrafts({
         return;
       }
       if (dirty.marshalRoundBlocked.length > 0) {
-        toast.error("マーシャル開始後はラウンド数を変更できません");
+        toast.error("マーシャル開始済みのラウンドは変更できません");
         return;
       }
 
@@ -307,7 +317,13 @@ export function useStartListRoundHeatDrafts({
         const data = (await res.json().catch(() => ({}))) as {
           message?: string;
           snapshotCapture?:
-            | { ok: true; snapshotId: string; wasUpdate: boolean }
+            | {
+                ok: true;
+                snapshotId: string;
+                wasUpdate: boolean;
+                tailInvalidated?: boolean;
+                tailInvalidatedMessage?: string;
+              }
             | { ok: false; error: string };
           confirmResults?: Array<{ eventId: string; ok: boolean; message?: string }>;
         };
@@ -332,6 +348,13 @@ export function useStartListRoundHeatDrafts({
           );
         } else {
           toast.success(data.message || "ラウンド設定を一括保存しました");
+        }
+        if (
+          data.snapshotCapture?.ok === true &&
+          data.snapshotCapture.tailInvalidated &&
+          data.snapshotCapture.tailInvalidatedMessage
+        ) {
+          toast.info(data.snapshotCapture.tailInvalidatedMessage);
         }
         router.refresh();
       } catch (e) {

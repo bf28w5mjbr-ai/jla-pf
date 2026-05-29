@@ -71,3 +71,22 @@ DayOps操作の多くは `startListHeatPlanConfirmedAt` を前提にしている
 1. 外部依存（Cron設定/監視）を完全に停止
 2. no-op応答を使う呼び出し元が無いことを確認
 3. `@deprecated` 経路を削除し、手動 capture フローのみを正規化
+
+## 5. 表示3層（ops / CSV）
+
+スタートリスト ops 画面と CSV は、同じ種目でも **表示の出どころ** を `displaySource` で区別する。
+
+| displaySource | 意味 | ops タブバッジ | CSV |
+| --- | --- | --- | --- |
+| `liveEntry` | 未凍結の先頭ラウンド（エントリー追随・名前あり） | 最新 | 出力しない |
+| `snapshotHeat` | 凍結 HEAT（ENTRY_CLOSE / RECORD_CAPTURE 等） | 記録 | 出力する |
+| `snapshotResult` | 凍結 SEMI/FINAL（`generatedBy: RESULT_BASED`） | 結果確定 | 出力する |
+| `previewStructure` | 後続タブの試算（ヒート数・最大枠のみ、選手名なし） | 試算 | 出力しない |
+
+**試算タブ** — 2ラウンド目以降でスナップショット未存在のとき、`getLiveHeatsByTab` はヒート数だけ計算し参加者配列は空にする。按分表示は先頭ラウンド確定時の「按分試算 N 名」（UI: `HeatAdvanceQuotaLabel`）。
+
+**記録タブ** — スナップショット凍結後は名前付きで表示。CSV は `snapshotHeat` / `snapshotResult` の行のみ flatten する（`startListEventCsvExport.ts`）。
+
+**HEAT 部分再生成と tail 無効化** — 設定保存で先頭 HEAT を差し替えるとき、`mergeNewHeatHeadOntoPreviousTailForEvent` は `RESULT_BASED` の次ラウンド tail を破棄する（古い進出者と整合しないため）。`BASELINE` 等の tail は残す。破棄時は `runSnapshotCaptureForSettings` の応答に `tailInvalidated` / `tailInvalidatedMessage` が付き、bulk-save 成功後に toast で通知する。
+
+按分式の詳細は `docs/DOMAIN_OPERATIONS_SPEC.md`（L429 付近）と `src/lib/startListAdvanceEligibility.ts`（UI との差）を参照。

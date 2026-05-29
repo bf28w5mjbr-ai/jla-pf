@@ -1,4 +1,5 @@
 import type { HeatSetting, StartListRoundTab } from "@/lib/startListSettings";
+import { parseMaxLanesPerHeat } from "@/lib/maxLanesPerHeat";
 import {
   normalizeRoundTabs,
   START_LIST_ROUND_LABEL_MAX_LEN,
@@ -115,11 +116,7 @@ function parseRoundTabOne(item: unknown): StartListRoundTab | null {
   }
   const useAutoHeatFromMaxLanes =
     t.useAutoHeatFromMaxLanes === false ? (false as const) : undefined;
-  const rawMl = t.maxLanesPerHeat;
-  const maxLanesPerHeat =
-    typeof rawMl === "number" && Number.isFinite(rawMl) && rawMl >= 1 && rawMl <= 32
-      ? Math.floor(rawMl)
-      : undefined;
+  const maxLanesPerHeat = parseMaxLanesPerHeat(t.maxLanesPerHeat);
   return {
     id,
     label,

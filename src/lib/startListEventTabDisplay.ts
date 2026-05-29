@@ -165,7 +165,7 @@ export function computeLiveAdvanceQuotasForFrozenNonFinalTab(params: {
     fromRound: fromApi,
     toRound: toApi,
   });
-  const L = Math.min(64, Math.floor(Lresolved));
+  const L = Math.max(1, Math.floor(Lresolved));
   const capacity = nextHeatCount * L;
   return computeAdvanceCountsByLaneSlotsPerHeat(n, Lresolved, capacity);
 }
@@ -232,7 +232,7 @@ function estimateMaxParticipantsForStartListTabPreview(params: {
     H = Math.max(1, Math.min(64, H));
     const Ldest = resolveTabMaxLanes(destTab, eventDefaultLanes);
     if (typeof Ldest === "number" && Ldest >= 1) {
-      const L = Math.min(64, Math.max(1, Math.floor(Ldest)));
+      const L = Math.max(1, Math.floor(Ldest));
       n = Math.min(H * L, n);
     }
   }
@@ -433,6 +433,38 @@ export function extractFrozenRoundsForEventFromSnapshotData(
   return reorderRounds(normalized);
 }
 
+export type StartListTabDisplaySource =
+  | "liveEntry"
+  | "snapshotHeat"
+  | "snapshotResult"
+  | "previewStructure";
+
+export function resolveTabDisplaySource(
+  tabIndex: number,
+  frozenBlock: StartListRoundData | null | undefined
+): StartListTabDisplaySource {
+  if (frozenBlock?.heats?.length) {
+    return frozenBlock.generatedBy === "RESULT_BASED" ? "snapshotResult" : "snapshotHeat";
+  }
+  if (tabIndex === 0) return "liveEntry";
+  return "previewStructure";
+}
+
+export function startListTabDisplaySourceLabel(source: StartListTabDisplaySource): string {
+  switch (source) {
+    case "liveEntry":
+      return "最新";
+    case "snapshotHeat":
+      return "記録";
+    case "snapshotResult":
+      return "結果確定";
+    case "previewStructure":
+      return "試算";
+    default:
+      return source;
+  }
+}
+
 export function getLiveHeatsByTab(params: {
   liveTabs: StartListRoundTab[];
   individuals: StartListIndividualInput[];
@@ -457,6 +489,8 @@ export function getLiveHeatsByTab(params: {
   heatAdvanceQuotas: (number | null)[];
   /** マーシャル・リザルトAPIの heatIndex（行インデックス＋1 と一致しない場合あり） */
   marshalDisplayHeatIndices: number[];
+  previewEstimatedParticipants?: number;
+  previewMaxLanesPerHeat?: number;
 }> {
   const {
     liveTabs,
@@ -521,9 +555,40 @@ export function getLiveHeatsByTab(params: {
           ? enforceMinHeatCountForMaxLanes(nForRound, resolvedCount, LThisTab)
           : resolvedCount;
 
-    const activeIndividuals =
-      tabIndex > 0 && lanesOk ? individuals.slice(0, nForRound) : individuals;
-    const activeTeams = tabIndex > 0 && lanesOk ? teams.slice(0, nForRound) : teams;
+    /** 後続タブの試算: 枠組みのみ（選手名は載せない） */
+    if (tabIndex > 0) {
+      if (total === 0 || heatCount <= 0) {
+        return {
+          tab,
+          individualHeats: [],
+          teamHeats: [],
+          heatAdvanceQuotas: [],
+          marshalDisplayHeatIndices: [],
+          previewEstimatedParticipants: nForRound,
+          previewMaxLanesPerHeat:
+            typeof LThisTab === "number" && Number.isFinite(LThisTab) ? LThisTab : undefined,
+        };
+      }
+      const marshalDisplayHeatIndices = Array.from({ length: heatCount }, (_, i) => i + 1);
+      const emptyIndividualHeats: StartListIndividualDisplayItem[][] = Array.from(
+        { length: heatCount },
+        () => []
+      );
+      const emptyTeamHeats: StartListTeamDisplayItem[][] = Array.from({ length: heatCount }, () => []);
+      return {
+        tab,
+        individualHeats: isTeam ? [] : emptyIndividualHeats,
+        teamHeats: isTeam ? emptyTeamHeats : [],
+        heatAdvanceQuotas: [],
+        marshalDisplayHeatIndices,
+        previewEstimatedParticipants: nForRound,
+        previewMaxLanesPerHeat:
+          typeof LThisTab === "number" && Number.isFinite(LThisTab) ? LThisTab : undefined,
+      };
+    }
+
+    const activeIndividuals = individuals;
+    const activeTeams = teams;
     const activeTotal = isTeam ? activeTeams.length : activeIndividuals.length;
 
     const tabSeed = (placementSeed ^ (tabIndex + 1) * 0x9e37_79b9) >>> 0;
@@ -607,6 +672,10 @@ export type StartListEventRoundDisplayRow = {
   teamHeats: StartListTeamDisplayItem[][];
   heatAdvanceQuotas: (number | null)[];
   marshalDisplayHeatIndices: number[];
+  displaySource: StartListTabDisplaySource;
+  snapshotRoundKey: StartListRound | null;
+  previewEstimatedParticipants?: number;
+  previewMaxLanesPerHeat?: number;
 };
 
 export type StartListEventRoundDisplay = {
@@ -689,12 +758,21 @@ export function buildStartListEventRoundDisplay(params: {
 
   const rows = visibleTabIndices.map((tabIndex) => {
     const heatRow = heatsByTab[tabIndex]!;
+    const snapKey = snapshotRoundForTab(tabIndex, tabCount);
+    const frozenBlock =
+      snapKey && frozenSnapshotRounds?.length
+        ? frozenSnapshotRounds.find((r) => normalizeSnapshotRoundKey(r.round) === snapKey)
+        : null;
     return {
       tab: allTabs[tabIndex]!,
       individualHeats: heatRow.individualHeats,
       teamHeats: heatRow.teamHeats,
       heatAdvanceQuotas: heatRow.heatAdvanceQuotas,
       marshalDisplayHeatIndices: heatRow.marshalDisplayHeatIndices,
+      displaySource: resolveTabDisplaySource(tabIndex, frozenBlock),
+      snapshotRoundKey: snapKey,
+      previewEstimatedParticipants: heatRow.previewEstimatedParticipants,
+      previewMaxLanesPerHeat: heatRow.previewMaxLanesPerHeat,
     };
   });
 

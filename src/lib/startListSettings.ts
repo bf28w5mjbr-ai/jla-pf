@@ -1,3 +1,4 @@
+import { parseMaxLanesPerHeat } from "@/lib/maxLanesPerHeat";
 import { resolveHeatCount } from "@/lib/startListRounds";
 
 /** スタートリスト上のラウンド（タブ）ごとのヒート／レーン */
@@ -12,7 +13,7 @@ export type StartListRoundTab = {
    * 未指定・true なら ceil(人数÷最大レーン) の自動ヒート数（従来どおり）。
    */
   useAutoHeatFromMaxLanes?: boolean;
-  /** 1レースあたりの最大レーン数（1〜32）。未指定時は種目の preliminaryHeatLaneCount を使う */
+  /** 1レースあたりの最大レーン数（1 以上の整数）。未指定時は種目の preliminaryHeatLaneCount を使う */
   maxLanesPerHeat?: number;
 };
 
@@ -133,13 +134,9 @@ export function normalizeHeatSettingForPersist(setting: HeatSetting): HeatSettin
       if (t.useAutoHeatFromMaxLanes === false) {
         return { ...base, useAutoHeatFromMaxLanes: false as const };
       }
-      if (
-        typeof t.maxLanesPerHeat === "number" &&
-        Number.isFinite(t.maxLanesPerHeat) &&
-        t.maxLanesPerHeat >= 1 &&
-        t.maxLanesPerHeat <= 32
-      ) {
-        return { ...base, maxLanesPerHeat: Math.floor(t.maxLanesPerHeat) };
+      const maxLanesPerHeat = parseMaxLanesPerHeat(t.maxLanesPerHeat);
+      if (maxLanesPerHeat !== undefined) {
+        return { ...base, maxLanesPerHeat };
       }
       return base;
     }),
@@ -284,14 +281,7 @@ export function normalizeRoundTabs(setting: HeatSetting): StartListRoundTab[] {
     const mapped: StartListRoundTab[] = setting.roundTabs.map((t, i) => {
       const mode = (t.mode === "size" ? "size" : "count") as "count" | "size";
       const heatSizeRaw = typeof t.heatSize === "string" ? t.heatSize.trim() : "";
-      const rawMl = t.maxLanesPerHeat;
-      const maxLanesPerHeat =
-        typeof rawMl === "number" &&
-        Number.isFinite(rawMl) &&
-        rawMl >= 1 &&
-        rawMl <= 32
-          ? Math.floor(rawMl)
-          : undefined;
+      const maxLanesPerHeat = parseMaxLanesPerHeat(t.maxLanesPerHeat);
       return {
         id: typeof t.id === "string" && t.id.trim() ? t.id.trim() : `round-${i}`,
         label: (t.label?.trim() || "ラウンド").slice(0, START_LIST_ROUND_LABEL_MAX_LEN),
@@ -373,6 +363,7 @@ export function buildRoundTabsForRoundCount(
     if (p) {
       const mode = p.mode === "size" ? "size" : "count";
       const hs = typeof p.heatSize === "string" ? p.heatSize.trim() : "";
+      const maxLanesPerHeat = parseMaxLanesPerHeat(p.maxLanesPerHeat);
       out.push({
         id: p.id,
         label: p.label,
@@ -380,12 +371,7 @@ export function buildRoundTabsForRoundCount(
         heatCount: p.heatCount ?? "1",
         heatSize: mode === "size" ? (hs !== "" ? hs : "8") : "",
         ...(p.useAutoHeatFromMaxLanes === false ? { useAutoHeatFromMaxLanes: false as const } : {}),
-        ...(typeof p.maxLanesPerHeat === "number" &&
-        Number.isFinite(p.maxLanesPerHeat) &&
-        p.maxLanesPerHeat >= 1 &&
-        p.maxLanesPerHeat <= 32
-          ? { maxLanesPerHeat: Math.floor(p.maxLanesPerHeat) }
-          : {}),
+        ...(maxLanesPerHeat !== undefined ? { maxLanesPerHeat } : {}),
       });
     } else {
       out.push({
@@ -505,23 +491,11 @@ export function resolveTabMaxLanes(
   tab: StartListRoundTab | undefined,
   eventDefaultLanes: number | null | undefined
 ): number | null {
-  const override = tab?.maxLanesPerHeat;
-  if (
-    typeof override === "number" &&
-    Number.isFinite(override) &&
-    override >= 1 &&
-    override <= 32
-  ) {
-    return Math.min(32, Math.floor(override));
+  const override = parseMaxLanesPerHeat(tab?.maxLanesPerHeat);
+  if (override !== undefined) {
+    return override;
   }
-  if (
-    typeof eventDefaultLanes === "number" &&
-    Number.isFinite(eventDefaultLanes) &&
-    eventDefaultLanes >= 1
-  ) {
-    return Math.min(32, Math.floor(eventDefaultLanes));
-  }
-  return null;
+  return parseMaxLanesPerHeat(eventDefaultLanes) ?? null;
 }
 
 /**

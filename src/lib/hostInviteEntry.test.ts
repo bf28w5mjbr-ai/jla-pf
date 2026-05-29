@@ -3,6 +3,8 @@ import {
   assertHostInviteEventCountLimits,
   buildHostInviteSnapshot,
   computeTeamNamesAfterAdd,
+  computeTeamNamesAfterTargetCount,
+  formatHostInviteTeamAdjustResultMessage,
   HostInviteValidationError,
   parseHostInviteBody,
 } from "./hostInviteEntry";
@@ -59,34 +61,47 @@ describe("parseHostInviteBody", () => {
     }
   });
 
-  it("parses team mode with additions", () => {
+  it("parses team mode with adjustments", () => {
     const payload = parseHostInviteBody(
       {
         clubId: "club-1",
-        additions: [{ eventId: "ev-team", addCount: 1 }],
+        adjustments: [{ eventId: "ev-team", targetCount: 1 }],
       },
       eventMap
     );
     expect(payload.mode).toBe("team");
     if (payload.mode === "team") {
       expect(payload.clubId).toBe("club-1");
-      expect(payload.additions).toEqual([{ eventId: "ev-team", addCount: 1 }]);
+      expect(payload.adjustments).toEqual([{ eventId: "ev-team", targetCount: 1 }]);
     }
   });
 
-  it("merges duplicate event additions", () => {
+  it("uses last duplicate event adjustment", () => {
     const payload = parseHostInviteBody(
       {
         clubId: "club-1",
-        additions: [
-          { eventId: "ev-team", addCount: 1 },
-          { eventId: "ev-team", addCount: 2 },
+        adjustments: [
+          { eventId: "ev-team", targetCount: 1 },
+          { eventId: "ev-team", targetCount: 2 },
         ],
       },
       eventMap
     );
     if (payload.mode === "team") {
-      expect(payload.additions).toEqual([{ eventId: "ev-team", addCount: 3 }]);
+      expect(payload.adjustments).toEqual([{ eventId: "ev-team", targetCount: 2 }]);
+    }
+  });
+
+  it("accepts targetCount 0", () => {
+    const payload = parseHostInviteBody(
+      {
+        clubId: "club-1",
+        adjustments: [{ eventId: "ev-team", targetCount: 0 }],
+      },
+      eventMap
+    );
+    if (payload.mode === "team") {
+      expect(payload.adjustments[0]?.targetCount).toBe(0);
     }
   });
 
@@ -97,7 +112,7 @@ describe("parseHostInviteBody", () => {
           userId: "user-1",
           clubId: "club-1",
           items: [{ eventId: "ev-ind", entryTime: "1:00" }],
-          additions: [{ eventId: "ev-team", addCount: 1 }],
+          adjustments: [{ eventId: "ev-team", targetCount: 1 }],
         },
         eventMap
       )
@@ -110,7 +125,7 @@ describe("parseHostInviteBody", () => {
         {
           userId: "user-1",
           clubId: "club-1",
-          additions: [{ eventId: "ev-team", addCount: 1 }],
+          adjustments: [{ eventId: "ev-team", targetCount: 1 }],
         },
         eventMap
       )
@@ -121,7 +136,7 @@ describe("parseHostInviteBody", () => {
     expect(() =>
       parseHostInviteBody(
         {
-          additions: [{ eventId: "ev-team", addCount: 1 }],
+          adjustments: [{ eventId: "ev-team", targetCount: 1 }],
         },
         eventMap
       )
@@ -141,6 +156,18 @@ describe("parseHostInviteBody", () => {
     ).toThrow(/クラブを指定できません/);
   });
 
+  it("rejects legacy additions", () => {
+    expect(() =>
+      parseHostInviteBody(
+        {
+          clubId: "club-1",
+          additions: [{ eventId: "ev-team", addCount: 1 }],
+        },
+        eventMap
+      )
+    ).toThrow(/adjustments/);
+  });
+
   it("rejects legacy teamEntries", () => {
     expect(() =>
       parseHostInviteBody(
@@ -150,15 +177,15 @@ describe("parseHostInviteBody", () => {
         },
         eventMap
       )
-    ).toThrow(/additions/);
+    ).toThrow(/adjustments/);
   });
 
-  it("rejects wrong event type for team addition", () => {
+  it("rejects wrong event type for team adjustment", () => {
     expect(() =>
       parseHostInviteBody(
         {
           clubId: "club-1",
-          additions: [{ eventId: "ev-ind", addCount: 1 }],
+          adjustments: [{ eventId: "ev-ind", targetCount: 1 }],
         },
         eventMap
       )
@@ -177,16 +204,16 @@ describe("parseHostInviteBody", () => {
     ).toThrow(/エントリータイム/);
   });
 
-  it("requires addCount >= 1", () => {
+  it("rejects negative targetCount", () => {
     expect(() =>
       parseHostInviteBody(
         {
           clubId: "club-1",
-          additions: [{ eventId: "ev-team", addCount: 0 }],
+          adjustments: [{ eventId: "ev-team", targetCount: -1 }],
         },
         eventMap
       )
-    ).toThrow(/追加組数/);
+    ).toThrow(/0以上/);
   });
 });
 
@@ -214,6 +241,66 @@ describe("computeTeamNamesAfterAdd", () => {
     );
     expect(result.updates).toEqual([]);
     expect(result.creates).toEqual([{ teamName: "東京SC C" }]);
+  });
+});
+
+describe("computeTeamNamesAfterTargetCount", () => {
+  it("reduces 3 teams to 2 and renormalizes", () => {
+    const existing = [
+      { id: "t1", teamName: "東京SC A" },
+      { id: "t2", teamName: "東京SC B" },
+      { id: "t3", teamName: "東京SC C" },
+    ];
+    const result = computeTeamNamesAfterTargetCount(existing, 2, "東京SC");
+    expect(result.deleteIds).toEqual(["t3"]);
+    expect(result.creates).toEqual([]);
+    expect(result.updates).toEqual([]);
+  });
+
+  it("reduces to 0 deletes all", () => {
+    const existing = [
+      { id: "t1", teamName: "東京SC A" },
+      { id: "t2", teamName: "東京SC B" },
+    ];
+    const result = computeTeamNamesAfterTargetCount(existing, 0, "東京SC");
+    expect(result.deleteIds).toEqual(["t1", "t2"]);
+    expect(result.updates).toEqual([]);
+    expect(result.creates).toEqual([]);
+  });
+
+  it("increases from 1 to 2", () => {
+    const result = computeTeamNamesAfterTargetCount(
+      [{ id: "t1", teamName: "東京SC" }],
+      2,
+      "東京SC"
+    );
+    expect(result.deleteIds).toEqual([]);
+    expect(result.updates).toEqual([{ id: "t1", teamName: "東京SC A" }]);
+    expect(result.creates).toEqual([{ teamName: "東京SC B" }]);
+  });
+});
+
+describe("formatHostInviteTeamAdjustResultMessage", () => {
+  it("formats add and delete", () => {
+    expect(
+      formatHostInviteTeamAdjustResultMessage({
+        createdTeamEntryIds: ["a"],
+        deletedTeamEntryIds: ["b"],
+        createdCount: 1,
+        deletedCount: 1,
+      })
+    ).toBe("チームエントリーを1 組追加・1 組削除しました");
+  });
+
+  it("formats rename-only", () => {
+    expect(
+      formatHostInviteTeamAdjustResultMessage({
+        createdTeamEntryIds: [],
+        deletedTeamEntryIds: [],
+        createdCount: 0,
+        deletedCount: 0,
+      })
+    ).toBe("チーム登録組数を更新しました");
   });
 });
 

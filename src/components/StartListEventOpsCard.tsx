@@ -17,6 +17,7 @@ import {
   computeLiveFirstRoundAdvanceQuotas,
   formatStartListTabLabelWithHeatCount,
   snapshotRoundForTab,
+  startListTabDisplaySourceLabel,
 } from "@/lib/startListEventTabDisplay";
 import { defaultStartListRoundTabLabels } from "@/lib/startListSettings";
 import { isCalledLikeStatus } from "@/lib/dayOpsTeamStatus";
@@ -109,13 +110,7 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
   }, [roundDisplay, isTeam]);
 
   const tabs = roundDisplay.allTabs;
-  const liveHeatsByTab = roundDisplay.rows.map((r) => ({
-    tab: r.tab,
-    individualHeats: r.individualHeats,
-    teamHeats: r.teamHeats,
-    heatAdvanceQuotas: r.heatAdvanceQuotas,
-    marshalDisplayHeatIndices: r.marshalDisplayHeatIndices,
-  }));
+  const displayRows = roundDisplay.rows;
 
   const [activeTabUserPick, setActiveTabUserPick] = useState<string | null>(null);
   const selectedTabId = useMemo(() => {
@@ -187,7 +182,7 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
         </div>
       );
     }
-    const row = liveHeatsByTab[index];
+    const row = displayRows[index];
     const heatsLen = row
       ? isTeam
         ? row.teamHeats.length
@@ -276,6 +271,9 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
         }
         marshalRoundForDisplay={roundForList}
         participantStatusByKey={participantStatusByKey}
+        displaySource={row?.displaySource}
+        previewEstimatedParticipants={row?.previewEstimatedParticipants}
+        previewMaxLanesPerHeat={row?.previewMaxLanesPerHeat}
       />
     );
   };
@@ -410,21 +408,27 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
               <Tabs value={selectedTabId} onValueChange={setActiveTabUserPick} className="w-full">
                 <TabsList className="h-auto min-h-10 w-full flex-wrap justify-start gap-1 rounded-lg bg-muted/60 p-1.5">
                   {tabs.map((t, index) => {
-                    const row = liveHeatsByTab[index];
+                    const row = displayRows[index];
                     const heatCount = isTeam
                       ? (row?.teamHeats.length ?? 0)
                       : (row?.individualHeats.length ?? 0);
                     const baseLabel =
                       roundTabDisplayLabels[index]?.trim() || `#${index + 1}`;
                     const tabText = formatStartListTabLabelWithHeatCount(baseLabel, heatCount);
+                    const sourceLabel = row ? startListTabDisplaySourceLabel(row.displaySource) : null;
                     return (
                       <TabsTrigger
                         key={t.id}
                         value={t.id}
                         className="max-w-[min(100%,14rem)] shrink-0 truncate rounded-md px-2.5 py-1.5 text-xs data-[state=active]:shadow-sm sm:max-w-[16rem]"
-                        title={tabText}
+                        title={sourceLabel ? `${tabText}（${sourceLabel}）` : tabText}
                       >
-                        {tabText}
+                        <span className="truncate">{tabText}</span>
+                        {sourceLabel ? (
+                          <span className="ml-1 shrink-0 rounded bg-muted px-1 py-0.5 text-[9px] font-medium text-muted-foreground">
+                            {sourceLabel}
+                          </span>
+                        ) : null}
                       </TabsTrigger>
                     );
                   })}
@@ -497,7 +501,7 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
             <p className="text-[11px]">
               表示データ：
               {frozenSnapshotRounds?.length
-                ? "確定ラウンドは記録どおり、未確定は最新エントリーで再計算。"
+                ? "記録＝スナップショット確定、試算＝進出者未確定の枠のみ、最新＝未凍結のエントリー追随。"
                 : "最新エントリーに追随。"}
             </p>
           </div>

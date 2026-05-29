@@ -11,6 +11,7 @@ import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
 import { formatEventScheduleJa } from "@/lib/eventScheduleDisplay";
 import { computePlacementSeed } from "@/lib/startListHeatPlacement";
 import { extractFrozenRoundsForEventFromSnapshotData } from "@/lib/startListEventTabDisplay";
+import { getMarshalActiveRoundsForEvents } from "@/lib/marshalRoundSettingsLock";
 import { buildParticipantDayOpsStatusByKey } from "@/lib/dayOpsParticipantStatusDisplay";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
 import { buildStartListLineupFromEntries } from "@/lib/buildStartListLineupParticipants";
@@ -234,6 +235,11 @@ export async function loadStartListEventPage(input: {
                   allEventsForHeat.map((e) => ({ id: e.id, type: e.type }))
                 )
               : {};
+          const marshalActiveByEventId = await getMarshalActiveRoundsForEvents(
+            prisma,
+            competitionId,
+            allEventsForHeat.map((e) => e.id)
+          );
           const mapped: StartListEventBarItem[] = allEventsForHeat.map((e) => ({
             id: e.id,
             name: e.name,
@@ -253,6 +259,7 @@ export async function loadStartListEventPage(input: {
             preliminaryHeatLaneCount: e.preliminaryHeatLaneCount,
             startListHeatPlanConfirmedAt: e.startListHeatPlanConfirmedAt,
             marshalStartedAt: e.marshalStartedAt,
+            marshalLockedRounds: [...(marshalActiveByEventId.get(e.id) ?? new Set<ResultRound>())],
           }));
           return sortEventsByScheduleTabs(mapped, scheduleTabsRow);
         })()

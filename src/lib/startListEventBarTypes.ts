@@ -23,4 +23,6 @@ export type StartListEventBarItem = {
   /** ヒート計画確定日時 */
   startListHeatPlanConfirmedAt?: Date | string | null;
   marshalStartedAt?: Date | string | null;
+  /** マーシャル作業が始まったラウンド（設定変更不可） */
+  marshalLockedRounds?: Array<"HEAT" | "SEMI" | "FINAL">;
 };

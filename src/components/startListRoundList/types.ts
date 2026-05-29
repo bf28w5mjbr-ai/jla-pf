@@ -2,6 +2,8 @@ import type { ResultRound } from "@prisma/client";
 import type { HeatMarshalHeatRow } from "@/components/HeatMarshalLanePanel";
 import type { HeatResultCaptureRow } from "@/lib/heatResultCaptureApi";
 
+import type { StartListTabDisplaySource } from "@/lib/startListEventTabDisplay";
+
 export type IndividualItem = { entryId: string; name: string; clubName?: string | null };
 export type TeamItem = {
   teamEntryId: string;
@@ -59,6 +61,9 @@ export type LiveRoundContentProps = {
   /** ステップ1 確定済みなら true（失格管理の表示。ラウンド不一致でもマーシャル操作より優先して出す） */
   heatPlanConfirmedForDsq?: boolean;
   /** 表示中タブのマーシャル（主催管理者・スナップショット連動） */
+  displaySource?: StartListTabDisplaySource;
+  previewEstimatedParticipants?: number;
+  previewMaxLanesPerHeat?: number;
   startListMarshal?: {
     heats: HeatMarshalHeatRow[] | null;
     loading: boolean;

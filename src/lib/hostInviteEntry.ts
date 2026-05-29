@@ -4,6 +4,8 @@ import {
   normalizeTeamNamesForEvent,
   type TeamEntryDraftRow,
 } from "@/lib/teamEntryDraftNormalize";
+import { getTeamEntryMarshalAssignmentBlockedMap } from "@/lib/teamMemberAssignmentWindow";
+import { prisma } from "@/server/db";
 
 export const HOST_INVITE_SNAPSHOT_SOURCE = "HOST_INVITE" as const;
 
@@ -20,9 +22,9 @@ export type ParsedHostInviteItem = {
   entryTime: string | null;
 };
 
-export type HostInviteTeamAddition = {
+export type HostInviteTeamAdjustment = {
   eventId: string;
-  addCount: number;
+  targetCount: number;
 };
 
 export type HostInviteIndividualPayload = {
@@ -36,7 +38,7 @@ export type HostInviteTeamPayload = {
   mode: "team";
   notes: string | null;
   clubId: string;
-  additions: HostInviteTeamAddition[];
+  adjustments: HostInviteTeamAdjustment[];
 };
 
 export type HostInvitePayload = HostInviteIndividualPayload | HostInviteTeamPayload;
@@ -44,6 +46,13 @@ export type HostInvitePayload = HostInviteIndividualPayload | HostInviteTeamPayl
 export type ExistingTeamRow = {
   id: string;
   teamName: string;
+};
+
+export type HostInviteTeamAdjustResult = {
+  createdTeamEntryIds: string[];
+  deletedTeamEntryIds: string[];
+  createdCount: number;
+  deletedCount: number;
 };
 
 export class HostInviteValidationError extends Error {
@@ -82,13 +91,23 @@ function parseItemsRaw(
   return [...dedupedByEvent.values()];
 }
 
-function parseAdditionsRaw(
-  additionsRaw: unknown[] | null,
+function parseTargetCountRaw(raw: unknown): number {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return Math.floor(raw);
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    return Math.floor(Number(raw));
+  }
+  return NaN;
+}
+
+function parseAdjustmentsRaw(
+  adjustmentsRaw: unknown[] | null,
   eventMap: Map<string, HostInviteCompetitionEvent>
-): HostInviteTeamAddition[] {
-  if (!additionsRaw) return [];
+): HostInviteTeamAdjustment[] {
+  if (!adjustmentsRaw) return [];
   const byEvent = new Map<string, number>();
-  for (const row of additionsRaw) {
+  for (const row of adjustmentsRaw) {
     if (!row || typeof row !== "object") continue;
     const r = row as Record<string, unknown>;
     const eventId = typeof r.eventId === "string" ? r.eventId.trim() : "";
@@ -97,19 +116,15 @@ function parseAdditionsRaw(
     if (!ev || ev.type !== "TEAM") {
       throw new HostInviteValidationError("チーム種目のみ指定できます");
     }
-    const rawCount = r.addCount;
-    const addCount =
-      typeof rawCount === "number" && Number.isFinite(rawCount)
-        ? Math.floor(rawCount)
-        : typeof rawCount === "string" && rawCount.trim()
-          ? Math.floor(Number(rawCount))
-          : NaN;
-    if (!Number.isFinite(addCount) || addCount < 1) {
-      throw new HostInviteValidationError(`「${ev.name}」の追加組数は1以上の整数で指定してください`);
+    const targetCount = parseTargetCountRaw(r.targetCount);
+    if (!Number.isFinite(targetCount) || targetCount < 0) {
+      throw new HostInviteValidationError(
+        `「${ev.name}」の登録組数は0以上の整数で指定してください`
+      );
     }
-    byEvent.set(eventId, (byEvent.get(eventId) ?? 0) + addCount);
+    byEvent.set(eventId, targetCount);
   }
-  return [...byEvent.entries()].map(([eventId, addCount]) => ({ eventId, addCount }));
+  return [...byEvent.entries()].map(([eventId, targetCount]) => ({ eventId, targetCount }));
 }
 
 export function parseHostInviteBody(
@@ -126,32 +141,38 @@ export function parseHostInviteBody(
   const userId = typeof b.userId === "string" ? b.userId.trim() : "";
   const clubId = typeof b.clubId === "string" ? b.clubId.trim() : "";
   const itemsRaw = Array.isArray(b.items) ? b.items : null;
-  const additionsRaw = Array.isArray(b.additions) ? b.additions : null;
+  const adjustmentsRaw = Array.isArray(b.adjustments) ? b.adjustments : null;
   const hasItems = itemsRaw != null && itemsRaw.length > 0;
-  const hasAdditions = additionsRaw != null && additionsRaw.length > 0;
+  const hasAdjustments = adjustmentsRaw != null && adjustmentsRaw.length > 0;
 
-  if (Array.isArray(b.teamEntries) && b.teamEntries.length > 0) {
+  if (Array.isArray(b.additions) && b.additions.length > 0) {
     throw new HostInviteValidationError(
-      "チーム種目は additions（eventId と addCount）で指定してください"
+      "チーム種目は adjustments（eventId と targetCount）で指定してください"
     );
   }
 
-  if (hasItems && hasAdditions) {
+  if (Array.isArray(b.teamEntries) && b.teamEntries.length > 0) {
+    throw new HostInviteValidationError(
+      "チーム種目は adjustments（eventId と targetCount）で指定してください"
+    );
+  }
+
+  if (hasItems && hasAdjustments) {
     throw new HostInviteValidationError("個人種目とチーム種目は同時に指定できません");
   }
 
-  if (hasAdditions) {
+  if (hasAdjustments) {
     if (userId) {
-      throw new HostInviteValidationError("チーム種目の追加ではユーザーを指定できません");
+      throw new HostInviteValidationError("チーム種目の変更ではユーザーを指定できません");
     }
     if (!clubId) {
       throw new HostInviteValidationError("チーム種目を登録する場合はクラブを指定してください");
     }
-    const additions = parseAdditionsRaw(additionsRaw, eventMap);
-    if (additions.length === 0) {
+    const adjustments = parseAdjustmentsRaw(adjustmentsRaw, eventMap);
+    if (adjustments.length === 0) {
       throw new HostInviteValidationError("有効なチーム種目がありません");
     }
-    return { mode: "team", notes, clubId, additions };
+    return { mode: "team", notes, clubId, adjustments };
   }
 
   if (hasItems) {
@@ -197,7 +218,7 @@ export function computeTeamNamesAfterAdd(
 
   const eventId = "_host_invite_normalize";
   const draft: TeamEntryDraftRow[] = [
-    ...existing.map((row, index) => ({
+    ...existing.map((row) => ({
       id: row.id,
       eventId,
       teamName: row.teamName,
@@ -215,8 +236,8 @@ export function computeTeamNamesAfterAdd(
   const updates: { id: string; teamName: string }[] = [];
   for (let i = 0; i < existing.length; i++) {
     const nextName = normalized[i]?.teamName ?? "";
-    if (nextName !== existing[i].teamName) {
-      updates.push({ id: existing[i].id, teamName: nextName });
+    if (nextName !== existing[i]!.teamName) {
+      updates.push({ id: existing[i]!.id, teamName: nextName });
     }
   }
 
@@ -227,21 +248,80 @@ export function computeTeamNamesAfterAdd(
   return { updates, creates };
 }
 
-export async function applyHostInviteTeamAdditions(
+/** 目標組数に合わせて更新・追加・削除対象を決める（削除は末尾から） */
+export function computeTeamNamesAfterTargetCount(
+  existing: ExistingTeamRow[],
+  targetCount: number,
+  base: string
+): {
+  updates: { id: string; teamName: string }[];
+  creates: { teamName: string }[];
+  deleteIds: string[];
+} {
+  if (!Number.isInteger(targetCount) || targetCount < 0) {
+    throw new HostInviteValidationError("登録組数は0以上の整数で指定してください");
+  }
+
+  if (targetCount > existing.length) {
+    const { updates, creates } = computeTeamNamesAfterAdd(
+      existing,
+      targetCount - existing.length,
+      base
+    );
+    return { updates, creates, deleteIds: [] };
+  }
+
+  const kept = existing.slice(0, targetCount);
+  const deleteIds = existing.slice(targetCount).map((r) => r.id);
+
+  if (targetCount === 0) {
+    return { updates: [], creates: [], deleteIds };
+  }
+
+  const eventId = "_host_invite_normalize";
+  const draft: TeamEntryDraftRow[] = kept.map((row) => ({
+    id: row.id,
+    eventId,
+    teamName: row.teamName,
+    persistedId: row.id,
+  }));
+  const normalized = normalizeTeamNamesForEvent(draft, eventId, base);
+
+  const updates: { id: string; teamName: string }[] = [];
+  for (let i = 0; i < kept.length; i++) {
+    const nextName = normalized[i]?.teamName ?? "";
+    if (nextName !== kept[i]!.teamName) {
+      updates.push({ id: kept[i]!.id, teamName: nextName });
+    }
+  }
+
+  return { updates, creates: [], deleteIds };
+}
+
+export function formatHostInviteTeamAdjustResultMessage(result: HostInviteTeamAdjustResult): string {
+  const parts: string[] = [];
+  if (result.createdCount > 0) parts.push(`${result.createdCount} 組追加`);
+  if (result.deletedCount > 0) parts.push(`${result.deletedCount} 組削除`);
+  if (parts.length === 0) return "チーム登録組数を更新しました";
+  return `チームエントリーを${parts.join("・")}しました`;
+}
+
+export async function applyHostInviteTeamAdjustments(
   tx: Prisma.TransactionClient,
   params: {
     competitionId: string;
     clubId: string;
     clubBase: string;
-    additions: HostInviteTeamAddition[];
+    adjustments: HostInviteTeamAdjustment[];
     eventMap: Map<string, HostInviteCompetitionEvent>;
   }
-): Promise<{ createdTeamEntryIds: string[]; createdCount: number }> {
-  const { competitionId, clubId, clubBase, additions, eventMap } = params;
+): Promise<HostInviteTeamAdjustResult> {
+  const { competitionId, clubId, clubBase, adjustments, eventMap } = params;
   const createdTeamEntryIds: string[] = [];
+  const deletedTeamEntryIds: string[] = [];
 
-  for (const addition of additions) {
-    const ev = eventMap.get(addition.eventId);
+  for (const adjustment of adjustments) {
+    const ev = eventMap.get(adjustment.eventId);
     if (!ev || ev.type !== "TEAM") {
       throw new HostInviteValidationError("チーム種目のみ指定できます");
     }
@@ -250,24 +330,48 @@ export async function applyHostInviteTeamAdditions(
       where: {
         competitionId,
         clubId,
-        eventId: addition.eventId,
+        eventId: adjustment.eventId,
       },
       select: { id: true, teamName: true },
       orderBy: [{ teamName: "asc" }, { id: "asc" }],
     });
 
     const cap = ev.maxTeamEntriesPerClub ?? null;
-    if (cap != null && existing.length + addition.addCount > cap) {
+    if (cap != null && adjustment.targetCount > cap) {
       throw new HostInviteValidationError(
         `「${ev.name}」では同一クラブあたり最大${cap}組までです。`
       );
     }
 
-    const { updates, creates } = computeTeamNamesAfterAdd(
+    const { updates, creates, deleteIds } = computeTeamNamesAfterTargetCount(
       existing,
-      addition.addCount,
+      adjustment.targetCount,
       clubBase
     );
+
+    if (deleteIds.length > 0) {
+      const toDeleteRows = existing.filter((r) => deleteIds.includes(r.id));
+      const blockMap = await getTeamEntryMarshalAssignmentBlockedMap(
+        prisma,
+        competitionId,
+        toDeleteRows.map((r) => ({ id: r.id, eventId: adjustment.eventId }))
+      );
+      for (const row of toDeleteRows) {
+        if (blockMap.get(row.id)) {
+          throw new HostInviteValidationError(
+            `「${ev.name}」の ${row.teamName} はマーシャル締切済みのため削除できません`
+          );
+        }
+      }
+
+      await tx.competitionParticipantStatus.deleteMany({
+        where: { teamEntryId: { in: deleteIds } },
+      });
+      await tx.teamEntry.deleteMany({
+        where: { id: { in: deleteIds } },
+      });
+      deletedTeamEntryIds.push(...deleteIds);
+    }
 
     for (const update of updates) {
       await tx.teamEntry.update({
@@ -281,7 +385,7 @@ export async function applyHostInviteTeamAdditions(
         data: {
           competitionId,
           clubId,
-          eventId: addition.eventId,
+          eventId: adjustment.eventId,
           teamName: create.teamName,
         },
       });
@@ -289,7 +393,12 @@ export async function applyHostInviteTeamAdditions(
     }
   }
 
-  return { createdTeamEntryIds, createdCount: createdTeamEntryIds.length };
+  return {
+    createdTeamEntryIds,
+    deletedTeamEntryIds,
+    createdCount: createdTeamEntryIds.length,
+    deletedCount: deletedTeamEntryIds.length,
+  };
 }
 
 export function clubTeamNameBaseFromApprovedClub(club: {
