@@ -1,99 +1,40 @@
 import { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { prisma } from "@/server/db";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { appRoutes } from "@/lib/appRoutes";
-import { hostOrgAdminCanManageCompetition } from "@/lib/roleScopes";
-import { canViewCompetitionAsHostDraft } from "@/lib/competitionStartListAccess";
-import CompetitionTeamAssignmentManager from "@/components/CompetitionTeamAssignmentManager";
-import {
-  getTeamEntryMarshalAssignmentBlockedMap,
-  getTeamMemberAssignmentWindowState,
-} from "@/lib/teamMemberAssignmentWindow";
-import { formatCompetitionEntryPeriodRangeJa } from "@/lib/datetimeLocal";
-import { competitionEntryPaidCheckoutWhere } from "@/lib/entryCheckoutSessionPaid";
-import {
-  prismaCompetitionToTeamAssignmentCompetitionJson,
-  prismaEventToTeamAssignmentEventJson,
-} from "@/lib/teamMemberSlotEligibility";
-
-function parseRelayPositionNames(raw: unknown): string[] {
-  if (!raw || !Array.isArray(raw)) return [];
-  return raw
-    .filter((x): x is string => typeof x === "string")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-function resolveTeamRelaySlotCount(
-  configured: number | null | undefined,
-  members: { order: number | null }[]
-): number {
-  if (typeof configured === "number" && configured >= 1 && configured <= 32) {
-    return configured;
-  }
-  const maxOrder = members.reduce((acc, m) => Math.max(acc, m.order ?? 0), 0);
-  return Math.min(32, Math.max(maxOrder, members.length, 1));
-}
-
-function buildMemberSlotsFromDb(
-  members: { userId: string; order: number | null }[],
-  slotCount: number
-): (string | null)[] {
-  const slots: (string | null)[] = Array.from({ length: slotCount }, () => null);
-  const sorted = [...members].sort((a, b) => {
-    const ao = a.order ?? 999;
-    const bo = b.order ?? 999;
-    if (ao !== bo) return ao - bo;
-    return a.userId.localeCompare(b.userId);
-  });
-  let fillCursor = 0;
-  for (const m of sorted) {
-    if (m.order != null && m.order >= 1) {
-      const idx = m.order - 1;
-      if (idx < slotCount) slots[idx] = m.userId;
-    } else {
-      while (fillCursor < slotCount && slots[fillCursor] != null) fillCursor++;
-      if (fillCursor < slotCount) {
-        slots[fillCursor] = m.userId;
-        fillCursor++;
-      }
-    }
-  }
-  return slots;
-}
+import { competitionMetadataTitle } from "@/lib/competitionMetadata";
+import { getCompetitionPublicName } from "@/lib/competitionPublicPageLoader";
+import TeamAssignmentWorkspace from "./TeamAssignmentWorkspace";
 
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string; competitionId: string }>;
-  searchParams: Promise<{ tab?: string }>;
 }): Promise<Metadata> {
-  const { competitionId, id } = await params;
-  const { tab } = await searchParams;
-  const [competition, club] = await Promise.all([
-    prisma.competition.findUnique({
-      where: { id: competitionId },
-      select: { name: true },
-    }),
-    prisma.club.findUnique({
-      where: { id },
-      select: { name: true },
-    }),
-  ]);
-  const mode = tab === "assignment" ? "メンバー割当" : "チーム種目";
-  return {
-    title: `${mode} | ${competition?.name || "大会"} | ${club?.name || "クラブ"} | Bluvium`,
-  };
+  const { competitionId } = await params;
+  return competitionMetadataTitle(competitionId, "メンバー割当");
+}
+
+function TeamAssignmentSkeleton() {
+  return (
+    <div
+      className="flex min-h-[12rem] flex-col justify-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-4 py-6"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="h-6 w-48 animate-pulse rounded bg-muted/50" aria-hidden />
+      <div className="h-4 w-full max-w-xl animate-pulse rounded bg-muted/35" aria-hidden />
+      <p className="text-sm text-muted-foreground">メンバー割当情報を読み込んでいます…</p>
+    </div>
+  );
 }
 
 export default async function ClubCompetitionTeamHubPage({
@@ -111,22 +52,25 @@ export default async function ClubCompetitionTeamHubPage({
 
   const userId = await getRequiredAuthenticatedUserId();
 
-  const adminMemberships = await prisma.membership.findMany({
-    where: {
-      userId: userId,
-      status: "APPROVED",
-      role: "ADMIN",
-    },
-    include: {
-      club: {
-        select: {
-          id: true,
-          name: true,
-          abbreviation: true,
+  const [adminMemberships, competitionNameRow] = await Promise.all([
+    prisma.membership.findMany({
+      where: {
+        userId,
+        status: "APPROVED",
+        role: "ADMIN",
+      },
+      include: {
+        club: {
+          select: {
+            id: true,
+            name: true,
+            abbreviation: true,
+          },
         },
       },
-    },
-  });
+    }),
+    getCompetitionPublicName(competitionId),
+  ]);
 
   const membership = adminMemberships.find((m) => m.clubId === clubId);
   if (!membership) {
@@ -137,299 +81,10 @@ export default async function ClubCompetitionTeamHubPage({
     .sort((a, b) => a.club.name.localeCompare(b.club.name, "ja"))
     .map((m) => m.club);
   const adminClubIds = adminClubs.map((c) => c.id);
-
-  const competition = await prisma.competition.findUnique({
-    where: { id: competitionId },
-    include: {
-      organization: {
-        include: {
-          admins: {
-            where: { userId: userId },
-          },
-        },
-      },
-      ageCategories: {
-        orderBy: { displayOrder: "asc" },
-        select: {
-          id: true,
-          displayOrder: true,
-          eligibleBirthDateFrom: true,
-          eligibleBirthDateTo: true,
-        },
-      },
-      events: {
-        where: { type: "TEAM" },
-        orderBy: [
-          { category: "asc" },
-          { ageCategory: { displayOrder: "asc" } },
-          { displayOrder: "asc" },
-        ],
-        include: {
-          ageCategory: {
-            select: { id: true, displayOrder: true },
-          },
-        },
-      },
-    },
-  });
-
-  if (!competition) {
-    notFound();
-  }
-
-  const canEditCompetition = hostOrgAdminCanManageCompetition(
-    competition.organization.admins,
-    competition.organization.status
-  );
-  const canViewHostDraft = canViewCompetitionAsHostDraft({
-    orgAdminsForCurrentUser: competition.organization.admins,
-  });
-  if (competition.status === "DRAFT" && !canViewHostDraft) {
-    notFound();
-  }
-
-  const teamEntriesFull = await prisma.teamEntry.findMany({
-    where: {
-      competitionId: competition.id,
-      clubId: { in: adminClubIds },
-    },
-    include: {
-      event: {
-        select: {
-          id: true,
-          name: true,
-          sex: true,
-          minAge: true,
-          maxAge: true,
-          eligibleBirthDateFrom: true,
-          eligibleBirthDateTo: true,
-          ageCategoryId: true,
-          teamRelayPositionCount: true,
-          teamRelayPositionNames: true,
-          ageCategory: {
-            select: { id: true, displayOrder: true },
-          },
-        },
-      },
-      members: {
-        orderBy: { order: "asc" },
-        select: {
-          userId: true,
-          order: true,
-        },
-      },
-    },
-    orderBy: [
-      { clubId: "asc" },
-      { event: { category: "asc" } },
-      { event: { ageCategory: { displayOrder: "asc" } } },
-      { event: { displayOrder: "asc" } },
-      { teamName: "asc" },
-      { id: "asc" },
-    ],
-  });
-
-  const teamEntriesForHistory = teamEntriesFull.map((e) => ({
-    id: e.id,
-    clubId: e.clubId,
-    eventId: e.eventId,
-    teamName: e.teamName,
-    updatedAt: e.updatedAt,
-  }));
-
-  const eligibleEntries = await prisma.competitionEntry.findMany({
-    where: {
-      competitionId: competition.id,
-      clubId: { in: adminClubIds },
-      status: "SUBMITTED",
-    },
-    include: {
-      user: {
-        select: {
-          id: true,
-          profile: { select: { familyName: true, givenName: true, sex: true, dateOfBirth: true } },
-        },
-      },
-    },
-    orderBy: [{ clubId: "asc" }, { createdAt: "asc" }],
-  });
-
-  const now = new Date();
-  const entryStart = competition.entryStartDate ? new Date(competition.entryStartDate) : null;
-  const entryEnd = competition.entryEndDate ? new Date(competition.entryEndDate) : null;
-  const entryWindowOpen = entryStart && entryEnd ? now >= entryStart && now <= entryEnd : false;
-
-  const entryWindowLabel =
-    !entryStart || !entryEnd
-      ? "受付期間未設定"
-      : entryWindowOpen
-        ? "エントリー受付中"
-        : now < entryStart
-          ? "受付開始前"
-          : "受付終了";
-  const entryWindowBadgeClass =
-    entryWindowLabel === "エントリー受付中"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-100"
-      : entryWindowLabel === "受付開始前"
-        ? "border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
-        : "border-border bg-muted text-muted-foreground";
-
   const club = membership.club;
+  const competitionName = competitionNameRow?.name ?? "大会";
 
-  const assignmentsByClub = Object.fromEntries(
-    adminClubIds.map((cid) => [
-      cid,
-      teamEntriesFull
-        .filter((entry) => entry.clubId === cid)
-        .map((entry) => {
-          const slotCount = resolveTeamRelaySlotCount(entry.event.teamRelayPositionCount, entry.members);
-          const memberSlots = buildMemberSlotsFromDb(entry.members, slotCount);
-          return {
-            teamEntryId: entry.id,
-            eventId: entry.eventId,
-            eventName: entry.event.name,
-            sexLabel:
-              entry.event.sex === "MALE"
-                ? "男子"
-                : entry.event.sex === "FEMALE"
-                  ? "女子"
-                  : "混合",
-            teamName: entry.teamName,
-            memberUserIds: entry.members.map((member) => member.userId),
-            relayPositionCount: entry.event.teamRelayPositionCount ?? null,
-            relayPositionLabels: parseRelayPositionNames(entry.event.teamRelayPositionNames),
-            memberSlots,
-          };
-        }),
-    ])
-  );
-
-  /** クラブに紐づく SUBMITTED エントリー全員（個人種目のみ／チーム種目のみの別を問わず割当候補） */
-  const eligibleMembersByClub = Object.fromEntries(
-    adminClubIds.map((cid) => [
-      cid,
-      eligibleEntries
-        .filter((entry) => entry.clubId === cid)
-        .flatMap((entry) =>
-          entry.user.profile
-            ? [
-                {
-                  userId: entry.user.id,
-                  name: `${entry.user.profile.familyName} ${entry.user.profile.givenName}`.trim(),
-                  sex: entry.user.profile.sex,
-                  dateOfBirth: entry.user.profile.dateOfBirth
-                    ? entry.user.profile.dateOfBirth.toISOString()
-                    : null,
-                },
-              ]
-            : []
-        ),
-    ])
-  );
-
-  const prepaidSlotsAll = await prisma.clubCompetitionPrepaidIndividualSlot.findMany({
-    where: {
-      competitionId: competition.id,
-      clubId: { in: adminClubIds },
-      status: {
-        in: ["PENDING_CLUB_CHECKOUT", "ACTIVE_WAIVER", "DEFERRED_POST_CLOSE"],
-      },
-    },
-    select: { clubId: true, coveredUserId: true },
-    orderBy: [{ clubId: "asc" }, { createdAt: "asc" }],
-  });
-
-  const prepaidMembershipsAll = await prisma.membership.findMany({
-    where: { clubId: { in: adminClubIds }, status: "APPROVED" },
-    include: {
-      user: { select: { id: true, profile: { select: { familyName: true, givenName: true } } } },
-    },
-    orderBy: [{ clubId: "asc" }, { user: { profile: { familyName: "asc" } } }, { user: { profile: { givenName: "asc" } } }],
-  });
-
-  const prepaidPaidIndividualCheckoutRows = await prisma.competitionEntry.findMany({
-    where: {
-      competitionId: competition.id,
-      clubId: { in: adminClubIds },
-      status: "SUBMITTED",
-      ...competitionEntryPaidCheckoutWhere,
-    },
-    select: { clubId: true, userId: true },
-  });
-  const paidIndividualUserIdSetByClub = new Map<string, Set<string>>();
-  for (const row of prepaidPaidIndividualCheckoutRows) {
-    if (row.clubId == null) continue;
-    let set = paidIndividualUserIdSetByClub.get(row.clubId);
-    if (!set) {
-      set = new Set();
-      paidIndividualUserIdSetByClub.set(row.clubId, set);
-    }
-    set.add(row.userId);
-  }
-
-  const initialPrepaidIndividualUserIdsByClub = Object.fromEntries(
-    adminClubIds.map((cid) => [
-      cid,
-      prepaidSlotsAll.filter((s) => s.clubId === cid).map((s) => s.coveredUserId),
-    ])
-  ) as Record<string, string[]>;
-
-  const prepaidMemberOptionsByClub = Object.fromEntries(
-    adminClubIds.map((cid) => {
-      const paidSet = paidIndividualUserIdSetByClub.get(cid) ?? new Set<string>();
-      return [
-        cid,
-        prepaidMembershipsAll
-          .filter((m) => m.clubId === cid && !paidSet.has(m.user.id))
-          .map((m) => ({
-            userId: m.user.id,
-            name: `${m.user.profile?.familyName ?? ""} ${m.user.profile?.givenName ?? ""}`.trim(),
-          })),
-      ];
-    })
-  ) as Record<string, { userId: string; name: string }[]>;
-
-  const teamAssignmentWindow = await getTeamMemberAssignmentWindowState(
-    prisma,
-    competition.id,
-    {
-      entryEndDate: competition.entryEndDate,
-      startListSettings: competition.startListSettings,
-      startDate: competition.startDate,
-    },
-    now
-  );
-  const isAssignmentWindowOpen = teamAssignmentWindow.open;
-  const assignmentDeadlineLabel = teamAssignmentWindow.deadlineLabel;
-
-  const marshalBlockByTeamEntryId = Object.fromEntries(
-    await getTeamEntryMarshalAssignmentBlockedMap(
-      prisma,
-      competition.id,
-      teamEntriesFull.map((e) => ({ id: e.id, eventId: e.eventId }))
-    )
-  );
-
-  const teamAssignmentCompetition = prismaCompetitionToTeamAssignmentCompetitionJson({
-    startDate: competition.startDate,
-    ageCategories: competition.ageCategories,
-  });
-
-  const teamAssignmentEventsById = Object.fromEntries(
-    competition.events.map((e) => [
-      e.id,
-      prismaEventToTeamAssignmentEventJson({
-        sex: e.sex,
-        minAge: e.minAge,
-        maxAge: e.maxAge,
-        eligibleBirthDateFrom: e.eligibleBirthDateFrom,
-        eligibleBirthDateTo: e.eligibleBirthDateTo,
-        ageCategoryId: e.ageCategoryId,
-      }),
-    ])
-  );
-
-  const linkAssignment = appRoutes.clubs.competition.team(club.id, competition.id, {
+  const linkAssignment = appRoutes.clubs.competition.team(club.id, competitionId, {
     tab: "assignment",
   });
 
@@ -443,7 +98,7 @@ export default async function ClubCompetitionTeamHubPage({
           </Link>
         </Button>
         <Button variant="outline" size="sm" className="gap-2" asChild>
-          <Link href={appRoutes.competitions.root(competition.id)}>大会ページ</Link>
+          <Link href={appRoutes.competitions.root(competitionId)}>大会ページ</Link>
         </Button>
       </div>
 
@@ -454,7 +109,7 @@ export default async function ClubCompetitionTeamHubPage({
             {adminClubs.length > 1 ? " · 他クラブも選択可" : ""}
           </p>
           <h1 className="mt-1 text-balance text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            {competition.name}
+            {competitionName}
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
             クラブ運用向けのメンバー割り当てページです。チーム申込・請求・履歴は大会配下のチームエントリーページで操作します。
@@ -468,55 +123,28 @@ export default async function ClubCompetitionTeamHubPage({
         </div>
 
         <nav className="flex flex-wrap gap-2" aria-label="チーム種目の区切り">
-          <Button
-            variant="default"
-            size="sm"
-            className="rounded-full"
-            asChild
-          >
+          <Button variant="default" size="sm" className="rounded-full" asChild>
             <Link href={linkAssignment} scroll={false}>
               メンバー割当
             </Link>
           </Button>
           <Button variant="outline" size="sm" className="rounded-full" asChild>
-            <Link href={appRoutes.competitions.teamEntry(competition.id, { clubId: club.id })}>
+            <Link href={appRoutes.competitions.teamEntry(competitionId, { clubId: club.id })}>
               申込・請求ページへ
             </Link>
           </Button>
         </nav>
       </div>
 
-      <>
-          <header className="space-y-2 border-b border-border/60 pb-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              メンバー割当
-            </p>
-            <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-              ポジションにメンバーを割り当て、大会側スタートリスト反映の前提とします。保存で大会に送信されます。
-              {assignmentDeadlineLabel ? (
-                <>
-                  {" "}
-                  <span className="tabular-nums text-foreground/90">
-                    目安日時（通知用）: {assignmentDeadlineLabel}
-                  </span>
-                </>
-              ) : null}
-            </p>
-          </header>
-
-          <CompetitionTeamAssignmentManager
-            competitionId={competition.id}
-            clubs={adminClubs}
-            assignmentsByClub={assignmentsByClub}
-            eligibleMembersByClub={eligibleMembersByClub}
-            isAssignmentWindowOpen={isAssignmentWindowOpen}
-            assignmentDeadlineLabel={assignmentDeadlineLabel}
-            marshalBlockByTeamEntryId={marshalBlockByTeamEntryId}
-            initialClubId={club.id}
-            teamAssignmentCompetition={teamAssignmentCompetition}
-            teamAssignmentEventsById={teamAssignmentEventsById}
-          />
-      </>
+      <Suspense fallback={<TeamAssignmentSkeleton />}>
+        <TeamAssignmentWorkspace
+          competitionId={competitionId}
+          userId={userId}
+          initialClubId={club.id}
+          adminClubs={adminClubs}
+          adminClubIds={adminClubIds}
+        />
+      </Suspense>
     </div>
   );
 }
