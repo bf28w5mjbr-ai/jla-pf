@@ -28,9 +28,24 @@ export function useStartListPeriodicSync({
 
     const ms = resolveStartListPeriodicSyncIntervalSec(intervalSec) * 1000;
 
+    let cancelled = false;
+    let timerId: ReturnType<typeof setTimeout> | undefined;
+
+    const scheduleNext = () => {
+      if (cancelled) return;
+      timerId = window.setTimeout(() => void tick(), ms);
+    };
+
     const tick = async () => {
-      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
-      if (inFlightRef.current) return;
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        scheduleNext();
+        return;
+      }
+      if (inFlightRef.current) {
+        scheduleNext();
+        return;
+      }
       inFlightRef.current = true;
       try {
         if (snapshotSync) {
@@ -42,10 +57,14 @@ export function useStartListPeriodicSync({
         router.refresh();
       } finally {
         inFlightRef.current = false;
+        scheduleNext();
       }
     };
 
-    const id = window.setInterval(() => void tick(), ms);
-    return () => window.clearInterval(id);
+    scheduleNext();
+    return () => {
+      cancelled = true;
+      if (timerId != null) window.clearTimeout(timerId);
+    };
   }, [competitionId, enabled, snapshotSync, intervalSec, router]);
 }

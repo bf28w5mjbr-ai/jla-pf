@@ -155,21 +155,18 @@ export async function resolveEventIdsNeedingSnapshotSync(params: {
   const payload = parseStartListSnapshotLooseForRoundRead(params.snapshotData);
   const outOfSync: string[] = [];
 
-  await Promise.all(
-    events.map(async (ev) => {
-      const [liveIds, snapshotIds] = await Promise.all([
-        loadLiveEligibleParticipantIdsForEvent({
-          competitionId: params.competitionId,
-          eventId: ev.id,
-          eventType: ev.type,
-        }),
-        Promise.resolve(loadSnapshotHeatParticipantIds(payload, ev.id, ev.type)),
-      ]);
-      if (!participantIdSetsMatch(liveIds, snapshotIds)) {
-        outOfSync.push(ev.id);
-      }
-    })
-  );
+  // 種目数 × 2 本の findMany を Promise.all すると接続上限（dev でも 5〜10）を超え P2024 になりやすい
+  for (const ev of events) {
+    const liveIds = await loadLiveEligibleParticipantIdsForEvent({
+      competitionId: params.competitionId,
+      eventId: ev.id,
+      eventType: ev.type,
+    });
+    const snapshotIds = loadSnapshotHeatParticipantIds(payload, ev.id, ev.type);
+    if (!participantIdSetsMatch(liveIds, snapshotIds)) {
+      outOfSync.push(ev.id);
+    }
+  }
 
   return outOfSync;
 }

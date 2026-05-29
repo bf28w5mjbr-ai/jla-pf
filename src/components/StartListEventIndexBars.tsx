@@ -153,7 +153,8 @@ export default function StartListEventIndexBars({
   useStartListPeriodicSync({
     competitionId,
     enabled: true,
-    snapshotSync: true,
+    // 一覧は refresh のみ（全会種目 sync は種目詳細側に任せ、接続プール枯渇を避ける）
+    snapshotSync: false,
   });
 
   const compStart = useMemo(() => new Date(competitionStartDate), [competitionStartDate]);
