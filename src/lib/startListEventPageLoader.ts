@@ -16,6 +16,11 @@ import { buildParticipantDayOpsStatusByKey } from "@/lib/dayOpsParticipantStatus
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
 import { buildStartListLineupFromEntries } from "@/lib/buildStartListLineupParticipants";
 import {
+  countUniqueParticipantsInFrozenRounds,
+  EMPTY_PUBLIC_LINEUP,
+  loadPublicTeamLineupForEvent,
+} from "@/lib/startListSnapshotReadHelpers";
+import {
   resolveStartListPeriodicSyncIntervalSec,
   resolveStartListPublicRefreshIntervalSec,
 } from "@/lib/startListPeriodicSync";
@@ -129,6 +134,74 @@ export async function loadStartListEventPage(input: {
       competitionId,
       dayOpsUnlockConfigured,
       hasDayOpsUnlock,
+    };
+  }
+
+  const scheduleLabel = formatEventScheduleJa(event.scheduledStartAt, event.scheduledEndAt);
+  const archiveRecordedAtIso = competition.startListSnapshot?.capturedAt
+    ? new Date(competition.startListSnapshot.capturedAt).toISOString()
+    : null;
+  const frozenSnapshotRounds = extractFrozenRoundsForEventFromSnapshotData(
+    competition.startListSnapshot?.data,
+    eventId
+  );
+
+  if (!canManageStartListOps) {
+    const isTeam = event.type === "TEAM";
+    const teams =
+      isTeam && frozenSnapshotRounds?.length
+        ? await loadPublicTeamLineupForEvent(competitionId, eventId)
+        : EMPTY_PUBLIC_LINEUP.teams;
+    const individuals = EMPTY_PUBLIC_LINEUP.individuals;
+    const entryCount =
+      countUniqueParticipantsInFrozenRounds(frozenSnapshotRounds, isTeam) ||
+      (isTeam ? teams.length : individuals.length);
+    const placementFingerprint = `${archiveRecordedAtIso ?? ""}|snapshot-public`;
+    const placementSeed = computePlacementSeed(competitionId, eventId, placementFingerprint);
+
+    return {
+      kind: "ok",
+      competitionId,
+      dayOpsUnlockConfigured,
+      hasDayOpsUnlock,
+      cardProps: {
+        viewMode: "public",
+        competitionId,
+        competitionName: competition.name,
+        archiveRecordedAtIso,
+        event: {
+          id: event.id,
+          name: event.name,
+          sex: event.sex,
+          type: event.type,
+          ageCategoryName: event.ageCategory?.name ?? null,
+          preliminaryHeatLaneCount: event.preliminaryHeatLaneCount ?? null,
+          startListRoundCount: event.startListRoundCount ?? null,
+          heatPlanConfirmedAtIso: event.startListHeatPlanConfirmedAt?.toISOString() ?? null,
+          marshalStartedAtIso: event.marshalStartedAt?.toISOString() ?? null,
+        },
+        initialSettings: competition.startListSettings,
+        defaultMaxLanesPerRace: event.preliminaryHeatLaneCount ?? null,
+        entryCount,
+        scheduleLabel,
+        individuals,
+        teams,
+        officialRanksByRound: {},
+        placementSeed,
+        frozenSnapshotRounds,
+        participantStatusByKey: {},
+        initialParticipantStatusRows: [],
+        initialRoundIndex: null,
+        roundHeatBarItems: null,
+        permissions: {
+          canManageStartListOps: false,
+          isOrgAdmin,
+          showVenueOps,
+        },
+        periodicSyncEnabled: true,
+        periodicSnapshotSync: false,
+        periodicSyncIntervalSec: resolveStartListPublicRefreshIntervalSec(),
+      },
     };
   }
 
@@ -294,18 +367,8 @@ export async function loadStartListEventPage(input: {
     }
   }
 
-  const scheduleLabel = formatEventScheduleJa(event.scheduledStartAt, event.scheduledEndAt);
-  const archiveRecordedAtIso = competition.startListSnapshot?.capturedAt
-    ? new Date(competition.startListSnapshot.capturedAt).toISOString()
-    : null;
-
   const placementFingerprint = `${archiveRecordedAtIso ?? ""}|i:${placementIndividualIds.join(",")}|t:${placementTeamIds.join(",")}`;
   const placementSeed = computePlacementSeed(competitionId, eventId, placementFingerprint);
-
-  const frozenSnapshotRounds = extractFrozenRoundsForEventFromSnapshotData(
-    competition.startListSnapshot?.data,
-    eventId
-  );
 
   const mappedParticipantRows = participantStatusRows.map((row) => ({
     participantType: row.participantType,
@@ -317,15 +380,13 @@ export async function loadStartListEventPage(input: {
     calledAt: row.calledAt,
   }));
 
-  const viewMode = canManageStartListOps ? "ops" : "public";
-
   return {
     kind: "ok",
     competitionId,
     dayOpsUnlockConfigured,
     hasDayOpsUnlock,
     cardProps: {
-      viewMode,
+      viewMode: "ops" as const,
       competitionId,
       competitionName: competition.name,
       archiveRecordedAtIso,
@@ -359,10 +420,8 @@ export async function loadStartListEventPage(input: {
         showVenueOps,
       },
       periodicSyncEnabled: true,
-      periodicSnapshotSync: canManageStartListOps,
-      periodicSyncIntervalSec: canManageStartListOps
-        ? resolveStartListPeriodicSyncIntervalSec()
-        : resolveStartListPublicRefreshIntervalSec(),
+      periodicSnapshotSync: true,
+      periodicSyncIntervalSec: resolveStartListPeriodicSyncIntervalSec(),
     },
   };
 }

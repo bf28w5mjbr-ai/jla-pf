@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Suspense } from "react";
 import { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
@@ -6,10 +6,10 @@ import { notFound } from "next/navigation";
 import { verifySessionCached } from "@/lib/auth";
 import { competitionMetadataTitleOnly } from "@/lib/competitionMetadata";
 import {
-  loadCompetitionPublicDetail,
+  loadCompetitionPublicShell,
   loadSessionContextForPublicCompetition,
 } from "@/lib/competitionPublicPageLoader";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,25 +18,11 @@ import {
   Calendar,
   ChevronRight,
   ClipboardList,
-  Coins,
-  FileText,
-  ListOrdered,
   MapPin,
-  UserCog,
   Users,
 } from "lucide-react";
-import CompetitionRelationsEditor from "@/components/CompetitionRelationsEditor";
-import CompetitionAnnouncementsManager from "@/components/CompetitionAnnouncementsManager";
-import CompetitionAttachmentsManager from "@/components/CompetitionAttachmentsManager";
-import CompetitionPublicGallery from "@/components/CompetitionPublicGallery";
-import StartListEventIndexBars from "@/components/StartListEventIndexBars";
-import { fetchPaidEntryCountByEventId } from "@/lib/competitionStartListEntryCounts";
 import { appRoutes } from "@/lib/appRoutes";
 import { hasOrgAdminAccess, isClubAdminRole } from "@/lib/roleScopes";
-import {
-  canEditCompetitionPublishedSchedule,
-  canToggleCompetitionStartListVisibility,
-} from "@/lib/competitionStartListAccess";
 import {
   competitionHostAbbreviation,
   competitionHostDisplayName,
@@ -45,30 +31,16 @@ import {
   formatCompactJaDateRange,
   formatCompetitionEntryPeriodRangeJa,
 } from "@/lib/datetimeLocal";
-import {
-  buildParticipationEventSections,
-  isUnassignedParticipationAgeBlock,
-} from "@/lib/competitionPublicParticipationEvents";
-import { relationLogosWithDisplaySrc } from "@/lib/relationLogos";
-import { parseTechnicalOfficialTiers } from "@/lib/technicalOfficialRules";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
-import DayOpsUnlockBanner from "@/components/DayOpsUnlockBanner";
 import CompetitionPublicPageTabs from "@/components/public/CompetitionPublicPageTabs";
-import { StartListVisibilityAdminControls } from "@/components/StartListVisibilityAdminControls";
-import { CompetitionHostInquiryDialog } from "@/components/public/CompetitionHostInquiryDialog";
 import { cn } from "@/lib/utils";
+import { CompetitionHostInquiryDialogLazy } from "./_components/competitionPublicDynamicClients";
+import { CompetitionPublicOverviewPanelLoader } from "./_components/CompetitionPublicOverviewPanelLoader";
+import { CompetitionPublicStartListPanelLoader } from "./_components/CompetitionPublicStartListPanelLoader";
 import {
-  CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP,
-  parseAgeCategoryFeeTiers,
-  parseAgeFeeTiers,
-  requiredQualificationsMentionCertifiedLifesaver,
-} from "@/lib/competitionEntryAgeTiered";
-import { renderRequiredQualificationsSummary } from "@/lib/competitionParticipationSummaries";
-import { sortEventsByScheduleTabs } from "@/lib/competitionScheduleTabDisplay";
-import { getMarshalActiveRoundsForEvents } from "@/lib/marshalRoundSettingsLock";
-import { prisma } from "@/server/db";
-import { parseScheduleRowOrderByDayJson } from "@/lib/scheduleRowOrder";
-import { firstCompetitionScheduleDayKey } from "@/lib/competitionScheduleDays";
+  CompetitionPublicOverviewPanelSkeleton,
+  CompetitionPublicStartListPanelSkeleton,
+} from "./_components/CompetitionPublicPageSkeleton";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +51,40 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   return competitionMetadataTitleOnly(id);
+}
+
+function getStatusLabel(status: string) {
+  switch (status) {
+    case "DRAFT":
+      return "下書き";
+    case "PUBLISHED":
+      return "公開中";
+    case "ONGOING":
+      return "開催中";
+    case "COMPLETED":
+      return "終了";
+    case "CANCELLED":
+      return "中止";
+    default:
+      return status;
+  }
+}
+
+function getStatusBadgeClass(status: string) {
+  switch (status) {
+    case "PUBLISHED":
+      return "border-transparent bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400";
+    case "DRAFT":
+      return "border-transparent bg-muted text-muted-foreground";
+    case "ONGOING":
+      return "border-transparent bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400";
+    case "COMPLETED":
+      return "border-transparent bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400";
+    case "CANCELLED":
+      return "border-transparent bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
+    default:
+      return "border-transparent bg-muted text-muted-foreground";
+  }
 }
 
 export default async function CompetitionDetailPage({
@@ -93,64 +99,35 @@ export default async function CompetitionDetailPage({
   const requestedTab = tab ?? "overview";
   const activeTab =
     requestedTab === "overview" || requestedTab === "start-list" ? requestedTab : "overview";
+
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const session = await verifySessionCached(token);
+
+  const [session, hasDayOpsUnlock] = await Promise.all([
+    verifySessionCached(token),
+    verifyDayOpsUnlockFromCookies(id),
+  ]);
   const sessionUserId = session?.userId ?? null;
 
-  const competition = await loadCompetitionPublicDetail(id, sessionUserId);
-  const hasDayOpsUnlock = await verifyDayOpsUnlockFromCookies(id);
-  const { sessionApprovedMemberships, sessionUserForInquiry } = sessionUserId
-    ? await loadSessionContextForPublicCompetition(sessionUserId)
-    : { sessionApprovedMemberships: [], sessionUserForInquiry: null };
+  const [competition, sessionContext] = await Promise.all([
+    loadCompetitionPublicShell(id, sessionUserId),
+    sessionUserId
+      ? loadSessionContextForPublicCompetition(sessionUserId)
+      : Promise.resolve({
+          sessionApprovedMemberships: [],
+          sessionUserForInquiry: null,
+        }),
+  ]);
+
+  const { sessionApprovedMemberships, sessionUserForInquiry } = sessionContext;
 
   if (!competition) {
     notFound();
   }
 
-  const defaultScheduleDayKey = firstCompetitionScheduleDayKey(
-    competition.startDate,
-    competition.endDate
-  );
-  const scheduleTabsForPanel = competition.scheduleTabs.map((t) => ({
-    id: t.id,
-    name: t.name,
-    displayOrder: t.displayOrder,
-    scheduleRowOrder: parseScheduleRowOrderByDayJson(t.scheduleRowOrder, defaultScheduleDayKey),
-  }));
-
-  const eventsForStartListPanel = sortEventsByScheduleTabs(
-    competition.events,
-    scheduleTabsForPanel
-  );
-
-  const startListEntryCountByEventId =
-    activeTab === "start-list" && competition.events.length > 0
-      ? await fetchPaidEntryCountByEventId(
-          id,
-          competition.events.map((e) => ({ id: e.id, type: e.type }))
-        )
-      : {};
-
-  const marshalLockedRoundsByEventId =
-    activeTab === "start-list" && competition.events.length > 0
-      ? await getMarshalActiveRoundsForEvents(
-          prisma,
-          id,
-          competition.events.map((e) => e.id)
-        )
-      : new Map<string, Set<"HEAT" | "SEMI" | "FINAL">>();
-
-  const dayOpsUnlockConfigured = Boolean(competition.dayOpsAccessSecretHash);
-
   const orgAdminsForCurrentUser = competition.organization.admins;
   const isOrgAdmin = hasOrgAdminAccess(orgAdminsForCurrentUser);
-  const canEditPublishedSchedule = canEditCompetitionPublishedSchedule({ orgAdminsForCurrentUser, orgStatus: competition.organization.status });
-  const canToggleStartListVisibility = canToggleCompetitionStartListVisibility({ orgAdminsForCurrentUser, orgStatus: competition.organization.status });
-  const canViewStartListOnPublicPage =
-    (competition.startListPubliclyVisible ?? true) || isOrgAdmin || hasDayOpsUnlock;
 
-  // 公開されていない大会は、管理者以外は表示しない
   if (competition.status === "DRAFT" && !isOrgAdmin) {
     notFound();
   }
@@ -162,7 +139,6 @@ export default async function CompetitionDetailPage({
   const firstAdminClubForTeamEntry = teamEntryMemberships.find((m) =>
     isClubAdminRole(m.role)
   )?.club;
-  /** 公開ページの「チームエントリー」導線はクラブ管理者のみ（ログインかつ管理クラブあり） */
   const showTeamEntryButton = hasTeamEvents && Boolean(firstAdminClubForTeamEntry);
 
   const senderNamePreview =
@@ -173,164 +149,6 @@ export default async function CompetitionDetailPage({
 
   const hostAbbr = competitionHostAbbreviation(competition);
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("ja-JP").format(value);
-  };
-
-  /** 種目の有無に応じて、該当カテゴリの参加費だけ表示。表示する行がなければ null */
-  const renderEntryFeeForCategories = (
-    entryFee: unknown,
-    opts: { hasIndividualEvents: boolean; hasTeamEvents: boolean }
-  ): ReactNode => {
-    const { hasIndividualEvents, hasTeamEvents } = opts;
-    if (entryFee === null || entryFee === undefined) {
-      return null;
-    }
-
-    if (typeof entryFee === "number") {
-      if (!hasIndividualEvents && !hasTeamEvents) return null;
-      if (hasIndividualEvents && hasTeamEvents) {
-        return (
-          <p className="text-sm font-medium">¥{formatCurrency(entryFee)}</p>
-        );
-      }
-      if (hasIndividualEvents) {
-        return (
-          <p className="text-sm font-medium">個人: ¥{formatCurrency(entryFee)}</p>
-        );
-      }
-      return (
-        <p className="text-sm font-medium">
-          チーム（1チーム）: ¥{formatCurrency(entryFee)}
-        </p>
-      );
-    }
-
-    if (typeof entryFee !== "object") {
-      return <p className="text-sm font-medium">未設定</p>;
-    }
-
-    const feeCatTiers = parseAgeCategoryFeeTiers(entryFee);
-    if (feeCatTiers?.length && competition.ageCategories?.length) {
-      const nameById = new Map(competition.ageCategories.map((c) => [c.id, c.name]));
-      return (
-        <div className="space-y-1">
-          <p className="text-[11px] font-medium text-muted-foreground">年齢カテゴリ別（生年月日の区分）</p>
-          {feeCatTiers.map((t, i) => (
-            <p key={i} className="text-sm font-medium leading-snug">
-              {nameById.get(t.ageCategoryId) ?? "区分"}
-              {hasIndividualEvents ? (
-                <>
-                  {" "}
-                  · 個人 ¥{formatCurrency(t.individualEntryFee)}
-                </>
-              ) : null}
-              {hasTeamEvents ? (
-                <>
-                  {" "}
-                  · チーム（1）¥{formatCurrency(t.teamEntryFeePerTeam)}
-                </>
-              ) : null}
-            </p>
-          ))}
-        </div>
-      );
-    }
-
-    const feeTiers = parseAgeFeeTiers(entryFee);
-    if (feeTiers?.length) {
-      return (
-        <div className="space-y-1">
-          <p className="text-[11px] font-medium text-muted-foreground">年齢帯別（開催日時点の満年齢）</p>
-          {feeTiers.map((t, i) => (
-            <p key={i} className="text-sm font-medium leading-snug">
-              {t.minAge}歳〜{t.maxAge == null ? "上限なし" : `${t.maxAge}歳`}
-              {hasIndividualEvents ? (
-                <>
-                  {" "}
-                  · 個人 ¥{formatCurrency(t.individualEntryFee)}
-                </>
-              ) : null}
-              {hasTeamEvents ? (
-                <>
-                  {" "}
-                  · チーム（1）¥{formatCurrency(t.teamEntryFeePerTeam)}
-                </>
-              ) : null}
-            </p>
-          ))}
-        </div>
-      );
-    }
-
-    const fee = entryFee as {
-      individualEntryFee?: number;
-      teamEntryFeePerTeam?: number;
-      baseFee?: number;
-    };
-    const individualFee = fee.individualEntryFee ?? fee.baseFee;
-    const teamFee = fee.teamEntryFeePerTeam;
-
-    const showIndividual =
-      hasIndividualEvents && typeof individualFee === "number";
-    const showTeam = hasTeamEvents && typeof teamFee === "number";
-
-    if (!showIndividual && !showTeam) {
-      return null;
-    }
-
-    return (
-      <div className="space-y-0.5">
-        {showIndividual ? (
-          <p className="text-sm font-medium">個人: ¥{formatCurrency(individualFee)}</p>
-        ) : null}
-        {showTeam ? (
-          <p className="text-xs text-muted-foreground">
-            チーム（1チーム）: ¥{formatCurrency(teamFee)}
-          </p>
-        ) : null}
-      </div>
-    );
-  };
-
-  const renderRequiredQualifications = (requiredQualifications: unknown) =>
-    renderRequiredQualificationsSummary(requiredQualifications, competition.ageCategories);
-
-  const renderParticipantEligibility = (value: unknown) => {
-    if (typeof value !== "string" || value.trim().length === 0) {
-      return <p className="text-sm font-medium">制限なし</p>;
-    }
-
-    return <p className="whitespace-pre-wrap text-sm leading-relaxed">{value}</p>;
-  };
-
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case "DRAFT": return "下書き";
-      case "PUBLISHED": return "公開中";
-      case "ONGOING": return "開催中";
-      case "COMPLETED": return "終了";
-      case "CANCELLED": return "中止";
-      default: return status;
-    }
-  };
-
-  const getStatusBadgeClass = (status: string) => {
-    switch (status) {
-      case "PUBLISHED":
-        return "border-transparent bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400";
-      case "DRAFT":
-        return "border-transparent bg-muted text-muted-foreground";
-      case "ONGOING":
-        return "border-transparent bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400";
-      case "COMPLETED":
-        return "border-transparent bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400";
-      case "CANCELLED":
-        return "border-transparent bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
-      default:
-        return "border-transparent bg-muted text-muted-foreground";
-    }
-  };
   const now = new Date();
   const entryStart = competition.entryStartDate ? new Date(competition.entryStartDate) : null;
   const entryEnd = competition.entryEndDate ? new Date(competition.entryEndDate) : null;
@@ -353,26 +171,9 @@ export default async function CompetitionDetailPage({
           ? "bg-muted text-muted-foreground"
           : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
 
-  const participationEventSections =
-    activeTab === "overview"
-      ? buildParticipationEventSections(competition.events, competition.ageCategories)
-      : [];
-  const technicalOfficialTiers =
-    activeTab === "overview"
-      ? parseTechnicalOfficialTiers(competition.technicalOfficialTiers)
-      : [];
-  const showTechnicalOfficialPublicBlock =
-    (competition.officialRecruitmentEnabled ?? true) &&
-    (competition.technicalOfficialRecruitmentEnabled ?? true) &&
-    technicalOfficialTiers.length > 0 && competition.technicalOfficialQualificationTemplate;
-
   const isEntryWindowOpen =
-    entryStart !== null &&
-    entryEnd !== null &&
-    now >= entryStart &&
-    now <= entryEnd;
-  const showEntryLinks =
-    competition.events.length > 0 && competition.status !== "CANCELLED";
+    entryStart !== null && entryEnd !== null && now >= entryStart && now <= entryEnd;
+  const showEntryLinks = competition.events.length > 0 && competition.status !== "CANCELLED";
   const isOfficialRecruitmentOn =
     (competition.officialRecruitmentEnabled ?? true) && competition.status !== "CANCELLED";
   const showOfficialEntryButton = showEntryLinks && isOfficialRecruitmentOn;
@@ -380,13 +181,6 @@ export default async function CompetitionDetailPage({
     (hasIndividualEvents || hasTeamEvents ? 1 : 0) +
     (showTeamEntryButton ? 1 : 0) +
     (showOfficialEntryButton ? 1 : 0);
-  const entryFeeDisplay =
-    activeTab === "overview"
-      ? renderEntryFeeForCategories(competition.entryFee, {
-          hasIndividualEvents,
-          hasTeamEvents,
-        })
-      : null;
 
   const withLoginRedirect = (path: string) =>
     sessionUserId ? path : `/login?redirect=${encodeURIComponent(path)}`;
@@ -406,13 +200,19 @@ export default async function CompetitionDetailPage({
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <Badge
                     variant="outline"
-                    className={cn("rounded-md px-2 py-0.5 text-[11px] font-semibold", getStatusBadgeClass(competition.status))}
+                    className={cn(
+                      "rounded-md px-2 py-0.5 text-[11px] font-semibold",
+                      getStatusBadgeClass(competition.status)
+                    )}
                   >
                     {getStatusLabel(competition.status)}
                   </Badge>
                   <Badge
                     variant="outline"
-                    className={cn("rounded-md px-2 py-0.5 text-[11px] font-semibold", entryPeriodBadgeClass)}
+                    className={cn(
+                      "rounded-md px-2 py-0.5 text-[11px] font-semibold",
+                      entryPeriodBadgeClass
+                    )}
                   >
                     {entryPeriodLabel}
                   </Badge>
@@ -462,7 +262,7 @@ export default async function CompetitionDetailPage({
                 </div>
                 {competition.status !== "CANCELLED" ? (
                   <div className="flex flex-wrap items-center gap-2 border-t border-border/50 pt-3">
-                    <CompetitionHostInquiryDialog
+                    <CompetitionHostInquiryDialogLazy
                       competitionId={id}
                       competitionName={competition.name}
                       senderNamePreview={senderNamePreview}
@@ -529,7 +329,11 @@ export default async function CompetitionDetailPage({
                     {!sessionUserId ? (
                       <p className="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground sm:text-xs">
                         エントリー申込・お支払いには
-                        <Button variant="link" className="mx-0.5 inline h-auto min-h-0 p-0 text-xs font-medium" asChild>
+                        <Button
+                          variant="link"
+                          className="mx-0.5 inline h-auto min-h-0 p-0 text-xs font-medium"
+                          asChild
+                        >
                           <Link href={signInRedirectPath}>ログイン</Link>
                         </Button>
                         が必要です。未登録の方はログイン画面からアカウント作成へ進めます。
@@ -555,7 +359,9 @@ export default async function CompetitionDetailPage({
                             className="gap-2"
                           >
                             <Users className="h-4 w-4 shrink-0 opacity-85" aria-hidden />
-                            <span className="min-w-0 flex-1 text-balance leading-snug">個人エントリー</span>
+                            <span className="min-w-0 flex-1 text-balance leading-snug">
+                              個人エントリー
+                            </span>
                             <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
                           </Link>
                         </Button>
@@ -622,7 +428,8 @@ export default async function CompetitionDetailPage({
                     ) : null}
                     {sessionUserId && hasTeamEvents && !showTeamEntryButton ? (
                       <p className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-                        チーム種目のエントリーは、所属クラブの<strong className="font-medium text-foreground">管理者</strong>
+                        チーム種目のエントリーは、所属クラブの
+                        <strong className="font-medium text-foreground">管理者</strong>
                         がクラブの「チーム管理」から登録します。
                       </p>
                     ) : null}
@@ -638,282 +445,26 @@ export default async function CompetitionDetailPage({
         competitionId={id}
         overview={
           activeTab === "overview" ? (
-            <div className="space-y-4">
-        {/* 参加情報 */}
-        {(competition.events.length > 0 ||
-          competition.maxParticipants ||
-          entryFeeDisplay !== null ||
-          (showEntryLinks && (hasIndividualEvents || hasTeamEvents))) && (
-          <Card className="border-border/80 shadow-sm">
-            <CardHeader className="border-b border-border/80 bg-muted/20 px-4 py-3 sm:px-5">
-              <CardTitle className="text-base font-semibold tracking-tight">参加情報</CardTitle>
-              <p className="mt-1 text-[11px] leading-snug text-muted-foreground sm:text-xs">
-                種目・参加費・参加資格・対象者など、エントリー前にご確認ください。
-              </p>
-            </CardHeader>
-            <CardContent className="p-0 sm:p-0">
-              <div className="divide-y divide-border">
-                {competition.events.length > 0 ? (
-                  <div className="flex gap-3 px-4 py-3 sm:px-5">
-                    <ListOrdered className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium text-muted-foreground">種目</p>
-                      <div className="mt-1.5 flex flex-col gap-4">
-                        {participationEventSections.map((section) => (
-                          <div key={section.category}>
-                            {participationEventSections.length > 1 ? (
-                              <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-foreground/85">
-                                {section.label}
-                              </p>
-                            ) : null}
-                            <div className="flex flex-col gap-3">
-                              {section.ageBlocks.map((block) => {
-                                const framed = section.ageBlocks.length > 1;
-                                const showAgeLabel =
-                                  section.ageBlocks.length > 1 ||
-                                  (section.ageBlocks.length === 1 &&
-                                    !isUnassignedParticipationAgeBlock(block));
-                                return (
-                                  <div
-                                    key={`${section.category}-${block.key}`}
-                                    className={
-                                      framed
-                                        ? "rounded-lg border border-border/70 bg-muted/20 px-3 py-2.5 sm:px-3.5"
-                                        : undefined
-                                    }
-                                  >
-                                    {showAgeLabel ? (
-                                      <p className="mb-1.5 text-[11px] font-semibold text-muted-foreground">
-                                        {block.title}
-                                      </p>
-                                    ) : null}
-                                    <ul className="flex flex-col gap-2">
-                                      {block.rows.map((row) => (
-                                        <li key={row.key} className="text-sm">
-                                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                                            <span className="font-medium text-foreground">{row.name}</span>
-                                            <span className="text-[11px] leading-snug text-muted-foreground">
-                                              {row.metaLine}
-                                            </span>
-                                          </div>
-                                          {row.scheduleLine ? (
-                                            <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                                              {row.scheduleLine}
-                                            </p>
-                                          ) : null}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-
-                {competition.maxParticipants ? (
-                  <div className="flex gap-3 px-4 py-3 sm:px-5">
-                    <Users className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium text-muted-foreground">最大参加者数</p>
-                      <p className="mt-0.5 text-sm font-medium">
-                        {competition.maxParticipants.toLocaleString()}名
-                      </p>
-                    </div>
-                  </div>
-                ) : null}
-
-                {entryFeeDisplay !== null ? (
-                  <div className="flex gap-3 px-4 py-3 sm:px-5">
-                    <Coins className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium text-muted-foreground">参加費</p>
-                      <div className="mt-0.5">{entryFeeDisplay}</div>
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="flex gap-3 px-4 py-3 sm:px-5">
-                  <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium text-muted-foreground">参加資格</p>
-                    <div className="mt-1">{renderRequiredQualifications(competition.requiredQualifications)}</div>
-                    {requiredQualificationsMentionCertifiedLifesaver(competition.requiredQualifications) ? (
-                      <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground">
-                        {CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="flex gap-3 px-4 py-3 sm:px-5">
-                  <FileText className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium text-muted-foreground">参加対象者</p>
-                    <div className="mt-1">{renderParticipantEligibility(competition.participantEligibilityText)}</div>
-                  </div>
-                </div>
-
-                {showTechnicalOfficialPublicBlock ? (
-                  <div className="flex gap-3 px-4 py-3 sm:px-5">
-                    <UserCog className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">クラブ参加資格（テクニカルオフィシャル）</p>
-                      <p className="text-sm leading-relaxed">
-                        閾値の「件数」は、<strong className="font-medium text-foreground">クラブに紐づく個人エントリーの件数（キャンセル除く）</strong>
-                        です。チーム種目のエントリー件数は含みません。段階表のうち、
-                        <strong className="font-medium text-foreground">条件を満たす行のうち最も高い閾値の行だけ</strong>
-                        が適用されます。
-                      </p>
-                      <p className="text-sm leading-relaxed text-muted-foreground">
-                        指定の資格を持つテクニカルオフィシャルが、上記に応じてクラブ単位で必要になります。
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        必要な資格:{" "}
-                        <span className="font-medium text-foreground">
-                          {competition.technicalOfficialQualificationTemplate?.name ?? "—"}
-                        </span>
-                      </p>
-                      <ul className="space-y-1 text-sm">
-                        {technicalOfficialTiers.map((t, i) => (
-                          <li key={i} className="tabular-nums">
-                            個人エントリー合計 {t.minEntries} 件以上 → テクニカルオフィシャル {t.requiredCount} 人
-                          </li>
-                        ))}
-                      </ul>
-                      {competition.requireClubMembership ? null : (
-                        <p className="text-xs text-amber-900 dark:text-amber-100/90">
-                          この大会は所属クラブの指定が不要なエントリーもあります。クラブに紐づくエントリーがある場合に限り、上記がクラブ単位の要件となります。
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* 大会説明 */}
-        {competition.description ? (
-          <Card className="border-border/80 shadow-sm">
-            <CardHeader className="border-b border-border/80 bg-muted/20 px-4 py-3 sm:px-5">
-              <CardTitle className="text-base font-semibold tracking-tight">大会について</CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 py-4 sm:px-5 sm:py-5">
-              <div className="max-w-3xl whitespace-pre-wrap text-sm leading-[1.7] text-foreground/90">
-                {competition.description}
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {/* 関係組織情報 */}
-        <CompetitionRelationsEditor
-          competitionId={competition.id}
-          sponsors={competition.sponsors}
-          cooperators={competition.cooperators}
-          cooperatorsLogos={relationLogosWithDisplaySrc(competition.cooperatorsLogos)}
-          supporters={competition.supporters}
-          grants={competition.grants}
-          grantsLogos={relationLogosWithDisplaySrc(competition.grantsLogos)}
-          canEdit={false}
-        />
-
-        {competition.announcements.length > 0 ? (
-          <CompetitionAnnouncementsManager
-            competitionId={competition.id}
-            initialAnnouncements={competition.announcements.map((a) => ({
-              id: a.id,
-              title: a.title,
-              content: a.content,
-              publishedAt: a.publishedAt?.toISOString() ?? null,
-              createdAt: a.createdAt.toISOString(),
-            }))}
-            canEdit={false}
-          />
-        ) : null}
-
-        {competition.attachments.length > 0 ? (
-          <CompetitionAttachmentsManager
-            competitionId={competition.id}
-            initialAttachments={competition.attachments.map((a) => ({
-              id: a.id,
-              fileName: a.fileName,
-              fileUrl: a.fileUrl,
-              fileSize: a.fileSize,
-              mimeType: a.mimeType,
-              createdAt: a.createdAt.toISOString(),
-            }))}
-            canEdit={false}
-          />
-        ) : null}
-
-        <CompetitionPublicGallery photos={competition.galleryPhotos} />
-          </div>
+            <Suspense fallback={<CompetitionPublicOverviewPanelSkeleton />}>
+              <CompetitionPublicOverviewPanelLoader
+                competitionId={id}
+                sessionUserId={sessionUserId}
+                hasIndividualEvents={hasIndividualEvents}
+                hasTeamEvents={hasTeamEvents}
+                showEntryLinks={showEntryLinks}
+              />
+            </Suspense>
           ) : null
         }
         startList={
           activeTab === "start-list" ? (
-            <>
-              <DayOpsUnlockBanner
-                competitionId={competition.id}
-                passphraseConfigured={dayOpsUnlockConfigured}
-                alreadyUnlocked={hasDayOpsUnlock}
+            <Suspense fallback={<CompetitionPublicStartListPanelSkeleton />}>
+              <CompetitionPublicStartListPanelLoader
+                competitionId={id}
+                sessionUserId={sessionUserId}
+                hasDayOpsUnlock={hasDayOpsUnlock}
               />
-              <div className="flex justify-end">
-                <StartListVisibilityAdminControls
-                  canManage={canToggleStartListVisibility}
-                  organizationId={competition.organizationId}
-                  competitionId={id}
-                  initialVisible={competition.startListPubliclyVisible ?? true}
-                />
-              </div>
-              {canViewStartListOnPublicPage ? (
-                <StartListEventIndexBars
-                  competitionId={competition.id}
-                  competitionName={competition.name}
-                  competitionStartDate={competition.startDate}
-                  competitionEndDate={competition.endDate}
-                  scheduleTabs={scheduleTabsForPanel}
-                  events={eventsForStartListPanel.map((event) => ({
-                    id: event.id,
-                    name: event.name,
-                    sex: event.sex,
-                    type: event.type,
-                    displayOrder: event.displayOrder,
-                    ageCategoryId: event.ageCategory?.id ?? null,
-                    ageCategoryName: event.ageCategory?.name ?? null,
-                    ageCategoryDisplayOrder: event.ageCategory?.displayOrder ?? null,
-                    scheduledStartAt: event.scheduledStartAt,
-                    roundScheduledStarts: event.roundScheduledStarts,
-                    scheduledEndAt: event.scheduledEndAt,
-                    startListRoundCount: event.startListRoundCount,
-                    scheduleTabId: event.scheduleTabId,
-                    scheduleTabSortOrder: event.scheduleTabSortOrder,
-                    entryCount: startListEntryCountByEventId[event.id] ?? 0,
-                    preliminaryHeatLaneCount: event.preliminaryHeatLaneCount,
-                    startListHeatPlanConfirmedAt: event.startListHeatPlanConfirmedAt,
-                    marshalStartedAt: event.marshalStartedAt,
-                    marshalLockedRounds: [
-                      ...(marshalLockedRoundsByEventId.get(event.id) ?? new Set()),
-                    ],
-                  }))}
-                  initialStartListSettings={competition.startListSettings}
-                  canReorder={canEditPublishedSchedule}
-                  canEditSchedule={canEditPublishedSchedule}
-                  canEditRoundCount={canEditPublishedSchedule}
-                />
-              ) : (
-                <p className="rounded-lg border border-border/60 bg-muted/10 px-3 py-6 text-center text-sm text-muted-foreground">
-                  この大会のスタートリスト全体が主催の設定により非公開です（タイムスケジュールと全種目のリスト）。主催管理者または当日運用でアンロックした端末から閲覧・編集できます。
-                </p>
-              )}
-            </>
+            </Suspense>
           ) : null
         }
       />

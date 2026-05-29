@@ -1,10 +1,15 @@
 import { cache } from "react";
 import type { Prisma } from "@prisma/client";
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/server/db";
+import { competitionPublicPageTag } from "@/lib/cacheTags";
 
 const NO_SESSION_USER_ID = "clinvalidnosessionuser0000";
 
-const competitionPublicDetailInclude = (sessionUserId: string | null) =>
+/** 未ログイン向け公開大会データの ISR 相当キャッシュ（秒） */
+const ANON_PUBLIC_REVALIDATE_SECONDS = 60;
+
+const orgAdminsForSession = (sessionUserId: string | null) =>
   ({
     organization: {
       include: {
@@ -13,6 +18,32 @@ const competitionPublicDetailInclude = (sessionUserId: string | null) =>
         },
       },
     },
+  }) satisfies Prisma.CompetitionInclude;
+
+const officialApplicationsForSession = (sessionUserId: string | null) =>
+  ({
+    officialApplications: {
+      where: { userId: sessionUserId ?? NO_SESSION_USER_ID },
+      select: { status: true, positionName: true, message: true },
+      take: 1,
+    },
+  }) satisfies Prisma.CompetitionInclude;
+
+/** ヘッダー・エントリー導線用の軽量 include */
+const competitionPublicShellInclude = (sessionUserId: string | null) =>
+  ({
+    ...orgAdminsForSession(sessionUserId),
+    ...officialApplicationsForSession(sessionUserId),
+    events: {
+      select: { id: true, type: true },
+      orderBy: [{ displayOrder: "asc" as const }, { sex: "asc" as const }, { id: "asc" as const }],
+    },
+  }) satisfies Prisma.CompetitionInclude;
+
+/** 大会ページタブ用 */
+const competitionPublicOverviewInclude = (sessionUserId: string | null) =>
+  ({
+    ...orgAdminsForSession(sessionUserId),
     technicalOfficialQualificationTemplate: {
       select: { name: true },
     },
@@ -31,6 +62,31 @@ const competitionPublicDetailInclude = (sessionUserId: string | null) =>
       orderBy: { displayOrder: "asc" as const },
       select: { id: true, name: true, displayOrder: true },
     },
+    events: {
+      select: {
+        id: true,
+        name: true,
+        sex: true,
+        type: true,
+        category: true,
+        displayOrder: true,
+        scheduledStartAt: true,
+        scheduledEndAt: true,
+        scheduleTabId: true,
+        scheduleTabSortOrder: true,
+        ageCategory: {
+          select: { id: true, name: true, displayOrder: true },
+        },
+      },
+      orderBy: [{ displayOrder: "asc" as const }, { sex: "asc" as const }, { id: "asc" as const }],
+    },
+    ...officialApplicationsForSession(sessionUserId),
+  }) satisfies Prisma.CompetitionInclude;
+
+/** スタートリストタブ用 */
+const competitionPublicStartListInclude = (sessionUserId: string | null) =>
+  ({
+    ...orgAdminsForSession(sessionUserId),
     scheduleTabs: {
       orderBy: { displayOrder: "asc" as const },
       select: { id: true, name: true, displayOrder: true, scheduleRowOrder: true },
@@ -41,7 +97,6 @@ const competitionPublicDetailInclude = (sessionUserId: string | null) =>
         name: true,
         sex: true,
         type: true,
-        category: true,
         displayOrder: true,
         scheduledStartAt: true,
         roundScheduledStarts: true,
@@ -58,34 +113,104 @@ const competitionPublicDetailInclude = (sessionUserId: string | null) =>
       },
       orderBy: [{ displayOrder: "asc" as const }, { sex: "asc" as const }, { id: "asc" as const }],
     },
-    officialApplications: {
-      where: { userId: sessionUserId ?? NO_SESSION_USER_ID },
-      select: { status: true, positionName: true, message: true },
-      take: 1,
-    },
+    ...officialApplicationsForSession(sessionUserId),
   }) satisfies Prisma.CompetitionInclude;
 
-export type CompetitionPublicDetail = Prisma.CompetitionGetPayload<{
-  include: ReturnType<typeof competitionPublicDetailInclude>;
+export type CompetitionPublicShell = Prisma.CompetitionGetPayload<{
+  include: ReturnType<typeof competitionPublicShellInclude>;
 }>;
+
+export type CompetitionPublicOverviewDetail = Prisma.CompetitionGetPayload<{
+  include: ReturnType<typeof competitionPublicOverviewInclude>;
+}>;
+
+export type CompetitionPublicStartListDetail = Prisma.CompetitionGetPayload<{
+  include: ReturnType<typeof competitionPublicStartListInclude>;
+}>;
+
+/** @deprecated 互換用。新規コードは shell / overview / startList を使う */
+export type CompetitionPublicDetail = CompetitionPublicOverviewDetail;
+
+function cachedAnonymousCompetitionQuery<T>(
+  cacheKey: string,
+  competitionId: string,
+  fetcher: () => Promise<T>
+): Promise<T> {
+  return unstable_cache(fetcher, [cacheKey, competitionId], {
+    revalidate: ANON_PUBLIC_REVALIDATE_SECONDS,
+    tags: [competitionPublicPageTag(competitionId)],
+  })();
+}
 
 /** generateMetadata 用（session 不要） */
 export const getCompetitionPublicName = cache(async (competitionId: string) => {
-  return prisma.competition.findUnique({
-    where: { id: competitionId },
-    select: { name: true },
-  });
+  return cachedAnonymousCompetitionQuery("competition-public-name", competitionId, () =>
+    prisma.competition.findUnique({
+      where: { id: competitionId },
+      select: { name: true },
+    })
+  );
 });
 
-/** 公開大会ページ本体の大会行（同一リクエスト内は sessionUserId ごとにメモ化） */
-export const loadCompetitionPublicDetail = cache(
+/** 公開大会ページのヘッダー・エントリー導線 */
+export const loadCompetitionPublicShell = cache(
   async (competitionId: string, sessionUserId: string | null) => {
+    if (sessionUserId === null) {
+      return cachedAnonymousCompetitionQuery("competition-public-shell-anon", competitionId, () =>
+        prisma.competition.findUnique({
+          where: { id: competitionId },
+          include: competitionPublicShellInclude(null),
+        })
+      );
+    }
     return prisma.competition.findUnique({
       where: { id: competitionId },
-      include: competitionPublicDetailInclude(sessionUserId),
+      include: competitionPublicShellInclude(sessionUserId),
     });
   }
 );
+
+/** 大会ページタブ本体 */
+export const loadCompetitionPublicOverviewDetail = cache(
+  async (competitionId: string, sessionUserId: string | null) => {
+    if (sessionUserId === null) {
+      return cachedAnonymousCompetitionQuery("competition-public-overview-anon", competitionId, () =>
+        prisma.competition.findUnique({
+          where: { id: competitionId },
+          include: competitionPublicOverviewInclude(null),
+        })
+      );
+    }
+    return prisma.competition.findUnique({
+      where: { id: competitionId },
+      include: competitionPublicOverviewInclude(sessionUserId),
+    });
+  }
+);
+
+/** スタートリストタブ本体 */
+export const loadCompetitionPublicStartListDetail = cache(
+  async (competitionId: string, sessionUserId: string | null) => {
+    if (sessionUserId === null) {
+      return cachedAnonymousCompetitionQuery(
+        "competition-public-start-list-anon",
+        competitionId,
+        () =>
+          prisma.competition.findUnique({
+            where: { id: competitionId },
+            include: competitionPublicStartListInclude(null),
+          })
+      );
+    }
+    return prisma.competition.findUnique({
+      where: { id: competitionId },
+      include: competitionPublicStartListInclude(sessionUserId),
+    });
+  }
+);
+
+/** @deprecated loadCompetitionPublicOverviewDetail を使用 */
+export const loadCompetitionPublicDetail = loadCompetitionPublicOverviewDetail;
 
 const sessionMembershipSelect = {
   include: { club: { select: { id: true, name: true } } },
@@ -99,7 +224,7 @@ export type SessionContextForPublicCompetition = {
   } | null;
 };
 
-/** ログイン時のクラブ一覧・問い合わせ氏名（大会取得の後に実行） */
+/** ログイン時のクラブ一覧・問い合わせ氏名 */
 export const loadSessionContextForPublicCompetition = cache(
   async (sessionUserId: string): Promise<SessionContextForPublicCompetition> => {
     const [sessionApprovedMemberships, sessionUserForInquiry] = await prisma.$transaction([

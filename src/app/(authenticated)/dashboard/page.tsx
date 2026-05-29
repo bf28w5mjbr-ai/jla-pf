@@ -3,6 +3,10 @@ import { Suspense } from "react";
 import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { DashboardMain } from "./_components/DashboardMain";
 import { DashboardTechnicalOfficialBannerSlot } from "./_components/DashboardTechnicalOfficialBannerSlot";
+import {
+  DashboardMainSkeleton,
+  DashboardTechnicalOfficialBannerSkeleton,
+} from "./_components/DashboardPageSkeleton";
 
 export const metadata: Metadata = {
   title: "ダッシュボード | Bluvium",
@@ -10,32 +14,12 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-function TechnicalOfficialBannerSkeleton() {
-  return (
-    <div
-      className="h-14 animate-pulse rounded-lg border border-border/50 bg-muted/30"
-      aria-hidden
-    />
-  );
-}
-
-function DashboardMainSkeleton() {
-  return (
-    <div className="space-y-8" aria-busy="true">
-      <div className="h-28 animate-pulse rounded-xl border border-border/60 bg-muted/25" />
-      <div className="h-[7.5rem] animate-pulse rounded-xl border border-border/60 bg-muted/25" />
-      <div className="h-96 animate-pulse rounded-xl border border-border/60 bg-muted/25" />
-      <div className="h-52 animate-pulse rounded-xl border border-border/60 bg-muted/25" />
-    </div>
-  );
-}
-
 export default async function DashboardPage() {
   const userId = await getRequiredAuthenticatedUserId();
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-3 py-6 sm:space-y-8 sm:px-5 sm:py-8 lg:px-8 lg:py-10">
-      <Suspense fallback={<TechnicalOfficialBannerSkeleton />}>
+      <Suspense fallback={<DashboardTechnicalOfficialBannerSkeleton />}>
         <DashboardTechnicalOfficialBannerSlot userId={userId} />
       </Suspense>
       <Suspense fallback={<DashboardMainSkeleton />}>

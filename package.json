@@ -9,6 +9,7 @@
     "dev:logged": "mkdir -p .logs && next dev 2>&1 | tee .logs/next-dev.log",
     "dev:log:tail": "mkdir -p .logs && touch .logs/next-dev.log && tail -n 100 -f .logs/next-dev.log",
     "build": "next build",
+    "analyze": "ANALYZE=true next build",
     "start": "next start",
     "cap:sync": "cap sync",
     "cap:copy": "cap copy",
@@ -135,6 +136,7 @@
     ]
   },
   "devDependencies": {
+    "@next/bundle-analyzer": "^16.2.2",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/github": "^11.0.6",

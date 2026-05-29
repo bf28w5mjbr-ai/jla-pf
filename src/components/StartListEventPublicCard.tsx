@@ -19,6 +19,7 @@ export default function StartListEventPublicCard({
   archiveRecordedAtIso,
   event,
   scheduleLabel,
+  entryCount,
   individuals,
   teams,
   initialSettings,
@@ -30,7 +31,7 @@ export default function StartListEventPublicCard({
 }: StartListEventCardProps) {
   const eventId = event.id;
   const isTeam = event.type === "TEAM";
-  const total = isTeam ? teams.length : individuals.length;
+  const total = entryCount;
 
   const roundDisplay = useMemo(
     () =>

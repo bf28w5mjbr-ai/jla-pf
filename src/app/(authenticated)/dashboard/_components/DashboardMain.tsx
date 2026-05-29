@@ -19,9 +19,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/DataTable";
-import DashboardProfilePhoto from "@/components/DashboardProfilePhoto";
-import NfcTagManager from "@/components/NfcTagManager";
-import EntryWithdrawRequestButton from "@/components/EntryWithdrawRequestButton";
+import {
+  DashboardProfilePhotoLazy,
+  EntryWithdrawRequestButtonLazy,
+  NfcTagManagerLazy,
+} from "./dashboardDynamicClients";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
 import {
   buildWithdrawableEventOptions,
@@ -228,7 +230,7 @@ export async function DashboardMain({ userId }: { userId: string }) {
         <CardContent className="p-5 sm:p-6">
           <div className="grid gap-6 md:grid-cols-[88px_1fr]">
             <div className="flex justify-center md:justify-start">
-              <DashboardProfilePhoto
+              <DashboardProfilePhotoLazy
                 currentPhotoUrl={user.profilePhotoUrl}
                 userName={`${user.familyName}${user.givenName}`}
               />
@@ -297,7 +299,7 @@ export async function DashboardMain({ userId }: { userId: string }) {
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">NFCタグ紐付け</h3>
                   <div className="mt-2 rounded-xl border border-border bg-background p-3">
-                    <NfcTagManager initialNfcTagId={user.nfcTagId ?? null} />
+                    <NfcTagManagerLazy initialNfcTagId={user.nfcTagId ?? null} />
                   </div>
                 </div>
 
@@ -513,7 +515,7 @@ export async function DashboardMain({ userId }: { userId: string }) {
                           </Button>
                         ) : null}
                         {canRequestWithdraw ? (
-                          <EntryWithdrawRequestButton
+                          <EntryWithdrawRequestButtonLazy
                             competitionId={entry.competition.id}
                             entryId={entry.id}
                             withdrawableEvents={withdrawableEvents}
