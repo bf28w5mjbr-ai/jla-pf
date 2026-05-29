@@ -1,6 +1,7 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
+import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { prisma } from "@/server/db";
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
@@ -46,6 +47,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
       (competition.startListPubliclyVisible ?? true) || isOrgAdmin || hasDayOpsUnlock;
     if (!canViewStartList) {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });
+    }
+
+    const canManageStartList = canManageCompetitionStartListSettings({
+      orgAdminsForCurrentUser: competition.organization.admins,
+      orgStatus: competition.organization.status,
+      hasDayOpsUnlock,
+    });
+    if (!canManageStartList) {
+      return NextResponse.json({
+        ok: true,
+        refreshedEventIds: [],
+        skippedReason: "MANAGE_START_LIST_REQUIRED",
+      });
     }
 
     const events = await prisma.event.findMany({

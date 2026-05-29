@@ -15,6 +15,10 @@ import { getMarshalActiveRoundsForEvents } from "@/lib/marshalRoundSettingsLock"
 import { buildParticipantDayOpsStatusByKey } from "@/lib/dayOpsParticipantStatusDisplay";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
 import { buildStartListLineupFromEntries } from "@/lib/buildStartListLineupParticipants";
+import {
+  resolveStartListPeriodicSyncIntervalSec,
+  resolveStartListPublicRefreshIntervalSec,
+} from "@/lib/startListPeriodicSync";
 import type {
   StartListEventCardProps,
   StartListEventPageIndividual,
@@ -355,7 +359,10 @@ export async function loadStartListEventPage(input: {
         showVenueOps,
       },
       periodicSyncEnabled: true,
-      periodicSnapshotSync: true,
+      periodicSnapshotSync: canManageStartListOps,
+      periodicSyncIntervalSec: canManageStartListOps
+        ? resolveStartListPeriodicSyncIntervalSec()
+        : resolveStartListPublicRefreshIntervalSec(),
     },
   };
 }

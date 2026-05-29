@@ -40,12 +40,23 @@
 
 ## 1.2 スタートリスト画面の定期同期（全体）
 
-大会のスタートリストタブ（[`StartListEventIndexBars`](src/components/StartListEventIndexBars.tsx)）および種目詳細（[`StartListEventUnifiedCard`](src/components/StartListEventUnifiedCard.tsx)）は、表示中タブが visible のとき **約 30 秒ごと**（`NEXT_PUBLIC_START_LIST_SYNC_INTERVAL_SEC` で 15〜120 に変更可）に次を実行する。
+表示中タブが visible のとき、[`useStartListPeriodicSync`](src/hooks/useStartListPeriodicSync.ts) がポーリングする。接続プール枯渇を避けるため **役割で分ける**。
 
-1. `POST /api/competitions/{id}/start-list-snapshot/sync-if-needed` — 全会種目を対象に、HEAT 締切前かつスナップショットとライブ参加者 ID がずれている種目だけ HEAT を再生成（`syncTrigger: PERIODIC_POLL`）
-2. `router.refresh()` — SSR 再取得（エントリー件数・表示を最新化）
+| 画面 | 閲覧者 | sync-if-needed | refresh 間隔（既定） |
+| --- | --- | --- | --- |
+| スタートリスト一覧 [`StartListEventIndexBars`](src/components/StartListEventIndexBars.tsx) | 全員 | なし | 90 秒 |
+| 種目詳細 [`StartListEventUnifiedCard`](src/components/StartListEventUnifiedCard.tsx) | 一般（public） | なし | 90 秒 |
+| 種目詳細 | 主催設定・当日運用（ops） | あり | 30 秒 |
 
-スタートリスト閲覧権限（公開設定 or 主催管理者 or 当日運用アンロック）がない場合は API は 403。
+- **主催・当日運用**: `POST /api/competitions/{id}/start-list-snapshot/sync-if-needed` のあと `router.refresh()`。全会種目を候補に HEAT 差分同期（`syncTrigger: PERIODIC_POLL`）。API は **スタートリスト設定を変更できる権限**のみ実行（一般閲覧の POST は `skippedReason: MANAGE_START_LIST_REQUIRED` で DB 更新なし）。
+- **一般閲覧**: `router.refresh()` のみ（エントリー・表示の鮮度）。HEAT 整合はエントリー保存・決済などの自動同期（§1.1）に任せる。
+
+環境変数（いずれも 15〜120 秒に clamp）:
+
+- `NEXT_PUBLIC_START_LIST_SYNC_INTERVAL_SEC` — 主催・当日運用の sync + refresh
+- `NEXT_PUBLIC_START_LIST_PUBLIC_REFRESH_INTERVAL_SEC` — 一覧・一般閲覧の refresh のみ
+
+スタートリスト閲覧権限がない場合は API は 403。
 
 ## 2. 共通化した責務
 

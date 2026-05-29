@@ -29,6 +29,7 @@ import {
 } from "@/lib/startListSettings";
 import { useStartListRoundHeatDrafts } from "@/hooks/useStartListRoundHeatDrafts";
 import { useStartListPeriodicSync } from "@/hooks/useStartListPeriodicSync";
+import { resolveStartListPublicRefreshIntervalSec } from "@/lib/startListPeriodicSync";
 import { StartListRoundSettingsCard } from "@/components/StartListRoundSettingsCard";
 import { StartListScheduleCard } from "@/components/StartListScheduleCard";
 
@@ -153,8 +154,9 @@ export default function StartListEventIndexBars({
   useStartListPeriodicSync({
     competitionId,
     enabled: true,
-    // 一覧は refresh のみ（全会種目 sync は種目詳細側に任せ、接続プール枯渇を避ける）
+    // 一覧は refresh のみ（sync-if-needed は主催・当日運用の種目詳細のみ）
     snapshotSync: false,
+    intervalSec: resolveStartListPublicRefreshIntervalSec(),
   });
 
   const compStart = useMemo(() => new Date(competitionStartDate), [competitionStartDate]);

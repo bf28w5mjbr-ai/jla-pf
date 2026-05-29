@@ -72,7 +72,7 @@ export type StartListEventCardProps = {
   permissions: StartListEventCardPermissions;
   /** 定期 sync + refresh を有効にする（既定 true） */
   periodicSyncEnabled?: boolean;
-  /** refresh 前に sync-if-needed API を呼ぶ（既定 true） */
+  /** refresh 前に sync-if-needed API を呼ぶ（主催・当日運用のみ true。一般閲覧は false） */
   periodicSnapshotSync?: boolean;
   /** 同期間隔（秒）。未指定時は 30 秒（環境変数で上書き可） */
   periodicSyncIntervalSec?: number;
