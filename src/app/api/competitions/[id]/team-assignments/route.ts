@@ -266,47 +266,51 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       );
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.teamEntryMember.deleteMany({
-        where: {
-          teamEntryId: {
-            in: normalizedAssignments.map((assignment) => assignment.teamEntryId),
-          },
-        },
-      });
-
-      for (const assignment of normalizedAssignments) {
-        if (assignment.memberSlots) {
-          const rows = assignment.memberSlots
-            .map((userId, index) =>
-              userId
-                ? {
-                    teamEntryId: assignment.teamEntryId,
-                    userId,
-                    role: "ATHLETE" as const,
-                    order: index + 1,
-                  }
-                : null
-            )
-            .filter((row): row is NonNullable<typeof row> => row !== null);
-          if (rows.length === 0) continue;
-          await tx.teamEntryMember.createMany({ data: rows });
-          continue;
-        }
-
-        const legacyIds = assignment.memberUserIds ?? [];
-        if (legacyIds.length === 0) continue;
-
-        await tx.teamEntryMember.createMany({
-          data: legacyIds.map((userId, index) => ({
-            teamEntryId: assignment.teamEntryId,
-            userId,
-            role: "ATHLETE",
-            order: index + 1,
-          })),
-        });
+    const memberRows = normalizedAssignments.flatMap((assignment) => {
+      if (assignment.memberSlots) {
+        return assignment.memberSlots
+          .map((userId, index) =>
+            userId
+              ? {
+                  teamEntryId: assignment.teamEntryId,
+                  userId,
+                  role: "ATHLETE" as const,
+                  order: index + 1,
+                }
+              : null
+          )
+          .filter((row): row is NonNullable<typeof row> => row !== null);
       }
+
+      const legacyIds = assignment.memberUserIds ?? [];
+      return legacyIds.map((userId, index) => ({
+        teamEntryId: assignment.teamEntryId,
+        userId,
+        role: "ATHLETE" as const,
+        order: index + 1,
+      }));
     });
+
+    /**
+     * 既定 ~5s のインタラクティブ TX タイムアウトを超えると
+     * 「Transaction not found … old closed transaction」になる（特に多数チームの逐次 create）。
+     */
+    await prisma.$transaction(
+      async (tx) => {
+        await tx.teamEntryMember.deleteMany({
+          where: {
+            teamEntryId: {
+              in: normalizedAssignments.map((assignment) => assignment.teamEntryId),
+            },
+          },
+        });
+
+        if (memberRows.length > 0) {
+          await tx.teamEntryMember.createMany({ data: memberRows });
+        }
+      },
+      { maxWait: 20_000, timeout: 55_000 }
+    );
 
     return NextResponse.json({
       message: "チームメンバー割当を更新しました",
