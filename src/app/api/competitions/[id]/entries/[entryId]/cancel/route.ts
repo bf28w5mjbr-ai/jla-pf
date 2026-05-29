@@ -7,6 +7,7 @@ import { prisma } from "@/server/db";
 import { isOrgAdminRole } from "@/lib/roleScopes";
 import { isEntryCheckoutPaidForEligibility } from "@/lib/entryCheckoutSessionPaid";
 import { stripe } from "@/lib/stripe";
+import { syncStartListSnapshotBeforeMarshal } from "@/lib/startListSnapshotOnEntryIncrease";
 
 type RouteContext = {
   params: Promise<{ id: string; entryId: string }>;
@@ -29,6 +30,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         competitionId,
       },
       include: {
+        items: { select: { eventId: true } },
         competition: {
           include: {
             organization: {
@@ -154,6 +156,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
           },
         },
       });
+    });
+
+    const cancelEventIds = [...new Set(entry.items.map((item) => item.eventId))];
+    await syncStartListSnapshotBeforeMarshal({
+      competitionId,
+      candidateEventIds: cancelEventIds,
+      createdByUserId: session.userId,
+      trigger: "ENTRY_CANCEL",
+      request,
     });
 
     return NextResponse.json({

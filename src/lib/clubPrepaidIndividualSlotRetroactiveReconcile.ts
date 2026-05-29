@@ -191,11 +191,21 @@ export async function reconcileRetroactiveClubPrepaidSlotsForUsersInTx(
       feeUnits
     );
 
-    if (!appliedWaiver) {
+    let nextFee: number | null = null;
+    if (appliedWaiver) {
+      nextFee = waivedFee;
+    } else if (
+      clubIndividualBillingTiming === "INSTANT_PREPAID" &&
+      entryItemsCount > 0 &&
+      teamEntryRows === 0 &&
+      entry.totalFee > 0
+    ) {
+      // ACTIVE_WAIVER: クラブ先払い済み。再計算 base が 0 などで applyInstantPrepaidWaiver が
+      // false でも、送信時に残った totalFee を個人 Checkout 対象にしない。
+      nextFee = 0;
+    } else {
       continue;
     }
-
-    const nextFee = waivedFee;
     if (nextFee !== entry.totalFee) {
       await expirePendingCheckoutSessions(tx, entry.id, now);
       await tx.competitionEntry.update({

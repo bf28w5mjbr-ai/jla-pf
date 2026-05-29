@@ -94,109 +94,154 @@ export async function replaceClubPrepaidSlotsForSave(
   });
 }
 
+const CLUB_PREPAID_ACTIVATE_TX = { maxWait: 10_000, timeout: 10_000 } as const;
+const CLUB_PREPAID_RECONCILE_TX = { maxWait: 20_000, timeout: 55_000 } as const;
+
+export type ClubPrepaidStripeSideEffectsContext = {
+  paymentId: string;
+  clubId: string;
+  competitionId: string;
+};
+
+/** Payment.metadata から clubId / competitionId を取り出す */
+export function parseClubPrepaidPaymentMetadata(
+  meta: unknown
+): Pick<ClubPrepaidStripeSideEffectsContext, "clubId" | "competitionId"> | null {
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return null;
+  const record = meta as { clubId?: unknown; competitionId?: unknown };
+  if (typeof record.clubId !== "string" || typeof record.competitionId !== "string") {
+    return null;
+  }
+  return { clubId: record.clubId, competitionId: record.competitionId };
+}
+
+/** Phase A: 決済成功後に先払い枠を ACTIVE_WAIVER へ（短い TX） */
+export async function activateClubPrepaidSlotsAfterPayment(
+  tx: Tx,
+  paymentId: string
+): Promise<ClubPrepaidStripeSideEffectsContext | null> {
+  const payment = await tx.payment.findUnique({
+    where: { id: paymentId },
+    select: { id: true, status: true, metadata: true, type: true, ownerId: true },
+  });
+  if (!payment || payment.status !== "SUCCEEDED" || payment.type !== "COMPETITION_ENTRY_FEE") {
+    return null;
+  }
+  if (!shouldApplyClubPrepaidStripeSideEffects(payment)) return null;
+
+  await tx.clubCompetitionPrepaidIndividualSlot.updateMany({
+    where: {
+      clubPaymentId: paymentId,
+      status: "PENDING_CLUB_CHECKOUT",
+    },
+    data: { status: "ACTIVE_WAIVER" },
+  });
+
+  const ids = parseClubPrepaidPaymentMetadata(payment.metadata);
+  if (!ids) return null;
+
+  return { paymentId, ...ids };
+}
+
+/** Phase B: 既存エントリーへの先払い相殺（長い TX） */
+export async function reconcileActiveClubPrepaidWaiversForPayment(
+  tx: Tx,
+  ctx: ClubPrepaidStripeSideEffectsContext
+): Promise<void> {
+  const competition = await loadCompetitionForPrepaidReconcile(tx, ctx.competitionId);
+  if (!competition) return;
+
+  const activeWaiverUsers = await tx.clubCompetitionPrepaidIndividualSlot.findMany({
+    where: {
+      clubPaymentId: ctx.paymentId,
+      status: "ACTIVE_WAIVER",
+      consumedByEntryId: null,
+    },
+    select: { coveredUserId: true },
+  });
+  const activeIds = [...new Set(activeWaiverUsers.map((r) => r.coveredUserId))];
+  if (activeIds.length === 0) return;
+
+  await reconcileRetroactiveClubPrepaidSlotsForUsersInTx(tx, {
+    competition,
+    clubId: ctx.clubId,
+    coveredUserIds: activeIds,
+  });
+}
+
+/** Phase C: 締切後請求枠に紐づく個人エントリーのクラブ一括清算 */
+export async function settleDeferredClubPrepaidSlotsForPayment(
+  tx: Tx,
+  ctx: ClubPrepaidStripeSideEffectsContext
+): Promise<void> {
+  const deferredSlots = await tx.clubCompetitionPrepaidIndividualSlot.findMany({
+    where: {
+      competitionId: ctx.competitionId,
+      clubId: ctx.clubId,
+      status: "DEFERRED_POST_CLOSE",
+    },
+    select: { id: true, coveredUserId: true },
+  });
+  if (deferredSlots.length === 0) return;
+
+  const now = new Date();
+  for (const slot of deferredSlots) {
+    const entry = await tx.competitionEntry.findFirst({
+      where: {
+        competitionId: ctx.competitionId,
+        clubId: ctx.clubId,
+        userId: slot.coveredUserId,
+        status: "SUBMITTED",
+        totalFee: { gt: 0 },
+        clubIndividualFeePaidAt: null,
+      },
+      select: {
+        id: true,
+        checkoutSessions: {
+          where: { status: { in: ["COMPLETED", "DISPUTED"] } },
+          take: 1,
+          select: { id: true },
+        },
+      },
+    });
+    if (!entry || entry.checkoutSessions.length > 0) continue;
+
+    await tx.competitionEntry.update({
+      where: { id: entry.id },
+      data: { clubIndividualFeePaidAt: now },
+    });
+    await tx.clubCompetitionPrepaidIndividualSlot.update({
+      where: { id: slot.id },
+      data: {
+        status: "CONSUMED",
+        clubPaymentId: ctx.paymentId,
+        consumedAt: now,
+        consumedByEntryId: entry.id,
+      },
+    });
+  }
+}
+
 /** Stripe の CLUB 大会参加費 Checkout 成功後：先払い枠の有効化と、締切後枠に紐づく個人エントリーの清算 */
 export async function applyClubTeamAndPrepaidStripeSideEffects(
   prisma: PrismaClient,
   paymentId: string
 ): Promise<void> {
-  await prisma.$transaction(async (tx) => {
-    const payment = await tx.payment.findUnique({
-      where: { id: paymentId },
-      select: { id: true, status: true, metadata: true, type: true, ownerId: true },
-    });
-    if (!payment || payment.status !== "SUCCEEDED" || payment.type !== "COMPETITION_ENTRY_FEE") return;
-    if (!shouldApplyClubPrepaidStripeSideEffects(payment)) return;
+  const ctx = await prisma.$transaction(
+    (tx) => activateClubPrepaidSlotsAfterPayment(tx, paymentId),
+    CLUB_PREPAID_ACTIVATE_TX
+  );
+  if (!ctx) return;
 
-    await tx.clubCompetitionPrepaidIndividualSlot.updateMany({
-      where: {
-        clubPaymentId: paymentId,
-        status: "PENDING_CLUB_CHECKOUT",
-      },
-      data: { status: "ACTIVE_WAIVER" },
-    });
+  await prisma.$transaction(
+    (tx) => reconcileActiveClubPrepaidWaiversForPayment(tx, ctx),
+    CLUB_PREPAID_RECONCILE_TX
+  );
 
-    const meta = payment.metadata;
-    const clubId =
-      meta && typeof meta === "object" && !Array.isArray(meta) && typeof (meta as { clubId?: unknown }).clubId === "string"
-        ? (meta as { clubId: string }).clubId
-        : null;
-    const competitionId =
-      meta &&
-      typeof meta === "object" &&
-      !Array.isArray(meta) &&
-      typeof (meta as { competitionId?: unknown }).competitionId === "string"
-        ? (meta as { competitionId: string }).competitionId
-        : null;
-
-    if (!clubId || !competitionId) return;
-
-    const competition = await loadCompetitionForPrepaidReconcile(tx, competitionId);
-    if (competition) {
-      const activeWaiverUsers = await tx.clubCompetitionPrepaidIndividualSlot.findMany({
-        where: {
-          clubPaymentId: paymentId,
-          status: "ACTIVE_WAIVER",
-          consumedByEntryId: null,
-        },
-        select: { coveredUserId: true },
-      });
-      const activeIds = [...new Set(activeWaiverUsers.map((r) => r.coveredUserId))];
-      if (activeIds.length > 0) {
-        await reconcileRetroactiveClubPrepaidSlotsForUsersInTx(tx, {
-          competition,
-          clubId,
-          coveredUserIds: activeIds,
-        });
-      }
-    }
-
-    const deferredSlots = await tx.clubCompetitionPrepaidIndividualSlot.findMany({
-      where: {
-        competitionId,
-        clubId,
-        status: "DEFERRED_POST_CLOSE",
-      },
-      select: { id: true, coveredUserId: true },
-    });
-    if (deferredSlots.length === 0) return;
-
-    const now = new Date();
-    for (const slot of deferredSlots) {
-      const entry = await tx.competitionEntry.findFirst({
-        where: {
-          competitionId,
-          clubId,
-          userId: slot.coveredUserId,
-          status: "SUBMITTED",
-          totalFee: { gt: 0 },
-          clubIndividualFeePaidAt: null,
-        },
-        select: {
-          id: true,
-          checkoutSessions: {
-            where: { status: { in: ["COMPLETED", "DISPUTED"] } },
-            take: 1,
-            select: { id: true },
-          },
-        },
-      });
-      if (!entry || entry.checkoutSessions.length > 0) continue;
-
-      await tx.competitionEntry.update({
-        where: { id: entry.id },
-        data: { clubIndividualFeePaidAt: now },
-      });
-      await tx.clubCompetitionPrepaidIndividualSlot.update({
-        where: { id: slot.id },
-        data: {
-          status: "CONSUMED",
-          clubPaymentId: paymentId,
-          consumedAt: now,
-          consumedByEntryId: entry.id,
-        },
-      });
-    }
-  });
+  await prisma.$transaction(
+    (tx) => settleDeferredClubPrepaidSlotsForPayment(tx, ctx),
+    CLUB_PREPAID_RECONCILE_TX
+  );
 }
 
 export async function sumDeferredUnpaidIndividualEntryFeesYen(

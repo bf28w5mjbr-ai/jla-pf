@@ -12,6 +12,10 @@ import {
   expirePendingEntryCheckoutSessions,
   loadEntryForOrganizerPostPay,
 } from "@/lib/entryOrganizerPostPayService";
+import {
+  loadCandidateEventIdsForCompetitionEntry,
+  syncStartListSnapshotBeforeMarshal,
+} from "@/lib/startListSnapshotOnEntryIncrease";
 
 type RouteContext = { params: Promise<{ id: string; entryId: string }> };
 
@@ -84,6 +88,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
       },
       request: getRequestContext(request),
     });
+
+    const entryEvents = await loadCandidateEventIdsForCompetitionEntry(entryId);
+    if (entryEvents) {
+      await syncStartListSnapshotBeforeMarshal({
+        competitionId: entryEvents.competitionId,
+        candidateEventIds: entryEvents.eventIds,
+        createdByUserId: session.userId,
+        trigger: "PAYMENT_ESTABLISHED",
+        request,
+      });
+    }
 
     return NextResponse.json({
       message: "手動入金を記録しました",

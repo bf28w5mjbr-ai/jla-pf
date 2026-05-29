@@ -584,13 +584,21 @@ export async function repairStartListSnapshotEmptyHeadHeatsWhenEntriesExist(para
 }
 
 /**
- * 互換のため残すが、初回 HEAT は主催の明示 capture のみのため何もしない。
- * @deprecated スタートリストは {@link replaceCompetitionStartListSnapshot}（capture API）で更新する。
+ * @deprecated {@link syncStartListSnapshotBeforeMarshal} を利用する。
  */
 export async function refreshStartListSnapshotAfterEligibleEntryChange(
-  _competitionId: string
+  competitionId: string,
+  candidateEventIds?: readonly string[]
 ): Promise<void> {
-  return;
+  if (!candidateEventIds?.length) return;
+  const { syncStartListSnapshotBeforeMarshal } = await import(
+    "@/lib/startListSnapshotOnEntryIncrease"
+  );
+  await syncStartListSnapshotBeforeMarshal({
+    competitionId,
+    candidateEventIds,
+    trigger: "ENTRY_SAVE",
+  });
 }
 
 /**

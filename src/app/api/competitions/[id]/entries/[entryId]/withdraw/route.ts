@@ -8,6 +8,7 @@ import {
   resolveWithdrawProcessingEventIds,
   resolveWithdrawTargetEventIds,
 } from "@/lib/entryWithdrawalRequest";
+import { syncStartListSnapshotBeforeMarshal } from "@/lib/startListSnapshotOnEntryIncrease";
 
 type RouteContext = {
   params: Promise<{ id: string; entryId: string }>;
@@ -160,6 +161,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
         count += 1;
       }
       return count;
+    });
+
+    await syncStartListSnapshotBeforeMarshal({
+      competitionId,
+      candidateEventIds: eventIds,
+      createdByUserId: session.userId,
+      trigger: "ENTRY_WITHDRAW",
+      request,
     });
 
     return NextResponse.json({

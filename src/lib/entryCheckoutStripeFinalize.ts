@@ -4,6 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { fetchStripeReceiptUrlForCheckoutSessionId } from "@/lib/stripeEntryReceiptUrl";
 import { safeServerErrorLog } from "@/lib/safeServerLog";
+import {
+  loadCandidateEventIdsForCompetitionEntry,
+  syncStartListSnapshotBeforeMarshal,
+} from "@/lib/startListSnapshotOnEntryIncrease";
 
 /**
  * Stripe 推奨: checkout.session.completed だけでは支払済みと限らない（遅延通知の決済手段などで unpaid のことがある）。
@@ -95,6 +99,25 @@ export async function finalizeEntryCheckoutSessionsFromStripeSession(
       ...(paymentIntentId ? { stripePaymentIntentId: paymentIntentId } : {}),
     },
   });
+
+  const eventIdsByCompetition = new Map<string, Set<string>>();
+  for (const target of targets) {
+    if (!target.entryId || !target.competitionId) continue;
+    const loaded = await loadCandidateEventIdsForCompetitionEntry(target.entryId);
+    if (!loaded || loaded.eventIds.length === 0) continue;
+    const set = eventIdsByCompetition.get(loaded.competitionId) ?? new Set<string>();
+    for (const eventId of loaded.eventIds) {
+      set.add(eventId);
+    }
+    eventIdsByCompetition.set(loaded.competitionId, set);
+  }
+  for (const [competitionId, eventIdSet] of eventIdsByCompetition) {
+    await syncStartListSnapshotBeforeMarshal({
+      competitionId,
+      candidateEventIds: [...eventIdSet],
+      trigger: "STRIPE_CHECKOUT",
+    });
+  }
 
   return targets;
 }

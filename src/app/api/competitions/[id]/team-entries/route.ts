@@ -24,6 +24,11 @@ import {
   sumInstantPrepaidIndividualsYen,
 } from "@/lib/clubPrepaidIndividualSlots";
 import { clubTeamNameBaseFromClub, shouldStripLetterSuffixForSingleTeam } from "@/lib/teamEntryClubBaseName";
+import {
+  countTeamEntriesByEventForClub,
+  eventIdsWithTeamCountChange,
+  syncStartListSnapshotBeforeMarshal,
+} from "@/lib/startListSnapshotOnEntryIncrease";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -312,6 +317,11 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const clearStripeRefsAfterSucceededPrepaidPayment =
       existingPrepaidPayment?.status === "SUCCEEDED";
 
+    const teamCountsBeforeSave = await countTeamEntriesByEventForClub({
+      competitionId,
+      clubId,
+    });
+
     /**
      * 既定 ~5s のインタラクティブ TX タイムアウトを超えると
      * 「Transaction not found … old closed transaction」になる（特に多数チームの逐次 create）。
@@ -561,6 +571,24 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         competitionId,
         clubId,
         coveredUserIds: prepaidIndividualUserIds,
+      });
+    }
+
+    const teamCountsAfterSave = await countTeamEntriesByEventForClub({
+      competitionId,
+      clubId,
+    });
+    const changedTeamEventIds = eventIdsWithTeamCountChange(
+      teamCountsBeforeSave,
+      teamCountsAfterSave
+    );
+    if (changedTeamEventIds.length > 0) {
+      await syncStartListSnapshotBeforeMarshal({
+        competitionId,
+        candidateEventIds: changedTeamEventIds,
+        createdByUserId: session.userId,
+        trigger: "TEAM_ENTRIES_SAVE",
+        request,
       });
     }
 

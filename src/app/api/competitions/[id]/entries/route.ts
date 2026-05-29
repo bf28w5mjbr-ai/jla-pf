@@ -26,6 +26,10 @@ import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
 import { ENTRY_CHECKOUT_PAID_STATUSES } from "@/lib/entryCheckoutSessionPaid";
 import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
 import { clearIndividualWithdrawalParticipantStatusesForEvents } from "@/lib/entryWithdrawalReinstatement";
+import {
+  collectEventIdsFromEntrySavePayload,
+  syncStartListSnapshotBeforeMarshal,
+} from "@/lib/startListSnapshotOnEntryIncrease";
 import { hostOrgAdminCanManageCompetition, isClubAdminRole } from "@/lib/roleScopes";
 import {
   billingCountsForPersonalEntryPost,
@@ -689,6 +693,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
       clubId: clubId ?? null,
     };
 
+    const previousSubmittedEntry = await prisma.competitionEntry.findFirst({
+      where: {
+        competitionId,
+        userId: session.userId,
+        status: "SUBMITTED",
+      },
+      select: { items: { select: { eventId: true } } },
+    });
+    const previousEntryEventIds =
+      previousSubmittedEntry?.items.map((item) => item.eventId) ?? [];
+
     const result = await prisma.$transaction(async (tx) => {
       const lockKey = `competition-entry:${competitionId}:${session.userId}`;
       // 同一大会・同一ユーザーの同時POSTで重複エントリーが作られるのを防ぐ。
@@ -932,6 +947,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 organizerManualPaidAt: result.entry.organizerManualPaidAt,
               });
               const completeUrl = `${stripeRedirectOrigin()}/competitions/${competitionId}/entry?completed=1&entryId=${result.entry.id}`;
+              if (userStatus.businessEstablished) {
+                await syncStartListSnapshotBeforeMarshal({
+                  competitionId,
+                  candidateEventIds: collectEventIdsFromEntrySavePayload(
+                    entryItemsData,
+                    teamEntriesData,
+                    previousEntryEventIds
+                  ),
+                  createdByUserId: session.userId,
+                  trigger: "ENTRY_SAVE",
+                  request,
+                });
+              }
               return NextResponse.json({
                 message: userStatus.businessEstablished
                   ? "決済が確認できました。エントリーが成立しました。"
@@ -1091,6 +1119,20 @@ export async function POST(request: NextRequest, context: RouteContext) {
       organizerPostPayApprovedAt: result.entry.organizerPostPayApprovedAt,
       organizerManualPaidAt: result.entry.organizerManualPaidAt,
     });
+
+    if (userStatus.businessEstablished) {
+      await syncStartListSnapshotBeforeMarshal({
+        competitionId,
+        candidateEventIds: collectEventIdsFromEntrySavePayload(
+          entryItemsData,
+          teamEntriesData,
+          previousEntryEventIds
+        ),
+        createdByUserId: session.userId,
+        trigger: "ENTRY_SAVE",
+        request,
+      });
+    }
 
     return NextResponse.json({
       message: result.wasUpdate

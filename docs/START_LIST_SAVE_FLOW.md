@@ -1,6 +1,6 @@
 # スタートリスト保存フロー整理
 
-最終更新: 2026-05-26
+最終更新: 2026-05-29
 
 ## 1. 現行の正規フロー
 
@@ -11,6 +11,31 @@
 | `POST /api/competitions/{id}/round-setup/bulk-save` | ラウンド設定カードの一括保存 | あり（roundCount + roundTabs） | 既定で実施（`captureSnapshot !== false`） | 未確定種目を自動確定可 |
 | `PUT /api/competitions/{id}/start-list-settings` | 旧来/運用系の設定保存 | あり（startListSettings） | `captureSnapshot === true` のとき実施 | なし |
 | `POST /api/competitions/{id}/start-list-snapshot/capture` | 手動で記録更新のみ | なし | 常に実施 | なし |
+
+## 1.1 マーシャル前の自動スナップショット同期
+
+`src/lib/startListSnapshotOnEntryIncrease.ts` の `syncStartListSnapshotBeforeMarshal` が、**既にスナップショット記録がある大会**で、種目ごとの**ライブ成立参加者 ID 集合**と **HEAT スナップショット上の ID 集合**が一致しないとき、その種目の HEAT だけを部分再計算する（`marshalStartedAt` 未設定のみ）。故意のシャッフル UI は設けない。
+
+| トリガー | 入口例 |
+| --- | --- |
+| `ENTRY_SAVE` | `POST .../entries`（エントリー成立時・変更前種目も候補に含む） |
+| `HOST_INVITE` | `POST .../entries/host-invite` |
+| `PAYMENT_ESTABLISHED` | 手動入金・後払い承認 |
+| `STRIPE_CHECKOUT` | `finalizeEntryCheckoutSessionsFromStripeSession` |
+| `TEAM_ENTRIES_SAVE` | `PUT .../team-entries`（種目別チーム数が変わったとき） |
+| `ENTRY_WITHDRAW` | `POST .../entries/{entryId}/withdraw` |
+| `ENTRY_CANCEL` | `POST .../entries/{entryId}/cancel` |
+| `POST_PAY_REVOKE` | 後払い承認取り消し |
+
+**自動同期しない例**
+
+- スナップショット未作成（初回は従来どおり手動 capture または bulk-save）
+- 種目の `marshalStartedAt` 設定済み
+- ライブとスナップショットの参加者 ID 集合が既に一致（`ALREADY_IN_SYNC`）
+
+監査ログ `COMPETITION_START_LIST_SNAPSHOT_CAPTURE` には `autoBeforeMarshalSync: true` と `syncTrigger` が付く。
+
+マーシャル前でも同期のたびに該当種目の **HEAT は全員分再シャッフル**される（SEMI/FINAL は維持）。
 
 ## 2. 共通化した責務
 

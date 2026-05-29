@@ -11,6 +11,10 @@ import {
   canRevokeOrganizerPostPay,
   loadEntryForOrganizerPostPay,
 } from "@/lib/entryOrganizerPostPayService";
+import {
+  loadCandidateEventIdsForCompetitionEntry,
+  syncStartListSnapshotBeforeMarshal,
+} from "@/lib/startListSnapshotOnEntryIncrease";
 
 type RouteContext = { params: Promise<{ id: string; entryId: string }> };
 
@@ -63,6 +67,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
       metadata: { competitionId, totalFee: entry.totalFee },
       request: getRequestContext(request),
     });
+
+    const entryEvents = await loadCandidateEventIdsForCompetitionEntry(entryId);
+    if (entryEvents) {
+      await syncStartListSnapshotBeforeMarshal({
+        competitionId: entryEvents.competitionId,
+        candidateEventIds: entryEvents.eventIds,
+        createdByUserId: session.userId,
+        trigger: "POST_PAY_REVOKE",
+        request,
+      });
+    }
 
     return NextResponse.json({
       message: "後払い承認を取り消しました",

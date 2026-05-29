@@ -15,6 +15,7 @@ import {
   HostInviteValidationError,
   parseHostInviteBody,
 } from "@/lib/hostInviteEntry";
+import { syncStartListSnapshotBeforeMarshal } from "@/lib/startListSnapshotOnEntryIncrease";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -130,6 +131,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
           notes: payload.notes,
         },
         request: getRequestContext(request),
+      });
+
+      await syncStartListSnapshotBeforeMarshal({
+        competitionId,
+        candidateEventIds: payload.additions.map((a) => a.eventId),
+        createdByUserId: session.userId,
+        trigger: "HOST_INVITE",
+        request,
       });
 
       return NextResponse.json({
@@ -248,6 +257,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
         eventCount: uniqueEventCount,
       },
       request: getRequestContext(request),
+    });
+
+    await syncStartListSnapshotBeforeMarshal({
+      competitionId,
+      candidateEventIds: payload.items.map((item) => item.eventId),
+      createdByUserId: session.userId,
+      trigger: "HOST_INVITE",
+      request,
     });
 
     return NextResponse.json({
