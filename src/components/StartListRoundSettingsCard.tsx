@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -17,6 +18,7 @@ import {
   filterEventsByStartListAgeCategory,
 } from "@/lib/startListAgeCategoryTabs";
 import { parseStartListSettings } from "@/lib/startListSettings";
+import { cn } from "@/lib/utils";
 
 type AgeCategoryTab = { key: string; label: string; count: number };
 
@@ -51,6 +53,7 @@ export function StartListRoundSettingsCard({
   headerClassName = "px-2.5 py-1.5",
   contentStatusClassName = "px-2.5",
 }: StartListRoundSettingsCardProps) {
+  const [expanded, setExpanded] = useState(false);
   const {
     roundCounts,
     setRoundCounts,
@@ -93,21 +96,69 @@ export function StartListRoundSettingsCard({
 
   return (
     <Card className="overflow-hidden border-border/80 shadow-sm">
-      <CardHeader className={`space-y-0.5 border-b border-border/80 bg-muted/15 ${headerClassName}`}>
-        <CardTitle className="text-sm font-semibold leading-tight">ラウンド設定</CardTitle>
-        {competitionName ? (
-          <p className="truncate text-[10px] text-muted-foreground">{competitionName}</p>
+      <CardHeader
+        className={cn(
+          "space-y-0.5 bg-muted/15",
+          expanded ? "border-b border-border/80" : "border-b border-transparent",
+          headerClassName
+        )}
+      >
+        <button
+          type="button"
+          className="flex w-full items-start gap-2 text-left"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+        >
+          <div className="min-w-0 flex-1 space-y-0.5">
+            <CardTitle className="text-sm font-semibold leading-tight">ラウンド設定</CardTitle>
+            {competitionName ? (
+              <p className="truncate text-[10px] text-muted-foreground">{competitionName}</p>
+            ) : null}
+            {!expanded && dirtyState.totalDirty > 0 ? (
+              <p className="text-[10px] leading-snug text-amber-800 dark:text-amber-200">
+                未保存の変更 {dirtyState.totalDirty} 件
+              </p>
+            ) : null}
+          </div>
+          <ChevronDown
+            className={cn(
+              "mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform",
+              expanded && "rotate-180"
+            )}
+            aria-hidden
+          />
+        </button>
+        {expanded ? (
+          <>
+            {scheduleLabel ? (
+              <p className="text-[10px] leading-snug text-muted-foreground">
+                進行予定: {scheduleLabel}
+              </p>
+            ) : null}
+            <p className="text-[10px] leading-snug text-muted-foreground">{hintText ?? defaultHint}</p>
+            {focusEventId && visibleEvents[0]?.startListHeatPlanConfirmedAt ? (
+              <p className="mt-1 text-[10px] leading-snug text-amber-900 dark:text-amber-100">
+                ヒート・レーンは確定済みですが、内容を変えて再保存できます。保存するとスタートリスト記録（公開・マーシャル）も更新されます。2ラウンド目以降は進出者未確定の試算（枠のみ）です。マーシャル締切済みのラウンドは編集できません。
+              </p>
+            ) : null}
+          </>
         ) : null}
-        {scheduleLabel ? (
-          <p className="text-[10px] leading-snug text-muted-foreground">進行予定: {scheduleLabel}</p>
-        ) : null}
-        <p className="text-[10px] leading-snug text-muted-foreground">{hintText ?? defaultHint}</p>
-        {focusEventId && visibleEvents[0]?.startListHeatPlanConfirmedAt ? (
-          <p className="mt-1 text-[10px] leading-snug text-amber-900 dark:text-amber-100">
-            ヒート・レーンは確定済みですが、内容を変えて再保存できます。保存するとスタートリスト記録（公開・マーシャル）も更新されます。2ラウンド目以降は進出者未確定の試算（枠のみ）です。マーシャル締切済みのラウンドは編集できません。
-          </p>
+        {!expanded && dirtyState.totalDirty > 0 ? (
+          <div className="flex items-center justify-end pt-1">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="h-7 px-2.5 text-[11px]"
+              onClick={() => void saveAllRoundSettings(visibleEvents)}
+              disabled={bulkSaveDisabled}
+            >
+              {bulkSaving ? "一括保存中…" : "一括保存"}
+            </Button>
+          </div>
         ) : null}
       </CardHeader>
+      {expanded ? (
       <CardContent className="p-0">
         {ageCategoryTabs && ageCategoryTabs.length > 1 && activeAgeCategoryTab && onAgeCategoryTabChange ? (
           <div className="border-b border-border/50 bg-muted/10 px-2.5 py-1.5">
@@ -177,6 +228,7 @@ export function StartListRoundSettingsCard({
           </Button>
         </div>
       </CardContent>
+      ) : null}
     </Card>
   );
 }
