@@ -43,6 +43,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
         { status: 401 }
       );
     }
-    return jsonInternalError500(error);
+    return jsonInternalError500(
+      "GET api/competitions/[id]/day-ops/dsq-management/route.ts",
+      error
+    );
   }
 }
