@@ -56,10 +56,9 @@ export function useDayOpsStartListPolling({
 
   const refreshIfFingerprintChanged = useCallback(async () => {
     const fp = await fetchDayOpsLiveFingerprint(competitionId, eventId);
-    if (fp != null) {
-      if (lastFingerprintRef.current === fp) return;
-      lastFingerprintRef.current = fp;
-    }
+    if (fp == null) return;
+    if (lastFingerprintRef.current === fp) return;
+    lastFingerprintRef.current = fp;
     refreshRef.current();
   }, [competitionId, eventId]);
 

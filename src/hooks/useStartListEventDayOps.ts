@@ -97,6 +97,7 @@ export function useStartListEventDayOps({
   );
 
   const participantPollPrimedRef = useRef(false);
+  const participantPollInFlightRef = useRef(false);
   /** マーシャル draft 編集中は heat-marshal / participant-status のポーリング再取得を抑止 */
   const marshalSyncDeferredRef = useRef(false);
   const setMarshalSyncDeferred = useCallback((deferred: boolean) => {
@@ -104,38 +105,46 @@ export function useStartListEventDayOps({
   }, []);
 
   const refreshDayOpsParticipantPoll = useCallback(async () => {
-    if (!showDayOpsShell) return;
-    await measureDayOpsAsync("day-ops participant-statuses", async () => {
-      const res = await dayOpsFetch(
-        `/api/competitions/${competitionId}/day-ops/participant-statuses?eventId=${encodeURIComponent(eventId)}&includeCandidates=0`
-      );
-      if (!res.ok) return;
-      const data = (await res.json().catch(() => ({}))) as {
-        statuses?: ReadonlyArray<{
-          participantType: string;
-          competitionEntryId: string | null;
-          teamEntryId: string | null;
-          status: string;
-          marshalRound?: ResultRound;
-          updatedAt?: string;
-          calledAt?: string | null;
-        }>;
-      };
-      if (Array.isArray(data.statuses)) {
-        const nextRows = data.statuses.map((s) => ({
-          participantType: String(s.participantType),
-          competitionEntryId: s.competitionEntryId ?? null,
-          teamEntryId: s.teamEntryId ?? null,
-          status: String(s.status),
-          marshalRound: s.marshalRound ?? "HEAT",
-          updatedAt: s.updatedAt ? new Date(s.updatedAt) : new Date(),
-          calledAt: s.calledAt ? new Date(s.calledAt) : null,
-        }));
-        setPolledParticipantStatusRows((prev) =>
-          participantStatusPollRowsEqual(prev, nextRows) ? prev : nextRows
+    if (!showDayOpsShell || participantPollInFlightRef.current) return;
+    participantPollInFlightRef.current = true;
+    try {
+      await measureDayOpsAsync("day-ops participant-statuses", async () => {
+        const res = await dayOpsFetch(
+          `/api/competitions/${competitionId}/day-ops/participant-statuses?eventId=${encodeURIComponent(eventId)}&includeCandidates=0`
         );
-      }
-    });
+        if (!res.ok) return;
+        const data = (await res.json().catch(() => ({}))) as {
+          statuses?: ReadonlyArray<{
+            participantType: string;
+            competitionEntryId: string | null;
+            teamEntryId: string | null;
+            status: string;
+            marshalRound?: ResultRound;
+            updatedAt?: string;
+            calledAt?: string | null;
+          }>;
+        };
+        if (Array.isArray(data.statuses)) {
+          const nextRows = data.statuses.map((s) => ({
+            participantType: String(s.participantType),
+            competitionEntryId: s.competitionEntryId ?? null,
+            teamEntryId: s.teamEntryId ?? null,
+            status: String(s.status),
+            marshalRound: s.marshalRound ?? "HEAT",
+            updatedAt: s.updatedAt ? new Date(s.updatedAt) : new Date(),
+            calledAt: s.calledAt ? new Date(s.calledAt) : null,
+          }));
+          setPolledParticipantStatusRows((prev) =>
+            participantStatusPollRowsEqual(prev, nextRows) ? prev : nextRows
+          );
+        }
+      });
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") return;
+      /* 遅延・一時的なネットワーク障害ではポーリングを継続 */
+    } finally {
+      participantPollInFlightRef.current = false;
+    }
   }, [showDayOpsShell, competitionId, eventId]);
 
   /* eslint-disable react-hooks/set-state-in-effect */
