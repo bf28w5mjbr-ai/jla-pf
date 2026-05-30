@@ -6,6 +6,7 @@ import { prisma } from "@/server/db";
 import { assertDayOpsAdminWriteAccess } from "@/lib/dayOpsAccess";
 import { markMarshalStartedIfUnset } from "@/lib/eventHeatPlanMarshal";
 import { resolveParticipantInHeatForDayOps } from "@/lib/heatDayOpsResolveParticipantInHeat";
+import { loadStartListSnapshotPayloadWithFallback } from "@/lib/heatMarshalGate";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -49,6 +50,10 @@ const bulkSchema = z.object({
 });
 
 type BulkOperation = z.infer<typeof operationSchema>;
+
+function heatMarshalStateKey(eventId: string, round: ResultRound, heatIndex: number): string {
+  return `${eventId}:${round}:${heatIndex}`;
+}
 
 function makeParticipantWhere(op: BulkOperation) {
   return {
@@ -152,20 +157,39 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }> = [];
     const failed: Array<{ opKey: string; error: string; errorCode?: string }> = [];
 
-    for (const op of parsed.data.operations) {
+    const operations = parsed.data.operations;
+    const snapshot = await loadStartListSnapshotPayloadWithFallback(competitionId);
+
+    const uniqueHeatKeys = new Map<string, { eventId: string; round: ResultRound; heatIndex: number }>();
+    for (const op of operations) {
+      uniqueHeatKeys.set(heatMarshalStateKey(op.eventId, op.round, op.heatIndex), {
+        eventId: op.eventId,
+        round: op.round,
+        heatIndex: op.heatIndex,
+      });
+    }
+    const closedHeatKeys = new Set<string>();
+    if (uniqueHeatKeys.size > 0) {
+      const closedRows = await prisma.competitionHeatMarshalState.findMany({
+        where: {
+          competitionId,
+          callClosedAt: { not: null },
+          OR: [...uniqueHeatKeys.values()].map((h) => ({
+            eventId: h.eventId,
+            round: h.round,
+            heatIndex: h.heatIndex,
+          })),
+        },
+        select: { eventId: true, round: true, heatIndex: true },
+      });
+      for (const row of closedRows) {
+        closedHeatKeys.add(heatMarshalStateKey(row.eventId, row.round, row.heatIndex));
+      }
+    }
+
+    for (const op of operations) {
       try {
-        const state = await prisma.competitionHeatMarshalState.findUnique({
-          where: {
-            competitionId_eventId_round_heatIndex: {
-              competitionId,
-              eventId: op.eventId,
-              round: op.round,
-              heatIndex: op.heatIndex,
-            },
-          },
-          select: { callClosedAt: true },
-        });
-        if (state?.callClosedAt) {
+        if (closedHeatKeys.has(heatMarshalStateKey(op.eventId, op.round, op.heatIndex))) {
           failed.push({
             opKey: op.opKey,
             error: "このヒートは召集締切済みです",
@@ -179,6 +203,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           eventId: op.eventId,
           round: op.round,
           heatIndex: op.heatIndex,
+          snapshot,
           body: {
             mode: "manual",
             participantType: op.participantType,

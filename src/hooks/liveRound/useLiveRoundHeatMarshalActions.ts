@@ -39,6 +39,9 @@ export function useLiveRoundHeatMarshalActions(args: {
           return;
         }
 
+        patchHeatCallClosed(displayHeatNumber);
+        setHeatCloseTarget(null);
+
         const putRes = await fetch(`/api/competitions/${m.competitionId}/day-ops/heat-marshal`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -51,12 +54,11 @@ export function useLiveRoundHeatMarshalActions(args: {
         });
         const putData = (await putRes.json().catch(() => ({}))) as { error?: string };
         if (!putRes.ok) {
+          patchHeatCallReopened(displayHeatNumber);
           throw new Error(putData.error || "ヒート召集締切に失敗しました");
         }
 
-        patchHeatCallClosed(displayHeatNumber);
-        setHeatCloseTarget(null);
-        await m.onMarshalSuccess(undefined, {
+        void m.onMarshalSuccess(undefined, {
           heatCallWindowOnly: true,
           heatIndex: displayHeatNumber,
           callClosed: true,
@@ -75,7 +77,7 @@ export function useLiveRoundHeatMarshalActions(args: {
         setHeatCloseBusy(false);
       }
     },
-    [m, eventId, flushMarshalDraftsBeforeHeatClose, patchHeatCallClosed]
+    [m, eventId, flushMarshalDraftsBeforeHeatClose, patchHeatCallClosed, patchHeatCallReopened]
   );
 
   const runHeatMarshalReopen = useCallback(
@@ -83,6 +85,9 @@ export function useLiveRoundHeatMarshalActions(args: {
       if (!m) return;
       setHeatReopenBusy(true);
       try {
+        patchHeatCallReopened(displayHeatNumber);
+        setHeatReopenTarget(null);
+
         const putRes = await fetch(`/api/competitions/${m.competitionId}/day-ops/heat-marshal`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -95,11 +100,11 @@ export function useLiveRoundHeatMarshalActions(args: {
         });
         const putData = (await putRes.json().catch(() => ({}))) as { error?: string };
         if (!putRes.ok) {
+          patchHeatCallClosed(displayHeatNumber);
           throw new Error(putData.error || "マーシャル締切の解除に失敗しました");
         }
-        patchHeatCallReopened(displayHeatNumber);
-        setHeatReopenTarget(null);
-        await m.onMarshalSuccess(undefined, {
+
+        void m.onMarshalSuccess(undefined, {
           heatCallWindowOnly: true,
           heatIndex: displayHeatNumber,
           callClosed: false,
@@ -111,7 +116,7 @@ export function useLiveRoundHeatMarshalActions(args: {
         setHeatReopenBusy(false);
       }
     },
-    [m, eventId, patchHeatCallReopened]
+    [m, eventId, patchHeatCallClosed, patchHeatCallReopened]
   );
 
   return {

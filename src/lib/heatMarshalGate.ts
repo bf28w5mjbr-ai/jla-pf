@@ -10,6 +10,14 @@ import {
   type MarshalParticipantRef,
 } from "@/lib/heatMarshalFromSnapshot";
 
+function parseStartListSnapshotRowData(
+  data: unknown
+): StartListSnapshotPayload | null {
+  return (
+    parseStartListSnapshotForMarshal(data) ?? parseStartListSnapshotLooseForRoundRead(data)
+  );
+}
+
 export async function loadStartListSnapshotPayload(
   competitionId: string
 ): Promise<StartListSnapshotPayload | null> {
@@ -29,6 +37,17 @@ export async function loadStartListSnapshotPayloadLoose(
     select: { data: true },
   });
   return parseStartListSnapshotLooseForRoundRead(row?.data);
+}
+
+/** 1 回の DB 読み取りで厳密→緩和の順にパース（PUT/bulk 等向け） */
+export async function loadStartListSnapshotPayloadWithFallback(
+  competitionId: string
+): Promise<StartListSnapshotPayload | null> {
+  const row = await prisma.competitionStartListSnapshot.findUnique({
+    where: { competitionId },
+    select: { data: true },
+  });
+  return parseStartListSnapshotRowData(row?.data);
 }
 
 export async function getClosedMarshalHeatIndices(

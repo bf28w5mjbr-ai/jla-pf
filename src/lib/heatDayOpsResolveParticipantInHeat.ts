@@ -1,6 +1,7 @@
 import type { ResultRound } from "@prisma/client";
 import { prisma } from "@/server/db";
-import { loadStartListSnapshotPayload } from "@/lib/heatMarshalGate";
+import { loadStartListSnapshotPayloadWithFallback } from "@/lib/heatMarshalGate";
+import type { StartListSnapshotPayload } from "@/lib/startListSnapshot";
 import {
   getHeatFromRoundData,
   getRoundDataFromSnapshot,
@@ -35,12 +36,17 @@ export async function resolveParticipantInHeatForDayOps(opts: {
   round: ResultRound;
   heatIndex: number;
   body: HeatDayOpsResolveBody;
+  /** bulk 等で同一リクエスト内に読み込み済みのスナップショット */
+  snapshot?: StartListSnapshotPayload | null;
 }): Promise<
   | { ok: true; data: HeatDayOpsResolvedSlot }
   | { ok: false; status: number; error: string; errorCode?: string }
 > {
   const { competitionId, eventId, round, heatIndex, body } = opts;
-  const snapshot = await loadStartListSnapshotPayload(competitionId);
+  const snapshot =
+    opts.snapshot !== undefined
+      ? opts.snapshot
+      : await loadStartListSnapshotPayloadWithFallback(competitionId);
   const roundData = getRoundDataFromSnapshot(snapshot, eventId, round);
   const heat = getHeatFromRoundData(roundData, heatIndex);
   if (!heat) {

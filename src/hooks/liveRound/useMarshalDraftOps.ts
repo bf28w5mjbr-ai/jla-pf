@@ -33,6 +33,13 @@ export function useMarshalDraftOps(args: {
   marshalDraftOpsRef.current = marshalDraftOps;
   const marshalAutoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const marshalAutoSaveInFlightRef = useRef(false);
+  const marshalAutoSaveIdleWaitersRef = useRef<Array<() => void>>([]);
+
+  const notifyMarshalAutoSaveIdle = useCallback(() => {
+    const waiters = marshalAutoSaveIdleWaitersRef.current;
+    marshalAutoSaveIdleWaitersRef.current = [];
+    for (const resolve of waiters) resolve();
+  }, []);
 
   useEffect(() => {
     setLocalMarshalHeats(applyMarshalDraftOpsToHeats(m?.heats ?? [], marshalDraftOps));
@@ -81,7 +88,10 @@ export function useMarshalDraftOps(args: {
   }, []);
 
   const commitMarshalDraftOps = useCallback(
-    async (operations: MarshalDraftOp[], opts?: { silent?: boolean }) => {
+    async (
+      operations: MarshalDraftOp[],
+      opts?: { silent?: boolean; localPatchOnly?: boolean }
+    ) => {
       if (!m || operations.length === 0) return { committed: false as const };
       const result = await postParticipantStatusesBulk(m.competitionId, operations);
       const failedMap: Record<string, string> = {};
@@ -102,7 +112,7 @@ export function useMarshalDraftOps(args: {
         const successOps = operations.filter((op) =>
           result.success.some((s) => s.opKey === op.opKey)
         );
-        await m.onMarshalSuccess(successOps);
+        await m.onMarshalSuccess(successOps, opts?.localPatchOnly ? { localPatchOnly: true } : undefined);
         const heatIndicesAfterBulk = new Set(successOps.map((o) => o.heatIndex));
         for (const hi of heatIndicesAfterBulk) {
           deleteHeatOperationDraftFireAndForget(m.competitionId, {
@@ -136,12 +146,13 @@ export function useMarshalDraftOps(args: {
         await m.onMarshalSuccess();
       } finally {
         marshalAutoSaveInFlightRef.current = false;
+        notifyMarshalAutoSaveIdle();
         if (Object.keys(marshalDraftOpsRef.current).length > 0) {
           scheduleMarshalAutoSaveRef.current?.();
         }
       }
     },
-    [m, marshalBulkSubmitting, commitMarshalDraftOps]
+    [m, marshalBulkSubmitting, commitMarshalDraftOps, notifyMarshalAutoSaveIdle]
   );
 
   const scheduleMarshalAutoSaveRef = useRef<(() => void) | null>(null);
@@ -218,9 +229,14 @@ export function useMarshalDraftOps(args: {
   }, [m]);
 
   const waitForMarshalAutoSaveIdle = useCallback(async () => {
-    for (let i = 0; i < 80 && marshalAutoSaveInFlightRef.current; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
+    if (!marshalAutoSaveInFlightRef.current) return;
+    await new Promise<void>((resolve) => {
+      if (!marshalAutoSaveInFlightRef.current) {
+        resolve();
+        return;
+      }
+      marshalAutoSaveIdleWaitersRef.current.push(resolve);
+    });
   }, []);
 
   /** 締切直前: 自動保存待ちを捨て、当該ヒートの未確定チェックをサーバーへ送る。失敗時は false */
@@ -240,7 +256,7 @@ export function useMarshalDraftOps(args: {
         await waitForMarshalAutoSaveIdle();
       }
       if (marshalAutoSaveInFlightRef.current) return false;
-      const result = await commitMarshalDraftOps(operations, { silent: true });
+      const result = await commitMarshalDraftOps(operations, { silent: true, localPatchOnly: true });
       return !result.hadFailures;
     },
     [m, waitForMarshalAutoSaveIdle, commitMarshalDraftOps]

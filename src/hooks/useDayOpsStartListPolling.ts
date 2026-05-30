@@ -63,10 +63,13 @@ export function useDayOpsStartListPolling({
           competitionId?: string;
           eventId?: string;
           skipMarshalHeatRefetch?: boolean;
+          skipParticipantPoll?: boolean;
         }>
       ).detail;
       if (d?.competitionId === competitionId && d?.eventId === eventId) {
-        void refreshParticipantStatuses();
+        if (!d.skipParticipantPoll) {
+          void refreshParticipantStatuses();
+        }
         refreshMarshalAndResultLists(
           d.skipMarshalHeatRefetch ? { skipMarshalHeat: true } : undefined
         );

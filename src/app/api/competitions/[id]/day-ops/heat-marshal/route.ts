@@ -17,6 +17,7 @@ import {
 import {
   loadStartListSnapshotPayload,
   loadStartListSnapshotPayloadLoose,
+  loadStartListSnapshotPayloadWithFallback,
 } from "@/lib/heatMarshalGate";
 import { buildParticipantMarshalDisplayByKeyForRound } from "@/lib/competitionParticipantStatusScope";
 import { effectiveDayOpsStatusForMarshalDisplay } from "@/lib/dayOpsParticipantStatusDisplay";
@@ -341,10 +342,13 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       }
     }
 
-    const eventRow = await prisma.event.findFirst({
-      where: { id: eventId, competitionId },
-      select: { id: true, startListHeatPlanConfirmedAt: true },
-    });
+    const [eventRow, snapshot] = await Promise.all([
+      prisma.event.findFirst({
+        where: { id: eventId, competitionId },
+        select: { id: true, startListHeatPlanConfirmedAt: true },
+      }),
+      loadStartListSnapshotPayloadWithFallback(competitionId),
+    ]);
     if (!eventRow) {
       return NextResponse.json({ error: "種目が見つかりません" }, { status: 404 });
     }
@@ -355,9 +359,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const snapshot =
-      (await loadStartListSnapshotPayload(competitionId)) ??
-      (await loadStartListSnapshotPayloadLoose(competitionId));
     const roundData = getRoundDataFromSnapshot(snapshot, eventId, round);
     const heatExists =
       roundData?.heats.some((h) => heatIndexMatchesSnapshot(heatIndex, h.heatIndex)) ?? false;

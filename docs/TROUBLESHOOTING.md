@@ -19,7 +19,7 @@
   - `ensureCompetitionScheduleTabs` は公開閲覧では実行しない（スケジュールタブ補完は `api/competitions/[id]/schedule-tabs/*` 等の管理 API のみ）。
   - 認証レイアウトの未読通知は DB 失敗時 0 件フォールバック。
 - **ローカル dev**: `.env` の `DATABASE_URL` に `pool_timeout=10` が付いていると `src/server/db.ts` の開発用延長（既定 60 秒）が効かない。P2024 が続くときは `PRISMA_DEV_POOL_TIMEOUT=60` を検討する。
-- **インフラ**: 本番の `connection_limit` を安易に大きくしない（サーバーレスインスタンス数 × limit で Supabase 総接続が先に枯渇しうる）。まず並列削減を優先する。
+- **インフラ（本番）**: `src/server/db.ts` の `withProdPoolTuning` が Transaction pooler 向けに **`connection_limit=8`・`pool_timeout=20`** を付与する（URL に既により大きい値があれば維持）。Vercel では **`PRISMA_CONNECTION_LIMIT`** / **`PRISMA_POOL_TIMEOUT`** で上書き可能。`DATABASE_URL` に直接 `?connection_limit=…` を書いてもよい。安易に limit を大きくしない（サーバーレスインスタンス数 × limit で Supabase 総接続が先に枯渇しうる）。まず並列削減を優先する。
 
 ## Supabase EMAXCONN（`max client connections reached, limit: 200`）
 

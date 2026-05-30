@@ -366,6 +366,7 @@ export function useStartListEventDayOps({
         );
         dispatchJlaDayOpsParticipantStatusChanged(competitionId, eventId, {
           skipMarshalHeatRefetch: true,
+          skipParticipantPoll: true,
         });
         return;
       }
@@ -381,7 +382,11 @@ export function useStartListEventDayOps({
         Boolean(appliedOps?.length && listMarshalHeats?.length);
       dispatchJlaDayOpsParticipantStatusChanged(competitionId, eventId, {
         skipMarshalHeatRefetch,
+        ...(options?.localPatchOnly ? { skipParticipantPoll: true } : {}),
       });
+      if (options?.localPatchOnly) {
+        return;
+      }
       void refreshDayOpsParticipantPoll();
       if (anyTabNeedsMarshalHeat && !skipMarshalHeatRefetch) {
         void refetchListMarshalHeats();

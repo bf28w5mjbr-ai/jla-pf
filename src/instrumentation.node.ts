@@ -13,3 +13,5 @@ function onShutdown(): void {
 
 process.once("SIGINT", onShutdown);
 process.once("SIGTERM", onShutdown);
+
+export {};
