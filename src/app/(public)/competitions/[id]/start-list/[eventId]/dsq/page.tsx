@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { getOrgAdminContextForCompetition } from "@/lib/dayOpsAccess";
+import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
 import { EventDsqManagementClient } from "@/components/EventDsqManagementClient";
 import { buildResultRoundLabelMap } from "@/lib/resultRoundLabels";
 
@@ -44,11 +45,8 @@ export default async function EventDsqManagementPage({
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
   const session = await verifySessionCached(token);
-  if (!session?.userId) {
-    redirect("/login");
-  }
 
-  const [event, access] = await Promise.all([
+  const [event, access, hasDayOpsUnlock] = await Promise.all([
     prisma.event.findFirst({
       where: { id: eventId, competitionId },
       select: {
@@ -60,14 +58,21 @@ export default async function EventDsqManagementPage({
         },
       },
     }),
-    getOrgAdminContextForCompetition(competitionId, session.userId),
+    session?.userId
+      ? getOrgAdminContextForCompetition(competitionId, session.userId)
+      : Promise.resolve({ organizationId: "", isOrgAdmin: false }),
+    verifyDayOpsUnlockFromCookies(competitionId),
   ]);
+
+  if (!session?.userId && !hasDayOpsUnlock) {
+    redirect("/login");
+  }
 
   if (!event) {
     notFound();
   }
 
-  if (!access.isOrgAdmin) {
+  if (!access.isOrgAdmin && !hasDayOpsUnlock) {
     redirect(`/competitions/${competitionId}/start-list/${eventId}`);
   }
 
