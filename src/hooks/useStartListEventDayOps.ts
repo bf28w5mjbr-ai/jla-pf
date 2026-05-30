@@ -21,6 +21,7 @@ import { useDayOpsStartListPolling } from "@/hooks/useDayOpsStartListPolling";
 import { dispatchJlaDayOpsParticipantStatusChanged } from "@/lib/dayOpsParticipantStatusDisplay";
 import {
   confirmedHeatsEqual,
+  mergeConfirmedHeats,
   marshalHeatsSemanticEqual,
   participantStatusPollRowsEqual,
   resultCaptureRowsEqual,
@@ -249,9 +250,10 @@ export function useStartListEventDayOps({
         setListResultRows((prev) =>
           resultCaptureRowsEqual(prev, data.rows) ? prev : data.rows
         );
-        setListResultConfirmedHeats((prev) =>
-          confirmedHeatsEqual(prev, data.confirmedHeats) ? prev : data.confirmedHeats
-        );
+        setListResultConfirmedHeats((prev) => {
+          const merged = mergeConfirmedHeats(prev, data.confirmedHeats);
+          return confirmedHeatsEqual(prev, merged) ? prev : merged;
+        });
       });
     } catch {
       /* 楽観更新を維持 */
@@ -269,6 +271,10 @@ export function useStartListEventDayOps({
   }, []);
 
   useEffect(() => {
+    setListResultConfirmedHeats([]);
+  }, [listMarshalRound, eventId]);
+
+  useEffect(() => {
     if (!showResultOps || listMarshalRound === null || !anyTabInResultMode) {
       setListResultRows([]);
       setListResultLocked(false);
@@ -283,7 +289,7 @@ export function useStartListEventDayOps({
         if (cancelled) return;
         setListResultLocked(Boolean(data.lockedAt));
         setListResultRows(data.rows);
-        setListResultConfirmedHeats(data.confirmedHeats);
+        setListResultConfirmedHeats((prev) => mergeConfirmedHeats(prev, data.confirmedHeats));
       })
       .catch(() => {
         if (!cancelled) {

@@ -53,6 +53,14 @@ export function confirmedHeatsEqual(a: number[], b: number[]): boolean {
   return true;
 }
 
+/** 楽観更新済みヒートを、遅延した GET が空配列で上書きしないためのマージ */
+export function mergeConfirmedHeats(
+  prev: readonly number[],
+  server: readonly number[]
+): number[] {
+  return [...new Set([...prev, ...server])].sort((a, b) => a - b);
+}
+
 export function resultCaptureSnapshotEqual(
   a: {
     rows: HeatResultCaptureRow[];

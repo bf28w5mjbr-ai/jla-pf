@@ -4,6 +4,7 @@ import { marshalParticipantKey } from "@/components/HeatMarshalLanePanel";
 import type { HeatResultCaptureRow } from "@/lib/heatResultCaptureApi";
 import {
   confirmedHeatsEqual,
+  mergeConfirmedHeats,
   marshalHeatStatusSignature,
   marshalHeatsSemanticEqual,
   participantStatusPollRowsEqual,
@@ -76,6 +77,12 @@ describe("dayOpsPollCompare", () => {
   it("confirmedHeatsEqual", () => {
     expect(confirmedHeatsEqual([1, 2], [1, 2])).toBe(true);
     expect(confirmedHeatsEqual([1], [1, 2])).toBe(false);
+  });
+
+  it("mergeConfirmedHeats keeps optimistic heats until server catches up", () => {
+    expect(mergeConfirmedHeats([1], [])).toEqual([1]);
+    expect(mergeConfirmedHeats([1], [2])).toEqual([1, 2]);
+    expect(mergeConfirmedHeats([], [2])).toEqual([2]);
   });
 
   it("marshalHeatStatusSignature includes opKey", () => {

@@ -2,9 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import type { HeatMarshalHeatRow } from "@/components/HeatMarshalLanePanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -31,41 +29,26 @@ import {
   dayOpsParticipantStatusLabelJa,
   dispatchJlaDayOpsParticipantStatusChanged,
 } from "@/lib/dayOpsParticipantStatusDisplay";
+import type { DsqManagementPageData } from "@/lib/dsqManagementLoad";
 import { displayResultRoundLabel, type ResultRoundUiKey } from "@/lib/resultRoundLabels";
 
 type ResultRoundKey = "HEAT" | "SEMI" | "FINAL";
 
-type StatusRow = {
-  id: string;
-  participantType: string;
-  competitionEntryId: string | null;
-  teamEntryId: string | null;
-  status: string;
-  reason: string | null;
-  /** dsqOnly=1 の GET でサーバーが付与 */
-  label?: string;
-};
+type StatusRow = DsqManagementPageData["statuses"][number];
 
-type HeatSummaryRow = {
-  heatIndex: number;
-  participantCount?: number;
-  participants?: HeatMarshalHeatRow["participants"];
-};
+type HeatSummaryRow = DsqManagementPageData["heats"][number];
 
-function labelForDsqRow(row: StatusRow): string {
-  if (row.label) return row.label;
-  if (row.participantType === "INDIVIDUAL" && row.competitionEntryId) {
-    return row.competitionEntryId;
+function applyPageData(
+  data: DsqManagementPageData,
+  setters: {
+    setHeats: (heats: HeatSummaryRow[]) => void;
+    setStatuses: (statuses: StatusRow[]) => void;
+    setAdjustedRound: (round: ResultRoundKey | null) => void;
   }
-  if (row.participantType === "TEAM" && row.teamEntryId) {
-    return row.teamEntryId;
-  }
-  return "—";
-}
-
-function laneCountForHeat(h: HeatSummaryRow): number {
-  if (typeof h.participantCount === "number") return h.participantCount;
-  return h.participants?.length ?? 0;
+) {
+  setters.setHeats(data.heats);
+  setters.setStatuses(data.statuses);
+  setters.setAdjustedRound(data.roundWasAdjusted ? data.round : null);
 }
 
 export function EventDsqManagementClient({
@@ -74,20 +57,23 @@ export function EventDsqManagementClient({
   eventName,
   initialRound,
   roundLabels,
+  initialData,
 }: {
   competitionId: string;
   eventId: string;
   eventName: string;
   initialRound: ResultRoundKey;
   roundLabels: Partial<Record<ResultRoundUiKey, string>>;
+  initialData: DsqManagementPageData | null;
 }) {
-  const router = useRouter();
-  /** heat-marshal が URL のラウンドを補正したときの実効ラウンド（未補正時はタブ／URL の initialRound をそのまま使う） */
-  const [adjustedRound, setAdjustedRound] = useState<ResultRoundKey | null>(null);
+  const [adjustedRound, setAdjustedRound] = useState<ResultRoundKey | null>(
+    initialData?.roundWasAdjusted ? initialData.round : null
+  );
   const marshalRound = adjustedRound ?? initialRound;
-  const [heats, setHeats] = useState<HeatSummaryRow[]>([]);
-  const [pageLoading, setPageLoading] = useState(true);
-  const [statuses, setStatuses] = useState<StatusRow[]>([]);
+  const [heats, setHeats] = useState<HeatSummaryRow[]>(initialData?.heats ?? []);
+  const [pageLoading, setPageLoading] = useState(!initialData);
+  const [listRefreshing, setListRefreshing] = useState(false);
+  const [statuses, setStatuses] = useState<StatusRow[]>(initialData?.statuses ?? []);
 
   const [applyHeatIndex, setApplyHeatIndex] = useState<string>("");
   const [applyLane, setApplyLane] = useState("");
@@ -100,61 +86,46 @@ export function EventDsqManagementClient({
   const [revertReason, setRevertReason] = useState("");
   const [revertBusy, setRevertBusy] = useState(false);
 
-  const loadPage = useCallback(async () => {
-    setPageLoading(true);
-    try {
-      const [metaRes, heatRes] = await Promise.all([
-        fetch(
-          `/api/competitions/${competitionId}/day-ops/participant-statuses?eventId=${encodeURIComponent(eventId)}&dsqOnly=1`
-        ),
-        fetch(
-          `/api/competitions/${competitionId}/day-ops/heat-marshal?eventId=${encodeURIComponent(eventId)}&round=${encodeURIComponent(marshalRound)}&summary=1`
-        ),
-      ]);
-      const metaData = (await metaRes.json().catch(() => ({}))) as {
-        error?: string;
-        statuses?: StatusRow[];
-      };
-      const heatData = (await heatRes.json().catch(() => ({}))) as {
-        error?: string;
-        heats?: HeatSummaryRow[];
-        round?: string;
-        roundWasAdjusted?: boolean;
-      };
-      if (!metaRes.ok) {
-        throw new Error(
-          typeof metaData.error === "string" ? metaData.error : "失格一覧の取得に失敗しました"
+  const refreshData = useCallback(
+    async (fetchRound: ResultRoundKey, opts?: { fullPage?: boolean }) => {
+      if (opts?.fullPage) {
+        setPageLoading(true);
+      } else {
+        setListRefreshing(true);
+      }
+      try {
+        const res = await fetch(
+          `/api/competitions/${competitionId}/day-ops/dsq-management?eventId=${encodeURIComponent(eventId)}&round=${encodeURIComponent(fetchRound)}`
         );
+        const data = (await res.json().catch(() => ({}))) as DsqManagementPageData & {
+          error?: string;
+        };
+        if (!res.ok) {
+          throw new Error(typeof data.error === "string" ? data.error : "読み込みに失敗しました");
+        }
+        applyPageData(data, { setHeats, setStatuses, setAdjustedRound });
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "読み込みに失敗しました");
+        if (opts?.fullPage) {
+          setStatuses([]);
+          setHeats([]);
+          setAdjustedRound(null);
+        }
+      } finally {
+        if (opts?.fullPage) {
+          setPageLoading(false);
+        } else {
+          setListRefreshing(false);
+        }
       }
-      if (!heatRes.ok) {
-        throw new Error(
-          typeof heatData.error === "string" ? heatData.error : "ヒート一覧の取得に失敗しました"
-        );
-      }
-      setStatuses(Array.isArray(metaData.statuses) ? metaData.statuses : []);
-      setHeats(Array.isArray(heatData.heats) ? heatData.heats : []);
-      if (
-        heatData.roundWasAdjusted &&
-        (heatData.round === "HEAT" || heatData.round === "SEMI" || heatData.round === "FINAL")
-      ) {
-        setAdjustedRound(heatData.round);
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "読み込みに失敗しました");
-      setStatuses([]);
-      setHeats([]);
-    } finally {
-      setPageLoading(false);
-    }
-  }, [competitionId, eventId, marshalRound]);
+    },
+    [competitionId, eventId]
+  );
 
   useEffect(() => {
-    setAdjustedRound(null);
-  }, [initialRound]);
-
-  useEffect(() => {
-    void loadPage();
-  }, [loadPage]);
+    if (initialData) return;
+    void refreshData(initialRound, { fullPage: true });
+  }, [initialData, initialRound, refreshData]);
 
   const dsqRows = useMemo(() => statuses.filter((s) => s.status === "DSQ"), [statuses]);
 
@@ -197,9 +168,8 @@ export function EventDsqManagementClient({
       }
       setApplyLane("");
       setApplyReason("");
-      await loadPage();
+      await refreshData(marshalRound);
       dispatchJlaDayOpsParticipantStatusChanged(competitionId, eventId);
-      router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "失格の登録に失敗しました");
     } finally {
@@ -234,9 +204,8 @@ export function EventDsqManagementClient({
       }
       setRevertOpen(false);
       setRevertRow(null);
-      await loadPage();
+      await refreshData(marshalRound);
       dispatchJlaDayOpsParticipantStatusChanged(competitionId, eventId);
-      router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "取り消しに失敗しました");
     } finally {
@@ -284,7 +253,7 @@ export function EventDsqManagementClient({
                   <SelectContent>
                     {heats.map((h) => (
                       <SelectItem key={h.heatIndex} value={String(h.heatIndex)}>
-                        ヒート {h.heatIndex}（{laneCountForHeat(h)} レーン）
+                        ヒート {h.heatIndex}（{h.participantCount} レーン）
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -334,25 +303,30 @@ export function EventDsqManagementClient({
           ) : dsqRows.length === 0 ? (
             <p className="text-sm text-muted-foreground">失格中の参加者はいません。</p>
           ) : (
-            <ul className="space-y-2">
-              {dsqRows.map((row) => (
-                <li
-                  key={row.id}
-                  className="flex flex-col gap-2 rounded-md border border-border/80 bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">{labelForDsqRow(row)}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {dayOpsParticipantStatusLabelJa(row.status)}
-                      {row.reason ? ` · ${row.reason}` : ""}
-                    </p>
-                  </div>
-                  <Button type="button" variant="outline" size="sm" onClick={() => openRevert(row)}>
-                    取り消し
-                  </Button>
-                </li>
-              ))}
-            </ul>
+            <div className="space-y-2">
+              {listRefreshing ? (
+                <p className="text-xs text-muted-foreground">一覧を更新中…</p>
+              ) : null}
+              <ul className="space-y-2">
+                {dsqRows.map((row) => (
+                  <li
+                    key={row.id}
+                    className="flex flex-col gap-2 rounded-md border border-border/80 bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{row.label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {dayOpsParticipantStatusLabelJa(row.status)}
+                        {row.reason ? ` · ${row.reason}` : ""}
+                      </p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={() => openRevert(row)}>
+                      取り消し
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -366,7 +340,7 @@ export function EventDsqManagementClient({
                 <p>
                   {revertRow ? (
                     <>
-                      <span className="font-medium">{labelForDsqRow(revertRow)}</span>
+                      <span className="font-medium">{revertRow.label}</span>
                       を失格から戻します。
                     </>
                   ) : null}

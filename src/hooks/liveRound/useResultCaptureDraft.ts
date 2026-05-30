@@ -19,7 +19,7 @@ import {
   type HeatResultDraftServerEntry,
 } from "@/lib/dayOpsHeatOperationDraftSync";
 import { dispatchJlaDayOpsParticipantStatusChanged } from "@/lib/dayOpsParticipantStatusDisplay";
-import { resultCaptureRowsEqual } from "@/lib/dayOpsPollCompare";
+import { resultCaptureRowsEqual, mergeConfirmedHeats, confirmedHeatsEqual } from "@/lib/dayOpsPollCompare";
 import { participantKeyFromResultRow } from "@/components/startListRoundList/panelHelpers";
 import {
   countResultDraftsForHeatFromOps,
@@ -82,7 +82,11 @@ export function useResultCaptureDraft(args: {
 
   const confirmedHeatsKey = JSON.stringify(resultCapture?.confirmedHeats ?? []);
   useEffect(() => {
-    setLocalConfirmedHeats(resultCapture?.confirmedHeats ?? []);
+    setLocalConfirmedHeats((prev) => {
+      const server = resultCapture?.confirmedHeats ?? [];
+      const merged = mergeConfirmedHeats(prev, server);
+      return confirmedHeatsEqual(prev, merged) ? prev : merged;
+    });
   }, [confirmedHeatsKey, resultCapture?.confirmedHeats]);
 
   const flushResultDraftServerPatch = useCallback(

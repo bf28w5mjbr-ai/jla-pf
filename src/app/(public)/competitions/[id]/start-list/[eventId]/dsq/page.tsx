@@ -6,6 +6,7 @@ import { prisma } from "@/server/db";
 import { getOrgAdminContextForCompetition } from "@/lib/dayOpsAccess";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
 import { EventDsqManagementClient } from "@/components/EventDsqManagementClient";
+import { loadDsqManagementData } from "@/lib/dsqManagementLoad";
 import { buildResultRoundLabelMap } from "@/lib/resultRoundLabels";
 
 export const dynamic = "force-dynamic";
@@ -46,7 +47,7 @@ export default async function EventDsqManagementPage({
   const token = cookieStore.get("session")?.value;
   const session = await verifySessionCached(token);
 
-  const [event, access, hasDayOpsUnlock] = await Promise.all([
+  const [event, access, hasDayOpsUnlock, initialData] = await Promise.all([
     prisma.event.findFirst({
       where: { id: eventId, competitionId },
       select: {
@@ -62,6 +63,7 @@ export default async function EventDsqManagementPage({
       ? getOrgAdminContextForCompetition(competitionId, session.userId)
       : Promise.resolve({ organizationId: "", isOrgAdmin: false }),
     verifyDayOpsUnlockFromCookies(competitionId),
+    loadDsqManagementData(competitionId, eventId, initialRound),
   ]);
 
   if (!session?.userId && !hasDayOpsUnlock) {
@@ -84,11 +86,13 @@ export default async function EventDsqManagementPage({
 
   return (
     <EventDsqManagementClient
+      key={`${eventId}-${initialRound}`}
       competitionId={competitionId}
       eventId={eventId}
       eventName={event.name}
       initialRound={initialRound}
       roundLabels={roundLabels}
+      initialData={initialData}
     />
   );
 }
