@@ -3,9 +3,13 @@
 // 文字列連結による生 SQL（SQL インジェクション）を避ける。
 import { PrismaClient } from "@prisma/client";
 
-const globalForPrisma = globalThis as unknown as {
+type PrismaGlobalState = {
   prisma: PrismaClient | undefined;
+  /** dev: HMR で global.prisma が消えても TCP が残るクライアントを追跡して解放する */
+  devClients?: Set<PrismaClient>;
 };
+
+const globalForPrisma = globalThis as unknown as PrismaGlobalState;
 
 /**
  * Supabase Transaction pooler（pgbouncer）経由では、同一接続以外で
@@ -52,13 +56,16 @@ function withNonProdPoolTuning(url: string | undefined): string | undefined {
   if (!url || process.env.NODE_ENV === "production") return url;
   const devPoolTimeout = Number(process.env.PRISMA_DEV_POOL_TIMEOUT ?? "60");
   /**
-   * 開発時はポーリング・並列 RSC・$transaction 併用で同時接続が増えやすい。
-   * pgbouncer 経由でも Prisma クライアント側の上限を少し上げる（環境変数で上書き可）。
+   * 開発時は HMR・複数ワーカー・ポーリングで Prisma インスタンスと接続が積み上がりやすい。
+   * Supabase の EMAXCONN（例: 200）に達しないよう、プロセスあたりの上限は低めに固定する。
+   * 本番 URL をそのままコピーした場合も、既定では dev 上限で上書きする（`PRISMA_DEV_RESPECT_URL_CONNECTION_LIMIT=1` で無効化）。
    */
-  const defaultLimit = /[?&]pgbouncer=true/.test(url) ? 8 : 10;
+  const defaultLimit = /[?&]pgbouncer=true/.test(url) ? 1 : 5;
   const devConnectionLimit = Number(
     process.env.PRISMA_DEV_CONNECTION_LIMIT ?? String(defaultLimit)
   );
+  const respectUrlConnectionLimit =
+    process.env.PRISMA_DEV_RESPECT_URL_CONNECTION_LIMIT === "1";
   try {
     const u = new URL(url);
     const existingTimeout = u.searchParams.get("pool_timeout");
@@ -68,7 +75,11 @@ function withNonProdPoolTuning(url: string | undefined): string | undefined {
     if (!Number.isFinite(timeoutNum) || timeoutNum < devPoolTimeout) {
       u.searchParams.set("pool_timeout", String(devPoolTimeout));
     }
-    if (!Number.isFinite(limitNum) || limitNum < devConnectionLimit) {
+    if (respectUrlConnectionLimit) {
+      if (!Number.isFinite(limitNum) || limitNum < devConnectionLimit) {
+        u.searchParams.set("connection_limit", String(devConnectionLimit));
+      }
+    } else {
       u.searchParams.set("connection_limit", String(devConnectionLimit));
     }
     return u.toString();
@@ -77,7 +88,7 @@ function withNonProdPoolTuning(url: string | undefined): string | undefined {
     if (!/[?&]pool_timeout=/.test(url)) {
       query.push(`pool_timeout=${devPoolTimeout}`);
     }
-    if (!/[?&]connection_limit=/.test(url)) {
+    if (!/[?&]connection_limit=/.test(url) || !respectUrlConnectionLimit) {
       query.push(`connection_limit=${devConnectionLimit}`);
     }
     if (query.length === 0) return url;
@@ -102,13 +113,50 @@ const datasourceUrl = withSupabaseSslModeDefault(
   withNonProdPoolTuning(withSupabaseTransactionPooler(process.env.DATABASE_URL))
 );
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
+function trackDevPrismaClient(client: PrismaClient): void {
+  if (process.env.NODE_ENV === "production") return;
+  if (!globalForPrisma.devClients) globalForPrisma.devClients = new Set();
+  globalForPrisma.devClients.add(client);
+}
+
+function createPrismaClient(): PrismaClient {
+  const client = new PrismaClient({
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
     ...(datasourceUrl ? { datasourceUrl } : {}),
   });
+  trackDevPrismaClient(client);
+  return client;
+}
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+async function disconnectDevPrismaClients(except?: PrismaClient): Promise<void> {
+  const clients = globalForPrisma.devClients;
+  if (!clients?.size) return;
+  const pending = [...clients]
+    .filter((c) => c !== except)
+    .map(async (c) => {
+      clients.delete(c);
+      await c.$disconnect();
+    });
+  await Promise.allSettled(pending);
+}
+
+function getOrCreatePrismaClient(): PrismaClient {
+  if (globalForPrisma.prisma) return globalForPrisma.prisma;
+
+  if (process.env.NODE_ENV !== "production") {
+    // HMR で singleton 参照だけ消えた古いクライアントの接続を先に閉じる
+    void disconnectDevPrismaClients();
+  }
+
+  const client = createPrismaClient();
+  globalForPrisma.prisma = client;
+  return client;
+}
+
+export const prisma = getOrCreatePrismaClient();
+
+/** dev サーバー終了時に接続を解放（HMR 再起動で EMAXCONN が積み上がるのを抑える） */
+export async function disconnectPrismaForDevShutdown(): Promise<void> {
+  globalForPrisma.prisma = undefined;
+  await disconnectDevPrismaClients();
 }

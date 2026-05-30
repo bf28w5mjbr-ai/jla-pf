@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { prisma } from "@/server/db";
+import { withPrismaPoolRetryOnce } from "@/lib/prismaPool";
 import { hasOrgAdminAccess } from "@/lib/roleScopes";
 import { ORG_OPERATIONAL_STATUS } from "@/lib/organizerLifecycle";
 
@@ -19,22 +20,24 @@ export const getCompetitionManagementAccess = cache(
     competitionId: string,
     userId: string
   ): Promise<CompetitionManagementAccessResult> => {
-    const row = await prisma.competition.findUnique({
-      where: { id: competitionId },
-      select: {
-        name: true,
-        organizationId: true,
-        organization: {
-          select: {
-            status: true,
-            admins: {
-              where: { userId },
-              select: { role: true },
+    const row = await withPrismaPoolRetryOnce(() =>
+      prisma.competition.findUnique({
+        where: { id: competitionId },
+        select: {
+          name: true,
+          organizationId: true,
+          organization: {
+            select: {
+              status: true,
+              admins: {
+                where: { userId },
+                select: { role: true },
+              },
             },
           },
         },
-      },
-    });
+      })
+    );
     if (!row) return { kind: "not_found" };
     if (row.organizationId !== organizationId) return { kind: "wrong_org" };
     if (!hasOrgAdminAccess(row.organization.admins)) return { kind: "forbidden" };
@@ -51,10 +54,12 @@ export const getCompetitionManagementAccessByCompetitionId = cache(
     competitionId: string,
     userId: string
   ): Promise<CompetitionManagementAccessResult> => {
-    const row = await prisma.competition.findUnique({
-      where: { id: competitionId },
-      select: { organizationId: true },
-    });
+    const row = await withPrismaPoolRetryOnce(() =>
+      prisma.competition.findUnique({
+        where: { id: competitionId },
+        select: { organizationId: true },
+      })
+    );
     if (!row) return { kind: "not_found" };
     return getCompetitionManagementAccess(row.organizationId, competitionId, userId);
   }

@@ -21,6 +21,21 @@
 - **ローカル dev**: `.env` の `DATABASE_URL` に `pool_timeout=10` が付いていると `src/server/db.ts` の開発用延長（既定 60 秒）が効かない。P2024 が続くときは `PRISMA_DEV_POOL_TIMEOUT=60` を検討する。
 - **インフラ**: 本番の `connection_limit` を安易に大きくしない（サーバーレスインスタンス数 × limit で Supabase 総接続が先に枯渇しうる）。まず並列削減を優先する。
 
+## Supabase EMAXCONN（`max client connections reached, limit: 200`）
+
+- **症状**: `PrismaClientUnknownRequestError` / `Error in connector: FATAL: (EMAXCONN) ...`。認証レイアウトの `prisma.user.findUnique` など、単純な 1 クエリでも失敗しうる。
+- **原因**: プロジェクト全体の **Postgres 接続数が上限（多くは 200）** に達した状態。Prisma の P2024（1 プロセス内プール枯渇）とは別。`pnpm dev` の HMR 再起動・複数タブ・当日運用 SSE・本番/プレビュー/CLI が同じ Supabase を共有していると起きやすい。
+- **すぐ試すこと**:
+  1. `pnpm dev` を一度止め、ゾンビの `next` / `node` プロセスが残っていないか確認してから再起動する。
+  2. Supabase ダッシュボード → **Database** でアクティブ接続数を確認する（他メンバーの dev / Vercel プレビュー含む）。
+  3. 開発では `DATABASE_URL` を **Transaction pooler（6543）** にし、`src/server/db.ts` が付与する `pgbouncer=true` を維持する（Direct 5432 は接続を消費しやすい）。
+- **アプリ側（実装済み）**:
+  - 非本番は `connection_limit` を低めに固定（pooler 既定 1。`PRISMA_DEV_CONNECTION_LIMIT` で変更可）。
+  - HMR で古い `PrismaClient` の TCP が残る場合は `src/server/db.ts` が dev クライアントを追跡して新規作成前に `$disconnect` する。
+  - dev 終了時に `src/instrumentation.ts` から Prisma を `$disconnect`。
+  - `withPrismaPoolRetryOnce` が EMAXCONN でも 1 回再試行（根本解決は接続解放）。
+- **本番 URL の `connection_limit` を dev にそのまま使いたい場合**: `PRISMA_DEV_RESPECT_URL_CONNECTION_LIMIT=1`（通常は不要）。
+
 ## Prisma migrate dev の警告
 **例**: `ClubStatus` / `OrgStatus` の enum から `ACTIVE` が削除される警告
 - 対応: DB 内に `ACTIVE` が残っていないことを確認してから migration を実行。

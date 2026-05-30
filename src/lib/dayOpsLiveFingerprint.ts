@@ -14,7 +14,7 @@ export async function computeDayOpsLiveFingerprint(
     officialRowMax,
     captureEventMax,
     draftMax,
-  ] = await Promise.all([
+  ] = await prisma.$transaction([
     prisma.competitionParticipantStatus.aggregate({
       where: { competitionId, eventId },
       _max: { updatedAt: true },
