@@ -304,16 +304,48 @@ function advanceQuotaForSnapshotHeat(
   return null;
 }
 
-/** 凍結ヒート行のチームメンバー名を、スナップショットではなく DB 由来の liveTeams で上書きする */
+/** 凍結ヒート行のチームメンバー名を、DB 由来の liveTeams で上書きする（DB が空ならスナップショットを維持） */
 function resolveTeamMembersForFrozenRow(
   teamEntryId: string,
   snapshotMembers: string[] | undefined,
   liveByTeamId: Map<string, string[]>
 ): string[] {
   if (liveByTeamId.has(teamEntryId)) {
-    return liveByTeamId.get(teamEntryId) ?? [];
+    const dbMembers = liveByTeamId.get(teamEntryId) ?? [];
+    if (dbMembers.length > 0) return dbMembers;
   }
-  return Array.isArray(snapshotMembers) ? snapshotMembers : [];
+  return Array.isArray(snapshotMembers) ? snapshotMembers.filter(Boolean) : [];
+}
+
+export type SnapshotRoundBlockForMemberOverlay = {
+  round: "HEAT" | "SEMI" | "FINAL";
+  heats: Array<{ heatIndex: number; participants: unknown[] }>;
+};
+
+/** 公開スタートリスト用: スナップショット block の TEAM 行に DB の最新メンバー名を反映 */
+export function overlayLiveTeamMembersOnSnapshotRoundBlock(
+  block: SnapshotRoundBlockForMemberOverlay,
+  liveTeams: ReadonlyArray<StartListTeamInput>
+): SnapshotRoundBlockForMemberOverlay {
+  if (liveTeams.length === 0) return block;
+  const liveByTeamId = new Map(liveTeams.map((t) => [t.teamEntryId, t.members]));
+  return {
+    ...block,
+    heats: block.heats.map((heat) => ({
+      ...heat,
+      participants: heat.participants.map((p) => {
+        if (typeof p !== "object" || p == null || (p as { kind?: string }).kind !== "TEAM") {
+          return p;
+        }
+        const team = p as Extract<StartListParticipant, { kind: "TEAM" }>;
+        if (!team.teamEntryId) return p;
+        return {
+          ...team,
+          members: resolveTeamMembersForFrozenRow(team.teamEntryId, team.members, liveByTeamId),
+        };
+      }),
+    })),
+  };
 }
 
 function heatsFromFrozenSnapshotRound(

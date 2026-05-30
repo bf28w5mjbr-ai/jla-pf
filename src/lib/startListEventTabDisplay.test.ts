@@ -5,6 +5,7 @@ import {
   dedupeFrozenTabIndicesBySnapshotRound,
   getLiveHeatsByTab,
   getSnapshotTabPanels,
+  overlayLiveTeamMembersOnSnapshotRoundBlock,
 } from "./startListEventTabDisplay";
 
 describe("getLiveHeatsByTab", () => {
@@ -345,6 +346,40 @@ describe("getLiveHeatsByTab", () => {
       eventHeatSetting: { roundTabs: liveTabs, mode: "count", heatCount: "2", heatSize: "" },
     });
     expect(rows[0]!.teamHeats[0]![0]!.members).toEqual(["山田 太郎", "佐藤 花子"]);
+  });
+
+  it("overlayLiveTeamMembersOnSnapshotRoundBlock は公開用スナップショット block の members を DB で上書きする", () => {
+    const block = overlayLiveTeamMembersOnSnapshotRoundBlock(
+      {
+        round: "HEAT",
+        heats: [
+          {
+            heatIndex: 1,
+            participants: [
+              {
+                kind: "TEAM" as const,
+                teamEntryId: "t1",
+                teamName: "チームA",
+                clubId: null,
+                clubName: null,
+                members: ["旧 太郎"],
+              },
+            ],
+          },
+        ],
+      },
+      [
+        {
+          teamEntryId: "t1",
+          teamName: "チームA",
+          clubId: null,
+          clubName: null,
+          members: ["新 太郎", "佐藤 花子"],
+        },
+      ]
+    );
+    const team = block.heats[0]!.participants[0] as { members?: string[] };
+    expect(team.members).toEqual(["新 太郎", "佐藤 花子"]);
   });
 
   it("getSnapshotTabPanels はタブ位置とスナップショット round キーで対応付けし、欠損ラウンドで次の配列要素を誤表示しない", () => {

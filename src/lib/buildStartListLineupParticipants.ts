@@ -158,10 +158,15 @@ export function overlayLiveTeamMembersFromDb(
   const merged = teams.map((team) => {
     seen.add(team.teamEntryId);
     const db = dbById.get(team.teamEntryId);
-    return db ? { ...team, members: db.members } : team;
+    return db
+      ? {
+          ...team,
+          members: db.members.length > 0 ? db.members : team.members,
+        }
+      : team;
   });
   for (const [id, dbTeam] of dbById) {
-    if (!seen.has(id)) merged.push(dbTeam);
+    if (!seen.has(id) && dbTeam.members.length > 0) merged.push(dbTeam);
   }
   return merged;
 }

@@ -9,6 +9,7 @@ import {
   dedupeFrozenTabIndicesBySnapshotRound,
   formatStartListTabLabelWithHeatCount,
   getSnapshotTabPanels,
+  overlayLiveTeamMembersOnSnapshotRoundBlock,
 } from "@/lib/startListEventTabDisplay";
 import { parseStartListSettings, pickHeatSettingForEvent } from "@/lib/startListSettings";
 import { SnapshotRoundContent } from "@/components/startListRoundList/SnapshotRoundContent";
@@ -24,6 +25,7 @@ export default function StartListEventPublicCard({
   entryCount,
   initialSettings,
   frozenSnapshotRounds,
+  teams,
 }: StartListEventCardProps) {
   const eventId = event.id;
   const isTeam = event.type === "TEAM";
@@ -47,17 +49,26 @@ export default function StartListEventPublicCard({
     return visibleIndices
       .map((i) => allPanels[i]!)
       .filter((p) => p.block?.heats?.length)
-      .map((p) => ({
-        tabId: p.tabId,
-        label: p.label,
-        block: p.block as SnapshotRoundBlock,
-        heatCount: p.block!.heats.length,
-      }));
+      .map((p) => {
+        const rawBlock = p.block as SnapshotRoundBlock;
+        const block =
+          isTeam && teams.length > 0
+            ? (overlayLiveTeamMembersOnSnapshotRoundBlock(rawBlock, teams) as SnapshotRoundBlock)
+            : rawBlock;
+        return {
+          tabId: p.tabId,
+          label: p.label,
+          block,
+          heatCount: block.heats.length,
+        };
+      });
   }, [
     eventId,
     initialSettings,
     event.startListRoundCount,
     frozenSnapshotRounds,
+    isTeam,
+    teams,
   ]);
 
   const tabsKey = publicPanels.map((p) => p.tabId).join("|");

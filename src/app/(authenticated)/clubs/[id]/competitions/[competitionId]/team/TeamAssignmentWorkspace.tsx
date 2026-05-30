@@ -10,6 +10,8 @@ import {
   prismaCompetitionToTeamAssignmentCompetitionJson,
   prismaEventToTeamAssignmentEventJson,
 } from "@/lib/teamMemberSlotEligibility";
+import { extractFrozenRoundsForEventFromSnapshotData } from "@/lib/startListEventTabDisplay";
+import { backfillTeamEntryMembersFromSnapshotIfEmpty } from "@/lib/teamEntryMemberSnapshotBackfill";
 
 function parseRelayPositionNames(raw: unknown): string[] {
   if (!raw || !Array.isArray(raw)) return [];
@@ -123,6 +125,25 @@ export default async function TeamAssignmentWorkspace({
   }
 
   const now = new Date();
+
+  const startListSnapshot = await prisma.competitionStartListSnapshot.findUnique({
+    where: { competitionId: competition.id },
+    select: { data: true },
+  });
+  await Promise.all(
+    competition.events.map(async (event) => {
+      const frozenSnapshotRounds = extractFrozenRoundsForEventFromSnapshotData(
+        startListSnapshot?.data,
+        event.id
+      );
+      if (!frozenSnapshotRounds?.length) return;
+      await backfillTeamEntryMembersFromSnapshotIfEmpty(prisma, {
+        competitionId: competition.id,
+        eventId: event.id,
+        frozenSnapshotRounds,
+      });
+    })
+  );
 
   const teamEntriesFull = await prisma.teamEntry.findMany({
     where: {

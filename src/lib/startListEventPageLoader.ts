@@ -24,6 +24,7 @@ import {
   EMPTY_PUBLIC_LINEUP,
   loadPublicTeamLineupForEvent,
 } from "@/lib/startListSnapshotReadHelpers";
+import { backfillTeamEntryMembersFromSnapshotIfEmpty } from "@/lib/teamEntryMemberSnapshotBackfill";
 import {
   resolveStartListPeriodicSyncIntervalSec,
   resolveStartListPublicRefreshIntervalSec,
@@ -148,6 +149,14 @@ export async function loadStartListEventPage(input: {
     competition.startListSnapshot?.data,
     eventId
   );
+
+  if (event.type === "TEAM" && frozenSnapshotRounds?.length) {
+    await backfillTeamEntryMembersFromSnapshotIfEmpty(prisma, {
+      competitionId,
+      eventId,
+      frozenSnapshotRounds,
+    });
+  }
 
   if (!canManageStartListOps) {
     const isTeam = event.type === "TEAM";
