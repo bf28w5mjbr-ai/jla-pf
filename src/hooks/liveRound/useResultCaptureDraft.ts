@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { HeatMarshalParticipant } from "@/components/HeatMarshalLanePanel";
 import type { HeatResultCaptureRow } from "@/lib/heatResultCaptureApi";
 import {
-  postHeatResultCaptureAppend,
   postHeatResultClearRunUp,
   postHeatResultConfirmHeat,
   postHeatResultReorder,
@@ -434,10 +433,11 @@ export function useResultCaptureDraft(args: {
     });
   }, []);
 
-  /** 確定直前: 当該ヒートの未確定チェックをサーバーへ送る。失敗時は false */
-  const flushResultDraftsBeforeConfirm = useCallback(
-    async (displayHeatNumber: number): Promise<boolean> => {
-      if (!m) return false;
+  const runHeatResultConfirm = useCallback(
+    async (displayHeatNumber: number) => {
+      if (!m || !resultCapture) return;
+      setHeatResultConfirmBusy(true);
+
       const timers = resultDraftPatchTimersRef.current;
       clearTimeout(timers[displayHeatNumber]);
       delete timers[displayHeatNumber];
@@ -445,79 +445,36 @@ export function useResultCaptureDraft(args: {
       const draftsForHeat = Object.values(resultDraftOpsRef.current)
         .filter((op) => op.heatIndex === displayHeatNumber)
         .sort((a, b) => (a.draftSequence ?? 0) - (b.draftSequence ?? 0));
-      if (draftsForHeat.length === 0) return true;
+      const manualEntries = draftsForHeat.map((op) => ({
+        participantType: op.participantType,
+        competitionEntryId:
+          op.participantType === "INDIVIDUAL" ? op.competitionEntryId : undefined,
+        teamEntryId: op.participantType === "TEAM" ? op.teamEntryId : undefined,
+        teamMemberUserId: op.participantType === "TEAM" ? op.teamMemberUserId : undefined,
+        tieWithPrevious: op.tieWithPrevious,
+        inputOrder: op.inputOrder,
+      }));
 
-      const failedMap: Record<string, string> = {};
-      let successCount = 0;
-      for (const op of draftsForHeat) {
-        try {
-          const data = await postHeatResultCaptureAppend(m.competitionId, {
-            mode: "manual",
-            eventId,
-            round: m.round,
-            heatIndex: op.heatIndex,
-            tieWithPrevious: op.tieWithPrevious,
-            inputOrder: op.inputOrder,
-            participantType: op.participantType,
-            competitionEntryId:
-              op.participantType === "INDIVIDUAL" ? op.competitionEntryId : undefined,
-            teamEntryId: op.participantType === "TEAM" ? op.teamEntryId : undefined,
-            teamMemberUserId: op.participantType === "TEAM" ? op.teamMemberUserId : undefined,
-          });
-          handleRankRecorded({
-            heatIndex: op.heatIndex,
-            lane: data.lane,
-            rank: data.rank,
-            participantType: data.participantType,
-            competitionEntryId: data.competitionEntryId,
-            teamEntryId: data.teamEntryId,
-          });
-          successCount += 1;
-        } catch (error) {
-          failedMap[op.opKey] = error instanceof Error ? error.message : "記録に失敗しました";
-        }
-      }
-      setResultDraftErrors((prev) => ({ ...prev, ...failedMap }));
-      const failedKeys = new Set(Object.keys(failedMap));
-      setResultDraftOps((prev) => {
-        const next: typeof prev = {};
-        for (const [k, v] of Object.entries(prev)) {
-          if (failedKeys.has(k)) next[k] = v;
-        }
-        return next;
-      });
-      if (failedKeys.size > 0) {
-        if (successCount > 0) {
-          toast.error(
-            `未確定チェック ${failedKeys.size}件の反映に失敗したため、リザルト確定を中止しました`
-          );
-        } else {
-          toast.error("未確定チェックの反映に失敗したため、リザルト確定を中止しました");
-        }
-        return false;
-      }
-      clearResultDraftsForHeat(displayHeatNumber);
-      return true;
-    },
-    [m, eventId, handleRankRecorded, clearResultDraftsForHeat]
-  );
+      patchResultHeatConfirmed(displayHeatNumber);
+      setHeatResultConfirmTarget(null);
 
-  const runHeatResultConfirm = useCallback(
-    async (displayHeatNumber: number) => {
-      if (!m || !resultCapture) return;
-      setHeatResultConfirmBusy(true);
       try {
-        const draftsFlushed = await flushResultDraftsBeforeConfirm(displayHeatNumber);
-        if (!draftsFlushed) return;
-
-        patchResultHeatConfirmed(displayHeatNumber);
-        setHeatResultConfirmTarget(null);
-
-        await postHeatResultConfirmHeat(m.competitionId, {
+        const { appended } = await postHeatResultConfirmHeat(m.competitionId, {
           eventId,
           round: m.round,
           heatIndex: displayHeatNumber,
+          ...(manualEntries.length > 0 ? { manualEntries } : {}),
         });
+        for (const row of appended) {
+          handleRankRecorded({
+            heatIndex: displayHeatNumber,
+            lane: row.lane,
+            rank: row.rank,
+            participantType: row.participantType,
+            competitionEntryId: row.competitionEntryId,
+            teamEntryId: row.teamEntryId,
+          });
+        }
         clearResultDraftsForHeat(displayHeatNumber);
         toast.success(`ヒート ${displayHeatNumber} のリザルトを確定しました`);
         dispatchJlaDayOpsParticipantStatusChanged(m.competitionId, eventId, {
@@ -540,7 +497,7 @@ export function useResultCaptureDraft(args: {
       m,
       resultCapture,
       eventId,
-      flushResultDraftsBeforeConfirm,
+      handleRankRecorded,
       patchResultHeatConfirmed,
       patchResultHeatUnconfirmed,
       clearResultDraftsForHeat,

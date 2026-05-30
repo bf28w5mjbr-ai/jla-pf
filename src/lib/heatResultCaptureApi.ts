@@ -44,10 +44,32 @@ export async function getHeatResultCapture(
   };
 }
 
+export type HeatResultConfirmManualEntry = {
+  participantType: "INDIVIDUAL" | "TEAM";
+  competitionEntryId?: string;
+  teamEntryId?: string;
+  teamMemberUserId?: string;
+  tieWithPrevious?: boolean;
+  inputOrder?: "asc" | "desc";
+};
+
+export type HeatResultConfirmAppendedRow = {
+  rank: number;
+  lane: number;
+  participantType: "INDIVIDUAL" | "TEAM";
+  competitionEntryId: string | null;
+  teamEntryId: string | null;
+};
+
 export async function postHeatResultConfirmHeat(
   competitionId: string,
-  body: { eventId: string; round: "HEAT" | "SEMI" | "FINAL"; heatIndex: number }
-): Promise<void> {
+  body: {
+    eventId: string;
+    round: "HEAT" | "SEMI" | "FINAL";
+    heatIndex: number;
+    manualEntries?: HeatResultConfirmManualEntry[];
+  }
+): Promise<{ appended: HeatResultConfirmAppendedRow[] }> {
   const res = await fetch(
     `/api/competitions/${competitionId}/day-ops/heat-result-capture/confirm-heat`,
     {
@@ -56,10 +78,14 @@ export async function postHeatResultConfirmHeat(
       body: JSON.stringify(body),
     }
   );
-  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    appended?: HeatResultConfirmAppendedRow[];
+  };
   if (!res.ok) {
     throw new Error(typeof data.error === "string" ? data.error : "リザルトの確定に失敗しました");
   }
+  return { appended: Array.isArray(data.appended) ? data.appended : [] };
 }
 
 export async function postParticipantDsqRevert(
