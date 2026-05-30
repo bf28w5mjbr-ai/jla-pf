@@ -81,6 +81,8 @@ export type LiveRoundContentProps = {
       appliedOps?: ReadonlyArray<import("@/hooks/liveRound/types").MarshalDraftOp>,
       options?: import("@/hooks/liveRound/types").OnMarshalSuccessOptions
     ) => void | Promise<void>;
+    /** マーシャル draft 編集中にポーリング再取得を抑止 */
+    setMarshalSyncDeferred?: (deferred: boolean) => void;
     /** dialog: 一覧のみ。inline: マーシャル。result: リザルト（チェック・NFCで着順） */
     marshalUiMode?: "dialog" | "inline" | "result";
     /** marshalUiMode が result のときのみ使用 */

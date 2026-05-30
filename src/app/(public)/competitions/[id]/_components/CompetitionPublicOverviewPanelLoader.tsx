@@ -5,23 +5,21 @@ import { CompetitionPublicOverviewPanel } from "./CompetitionPublicOverviewPanel
 type Props = {
   competitionId: string;
   sessionUserId: string | null;
-  hasIndividualEvents: boolean;
-  hasTeamEvents: boolean;
-  showEntryLinks: boolean;
 };
 
 export async function CompetitionPublicOverviewPanelLoader({
   competitionId,
   sessionUserId,
-  hasIndividualEvents,
-  hasTeamEvents,
-  showEntryLinks,
 }: Props) {
   const competition = await loadCompetitionPublicOverviewDetail(competitionId, sessionUserId);
 
   if (!competition) {
     notFound();
   }
+
+  const hasIndividualEvents = competition.events.some((e) => e.type === "INDIVIDUAL");
+  const hasTeamEvents = competition.events.some((e) => e.type === "TEAM");
+  const showEntryLinks = competition.events.length > 0 && competition.status !== "CANCELLED";
 
   return (
     <CompetitionPublicOverviewPanel

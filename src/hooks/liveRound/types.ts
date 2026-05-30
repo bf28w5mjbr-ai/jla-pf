@@ -47,6 +47,7 @@ export type LiveRoundMarshalContext = {
     appliedOps?: ReadonlyArray<MarshalDraftOp>,
     options?: OnMarshalSuccessOptions
   ) => void | Promise<void>;
+  setMarshalSyncDeferred?: (deferred: boolean) => void;
   resultCapture?: {
     rows: import("@/lib/heatResultCaptureApi").HeatResultCaptureRow[];
     locked: boolean;

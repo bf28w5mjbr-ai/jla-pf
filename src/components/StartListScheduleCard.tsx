@@ -465,6 +465,7 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
                           </div>
                           <Link
                             href={startListHref}
+                            prefetch={false}
                             className="flex min-w-0 flex-1 flex-col gap-0.5 px-2 py-1.5 text-left text-sm transition hover:bg-muted/30 sm:flex-row sm:items-center sm:gap-2"
                             {...rowDrop}
                           >

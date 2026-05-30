@@ -5,18 +5,76 @@ import { getJwtSecretKeyBytes } from "@/lib/auth";
 
 const ALG = "HS256";
 const JWT_TYP = "JLA_DAYOPS";
-/** 当日運用 UI・API 用クッキーの寿命（秒） */
-export const DAY_OPS_UNLOCK_MAX_AGE_SEC = 60 * 60 * 24;
+
+/** 大会終了日の翌日まで（当日運用の片付け用バッファ） */
+const DAY_OPS_UNLOCK_END_DATE_BUFFER_DAYS = 1;
+/** 異常に長い大会向けの JWT / クッキー上限（秒） */
+const DAY_OPS_UNLOCK_MAX_AGE_CAP_SEC = 60 * 60 * 24 * 120;
+
+/**
+ * 大会終了日（UTC 日付）から、当日運用アンロックの失効時刻を求める。
+ * `endDate` は日付のみ（00:00 UTC）想定。終了日いっぱい + 翌日バッファまで有効。
+ */
+export function resolveDayOpsUnlockExpiresAt(endDate: Date): Date {
+  return new Date(
+    Date.UTC(
+      endDate.getUTCFullYear(),
+      endDate.getUTCMonth(),
+      endDate.getUTCDate() + 1 + DAY_OPS_UNLOCK_END_DATE_BUFFER_DAYS,
+      0,
+      0,
+      0,
+      0
+    )
+  );
+}
+
+/** 大会終了（+バッファ）までのクッキー / JWT 寿命（秒）。失効済みなら 0。 */
+export function resolveDayOpsUnlockMaxAgeSec(endDate: Date, now: Date = new Date()): number {
+  const expiresAt = resolveDayOpsUnlockExpiresAt(endDate);
+  const sec = Math.floor((expiresAt.getTime() - now.getTime()) / 1000);
+  if (sec <= 0) return 0;
+  return Math.min(sec, DAY_OPS_UNLOCK_MAX_AGE_CAP_SEC);
+}
 
 export function dayOpsUnlockCookieName(competitionId: string): string {
   return `jla_dayops_${competitionId}`;
 }
 
-export async function signDayOpsUnlockJwt(competitionId: string): Promise<string> {
+const dayOpsUnlockCookieOptions = (maxAgeSec: number) => ({
+  httpOnly: true,
+  sameSite: "lax" as const,
+  secure: process.env.NODE_ENV === "production",
+  path: "/",
+  maxAge: maxAgeSec,
+});
+
+/** Route Handler から当日運用 Cookie を発行（ログイン Cookie と同じ {@link cookies()} API） */
+export async function issueDayOpsUnlockCookie(
+  competitionId: string,
+  maxAgeSec: number
+): Promise<void> {
+  const jwt = await signDayOpsUnlockJwt(competitionId, maxAgeSec);
+  const jar = await cookies();
+  jar.set(dayOpsUnlockCookieName(competitionId), jwt, dayOpsUnlockCookieOptions(maxAgeSec));
+}
+
+export async function clearDayOpsUnlockCookie(competitionId: string): Promise<void> {
+  const jar = await cookies();
+  jar.set(dayOpsUnlockCookieName(competitionId), "", {
+    ...dayOpsUnlockCookieOptions(0),
+    maxAge: 0,
+  });
+}
+
+export async function signDayOpsUnlockJwt(
+  competitionId: string,
+  maxAgeSec: number
+): Promise<string> {
   return await new SignJWT({ typ: JWT_TYP, cid: competitionId })
     .setProtectedHeader({ alg: ALG })
     .setIssuedAt()
-    .setExpirationTime(`${DAY_OPS_UNLOCK_MAX_AGE_SEC}s`)
+    .setExpirationTime(`${maxAgeSec}s`)
     .sign(getJwtSecretKeyBytes());
 }
 

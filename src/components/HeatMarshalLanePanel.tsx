@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { applyMarshalDraftOpsToHeats } from "@/components/startListRoundList/panelHelpers";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -119,10 +120,56 @@ export function HeatMarshalLanePanel({
     alreadyMarshalled: boolean;
   } | null>(null);
 
+  const marshalDraftOpsRef = useRef(marshalDraftOps);
+  marshalDraftOpsRef.current = marshalDraftOps;
+
+  /** ポーリングで heat が更新されても未確定 draft を維持する */
   useEffect(() => {
-    setParticipants(heat.participants);
-    setMarshalDraftOps({});
-    setMarshalDraftErrors({});
+    setParticipants((prev) => {
+      const draftOps = marshalDraftOpsRef.current;
+      const merged = applyMarshalDraftOpsToHeats([heat], draftOps)[0]?.participants ?? heat.participants;
+      if (
+        prev.length === merged.length &&
+        prev.every(
+          (p, i) =>
+            marshalParticipantKey(p) === marshalParticipantKey(merged[i]!) &&
+            p.status === merged[i]!.status &&
+            p.lane === merged[i]!.lane
+        )
+      ) {
+        return prev;
+      }
+      return merged;
+    });
+  }, [heat]);
+
+  useEffect(() => {
+    setMarshalDraftOps((prev) => {
+      if (Object.keys(prev).length === 0) return prev;
+      const keysInHeat = new Set(heat.participants.map(marshalParticipantKey));
+      let changed = false;
+      const next = { ...prev };
+      for (const k of Object.keys(next)) {
+        if (!keysInHeat.has(k)) {
+          delete next[k];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    setMarshalDraftErrors((prev) => {
+      if (Object.keys(prev).length === 0) return prev;
+      const keysInHeat = new Set(heat.participants.map(marshalParticipantKey));
+      let changed = false;
+      const next = { ...prev };
+      for (const k of Object.keys(next)) {
+        if (!keysInHeat.has(k)) {
+          delete next[k];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
   }, [heat]);
 
   const applyMarshalResponse = useCallback((data: { lane?: unknown }) => {
@@ -237,10 +284,11 @@ export function HeatMarshalLanePanel({
       });
       if (result.success.length > 0) toast.success(`${result.success.length}件を確定しました`);
       if (result.failed.length > 0) toast.error(`${result.failed.length}件の確定に失敗しました`);
-      await onSuccess?.();
+      if (result.success.length > 0) {
+        await onSuccess?.();
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "一括確定に失敗しました");
-      await onSuccess?.();
     } finally {
       setMarshalBulkSubmitting(false);
     }

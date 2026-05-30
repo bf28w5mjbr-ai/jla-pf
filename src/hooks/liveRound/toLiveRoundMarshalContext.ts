@@ -15,6 +15,7 @@ export function toLiveRoundMarshalContext(
     isCallClosed: m.isCallClosed,
     marshalUiMode: m.marshalUiMode,
     onMarshalSuccess: m.onMarshalSuccess,
+    setMarshalSyncDeferred: m.setMarshalSyncDeferred,
     resultCapture: m.resultCapture,
   };
 }

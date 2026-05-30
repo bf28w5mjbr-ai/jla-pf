@@ -84,6 +84,7 @@ export function StartListSchedulePublicView({
                       >
                         <Link
                           href={startListHref}
+                          prefetch={false}
                           className="flex min-w-0 items-stretch text-left transition hover:bg-muted/30"
                         >
                           <span className="flex w-[3.25rem] shrink-0 items-center justify-center border-r border-border/50 px-1 tabular-nums text-[11px] font-medium">

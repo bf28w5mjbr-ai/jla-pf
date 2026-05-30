@@ -69,6 +69,19 @@ describe("mergeListMarshalHeatsOnRefetch", () => {
     expect(merged[0]?.participants[0]?.status).toBe("CALLED");
   });
 
+  it("preserves unchecked draft CALLED in prev display when poll returns PENDING", () => {
+    const op = calledOp();
+    const prev = applyMarshalDraftOpsToHeats([baseHeat], { [op.opKey]: op });
+    const incoming: HeatMarshalHeatRow[] = [
+      {
+        ...baseHeat,
+        participants: [{ ...baseHeat.participants[0]!, status: "PENDING" }],
+      },
+    ];
+    const merged = mergeListMarshalHeatsOnRefetch(prev, incoming);
+    expect(merged[0]?.participants[0]?.status).toBe("CALLED");
+  });
+
   it("accepts server CALLED from poll", () => {
     const op = calledOp();
     const prev = applyMarshalDraftOpsToHeats([baseHeat], { [op.opKey]: op });

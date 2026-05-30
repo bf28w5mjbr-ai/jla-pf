@@ -1,11 +1,16 @@
 "use client";
 
 import { useState, useTransition, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
+import {
+  markDayOpsUnlockedClient,
+  useDayOpsUnlockEffective,
+} from "@/hooks/useDayOpsUnlockEffective";
 
 type Props = {
   competitionId: string;
@@ -20,11 +25,13 @@ export default function DayOpsUnlockBanner({
   passphraseConfigured,
   alreadyUnlocked,
 }: Props) {
+  const router = useRouter();
   const [code, setCode] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [pending, startTransition] = useTransition();
+  const unlocked = useDayOpsUnlockEffective(competitionId, alreadyUnlocked);
 
-  if (!passphraseConfigured || alreadyUnlocked) {
+  if (!passphraseConfigured || unlocked) {
     return null;
   }
 
@@ -39,6 +46,7 @@ export default function DayOpsUnlockBanner({
       try {
         const res = await fetch(`/api/competitions/${competitionId}/day-ops-unlock`, {
           method: "POST",
+          credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ code: trimmed }),
         });
@@ -46,8 +54,9 @@ export default function DayOpsUnlockBanner({
         if (!res.ok) {
           throw new Error(body.error || "アンロックに失敗しました");
         }
+        markDayOpsUnlockedClient(competitionId);
         toast.success("当日運用モードを有効にしました");
-        window.location.reload();
+        router.refresh();
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "アンロックに失敗しました");
       }
@@ -94,7 +103,7 @@ export default function DayOpsUnlockBanner({
               disabled={pending}
             />
             <p className="text-[11px] leading-relaxed text-muted-foreground">
-              通常は入力不要です。主催から暗号が共有された場合のみ入力してください。
+              通常は入力不要です。主催から暗号が共有された場合のみ入力してください。有効化後はこの端末で大会終了まで再入力不要です。
             </p>
           </div>
           <Button type="submit" size="sm" className="h-9 shrink-0" disabled={pending}>

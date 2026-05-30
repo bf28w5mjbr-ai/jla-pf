@@ -12,7 +12,6 @@ import { prisma } from "@/server/db";
 import { parseScheduleRowOrderByDayJson } from "@/lib/scheduleRowOrder";
 import { firstCompetitionScheduleDayKey } from "@/lib/competitionScheduleDays";
 import {
-  DayOpsUnlockBannerLazy,
   StartListEventIndexBarsLazy,
   StartListVisibilityAdminControlsLazy,
 } from "./competitionPublicDynamicClients";
@@ -57,7 +56,6 @@ export async function CompetitionPublicStartListPanelLoader({
   });
   const canViewStartListOnPublicPage =
     (competition.startListPubliclyVisible ?? true) || isOrgAdmin || hasDayOpsUnlock;
-  const dayOpsUnlockConfigured = Boolean(competition.dayOpsAccessSecretHash);
 
   const eventsForStartListPanel = sortEventsByScheduleTabs(
     competition.events,
@@ -82,11 +80,6 @@ export async function CompetitionPublicStartListPanelLoader({
 
   return (
     <>
-      <DayOpsUnlockBannerLazy
-        competitionId={competition.id}
-        passphraseConfigured={dayOpsUnlockConfigured}
-        alreadyUnlocked={hasDayOpsUnlock}
-      />
       <div className="flex justify-end">
         <StartListVisibilityAdminControlsLazy
           canManage={canToggleStartListVisibility}

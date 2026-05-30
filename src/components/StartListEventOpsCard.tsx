@@ -41,6 +41,7 @@ const StartListRoundSettingsCardWithHook = dynamic(
 );
 import { StartListMarshalModeBar } from "@/components/StartListMarshalModeBar";
 import { useStartListEventDayOps } from "@/hooks/useStartListEventDayOps";
+import { useDayOpsUnlockEffective } from "@/hooks/useDayOpsUnlockEffective";
 import type { StartListEventCardProps, StartListMarshalViewMode } from "@/lib/startListEventTypes";
 import { sexLabelJa } from "@/lib/sexLabelJa";
 import { CompetitionEntriesSpreadsheetExportButton } from "@/components/admin/CompetitionEntriesSpreadsheetExportButton";
@@ -71,7 +72,8 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
     permissions,
   } = props;
 
-  const { canManageStartListOps, isOrgAdmin, showVenueOps } = permissions;
+  const { canManageStartListOps, isOrgAdmin, showVenueOps: serverShowVenueOps } = permissions;
+  const showVenueOps = useDayOpsUnlockEffective(competitionId, serverShowVenueOps);
   const showMarshalOps = showVenueOps;
   const showResultOps = showVenueOps;
   const canEditHeatConfiguration = canManageStartListOps;
@@ -268,6 +270,7 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
                   }
                 : undefined,
             onMarshalSuccess: dayOps.onMarshalSuccess,
+            setMarshalSyncDeferred: dayOps.setMarshalSyncDeferred,
           }
         : null;
     return (

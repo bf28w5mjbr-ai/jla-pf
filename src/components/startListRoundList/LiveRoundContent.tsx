@@ -79,11 +79,21 @@ export function LiveRoundContent({
     patchHeatCallReopened,
     patchLaneCalled,
     handleMarshalResult,
+    marshalSyncBusy,
   } = useMarshalDraftOps({
     eventId,
     m: marshalCtx,
     statusUpdatedAtByKey,
   });
+
+  useEffect(() => {
+    const setDefer = m?.setMarshalSyncDeferred;
+    const defer = marshalInline && marshalSyncBusy;
+    setDefer?.(defer);
+    return () => {
+      setDefer?.(false);
+    };
+  }, [marshalInline, marshalSyncBusy, m?.setMarshalSyncDeferred]);
 
   const {
     localResultRows,

@@ -25,6 +25,7 @@ import {
   resultCaptureRowsEqual,
 } from "@/lib/dayOpsPollCompare";
 import { measureDayOpsAsync } from "@/lib/dayOpsMetrics";
+import { dayOpsFetch } from "@/lib/dayOpsFetch";
 
 type Args = {
   competitionId: string;
@@ -81,11 +82,16 @@ export function useStartListEventDayOps({
   );
 
   const participantPollPrimedRef = useRef(false);
+  /** マーシャル draft 編集中は heat-marshal / participant-status のポーリング再取得を抑止 */
+  const marshalSyncDeferredRef = useRef(false);
+  const setMarshalSyncDeferred = useCallback((deferred: boolean) => {
+    marshalSyncDeferredRef.current = deferred;
+  }, []);
 
   const refreshDayOpsParticipantPoll = useCallback(async () => {
     if (!showDayOpsShell) return;
     await measureDayOpsAsync("day-ops participant-statuses", async () => {
-      const res = await fetch(
+      const res = await dayOpsFetch(
         `/api/competitions/${competitionId}/day-ops/participant-statuses?eventId=${encodeURIComponent(eventId)}&includeCandidates=0`
       );
       if (!res.ok) return;
@@ -288,7 +294,7 @@ export function useStartListEventDayOps({
       marshalHeatFetchInFlightRef.current = true;
       try {
         await measureDayOpsAsync("day-ops heat-marshal", async () => {
-          const res = await fetch(
+          const res = await dayOpsFetch(
             `/api/competitions/${competitionId}/day-ops/heat-marshal?eventId=${encodeURIComponent(eventId)}&round=${encodeURIComponent(listMarshalRound)}`,
             { signal }
           );
@@ -322,9 +328,14 @@ export function useStartListEventDayOps({
     }
   }, [fetchListMarshalHeatsCore]);
 
-  const refreshMarshalAndResultLists = useCallback(
-    (opts?: { skipMarshalHeat?: boolean; skipResultCapture?: boolean }) => {
-      if (anyTabNeedsMarshalHeat && !opts?.skipMarshalHeat) {
+  const refreshDayOpsListsFromPoll = useCallback(
+    (opts?: { skipMarshalHeat?: boolean; skipResultCapture?: boolean; skipParticipantPoll?: boolean }) => {
+      const skipMarshalHeat = opts?.skipMarshalHeat || marshalSyncDeferredRef.current;
+      const skipParticipantPoll = opts?.skipParticipantPoll || marshalSyncDeferredRef.current;
+      if (!skipParticipantPoll) {
+        void refreshDayOpsParticipantPoll();
+      }
+      if (anyTabNeedsMarshalHeat && !skipMarshalHeat) {
         void refetchListMarshalHeats();
       }
       if (anyTabInResultMode && showResultOps && !opts?.skipResultCapture) {
@@ -332,6 +343,7 @@ export function useStartListEventDayOps({
       }
     },
     [
+      refreshDayOpsParticipantPoll,
       anyTabNeedsMarshalHeat,
       anyTabInResultMode,
       refetchListMarshalHeats,
@@ -369,8 +381,7 @@ export function useStartListEventDayOps({
     competitionId,
     eventId,
     dayOpsListsSyncActive: anyTabNeedsMarshalHeat,
-    refreshParticipantStatuses: refreshDayOpsParticipantPoll,
-    refreshMarshalAndResultLists,
+    refreshDayOpsListsFromPoll,
   });
 
   const listMarshalHeatsByIndex = useMemo(() => {
@@ -462,5 +473,6 @@ export function useStartListEventDayOps({
     patchListResultHeatConfirmed,
     patchListResultHeatUnconfirmed,
     onMarshalSuccess,
+    setMarshalSyncDeferred,
   };
 }

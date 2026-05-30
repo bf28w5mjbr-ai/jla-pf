@@ -5,9 +5,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import {
-  DAY_OPS_UNLOCK_MAX_AGE_SEC,
-  dayOpsUnlockCookieName,
-  signDayOpsUnlockJwt,
+  clearDayOpsUnlockCookie,
+  issueDayOpsUnlockCookie,
+  resolveDayOpsUnlockMaxAgeSec,
 } from "@/lib/dayOpsUnlockCookie";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     const row = await prisma.competition.findUnique({
       where: { id: competitionId },
-      select: { dayOpsAccessSecretHash: true, status: true },
+      select: { dayOpsAccessSecretHash: true, status: true, endDate: true },
     });
     if (!row) {
       return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });
@@ -43,16 +43,13 @@ export async function POST(req: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "暗号が正しくありません" }, { status: 401 });
     }
 
-    const jwt = await signDayOpsUnlockJwt(competitionId);
-    const res = NextResponse.json({ success: true });
-    res.cookies.set(dayOpsUnlockCookieName(competitionId), jwt, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: DAY_OPS_UNLOCK_MAX_AGE_SEC,
-    });
-    return res;
+    const maxAgeSec = resolveDayOpsUnlockMaxAgeSec(row.endDate);
+    if (maxAgeSec <= 0) {
+      return NextResponse.json({ error: "大会は終了しています" }, { status: 403 });
+    }
+
+    await issueDayOpsUnlockCookie(competitionId, maxAgeSec);
+    return NextResponse.json({ success: true });
   } catch (err) {
     return jsonInternalError500("POST api/competitions/[id]/day-ops-unlock/route.ts", err);
   }
@@ -61,15 +58,8 @@ export async function POST(req: NextRequest, context: RouteContext) {
 export async function DELETE(_req: NextRequest, context: RouteContext) {
   try {
     const { id: competitionId } = await context.params;
-    const res = NextResponse.json({ success: true });
-    res.cookies.set(dayOpsUnlockCookieName(competitionId), "", {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 0,
-    });
-    return res;
+    await clearDayOpsUnlockCookie(competitionId);
+    return NextResponse.json({ success: true });
   } catch (err) {
     return jsonInternalError500("DELETE api/competitions/[id]/day-ops-unlock/route.ts", err);
   }

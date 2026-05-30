@@ -30,6 +30,7 @@ export function useMarshalDraftOps(args: {
   const [marshalCommittedOps, setMarshalCommittedOps] = useState<Record<string, MarshalDraftOp>>({});
   const [marshalDraftErrors, setMarshalDraftErrors] = useState<Record<string, string>>({});
   const [marshalBulkSubmitting, setMarshalBulkSubmitting] = useState(false);
+  const [marshalAutoSaveInFlight, setMarshalAutoSaveInFlight] = useState(false);
   const [marshalPendingKey, setMarshalPendingKey] = useState<string | null>(null);
   const [marshalResult, setMarshalResult] = useState<MarshalResultPayload | null>(null);
   const [localMarshalHeats, setLocalMarshalHeats] = useState<HeatMarshalHeatRow[]>([]);
@@ -193,14 +194,15 @@ export function useMarshalDraftOps(args: {
         lastKnownUpdatedAt: undefined,
       }));
       if (operations.length === 0) return;
+      setMarshalAutoSaveInFlight(true);
       marshalAutoSaveInFlightRef.current = true;
       try {
         await commitMarshalDraftOps(operations, { silent: opts?.silent ?? true });
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "反映に失敗しました");
-        await m.onMarshalSuccess();
       } finally {
         marshalAutoSaveInFlightRef.current = false;
+        setMarshalAutoSaveInFlight(false);
         notifyMarshalAutoSaveIdle();
         if (Object.keys(marshalDraftOpsRef.current).length > 0) {
           scheduleMarshalAutoSaveRef.current?.();
@@ -351,7 +353,6 @@ export function useMarshalDraftOps(args: {
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "一括確定に失敗しました");
-      await m.onMarshalSuccess();
     } finally {
       setMarshalBulkSubmitting(false);
     }
@@ -394,5 +395,11 @@ export function useMarshalDraftOps(args: {
     patchHeatCallReopened,
     patchLaneCalled,
     handleMarshalResult,
+    marshalSyncBusy:
+      Object.keys(marshalDraftOps).length > 0 ||
+      Object.keys(marshalCommittedOps).length > 0 ||
+      marshalBulkSubmitting ||
+      marshalAutoSaveInFlight ||
+      marshalPendingKey !== null,
   };
 }

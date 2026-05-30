@@ -2,9 +2,16 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED } from "@/lib/dayOpsParticipantStatusDisplay";
+import { dayOpsFetch } from "@/lib/dayOpsFetch";
 
 const DAY_OPS_POLL_INTERVAL_NORMAL_MS = 20_000;
 const DAY_OPS_POLL_INTERVAL_SYNC_MS = 6_000;
+
+type RefreshOpts = {
+  skipMarshalHeat?: boolean;
+  skipResultCapture?: boolean;
+  skipParticipantPoll?: boolean;
+};
 
 type Args = {
   enabled: boolean;
@@ -12,11 +19,7 @@ type Args = {
   eventId: string;
   /** いずれかのタブがマーシャル/リザルトモードのときは同期間隔を短くする */
   dayOpsListsSyncActive: boolean;
-  refreshParticipantStatuses: () => void | Promise<void>;
-  refreshMarshalAndResultLists: (opts?: {
-    skipMarshalHeat?: boolean;
-    skipResultCapture?: boolean;
-  }) => void;
+  refreshDayOpsListsFromPoll: (opts?: RefreshOpts) => void;
 };
 
 async function fetchDayOpsLiveFingerprint(
@@ -24,9 +27,8 @@ async function fetchDayOpsLiveFingerprint(
   eventId: string
 ): Promise<string | null> {
   try {
-    const res = await fetch(
-      `/api/competitions/${competitionId}/day-ops/live-fingerprint?eventId=${encodeURIComponent(eventId)}`,
-      { credentials: "same-origin" }
+    const res = await dayOpsFetch(
+      `/api/competitions/${competitionId}/day-ops/live-fingerprint?eventId=${encodeURIComponent(eventId)}`
     );
     if (!res.ok) return null;
     const data = (await res.json().catch(() => ({}))) as { fingerprint?: unknown };
@@ -42,10 +44,11 @@ export function useDayOpsStartListPolling({
   competitionId,
   eventId,
   dayOpsListsSyncActive,
-  refreshParticipantStatuses,
-  refreshMarshalAndResultLists,
+  refreshDayOpsListsFromPoll,
 }: Args) {
   const lastFingerprintRef = useRef<string | null>(null);
+  const refreshRef = useRef(refreshDayOpsListsFromPoll);
+  refreshRef.current = refreshDayOpsListsFromPoll;
 
   useEffect(() => {
     lastFingerprintRef.current = null;
@@ -57,9 +60,8 @@ export function useDayOpsStartListPolling({
       if (lastFingerprintRef.current === fp) return;
       lastFingerprintRef.current = fp;
     }
-    void refreshParticipantStatuses();
-    refreshMarshalAndResultLists();
-  }, [competitionId, eventId, refreshParticipantStatuses, refreshMarshalAndResultLists]);
+    refreshRef.current();
+  }, [competitionId, eventId]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -98,24 +100,16 @@ export function useDayOpsStartListPolling({
       ).detail;
       if (d?.competitionId === competitionId && d?.eventId === eventId) {
         lastFingerprintRef.current = null;
-        if (!d.skipParticipantPoll) {
-          void refreshParticipantStatuses();
-        }
-        refreshMarshalAndResultLists({
+        refreshRef.current({
           ...(d.skipMarshalHeatRefetch ? { skipMarshalHeat: true } : {}),
           ...(d.skipResultCaptureRefetch ? { skipResultCapture: true } : {}),
+          ...(d.skipParticipantPoll ? { skipParticipantPoll: true } : {}),
         });
       }
     };
     window.addEventListener(JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED, handler);
     return () => window.removeEventListener(JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED, handler);
-  }, [
-    enabled,
-    competitionId,
-    eventId,
-    refreshParticipantStatuses,
-    refreshMarshalAndResultLists,
-  ]);
+  }, [enabled, competitionId, eventId]);
 
   useEffect(() => {
     if (!enabled || process.env.NEXT_PUBLIC_DAY_OPS_LIVE_STREAM !== "1") return;
@@ -130,8 +124,7 @@ export function useDayOpsStartListPolling({
           } else {
             lastFingerprintRef.current = null;
           }
-          void refreshParticipantStatuses();
-          refreshMarshalAndResultLists();
+          refreshRef.current();
         }
       } catch {
         /* ignore */
@@ -140,11 +133,5 @@ export function useDayOpsStartListPolling({
     return () => {
       es.close();
     };
-  }, [
-    enabled,
-    competitionId,
-    eventId,
-    refreshParticipantStatuses,
-    refreshMarshalAndResultLists,
-  ]);
+  }, [enabled, competitionId, eventId]);
 }
