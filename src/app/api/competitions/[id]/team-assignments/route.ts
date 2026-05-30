@@ -12,6 +12,11 @@ import {
   prismaCompetitionToTeamAssignmentCompetitionJson,
   prismaEventToTeamAssignmentEventJson,
 } from "@/lib/teamMemberSlotEligibility";
+import {
+  normalizeMemberSlotsInput,
+  resolveTeamRelaySlotCount,
+  validateMemberSlotsForSave,
+} from "@/lib/teamMemberSlots";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -100,31 +105,17 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     }
 
     const normalizedAssignments = assignments.map((assignment: unknown) => {
-      const item = assignment as {
-        teamEntryId?: string;
-        memberUserIds?: string[];
-        memberSlots?: unknown;
-      };
+      const item = assignment as { teamEntryId?: string; memberSlots?: unknown };
       const teamEntryId = item.teamEntryId ?? "";
-      if (Array.isArray(item.memberSlots)) {
-        const slots = item.memberSlots.map((cell) => {
-          if (cell === null || cell === undefined || cell === "") return null;
-          return typeof cell === "string" ? cell : null;
-        });
-        const used = new Set<string>();
-        for (const uid of slots) {
-          if (!uid) continue;
-          if (used.has(uid)) {
-            return { teamEntryId, memberSlots: null as null, error: "同じメンバーを複数の配属に入れることはできません" };
-          }
-          used.add(uid);
-        }
-        return { teamEntryId, memberSlots: slots, memberUserIds: [] as string[], error: null as string | null };
+      const memberSlots = normalizeMemberSlotsInput(item.memberSlots);
+      if (!memberSlots) {
+        return {
+          teamEntryId,
+          memberSlots: null as null,
+          error: "割当情報が不正です",
+        };
       }
-      const memberUserIds = Array.isArray(item.memberUserIds)
-        ? Array.from(new Set(item.memberUserIds.filter((id): id is string => typeof id === "string")))
-        : [];
-      return { teamEntryId, memberSlots: null as null, memberUserIds, error: null as string | null };
+      return { teamEntryId, memberSlots, error: null as string | null };
     });
 
     const slotError = normalizedAssignments.find((a) => a.error)?.error;
@@ -146,6 +137,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       },
       select: {
         id: true,
+        teamName: true,
         eventId: true,
         event: {
           select: {
@@ -155,7 +147,11 @@ export async function PUT(request: NextRequest, context: RouteContext) {
             eligibleBirthDateFrom: true,
             eligibleBirthDateTo: true,
             ageCategoryId: true,
+            teamRelayPositionCount: true,
           },
+        },
+        members: {
+          select: { order: true, role: true },
         },
       },
     });
@@ -165,6 +161,25 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         { message: "対象外のチームエントリーが含まれています" },
         { status: 400 }
       );
+    }
+
+    const teamEntryById = new Map(teamEntries.map((t) => [t.id, t]));
+
+    for (const assignment of normalizedAssignments) {
+      const te = teamEntryById.get(assignment.teamEntryId);
+      if (!te || !assignment.memberSlots) continue;
+      const expectedSlotCount = resolveTeamRelaySlotCount(
+        te.event.teamRelayPositionCount,
+        te.members
+      );
+      const validation = validateMemberSlotsForSave({
+        memberSlots: assignment.memberSlots,
+        expectedSlotCount,
+        teamLabel: te.teamName,
+      });
+      if (!validation.ok) {
+        return NextResponse.json({ message: validation.message }, { status: 400 });
+      }
     }
 
     const marshalBlockMap = await getTeamEntryMarshalAssignmentBlockedMap(
@@ -197,14 +212,9 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     });
     const eligibleUserIds = new Set(eligibleEntries.map((entry) => entry.userId));
 
-    const hasIneligibleUser = assignmentsToApply.some((assignment) => {
-      if (assignment.memberSlots) {
-        return assignment.memberSlots.some(
-          (uid) => uid && !eligibleUserIds.has(uid)
-        );
-      }
-      return (assignment.memberUserIds ?? []).some((userId) => !eligibleUserIds.has(userId));
-    });
+    const hasIneligibleUser = assignmentsToApply.some((assignment) =>
+      (assignment.memberSlots ?? []).some((uid) => uid && !eligibleUserIds.has(uid))
+    );
     if (hasIneligibleUser) {
       return NextResponse.json(
         { message: "クラブのエントリー済みメンバーのみ割り当てできます" },
@@ -214,14 +224,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     const assignedUserIds = new Set<string>();
     for (const assignment of assignmentsToApply) {
-      if (assignment.memberSlots) {
-        for (const uid of assignment.memberSlots) {
-          if (uid) assignedUserIds.add(uid);
-        }
-      } else {
-        for (const uid of assignment.memberUserIds ?? []) {
-          assignedUserIds.add(uid);
-        }
+      for (const uid of assignment.memberSlots ?? []) {
+        if (uid) assignedUserIds.add(uid);
       }
     }
 
@@ -239,12 +243,11 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       ageCategories: competition.ageCategories,
     });
 
-    const teamEntryById = new Map(teamEntries.map((t) => [t.id, t]));
     const eventEligibilityViolation = assignmentsToApply.some((assignment) => {
       const te = teamEntryById.get(assignment.teamEntryId);
       if (!te?.event) return true;
       const eventJson = prismaEventToTeamAssignmentEventJson(te.event);
-      const slotList = assignment.memberSlots ?? assignment.memberUserIds ?? [];
+      const slotList = assignment.memberSlots ?? [];
       return slotList.some((userId) => {
         if (!userId) return false;
         const u = userById.get(userId);
@@ -268,30 +271,20 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const memberRows = assignmentsToApply.flatMap((assignment) => {
-      if (assignment.memberSlots) {
-        return assignment.memberSlots
-          .map((userId, index) =>
-            userId
-              ? {
-                  teamEntryId: assignment.teamEntryId,
-                  userId,
-                  role: "ATHLETE" as const,
-                  order: index + 1,
-                }
-              : null
-          )
-          .filter((row): row is NonNullable<typeof row> => row !== null);
-      }
-
-      const legacyIds = assignment.memberUserIds ?? [];
-      return legacyIds.map((userId, index) => ({
-        teamEntryId: assignment.teamEntryId,
-        userId,
-        role: "ATHLETE" as const,
-        order: index + 1,
-      }));
-    });
+    const memberRows = assignmentsToApply.flatMap((assignment) =>
+      (assignment.memberSlots ?? [])
+        .map((userId, index) =>
+          userId
+            ? {
+                teamEntryId: assignment.teamEntryId,
+                userId,
+                role: "ATHLETE" as const,
+                order: index + 1,
+              }
+            : null
+        )
+        .filter((row): row is NonNullable<typeof row> => row !== null)
+    );
 
     /**
      * 既定 ~5s のインタラクティブ TX タイムアウトを超えると

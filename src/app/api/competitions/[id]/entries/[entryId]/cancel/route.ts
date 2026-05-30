@@ -150,7 +150,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
       await tx.teamEntryMember.deleteMany({
         where: {
           userId: entry.userId,
-          role: "ATHLETE",
           teamEntry: {
             competitionId,
           },

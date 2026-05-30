@@ -48,12 +48,6 @@ export const appRoutes = {
       },
       assignments: (clubId: string, competitionId: string) =>
         `/clubs/${clubId}/competitions/${competitionId}/assignments`,
-      /** @deprecated `team` + `tab` に統合。互換リダイレクト用 */
-      teamAssignment: (clubId: string, competitionId: string) =>
-        `/clubs/${clubId}/competitions/${competitionId}/team-assignment`,
-      /** @deprecated `team` + `tab` に統合。互換リダイレクト用 */
-      teamEntry: (clubId: string, competitionId: string) =>
-        `/clubs/${clubId}/competitions/${competitionId}/team-entry`,
     },
   },
 

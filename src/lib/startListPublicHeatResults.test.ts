@@ -37,8 +37,8 @@ describe("buildPublicHeatResultRoundOverlays", () => {
 
     expect(overlays).toHaveLength(1);
     expect(overlays[0]?.confirmedHeatIndices).toEqual([1]);
-    expect(Object.keys(overlays[0]?.rowsByKey ?? {})).toEqual(["I:e1"]);
-    expect(overlays[0]?.rowsByKey["I:e1"]).toEqual({
+    expect(Object.keys(overlays[0]?.rowsByKey ?? {})).toEqual(["1:I:e1"]);
+    expect(overlays[0]?.rowsByKey["1:I:e1"]).toEqual({
       rank: 1,
       status: "OK",
       advanceWithoutRank: false,
@@ -75,7 +75,7 @@ describe("buildPublicHeatResultRoundOverlays", () => {
       },
     ]);
 
-    expect(Object.keys(overlays[0]?.rowsByKey ?? {})).not.toContain("I:e2");
+    expect(Object.keys(overlays[0]?.rowsByKey ?? {})).not.toContain("2:I:e2");
   });
 
   it("isFinalized が publishedAt / lockedAt で切り替わる", () => {

@@ -30,6 +30,10 @@ import {
   type TeamAssignmentCompetitionJson,
   type TeamAssignmentEventJson,
 } from "@/lib/teamMemberSlotEligibility";
+import {
+  type TeamEntryAssignmentDto,
+  validateMemberSlotsForSave,
+} from "@/lib/teamMemberSlots";
 import { notifyStartListTeamMembersChanged } from "@/lib/startListTeamMembersBroadcast";
 
 const EMPTY_SLOT_VALUE = "__none__";
@@ -46,18 +50,7 @@ type EligibleMember = {
   dateOfBirth: string | null;
 };
 
-type TeamEntryAssignment = {
-  teamEntryId: string;
-  eventId: string;
-  eventName: string;
-  sexLabel: string;
-  teamName: string;
-  /** 互換・表示用（スロット順の一覧） */
-  memberUserIds: string[];
-  relayPositionCount: number | null;
-  relayPositionLabels: string[];
-  memberSlots: (string | null)[];
-};
+type TeamEntryAssignment = TeamEntryAssignmentDto;
 
 type Props = {
   competitionId: string;
@@ -194,10 +187,28 @@ export default function CompetitionTeamAssignmentManager({
           }
         }
         nextSlots[slotIndex] = userId;
-        return { ...assignment, memberSlots: nextSlots, memberUserIds: compactUserIds(nextSlots) };
+        return { ...assignment, memberSlots: nextSlots };
       }),
     }));
   };
+
+  const editableAssignments = useMemo(
+    () =>
+      currentAssignments.filter((a) => !marshalBlockByTeamEntryId[a.teamEntryId]),
+    [currentAssignments, marshalBlockByTeamEntryId]
+  );
+
+  const saveValidationError = useMemo(() => {
+    for (const assignment of editableAssignments) {
+      const result = validateMemberSlotsForSave({
+        memberSlots: assignment.memberSlots,
+        expectedSlotCount: assignment.memberSlots.length,
+        teamLabel: assignment.teamName,
+      });
+      if (!result.ok) return result.message;
+    }
+    return null;
+  }, [editableAssignments]);
 
   const handleSave = async () => {
     if (!selectedClubId) {
@@ -205,9 +216,12 @@ export default function CompetitionTeamAssignmentManager({
       return;
     }
 
-    const assignmentsToSave = currentAssignments.filter(
-      (assignment) => !marshalBlockByTeamEntryId[assignment.teamEntryId]
-    );
+    if (saveValidationError) {
+      toast.error(saveValidationError);
+      return;
+    }
+
+    const assignmentsToSave = editableAssignments;
     if (assignmentsToSave.length === 0) {
       toast.error("編集可能なチームがありません");
       return;
@@ -253,7 +267,10 @@ export default function CompetitionTeamAssignmentManager({
   };
 
   const canSaveAssignments =
-    isAssignmentWindowOpen && hasEditableTeam && currentAssignments.length > 0;
+    isAssignmentWindowOpen &&
+    hasEditableTeam &&
+    currentAssignments.length > 0 &&
+    !saveValidationError;
 
   const statusKind = !isAssignmentWindowOpen
     ? "closed"
@@ -276,7 +293,9 @@ export default function CompetitionTeamAssignmentManager({
         ? "チームエントリーがありません"
         : !hasEditableTeam
           ? "編集可能なチームがありません"
-          : null;
+          : saveValidationError
+            ? saveValidationError
+            : null;
 
   return (
     <div className="space-y-6">
@@ -605,8 +624,4 @@ export default function CompetitionTeamAssignmentManager({
       </Card>
     </div>
   );
-}
-
-function compactUserIds(slots: (string | null)[]): string[] {
-  return slots.filter((uid): uid is string => Boolean(uid));
 }

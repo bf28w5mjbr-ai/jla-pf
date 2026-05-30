@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import type { MarshalParticipantRef } from "@/lib/heatMarshalFromSnapshot";
+import { filterAssignableTeamEntryMembers } from "@/lib/teamMemberSlots";
 
 type TeamMemberScopedDb = Pick<PrismaClient, "teamEntryMember">;
 
@@ -15,10 +16,11 @@ export async function fetchTeamMembersMapForTeamIds(
     select: {
       teamEntryId: true,
       userId: true,
+      role: true,
       user: { select: { profile: { select: { familyName: true, givenName: true } } } },
     },
   });
-  for (const m of memberRows) {
+  for (const m of filterAssignableTeamEntryMembers(memberRows)) {
     const list = map.get(m.teamEntryId) ?? [];
     list.push({
       userId: m.userId,

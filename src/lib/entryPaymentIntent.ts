@@ -268,7 +268,6 @@ export async function cancelEntryAsParticipantWithdraw(
   await tx.teamEntryMember.deleteMany({
     where: {
       userId: params.userId,
-      role: "ATHLETE",
       teamEntry: { competitionId: params.competitionId },
     },
   });

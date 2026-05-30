@@ -5,6 +5,7 @@ import type { PublicHeatResultRoundOverlay } from "@/lib/startListPublicHeatResu
 import {
   formatPublicHeatResultOverlayLabel,
   officialResultRowParticipantKey,
+  publicHeatResultOverlayKey,
 } from "@/lib/startListPublicHeatResults";
 import { secondaryClubLabelForTeamRow, secondaryClubLineForIndividual } from "@/lib/startListTeamDisplay";
 import type { SnapshotParticipant, SnapshotRoundBlock } from "./types";
@@ -89,7 +90,9 @@ export function SnapshotRoundContent({
                 const participantKey = snapshotParticipantKey(participant);
                 const resultRow =
                   heatHasConfirmedResults && participantKey
-                    ? resultOverlay?.rowsByKey[participantKey]
+                    ? resultOverlay?.rowsByKey[
+                        publicHeatResultOverlayKey(heat.heatIndex, participantKey)
+                      ]
                     : undefined;
                 const resultLabel = resultRow
                   ? formatPublicHeatResultOverlayLabel(resultRow)

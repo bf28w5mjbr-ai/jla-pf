@@ -5,6 +5,7 @@ import type {
   StartListEventPageIndividual,
   StartListEventPageTeam,
 } from "@/lib/startListEventTypes";
+import { formatAssignableTeamMemberNames } from "@/lib/teamMemberSlots";
 
 export type LineupParticipantStatusRow = {
   participantType: string;
@@ -29,6 +30,7 @@ export type LiveTeamEntryForLineup = {
   teamName: string;
   club: { id: string; name: string } | null;
   members: ReadonlyArray<{
+    role?: string | null;
     user: {
       profile: { familyName: string | null; givenName: string | null } | null;
     };
@@ -111,12 +113,7 @@ export function buildStartListLineupFromEntries(input: {
       teamName: teamEntry.teamName,
       clubId: teamEntry.club?.id ?? null,
       clubName: teamEntry.club?.name ?? null,
-      members: teamEntry.members
-        .map(
-          (member) =>
-            `${member.user.profile?.familyName ?? ""} ${member.user.profile?.givenName ?? ""}`.trim()
-        )
-        .filter(Boolean),
+      members: formatAssignableTeamMemberNames(teamEntry.members),
     });
   }
   placementTeamIds.sort();
@@ -132,12 +129,7 @@ function teamMembersFromLiveEntry(
     teamName: teamEntry.teamName,
     clubId: teamEntry.club?.id ?? null,
     clubName: teamEntry.club?.name ?? null,
-    members: teamEntry.members
-      .map(
-        (member) =>
-          `${member.user.profile?.familyName ?? ""} ${member.user.profile?.givenName ?? ""}`.trim()
-      )
-      .filter(Boolean),
+    members: formatAssignableTeamMemberNames(teamEntry.members),
   };
 }
 

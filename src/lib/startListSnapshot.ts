@@ -28,6 +28,7 @@ import {
   type StartListParticipant,
   type StartListRoundData,
 } from "@/lib/startListRounds";
+import { formatAssignableTeamMemberNames } from "@/lib/teamMemberSlots";
 
 type FirstRoundGeneratedBy = StartListRoundData["generatedBy"];
 
@@ -314,7 +315,8 @@ export async function buildStartListSnapshotPayload(
           select: { id: true, name: true },
         },
         members: {
-          include: {
+          select: {
+            role: true,
             user: {
               select: {
                 profile: { select: { familyName: true, givenName: true } },
@@ -360,9 +362,7 @@ export async function buildStartListSnapshotPayload(
       teamName: teamEntry.teamName,
       clubId: teamEntry.club?.id ?? null,
       clubName: teamEntry.club?.name ?? null,
-      members: teamEntry.members
-        .map((member) => `${member.user.profile?.familyName ?? ""} ${member.user.profile?.givenName ?? ""}`.trim())
-        .filter(Boolean),
+      members: formatAssignableTeamMemberNames(teamEntry.members),
     });
     teamByEvent.set(teamEntry.eventId, list);
   }

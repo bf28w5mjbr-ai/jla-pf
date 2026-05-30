@@ -7,6 +7,7 @@ import type {
 } from "@/lib/startListEventTypes";
 import { extractFrozenRoundsForEventFromSnapshotData } from "@/lib/startListEventTabDisplay";
 import { prisma } from "@/server/db";
+import { formatAssignableTeamMemberNames } from "@/lib/teamMemberSlots";
 
 /** 凍結ラウンドの先頭ヒートからユニーク参加者数を数える（公開表示用） */
 export function countUniqueParticipantsInFrozenRounds(
@@ -68,6 +69,7 @@ export async function loadPublicTeamLineupForEvent(
       members: {
         orderBy: { order: "asc" },
         select: {
+          role: true,
           user: { select: { profile: { select: { familyName: true, givenName: true } } } },
         },
       },
@@ -80,9 +82,7 @@ export async function loadPublicTeamLineupForEvent(
     teamName: row.teamName,
     clubId: row.club?.id ?? null,
     clubName: row.club?.name ?? null,
-    members: row.members.map(
-      (m) => `${m.user.profile?.familyName ?? ""} ${m.user.profile?.givenName ?? ""}`.trim()
-    ),
+    members: formatAssignableTeamMemberNames(row.members),
   }));
 }
 

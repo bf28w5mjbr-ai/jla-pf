@@ -39,6 +39,11 @@ export function officialResultRowParticipantKey(row: {
   return resultParticipantKeyFromParts(row.entryType, row.competitionEntryId, row.teamEntryId);
 }
 
+/** 公開オーバーレイ: ヒート番号 + 参加者キー（スナップショットのヒートと一致する行のみ表示） */
+export function publicHeatResultOverlayKey(heatIndex: number, participantKey: string): string {
+  return `${heatIndex}:${participantKey}`;
+}
+
 /** 確定ヒートのみを overlay に含める（単体テスト用の純関数） */
 export function buildPublicHeatResultRoundOverlays(
   officialResults: OfficialResultForOverlay[]
@@ -63,7 +68,7 @@ export function buildPublicHeatResultRoundOverlays(
       if (row.heat == null || !confirmedSet.has(row.heat)) continue;
       const key = officialResultRowParticipantKey(row);
       if (!key) continue;
-      rowsByKey[key] = {
+      rowsByKey[publicHeatResultOverlayKey(row.heat, key)] = {
         rank: row.rank,
         status: row.status,
         advanceWithoutRank: row.advanceWithoutRank,

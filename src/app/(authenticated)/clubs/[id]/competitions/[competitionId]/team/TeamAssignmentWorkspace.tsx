@@ -10,54 +10,11 @@ import {
   prismaCompetitionToTeamAssignmentCompetitionJson,
   prismaEventToTeamAssignmentEventJson,
 } from "@/lib/teamMemberSlotEligibility";
-import { extractFrozenRoundsForEventFromSnapshotData } from "@/lib/startListEventTabDisplay";
-import { backfillTeamEntryMembersFromSnapshotIfEmpty } from "@/lib/teamEntryMemberSnapshotBackfill";
-
-function parseRelayPositionNames(raw: unknown): string[] {
-  if (!raw || !Array.isArray(raw)) return [];
-  return raw
-    .filter((x): x is string => typeof x === "string")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-function resolveTeamRelaySlotCount(
-  configured: number | null | undefined,
-  members: { order: number | null }[]
-): number {
-  if (typeof configured === "number" && configured >= 1 && configured <= 32) {
-    return configured;
-  }
-  const maxOrder = members.reduce((acc, m) => Math.max(acc, m.order ?? 0), 0);
-  return Math.min(32, Math.max(maxOrder, members.length, 1));
-}
-
-function buildMemberSlotsFromDb(
-  members: { userId: string; order: number | null }[],
-  slotCount: number
-): (string | null)[] {
-  const slots: (string | null)[] = Array.from({ length: slotCount }, () => null);
-  const sorted = [...members].sort((a, b) => {
-    const ao = a.order ?? 999;
-    const bo = b.order ?? 999;
-    if (ao !== bo) return ao - bo;
-    return a.userId.localeCompare(b.userId);
-  });
-  let fillCursor = 0;
-  for (const m of sorted) {
-    if (m.order != null && m.order >= 1) {
-      const idx = m.order - 1;
-      if (idx < slotCount) slots[idx] = m.userId;
-    } else {
-      while (fillCursor < slotCount && slots[fillCursor] != null) fillCursor++;
-      if (fillCursor < slotCount) {
-        slots[fillCursor] = m.userId;
-        fillCursor++;
-      }
-    }
-  }
-  return slots;
-}
+import {
+  buildMemberSlotsFromDb,
+  parseRelayPositionNames,
+  resolveTeamRelaySlotCount,
+} from "@/lib/teamMemberSlots";
 
 type ClubOption = {
   id: string;
@@ -126,25 +83,6 @@ export default async function TeamAssignmentWorkspace({
 
   const now = new Date();
 
-  const startListSnapshot = await prisma.competitionStartListSnapshot.findUnique({
-    where: { competitionId: competition.id },
-    select: { data: true },
-  });
-  await Promise.all(
-    competition.events.map(async (event) => {
-      const frozenSnapshotRounds = extractFrozenRoundsForEventFromSnapshotData(
-        startListSnapshot?.data,
-        event.id
-      );
-      if (!frozenSnapshotRounds?.length) return;
-      await backfillTeamEntryMembersFromSnapshotIfEmpty(prisma, {
-        competitionId: competition.id,
-        eventId: event.id,
-        frozenSnapshotRounds,
-      });
-    })
-  );
-
   const teamEntriesFull = await prisma.teamEntry.findMany({
     where: {
       competitionId: competition.id,
@@ -173,6 +111,7 @@ export default async function TeamAssignmentWorkspace({
         select: {
           userId: true,
           order: true,
+          role: true,
         },
       },
     },
@@ -234,7 +173,6 @@ export default async function TeamAssignmentWorkspace({
                   ? "女子"
                   : "混合",
             teamName: entry.teamName,
-            memberUserIds: entry.members.map((member) => member.userId),
             relayPositionCount: entry.event.teamRelayPositionCount ?? null,
             relayPositionLabels: parseRelayPositionNames(entry.event.teamRelayPositionNames),
             memberSlots,
