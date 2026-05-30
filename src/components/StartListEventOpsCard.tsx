@@ -250,7 +250,8 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
       dayOps.showDayOpsShell && activeTabIndex === index && dayOps.listMarshalRound !== null
         ? {
             heats: dayOps.listMarshalHeats,
-            loading: dayOps.listMarshalLoading,
+            loading: dayOps.listMarshalParticipantsLoading,
+            callWindowLoading: dayOps.listMarshalCallWindowLoading,
             round: dayOps.listMarshalRoundForMutations ?? dayOps.listMarshalRound,
             competitionId,
             marshalOpsBlocked: !heatPlanConfirmed || dayOps.marshalRoundMismatch,

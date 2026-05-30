@@ -14,11 +14,7 @@ import {
   isEventPresentInSnapshot,
   listMarshalRoundsInSnapshotForEvent,
 } from "@/lib/heatMarshalFromSnapshot";
-import {
-  loadStartListSnapshotPayload,
-  loadStartListSnapshotPayloadLoose,
-  loadStartListSnapshotPayloadWithFallback,
-} from "@/lib/heatMarshalGate";
+import { loadStartListSnapshotPayloadWithFallback } from "@/lib/heatMarshalGate";
 import { buildParticipantMarshalDisplayByKeyForRound } from "@/lib/competitionParticipantStatusScope";
 import { effectiveDayOpsStatusForMarshalDisplay } from "@/lib/dayOpsParticipantStatusDisplay";
 import { buildMarshalRoundLabelBySnapshotKey, getLiveTabsAligned } from "@/lib/startListEventTabDisplay";
@@ -77,9 +73,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         where: { id: eventId, competitionId },
         select: { id: true, startListHeatPlanConfirmedAt: true, startListRoundCount: true },
       }),
-      loadStartListSnapshotPayload(competitionId).then(
-        async (s) => s ?? (await loadStartListSnapshotPayloadLoose(competitionId))
-      ),
+      loadStartListSnapshotPayloadWithFallback(competitionId),
       prisma.competition.findUnique({
         where: { id: competitionId },
         select: { startListSettings: true },
@@ -123,11 +117,21 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const heatsOrdered = [...(roundData?.heats ?? [])].sort((a, b) => a.heatIndex - b.heatIndex);
 
     if (summaryOnly) {
-      const wallSummary = Date.now();
+      const heatIndicesForBlock = heatsOrdered.map((h) => h.heatIndex);
+      const marshalReopenBlockedHeats =
+        heatIndicesForBlock.length > 0
+          ? await heatIndicesBlockingMarshalReopen(prisma, {
+              competitionId,
+              eventId,
+              round: effectiveRound,
+              heatIndices: heatIndicesForBlock,
+            })
+          : new Set<number>();
+      const wall2c = Date.now();
       const heats = heatsOrdered.map((h) => ({
         heatIndex: h.heatIndex,
         callClosedAt: closedByHeat.get(h.heatIndex)?.toISOString() ?? null,
-        marshalReopenBlocked: false,
+        marshalReopenBlocked: marshalReopenBlockedHeats.has(h.heatIndex),
         participantCount: (h.participants ?? []).length,
         participants: [] as Array<{
           lane: number;
@@ -140,6 +144,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           calledAt: string | null;
         }>,
       }));
+      const wallSummary = Date.now();
       const timingSummary =
         dayOpsServerTimingEnabled() ?
           {
@@ -147,7 +152,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
               "Server-Timing": formatDayOpsServerTiming([
                 { name: "db_round1", durMs: wall1 - wall0 },
                 { name: "db_marshal_rows", durMs: wall2 - wall1 },
-                { name: "build_json", durMs: wallSummary - wall2 },
+                { name: "db_reopen_gate", durMs: wall2c - wall2 },
+                { name: "build_json", durMs: wallSummary - wall2c },
               ]),
             },
           }

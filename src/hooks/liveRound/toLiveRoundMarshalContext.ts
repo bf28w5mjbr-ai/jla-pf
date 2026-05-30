@@ -8,6 +8,7 @@ export function toLiveRoundMarshalContext(
   return {
     heats: m.heats,
     loading: m.loading,
+    callWindowLoading: m.callWindowLoading,
     round: m.round,
     competitionId: m.competitionId,
     marshalOpsBlocked: m.marshalOpsBlocked,

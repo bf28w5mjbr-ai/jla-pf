@@ -138,13 +138,15 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
     queueMarshalDraftToggle,
   } = props;
 
+  const callWindowLoading = Boolean(m && (m.callWindowLoading ?? m.loading));
+
   if (isTeam) {
     const teams = heatItems as TeamItem[];
 
     const heatCallClosed = Boolean(apiHeat?.callClosedAt);
     const heatCloseDisabled =
       !m ||
-      m.loading ||
+      callWindowLoading ||
       !apiHeat ||
       m.marshalOpsBlocked ||
       marshalRoundMismatch ||
@@ -152,7 +154,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
       heatCallClosed;
     const heatReopenDisabled =
       !m ||
-      m.loading ||
+      callWindowLoading ||
       !apiHeat ||
       m.marshalOpsBlocked ||
       marshalRoundMismatch ||
@@ -205,7 +207,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
               />
             ) : null}
             {(showMarshalAdminUi || resultCaptureVisible) &&
-            !m?.loading &&
+            !callWindowLoading &&
             !apiHeat &&
             !marshalRoundMismatch ? (
               <span className="ml-1.5 font-normal text-amber-700 dark:text-amber-300">
@@ -379,11 +381,11 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
             </div>
           ) : null}
         </div>
-        {(m?.loading || (resultCaptureVisible && resultCapture?.loading)) ? (
+        {(callWindowLoading || (resultCaptureVisible && resultCapture?.loading)) ? (
           <p className="mt-1 text-[10px] text-muted-foreground">
-            {resultCaptureVisible && resultCapture?.loading && !m?.loading
+            {resultCaptureVisible && resultCapture?.loading && !callWindowLoading
               ? "リザルト記録状況を読み込み中…"
-              : "マーシャル状態を読み込み中…"}
+              : "マーシャル締切状態を読み込み中…"}
           </p>
         ) : null}
         {resultCaptureVisible &&
@@ -655,7 +657,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
   const heatCallClosed = Boolean(apiHeat?.callClosedAt);
     const heatCloseDisabled =
       !m ||
-      m.loading ||
+      callWindowLoading ||
       !apiHeat ||
       m.marshalOpsBlocked ||
       marshalRoundMismatch ||
@@ -663,7 +665,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
       heatCallClosed;
     const heatReopenDisabled =
       !m ||
-      m.loading ||
+      callWindowLoading ||
       !apiHeat ||
       m.marshalOpsBlocked ||
       marshalRoundMismatch ||
@@ -716,7 +718,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
               />
             ) : null}
             {(showMarshalAdminUi || resultCaptureVisible) &&
-            !m?.loading &&
+            !callWindowLoading &&
             !apiHeat &&
             !marshalRoundMismatch ? (
               <span className="ml-1.5 font-normal text-amber-700 dark:text-amber-300">
@@ -889,11 +891,11 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
             </div>
           ) : null}
         </div>
-        {(m?.loading || (resultCaptureVisible && resultCapture?.loading)) ? (
+        {(callWindowLoading || (resultCaptureVisible && resultCapture?.loading)) ? (
           <p className="mt-1 text-[10px] text-muted-foreground">
-            {resultCaptureVisible && resultCapture?.loading && !m?.loading
+            {resultCaptureVisible && resultCapture?.loading && !callWindowLoading
               ? "リザルト記録状況を読み込み中…"
-              : "マーシャル状態を読み込み中…"}
+              : "マーシャル締切状態を読み込み中…"}
           </p>
         ) : null}
         {resultCaptureVisible &&

@@ -3,6 +3,7 @@ import { marshalParticipantKey, type HeatMarshalHeatRow } from "@/components/Hea
 import {
   applyMarshalDraftOpsToHeats,
   mergeListMarshalHeatsOnRefetch,
+  mergeMarshalHeatSummaryLayer,
   mergeMarshalHeatOverlayOps,
   pruneMarshalCommittedOps,
 } from "./panelHelpers";
@@ -87,6 +88,27 @@ describe("mergeListMarshalHeatsOnRefetch", () => {
     const prev = applyMarshalDraftOpsToHeats([baseHeat], { [op.opKey]: op });
     const serverCalled = applyMarshalDraftOpsToHeats([baseHeat], { [op.opKey]: op });
     const merged = mergeListMarshalHeatsOnRefetch(prev, serverCalled);
+    expect(merged[0]?.participants[0]?.status).toBe("CALLED");
+  });
+
+  it("mergeMarshalHeatSummaryLayer updates callClosedAt and keeps participants", () => {
+    const prev: HeatMarshalHeatRow[] = [
+      {
+        ...baseHeat,
+        participants: [{ ...baseHeat.participants[0]!, status: "CALLED" }],
+      },
+    ];
+    const summary: HeatMarshalHeatRow[] = [
+      {
+        heatIndex: 1,
+        callClosedAt: "2026-05-30T10:00:00.000Z",
+        marshalReopenBlocked: true,
+        participants: [],
+      },
+    ];
+    const merged = mergeMarshalHeatSummaryLayer(prev, summary);
+    expect(merged[0]?.callClosedAt).toBe("2026-05-30T10:00:00.000Z");
+    expect(merged[0]?.marshalReopenBlocked).toBe(true);
     expect(merged[0]?.participants[0]?.status).toBe("CALLED");
   });
 });

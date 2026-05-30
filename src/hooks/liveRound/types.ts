@@ -37,6 +37,7 @@ export type OnMarshalSuccessOptions = {
 export type LiveRoundMarshalContext = {
   heats: import("@/components/HeatMarshalLanePanel").HeatMarshalHeatRow[] | null;
   loading: boolean;
+  callWindowLoading?: boolean;
   round: ResultRound;
   competitionId: string;
   marshalOpsBlocked: boolean;

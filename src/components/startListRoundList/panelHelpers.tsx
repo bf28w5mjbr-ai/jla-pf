@@ -135,6 +135,35 @@ export function mergeListMarshalHeatsOnRefetch(
   }));
 }
 
+/** summary=1 の締切状態を既存 heats にマージ（参加者行は維持） */
+export function mergeMarshalHeatSummaryLayer(
+  prev: HeatMarshalHeatRow[] | null | undefined,
+  summaryHeats: HeatMarshalHeatRow[]
+): HeatMarshalHeatRow[] {
+  if (summaryHeats.length === 0) return prev ?? [];
+  const summaryByIndex = new Map(summaryHeats.map((h) => [h.heatIndex, h]));
+  if (prev?.length) {
+    const seen = new Set<number>();
+    const merged = prev.map((h) => {
+      const summary = summaryByIndex.get(h.heatIndex);
+      seen.add(h.heatIndex);
+      if (!summary) return h;
+      return {
+        ...h,
+        callClosedAt: summary.callClosedAt,
+        marshalReopenBlocked: summary.marshalReopenBlocked ?? h.marshalReopenBlocked,
+      };
+    });
+    for (const summary of summaryHeats) {
+      if (!seen.has(summary.heatIndex)) {
+        merged.push({ ...summary, participants: summary.participants ?? [] });
+      }
+    }
+    return merged.sort((a, b) => a.heatIndex - b.heatIndex);
+  }
+  return summaryHeats.map((h) => ({ ...h, participants: h.participants ?? [] }));
+}
+
 /** 同一チームの `T:teamId:userId` 行を `buildParticipantDayOpsStatusByKey` 相当に畳む。レガシー `T:teamId` のみのときはその値。 */
 export function foldTeamServerStatusFromMemberKeys(
   teamEntryId: string,

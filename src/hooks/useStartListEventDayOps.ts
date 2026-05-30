@@ -13,6 +13,7 @@ import type {
 import {
   applyMarshalDraftOpsToHeats,
   mergeListMarshalHeatsOnRefetch,
+  mergeMarshalHeatSummaryLayer,
   patchHeatMarshalCallWindowInHeats,
 } from "@/components/startListRoundList/panelHelpers";
 import type { MarshalDraftOp, OnMarshalSuccessOptions } from "@/hooks/liveRound/types";
@@ -37,6 +38,16 @@ type Args = {
   tabCount: number;
 };
 
+function marshalHeatsCacheKey(eventId: string, round: ResultRound): string {
+  return `${eventId}:${round}`;
+}
+
+function marshalHeatsHaveParticipants(heats: HeatMarshalHeatRow[] | undefined): boolean {
+  return Boolean(heats?.some((h) => h.participants.length > 0));
+}
+
+type HeatMarshalFetchPhase = "auto" | "full-only";
+
 export function useStartListEventDayOps({
   competitionId,
   eventId,
@@ -50,7 +61,10 @@ export function useStartListEventDayOps({
 
   const [listMarshalHeats, setListMarshalHeats] = useState<HeatMarshalHeatRow[] | null>(null);
   const [listMarshalApiRound, setListMarshalApiRound] = useState<ResultRound | null>(null);
-  const [listMarshalLoading, setListMarshalLoading] = useState(false);
+  /** 締切バッジ・締切ボタン向け（summary=1 完了で false） */
+  const [listMarshalCallWindowLoading, setListMarshalCallWindowLoading] = useState(false);
+  /** 参加者チェック・NFC 向け（全量 GET 完了で false） */
+  const [listMarshalParticipantsLoading, setListMarshalParticipantsLoading] = useState(false);
   const [listResultRows, setListResultRows] = useState<HeatResultCaptureRow[]>([]);
   const [listResultLocked, setListResultLocked] = useState(false);
   const [listResultLoading, setListResultLoading] = useState(false);
@@ -287,46 +301,102 @@ export function useStartListEventDayOps({
   }, [showResultOps, listMarshalRound, anyTabInResultMode, competitionId, eventId]);
 
   const marshalHeatFetchInFlightRef = useRef(false);
+  const marshalHeatsCacheRef = useRef<Map<string, HeatMarshalHeatRow[]>>(new Map());
+
+  useEffect(() => {
+    marshalHeatsCacheRef.current.clear();
+  }, [eventId]);
+
+  const storeMarshalHeatsForRound = useCallback(
+    (round: ResultRound, heats: HeatMarshalHeatRow[]) => {
+      marshalHeatsCacheRef.current.set(marshalHeatsCacheKey(eventId, round), heats);
+    },
+    [eventId]
+  );
 
   const fetchListMarshalHeatsCore = useCallback(
-    async (signal?: AbortSignal) => {
+    async (signal?: AbortSignal, phase: HeatMarshalFetchPhase = "auto") => {
       if (!listMarshalRound || marshalHeatFetchInFlightRef.current) return;
       marshalHeatFetchInFlightRef.current = true;
+      const round = listMarshalRound;
+      const baseUrl = `/api/competitions/${competitionId}/day-ops/heat-marshal?eventId=${encodeURIComponent(eventId)}&round=${encodeURIComponent(round)}`;
+      const runSummary = phase !== "full-only";
+
       try {
+        if (runSummary) {
+          await measureDayOpsAsync("day-ops heat-marshal summary", async () => {
+            const res = await dayOpsFetch(`${baseUrl}&summary=1`, { signal });
+            if (signal?.aborted) return;
+            if (!res.ok) {
+              setListMarshalHeats(null);
+              setListMarshalApiRound(null);
+              setListMarshalCallWindowLoading(false);
+              setListMarshalParticipantsLoading(false);
+              return;
+            }
+            const data = (await res.json()) as { heats?: HeatMarshalHeatRow[]; round?: unknown };
+            const incoming = data.heats ?? [];
+            setListMarshalHeats((prev) => {
+              const merged = mergeMarshalHeatSummaryLayer(prev, incoming);
+              storeMarshalHeatsForRound(round, merged);
+              return marshalHeatsSemanticEqual(prev, merged) ? prev : merged;
+            });
+            setListMarshalApiRound(parseHeatMarshalResponseRound(data.round));
+            setListMarshalCallWindowLoading(false);
+          });
+        }
+
+        if (signal?.aborted) return;
+
         await measureDayOpsAsync("day-ops heat-marshal", async () => {
-          const res = await dayOpsFetch(
-            `/api/competitions/${competitionId}/day-ops/heat-marshal?eventId=${encodeURIComponent(eventId)}&round=${encodeURIComponent(listMarshalRound)}`,
-            { signal }
-          );
+          const res = await dayOpsFetch(baseUrl, { signal });
+          if (signal?.aborted) return;
           if (!res.ok) {
+            if (runSummary) {
+              setListMarshalParticipantsLoading(false);
+              return;
+            }
             setListMarshalHeats(null);
             setListMarshalApiRound(null);
+            setListMarshalCallWindowLoading(false);
+            setListMarshalParticipantsLoading(false);
             return;
           }
           const data = (await res.json()) as { heats?: HeatMarshalHeatRow[]; round?: unknown };
           const incoming = data.heats ?? [];
           setListMarshalHeats((prev) => {
             const merged = mergeListMarshalHeatsOnRefetch(prev, incoming);
+            storeMarshalHeatsForRound(round, merged);
             return marshalHeatsSemanticEqual(prev, merged) ? prev : merged;
           });
           setListMarshalApiRound(parseHeatMarshalResponseRound(data.round));
+          setListMarshalCallWindowLoading(false);
+          setListMarshalParticipantsLoading(false);
         });
       } finally {
         marshalHeatFetchInFlightRef.current = false;
       }
     },
-    [competitionId, eventId, listMarshalRound]
+    [competitionId, eventId, listMarshalRound, storeMarshalHeatsForRound]
   );
 
   const refetchListMarshalHeats = useCallback(async () => {
     try {
-      await fetchListMarshalHeatsCore();
+      const cached = listMarshalRound
+        ? marshalHeatsCacheRef.current.get(marshalHeatsCacheKey(eventId, listMarshalRound))
+        : undefined;
+      await fetchListMarshalHeatsCore(
+        undefined,
+        marshalHeatsHaveParticipants(cached) ? "full-only" : "auto"
+      );
     } catch (e) {
       if (e instanceof Error && e.name === "AbortError") return;
       setListMarshalHeats(null);
       setListMarshalApiRound(null);
+      setListMarshalCallWindowLoading(false);
+      setListMarshalParticipantsLoading(false);
     }
-  }, [fetchListMarshalHeatsCore]);
+  }, [fetchListMarshalHeatsCore, eventId, listMarshalRound]);
 
   const refreshDayOpsListsFromPoll = useCallback(
     (opts?: { skipMarshalHeat?: boolean; skipResultCapture?: boolean; skipParticipantPoll?: boolean }) => {
@@ -357,24 +427,37 @@ export function useStartListEventDayOps({
       if (!anyTabNeedsMarshalHeat) {
         setListMarshalHeats(null);
         setListMarshalApiRound(null);
-        setListMarshalLoading(false);
+        setListMarshalCallWindowLoading(false);
+        setListMarshalParticipantsLoading(false);
       }
       return;
     }
     const ac = new AbortController();
-    setListMarshalLoading(true);
-    setListMarshalApiRound(null);
-    void fetchListMarshalHeatsCore(ac.signal)
+    const cacheKey = marshalHeatsCacheKey(eventId, listMarshalRound);
+    const cached = marshalHeatsCacheRef.current.get(cacheKey);
+    const cachedHasParticipants = marshalHeatsHaveParticipants(cached);
+
+    if (cached?.length) {
+      setListMarshalHeats(cached);
+      setListMarshalApiRound(listMarshalRound);
+      setListMarshalCallWindowLoading(false);
+      setListMarshalParticipantsLoading(!cachedHasParticipants);
+    } else {
+      setListMarshalCallWindowLoading(true);
+      setListMarshalParticipantsLoading(true);
+      setListMarshalApiRound(null);
+    }
+
+    void fetchListMarshalHeatsCore(ac.signal, cachedHasParticipants ? "full-only" : "auto")
       .catch((e) => {
         if (e instanceof Error && e.name === "AbortError") return;
         setListMarshalHeats(null);
         setListMarshalApiRound(null);
-      })
-      .finally(() => {
-        if (!ac.signal.aborted) setListMarshalLoading(false);
+        setListMarshalCallWindowLoading(false);
+        setListMarshalParticipantsLoading(false);
       });
     return () => ac.abort();
-  }, [showDayOpsShell, listMarshalRound, anyTabNeedsMarshalHeat, fetchListMarshalHeatsCore]);
+  }, [showDayOpsShell, listMarshalRound, anyTabNeedsMarshalHeat, fetchListMarshalHeatsCore, eventId]);
 
   useDayOpsStartListPolling({
     enabled: showDayOpsShell,
@@ -397,11 +480,16 @@ export function useStartListEventDayOps({
   const onMarshalSuccess = useCallback(
     async (appliedOps?: ReadonlyArray<MarshalDraftOp>, options?: OnMarshalSuccessOptions) => {
       if (options?.heatCallWindowOnly && options.heatIndex != null) {
-        setListMarshalHeats((prev) =>
-          prev?.length
-            ? patchHeatMarshalCallWindowInHeats(prev, options.heatIndex!, options.callClosed === true)
-            : prev
-        );
+        setListMarshalHeats((prev) => {
+          const next =
+            prev?.length
+              ? patchHeatMarshalCallWindowInHeats(prev, options.heatIndex!, options.callClosed === true)
+              : prev;
+          if (next?.length && listMarshalRound) {
+            storeMarshalHeatsForRound(listMarshalRound, next);
+          }
+          return next;
+        });
         dispatchJlaDayOpsParticipantStatusChanged(competitionId, eventId, {
           skipMarshalHeatRefetch: true,
           skipParticipantPoll: true,
@@ -443,6 +531,8 @@ export function useStartListEventDayOps({
       anyTabInResultMode,
       showResultOps,
       listMarshalHeats?.length,
+      listMarshalRound,
+      storeMarshalHeatsForRound,
     ]
   );
 
@@ -461,7 +551,8 @@ export function useStartListEventDayOps({
     getViewModeForTab,
     listMarshalHeats,
     listMarshalHeatsByIndex,
-    listMarshalLoading,
+    listMarshalCallWindowLoading,
+    listMarshalParticipantsLoading,
     listMarshalRound,
     listMarshalRoundForMutations,
     marshalRoundMismatch,

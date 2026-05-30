@@ -66,7 +66,10 @@ export type LiveRoundContentProps = {
   previewMaxLanesPerHeat?: number;
   startListMarshal?: {
     heats: HeatMarshalHeatRow[] | null;
+    /** 参加者チェック・NFC 向け */
     loading: boolean;
+    /** 締切バッジ・締切ボタン向け（未指定時は loading にフォールバック） */
+    callWindowLoading?: boolean;
     /** heat-marshal GET が返した実効ラウンド（PUT / 締切 / リザルト API と一致させる） */
     round: ResultRound;
     competitionId: string;
