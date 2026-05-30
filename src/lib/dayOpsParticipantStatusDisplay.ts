@@ -147,14 +147,22 @@ export function dayOpsTerminalStatusBadgeClass(status: string): string {
  */
 export const JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED = "jla-dayops-participant-status-changed";
 
+export type DayOpsParticipantStatusChangedDetail = {
+  competitionId: string;
+  eventId: string;
+  /** 当該端末で heat-marshal を楽観更新済みのとき、全量 GET の即時再取得を省略 */
+  skipMarshalHeatRefetch?: boolean;
+};
+
 export function dispatchJlaDayOpsParticipantStatusChanged(
   competitionId: string,
-  eventId: string
+  eventId: string,
+  extra?: Pick<DayOpsParticipantStatusChangedDetail, "skipMarshalHeatRefetch">
 ): void {
   if (typeof window === "undefined") return;
   window.dispatchEvent(
     new CustomEvent(JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED, {
-      detail: { competitionId, eventId },
+      detail: { competitionId, eventId, ...extra },
     })
   );
 }

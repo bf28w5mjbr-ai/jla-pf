@@ -8,6 +8,7 @@ import {
   DAY_OPS_STATUS_MARSHAL_ABSENT,
   dayOpsParticipantStatusLabelJa,
   dayOpsTerminalStatusBadgeClass,
+  effectiveDayOpsStatusForMarshalDisplay,
   isDayOpsTerminalParticipantStatus,
 } from "@/lib/dayOpsParticipantStatusDisplay";
 import {
@@ -478,4 +479,28 @@ export function snapshotLaneForTeam(
 /** JSON 由来の heatIndex が string でも一致する。マーシャル API と表示用 heat 番号の突合に使う */
 export function marshalHeatMatchesDisplayIndex(h: HeatMarshalHeatRow, displayHeatNumber: number): boolean {
   return Number(h.heatIndex) === Number(displayHeatNumber);
+}
+
+/** ヒート締切/再開の楽観更新（未召集→未出場表示、再開時は MARSHAL_ABSENT を PENDING に戻す） */
+export function patchHeatMarshalCallWindowInHeats(
+  heats: HeatMarshalHeatRow[],
+  displayHeatNumber: number,
+  callClosed: boolean
+): HeatMarshalHeatRow[] {
+  const callClosedAt = callClosed ? new Date().toISOString() : null;
+  return heats.map((h) => {
+    if (!marshalHeatMatchesDisplayIndex(h, displayHeatNumber)) return h;
+    return {
+      ...h,
+      callClosedAt,
+      participants: h.participants.map((p) => {
+        const base =
+          !callClosed && p.status === DAY_OPS_STATUS_MARSHAL_ABSENT ? "PENDING" : p.status;
+        return {
+          ...p,
+          status: effectiveDayOpsStatusForMarshalDisplay(base, callClosed),
+        };
+      }),
+    };
+  });
 }

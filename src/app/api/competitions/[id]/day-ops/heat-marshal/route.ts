@@ -67,8 +67,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "roundが不正です" }, { status: 400 });
     }
 
+    const TERMINAL_DAY_OPS_STATUSES = ["DNS", "WITHDRAWN", "DSQ"] as const;
+
     const wall0 = Date.now();
-    const [eventRow, snapshot, statuses, competition] = await Promise.all([
+    const [eventRow, snapshot, competition] = await Promise.all([
       prisma.event.findFirst({
         where: { id: eventId, competitionId },
         select: { id: true, startListHeatPlanConfirmedAt: true, startListRoundCount: true },
@@ -76,20 +78,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
       loadStartListSnapshotPayload(competitionId).then(
         async (s) => s ?? (await loadStartListSnapshotPayloadLoose(competitionId))
       ),
-      prisma.competitionParticipantStatus.findMany({
-        where: { competitionId, eventId },
-        orderBy: { updatedAt: "desc" },
-        select: {
-          participantType: true,
-          competitionEntryId: true,
-          teamEntryId: true,
-          teamMemberUserId: true,
-          status: true,
-          calledAt: true,
-          marshalRound: true,
-          updatedAt: true,
-        },
-      }),
       prisma.competition.findUnique({
         where: { id: competitionId },
         select: { startListSettings: true },
@@ -115,10 +103,33 @@ export async function GET(request: NextRequest, context: RouteContext) {
       roundWasAdjusted = true;
     }
 
-    const marshalRows = await prisma.competitionHeatMarshalState.findMany({
-      where: { competitionId, eventId, round: effectiveRound },
-      select: { heatIndex: true, callClosedAt: true },
-    });
+    const [statuses, marshalRows] = await Promise.all([
+      prisma.competitionParticipantStatus.findMany({
+        where: {
+          competitionId,
+          eventId,
+          OR: [
+            { marshalRound: effectiveRound },
+            { status: { in: [...TERMINAL_DAY_OPS_STATUSES] } },
+          ],
+        },
+        orderBy: { updatedAt: "desc" },
+        select: {
+          participantType: true,
+          competitionEntryId: true,
+          teamEntryId: true,
+          teamMemberUserId: true,
+          status: true,
+          calledAt: true,
+          marshalRound: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.competitionHeatMarshalState.findMany({
+        where: { competitionId, eventId, round: effectiveRound },
+        select: { heatIndex: true, callClosedAt: true },
+      }),
+    ]);
     const wall2 = Date.now();
 
     const closedByHeat = new Map<number, Date | null>();

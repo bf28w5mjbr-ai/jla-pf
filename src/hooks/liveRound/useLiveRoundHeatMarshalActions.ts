@@ -56,7 +56,11 @@ export function useLiveRoundHeatMarshalActions(args: {
 
         patchHeatCallClosed(displayHeatNumber);
         setHeatCloseTarget(null);
-        await m.onMarshalSuccess();
+        await m.onMarshalSuccess(undefined, {
+          heatCallWindowOnly: true,
+          heatIndex: displayHeatNumber,
+          callClosed: true,
+        });
         deleteHeatOperationDraftFireAndForget(m.competitionId, {
           eventId,
           round: m.round,
@@ -95,7 +99,11 @@ export function useLiveRoundHeatMarshalActions(args: {
         }
         patchHeatCallReopened(displayHeatNumber);
         setHeatReopenTarget(null);
-        await m.onMarshalSuccess();
+        await m.onMarshalSuccess(undefined, {
+          heatCallWindowOnly: true,
+          heatIndex: displayHeatNumber,
+          callClosed: false,
+        });
         toast.success(`ヒート ${displayHeatNumber} のマーシャルを受付中に戻しました`);
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "処理に失敗しました");

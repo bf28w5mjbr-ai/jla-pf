@@ -25,6 +25,13 @@ export type ResultDraftOp = {
   draftSequence?: number;
 };
 
+export type OnMarshalSuccessOptions = {
+  /** ヒート締切/再開のみ。heat-marshal 全量 GET と router.refresh を省略 */
+  heatCallWindowOnly?: boolean;
+  heatIndex?: number;
+  callClosed?: boolean;
+};
+
 export type LiveRoundMarshalContext = {
   heats: import("@/components/HeatMarshalLanePanel").HeatMarshalHeatRow[] | null;
   loading: boolean;
@@ -34,7 +41,10 @@ export type LiveRoundMarshalContext = {
   marshalRoundMismatch?: boolean;
   isCallClosed: boolean;
   marshalUiMode?: "dialog" | "inline" | "result";
-  onMarshalSuccess: (appliedOps?: ReadonlyArray<MarshalDraftOp>) => void | Promise<void>;
+  onMarshalSuccess: (
+    appliedOps?: ReadonlyArray<MarshalDraftOp>,
+    options?: OnMarshalSuccessOptions
+  ) => void | Promise<void>;
   resultCapture?: {
     rows: import("@/lib/heatResultCaptureApi").HeatResultCaptureRow[];
     locked: boolean;

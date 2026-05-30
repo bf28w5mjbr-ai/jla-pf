@@ -78,7 +78,8 @@ export type LiveRoundContentProps = {
     marshalRoundMismatch?: boolean;
     isCallClosed: boolean;
     onMarshalSuccess: (
-      appliedOps?: ReadonlyArray<import("@/hooks/liveRound/types").MarshalDraftOp>
+      appliedOps?: ReadonlyArray<import("@/hooks/liveRound/types").MarshalDraftOp>,
+      options?: import("@/hooks/liveRound/types").OnMarshalSuccessOptions
     ) => void | Promise<void>;
     /** dialog: 一覧のみ。inline: マーシャル。result: リザルト（チェック・NFCで着順） */
     marshalUiMode?: "dialog" | "inline" | "result";

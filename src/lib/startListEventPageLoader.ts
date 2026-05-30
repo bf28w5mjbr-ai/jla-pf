@@ -420,7 +420,8 @@ export async function loadStartListEventPage(input: {
         showVenueOps,
       },
       periodicSyncEnabled: true,
-      periodicSnapshotSync: true,
+      /** 種目詳細は day-ops API で追随。30秒ごとの sync-if-needed+全SSRは避ける */
+      periodicSnapshotSync: false,
       periodicSyncIntervalSec: resolveStartListPeriodicSyncIntervalSec(),
     },
   };

@@ -4,15 +4,16 @@ import { useEffect } from "react";
 import { JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED } from "@/lib/dayOpsParticipantStatusDisplay";
 
 const DAY_OPS_POLL_INTERVAL_NORMAL_MS = 20_000;
-const DAY_OPS_POLL_INTERVAL_SYNC_MS = 2_500;
+const DAY_OPS_POLL_INTERVAL_SYNC_MS = 6_000;
 
 type Args = {
   enabled: boolean;
   competitionId: string;
   eventId: string;
-  activeViewMode: "normal" | "marshal" | "result";
+  /** いずれかのタブがマーシャル/リザルトモードのときは同期間隔を短くする */
+  dayOpsListsSyncActive: boolean;
   refreshParticipantStatuses: () => void | Promise<void>;
-  refreshMarshalAndResultLists: () => void;
+  refreshMarshalAndResultLists: (opts?: { skipMarshalHeat?: boolean }) => void;
 };
 
 /** 当日運用のポーリング・visibility・SSE・カスタムイベント同期 */
@@ -20,7 +21,7 @@ export function useDayOpsStartListPolling({
   enabled,
   competitionId,
   eventId,
-  activeViewMode,
+  dayOpsListsSyncActive,
   refreshParticipantStatuses,
   refreshMarshalAndResultLists,
 }: Args) {
@@ -31,15 +32,14 @@ export function useDayOpsStartListPolling({
       void refreshParticipantStatuses();
       refreshMarshalAndResultLists();
     };
-    const intervalMs =
-      activeViewMode === "normal"
-        ? DAY_OPS_POLL_INTERVAL_NORMAL_MS
-        : DAY_OPS_POLL_INTERVAL_SYNC_MS;
+    const intervalMs = dayOpsListsSyncActive
+      ? DAY_OPS_POLL_INTERVAL_SYNC_MS
+      : DAY_OPS_POLL_INTERVAL_NORMAL_MS;
     const id = setInterval(tick, intervalMs);
     return () => clearInterval(id);
   }, [
     enabled,
-    activeViewMode,
+    dayOpsListsSyncActive,
     refreshParticipantStatuses,
     refreshMarshalAndResultLists,
   ]);
@@ -58,10 +58,18 @@ export function useDayOpsStartListPolling({
   useEffect(() => {
     if (!enabled) return;
     const handler = (ev: Event) => {
-      const d = (ev as CustomEvent<{ competitionId?: string; eventId?: string }>).detail;
+      const d = (
+        ev as CustomEvent<{
+          competitionId?: string;
+          eventId?: string;
+          skipMarshalHeatRefetch?: boolean;
+        }>
+      ).detail;
       if (d?.competitionId === competitionId && d?.eventId === eventId) {
         void refreshParticipantStatuses();
-        refreshMarshalAndResultLists();
+        refreshMarshalAndResultLists(
+          d.skipMarshalHeatRefetch ? { skipMarshalHeat: true } : undefined
+        );
       }
     };
     window.addEventListener(JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED, handler);

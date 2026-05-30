@@ -9,6 +9,7 @@ import { deleteHeatOperationDraftFireAndForget } from "@/lib/dayOpsHeatOperation
 import {
   applyMarshalDraftOpsToHeats,
   marshalHeatMatchesDisplayIndex,
+  patchHeatMarshalCallWindowInHeats,
 } from "@/components/startListRoundList/panelHelpers";
 import type { LiveRoundMarshalContext, MarshalDraftOp } from "@/hooks/liveRound/types";
 
@@ -270,20 +271,11 @@ export function useMarshalDraftOps(args: {
   }, [m, commitMarshalDraftOps, waitForMarshalAutoSaveIdle]);
 
   const patchHeatCallClosed = useCallback((heatIndex1Based: number) => {
-    const iso = new Date().toISOString();
-    setLocalMarshalHeats((prev) =>
-      prev.map((h) =>
-        marshalHeatMatchesDisplayIndex(h, heatIndex1Based) ? { ...h, callClosedAt: iso } : h
-      )
-    );
+    setLocalMarshalHeats((prev) => patchHeatMarshalCallWindowInHeats(prev, heatIndex1Based, true));
   }, []);
 
   const patchHeatCallReopened = useCallback((heatIndex1Based: number) => {
-    setLocalMarshalHeats((prev) =>
-      prev.map((h) =>
-        marshalHeatMatchesDisplayIndex(h, heatIndex1Based) ? { ...h, callClosedAt: null } : h
-      )
-    );
+    setLocalMarshalHeats((prev) => patchHeatMarshalCallWindowInHeats(prev, heatIndex1Based, false));
   }, []);
 
   const handleMarshalResult = useCallback(
