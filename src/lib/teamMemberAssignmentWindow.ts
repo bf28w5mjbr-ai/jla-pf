@@ -10,6 +10,29 @@ import {
 } from "@/lib/heatMarshalFromSnapshot";
 import { resolveTeamAssignmentDeadline } from "@/lib/startListSettings";
 
+export type LatestTeamMarshalPlacement = {
+  latestRound: ResultRound | null;
+  latestHeatIndex: number | null;
+};
+
+/** スナップショット上で最も進んだラウンド（HEAT → SEMI → FINAL）の配置を返す */
+export function resolveLatestTeamMarshalPlacement(params: {
+  roundsInSnapshotOrder: readonly ResultRound[];
+  resolveHeatIndex: (round: ResultRound) => number | null | undefined;
+}): LatestTeamMarshalPlacement {
+  let latestRound: ResultRound | null = null;
+  let latestHeatIndex: number | null = null;
+
+  for (const round of params.roundsInSnapshotOrder) {
+    const heatIndex = params.resolveHeatIndex(round);
+    if (heatIndex == null) continue;
+    latestRound = round;
+    latestHeatIndex = heatIndex;
+  }
+
+  return { latestRound, latestHeatIndex };
+}
+
 /**
  * スナップショット上で最も進んだラウンド（HEAT → SEMI → FINAL のうち最後に配置がある）の
  * ヒートだけを見る。予選のマーシャル締切後も、決勝枠向けにメンバー割当を直せるようにする。
@@ -20,15 +43,7 @@ export function isTeamEntryMarshalAssignmentBlockedForLatestPlacement(params: {
   resolveHeatIndex: (round: ResultRound) => number | null | undefined;
   closedMarshalHeatKeys: ReadonlySet<string>;
 }): boolean {
-  let latestRound: ResultRound | null = null;
-  let latestHeatIndex: number | null = null;
-
-  for (const round of params.roundsInSnapshotOrder) {
-    const heatIndex = params.resolveHeatIndex(round);
-    if (heatIndex == null) continue;
-    latestRound = round;
-    latestHeatIndex = heatIndex;
-  }
+  const { latestRound, latestHeatIndex } = resolveLatestTeamMarshalPlacement(params);
 
   if (latestRound == null || latestHeatIndex == null) {
     return false;
@@ -72,17 +87,61 @@ export async function getTeamEntryMarshalAssignmentBlockedMap(
     teamEntryId: "",
   };
 
+  type BlockedCandidate = {
+    teamEntryId: string;
+    eventId: string;
+    fromRound: ResultRound;
+  };
+  const blockedCandidates: BlockedCandidate[] = [];
+
   for (const te of teamEntries) {
     ref.teamEntryId = te.id;
     const rounds = listMarshalRoundsInSnapshotForEvent(snapshot, te.eventId);
-    const blocked = isTeamEntryMarshalAssignmentBlockedForLatestPlacement({
-      eventId: te.eventId,
+    const placement = resolveLatestTeamMarshalPlacement({
       roundsInSnapshotOrder: rounds,
       resolveHeatIndex: (round) =>
         resolveParticipantMarshalHeat(snapshot, te.eventId, round, ref),
-      closedMarshalHeatKeys: closedSet,
     });
+    const blocked =
+      placement.latestRound != null &&
+      placement.latestHeatIndex != null &&
+      closedSet.has(`${te.eventId}:${placement.latestRound}:${placement.latestHeatIndex}`);
+
     out.set(te.id, blocked);
+    if (
+      blocked &&
+      placement.latestRound != null &&
+      placement.latestRound !== "FINAL"
+    ) {
+      blockedCandidates.push({
+        teamEntryId: te.id,
+        eventId: te.eventId,
+        fromRound: placement.latestRound,
+      });
+    }
+  }
+
+  if (blockedCandidates.length > 0) {
+    const advanceIdsByKey = new Map<string, Set<string>>();
+    for (const candidate of blockedCandidates) {
+      const key = `${candidate.eventId}:${candidate.fromRound}`;
+      if (!advanceIdsByKey.has(key)) {
+        const { teamEntryIdsSelectedForNextRoundAdvanceFromOfficial } = await import(
+          "@/lib/startListNextRoundFromOfficial"
+        );
+        advanceIdsByKey.set(
+          key,
+          await teamEntryIdsSelectedForNextRoundAdvanceFromOfficial({
+            competitionId,
+            eventId: candidate.eventId,
+            fromRound: candidate.fromRound,
+          })
+        );
+      }
+      if (advanceIdsByKey.get(key)!.has(candidate.teamEntryId)) {
+        out.set(candidate.teamEntryId, false);
+      }
+    }
   }
 
   return out;

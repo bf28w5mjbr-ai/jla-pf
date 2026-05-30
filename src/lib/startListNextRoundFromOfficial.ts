@@ -3,6 +3,7 @@ import { prisma } from "@/server/db";
 import { loadStartListSnapshotPayloadLoose } from "@/lib/heatMarshalGate";
 import {
   getRoundDataFromSnapshot,
+  heatIndexMatchesSnapshot,
   parseStartListSnapshotLooseForRoundRead,
 } from "@/lib/heatMarshalFromSnapshot";
 import {
@@ -117,6 +118,135 @@ export type AutoAppendNextStartListRoundResult =
   | { ok: true; skipped: true; reason: string }
   | { ok: false; error: string };
 
+type AdvanceSelectionRow = {
+  entryType: string;
+  teamEntryId: string | null;
+  teamEntry?: { id: string } | null;
+};
+
+/**
+ * 公式結果から次ラ進出が確定しているチーム ID（メンバー割当の編集可否用）。
+ * 次ラスナップショット未生成でも、進出者は予選マーシャル締切後に割当を直せる。
+ */
+export async function teamEntryIdsSelectedForNextRoundAdvanceFromOfficial(params: {
+  competitionId: string;
+  eventId: string;
+  fromRound: ResultRound;
+}): Promise<Set<string>> {
+  const { competitionId, eventId, fromRound } = params;
+  if (fromRound === "FINAL") return new Set();
+
+  const competition = await prisma.competition.findUnique({
+    where: { id: competitionId },
+    select: {
+      startListSettings: true,
+      events: {
+        where: { id: eventId },
+        select: {
+          id: true,
+          preliminaryHeatLaneCount: true,
+          startListRoundCount: true,
+        },
+      },
+    },
+  });
+  const event = competition?.events[0];
+  if (!event) return new Set();
+
+  const eventSettings = parseStartListSettings(competition!.startListSettings).eventSettings;
+  const eventSetting = eventSettings[eventId];
+  const tabCount = resolveStartListTabCountForProgression(event.startListRoundCount, eventSetting);
+  const transition = inferAutoNextRoundTransition({
+    finishedRound: fromRound,
+    tabCount,
+  });
+  if (!transition || transition.fromRound !== fromRound) return new Set();
+  const { toRound } = transition;
+
+  const official = await prisma.officialResult.findUnique({
+    where: {
+      competitionId_eventId_round: {
+        competitionId,
+        eventId,
+        round: fromRound,
+      },
+    },
+    include: officialInclude,
+  });
+  if (!official?.rows.length) return new Set();
+
+  const roundLocked = Boolean(official.lockedAt);
+  if (!roundLocked) {
+    const allHeatsConfirmed = await areAllSnapshotHeatsResultConfirmed({
+      competitionId,
+      eventId,
+      round: fromRound,
+      officialResultId: official.id,
+    });
+    if (!allHeatsConfirmed) return new Set();
+  }
+
+  const snapshotPayload = await loadStartListSnapshotPayloadLoose(competitionId);
+  const rowsForAdvance = dedupeOfficialResultRowsForAdvance(official.rows);
+  const heatEntriesRaw = groupOfficialRowsByResolvedHeatAndSnapshotOrder(
+    rowsForAdvance,
+    snapshotPayload,
+    eventId,
+    fromRound
+  );
+  const heatEntries = await filterHeatOfficialRowsForNextRoundAdvance(
+    { competitionId, eventId, fromRound },
+    heatEntriesRaw
+  );
+  const sourceHeatSizes = heatEntries.map(([, rows]) => rows.length);
+  const totalInRound = sourceHeatSizes.reduce((a, b) => a + b, 0);
+  if (totalInRound === 0) return new Set();
+
+  const nextHeatCountForCapacity = resolveHeatCountForSnapshotTransition({
+    setting: eventSetting,
+    participantTotal: totalInRound,
+    fromRound,
+    toRound,
+  });
+  const maxLanes = resolveMaxLanesForSnapshotTransition({
+    setting: eventSetting,
+    eventDefaultLanes: event.preliminaryHeatLaneCount,
+    fromRound,
+    toRound,
+  });
+  if (typeof maxLanes !== "number" || !Number.isFinite(maxLanes) || maxLanes < 1) {
+    return new Set();
+  }
+
+  const capacity = totalAdvanceCapacityFromNextRoundLayout(
+    nextHeatCountForCapacity,
+    maxLanes,
+    totalInRound
+  );
+  const advancePerHeat = computeAdvanceCountsByLaneSlotsPerHeat(
+    heatEntries.length,
+    maxLanes,
+    capacity
+  );
+  const selectedRows = collectAdvancersPerHeatMixed(heatEntries, advancePerHeat);
+
+  const out = new Set<string>();
+  for (const row of selectedRows as AdvanceSelectionRow[]) {
+    if (row.entryType !== "TEAM") continue;
+    const id = row.teamEntryId ?? row.teamEntry?.id;
+    if (id) out.add(id);
+  }
+  return out;
+}
+
+function logAutoAppendSkip(reason: string, detail?: Record<string, unknown>): void {
+  if (detail && Object.keys(detail).length > 0) {
+    console.info("[tryAutoAppendNextStartListRound] skipped:", reason, detail);
+  } else {
+    console.info("[tryAutoAppendNextStartListRound] skipped:", reason);
+  }
+}
+
 /**
  * 次ラウンド生成の前提: 種目の公式結果がラウンド単位でロック済み、または
  * スナップショット上の当該ラウンドの全ヒートがリザルト確定（OfficialResultHeatConfirmed）済み。
@@ -132,13 +262,20 @@ export async function areAllSnapshotHeatsResultConfirmed(params: {
   const roundData = getRoundDataFromSnapshot(snapshot, params.eventId, params.round);
   const heats = roundData?.heats ?? [];
   if (heats.length === 0) return false;
-  const needed = [...new Set(heats.map((h) => h.heatIndex))];
+  const needed = [
+    ...new Set(
+      heats
+        .map((h) => Number(h.heatIndex))
+        .filter((n) => Number.isFinite(n) && n >= 1)
+    ),
+  ];
+  if (needed.length === 0) return false;
   const confirmed = await prisma.officialResultHeatConfirmed.findMany({
     where: { officialResultId: params.officialResultId },
     select: { heat: true },
   });
-  const set = new Set(confirmed.map((c) => c.heat));
-  return needed.every((h) => set.has(h));
+  const confirmedHeats = confirmed.map((c) => c.heat);
+  return needed.every((h) => confirmedHeats.some((c) => heatIndexMatchesSnapshot(h, c)));
 }
 
 /**
@@ -183,6 +320,7 @@ export async function tryAutoAppendNextStartListRound(params: {
 
   const transition = inferAutoNextRoundTransition({ finishedRound, tabCount });
   if (!transition) {
+    logAutoAppendSkip("NO_NEXT_ROUND_FOR_TAB_COUNT", { eventId, finishedRound, tabCount });
     return { ok: true, skipped: true, reason: "NO_NEXT_ROUND_FOR_TAB_COUNT" };
   }
   const { fromRound, toRound } = transition;
@@ -203,6 +341,7 @@ export async function tryAutoAppendNextStartListRound(params: {
     select: { id: true, data: true },
   });
   if (!snapshot) {
+    logAutoAppendSkip("NO_SNAPSHOT", { competitionId, eventId });
     return { ok: true, skipped: true, reason: "NO_SNAPSHOT" };
   }
 
@@ -213,6 +352,7 @@ export async function tryAutoAppendNextStartListRound(params: {
   const snapEvent = events.find((e) => e.eventId === eventId);
   const rounds = Array.isArray(snapEvent?.rounds) ? snapEvent!.rounds! : [];
   if (rounds.some((r) => r.round === toRound)) {
+    logAutoAppendSkip("ALREADY_HAS_TARGET_ROUND", { eventId, toRound });
     return { ok: true, skipped: true, reason: "ALREADY_HAS_TARGET_ROUND" };
   }
 
@@ -227,6 +367,7 @@ export async function tryAutoAppendNextStartListRound(params: {
     include: officialInclude,
   });
   if (!official || official.rows.length === 0) {
+    logAutoAppendSkip("NO_OFFICIAL_ROWS", { eventId, fromRound, hasOfficial: Boolean(official) });
     return { ok: true, skipped: true, reason: "NO_OFFICIAL_ROWS" };
   }
 
@@ -239,6 +380,11 @@ export async function tryAutoAppendNextStartListRound(params: {
       officialResultId: official.id,
     });
     if (!allHeatsConfirmed) {
+      logAutoAppendSkip("WAITING_ALL_HEAT_RESULT_CONFIRMS_OR_ROUND_LOCK", {
+        eventId,
+        fromRound,
+        officialResultId: official.id,
+      });
       return { ok: true, skipped: true, reason: "WAITING_ALL_HEAT_RESULT_CONFIRMS_OR_ROUND_LOCK" };
     }
   }
@@ -272,6 +418,7 @@ export async function tryAutoAppendNextStartListRound(params: {
     toRound,
   });
   if (typeof maxLanes !== "number" || !Number.isFinite(maxLanes) || maxLanes < 1) {
+    logAutoAppendSkip("NEEDS_PRELIMINARY_MAX_LANES", { eventId, fromRound, toRound, maxLanes });
     return { ok: true, skipped: true, reason: "NEEDS_PRELIMINARY_MAX_LANES" };
   }
 
@@ -317,6 +464,13 @@ export async function tryAutoAppendNextStartListRound(params: {
   }
 
   if (participants.length === 0) {
+    logAutoAppendSkip("NO_ADVANCING_PARTICIPANTS", {
+      eventId,
+      fromRound,
+      toRound,
+      officialRowCount: rowsForAdvance.length,
+      heatEntryCount: heatEntries.length,
+    });
     return { ok: true, skipped: true, reason: "NO_ADVANCING_PARTICIPANTS" };
   }
 

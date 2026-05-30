@@ -312,23 +312,37 @@ export async function POST(request: NextRequest, context: RouteContext) {
       result: "SUCCESS",
     });
 
+    let startListAppend: Awaited<ReturnType<typeof tryAutoAppendNextStartListRound>> | null = null;
     if (round === "HEAT" || round === "SEMI") {
-      void tryAutoAppendNextStartListRound({
-        competitionId,
-        eventId,
-        finishedRound: round,
-      })
-        .then((append) => {
-          if (!append.ok) {
-            console.warn("start-list auto-append after heat confirm:", append.error);
-          }
-        })
-        .catch((e) => {
-          console.error("start-list auto-append after heat confirm failed:", e);
+      try {
+        startListAppend = await tryAutoAppendNextStartListRound({
+          competitionId,
+          eventId,
+          finishedRound: round,
         });
+        if (!startListAppend.ok) {
+          console.warn("start-list auto-append after heat confirm:", startListAppend.error);
+        } else if (startListAppend.skipped) {
+          console.info("start-list auto-append after heat confirm skipped:", startListAppend.reason);
+        } else {
+          console.info(
+            "start-list auto-append after heat confirm ok:",
+            startListAppend.toRound,
+            `${startListAppend.participantCount} participants`,
+            `${startListAppend.heatCount} heats`
+          );
+        }
+      } catch (e) {
+        console.error("start-list auto-append after heat confirm failed:", e);
+      }
     }
 
-    return NextResponse.json({ ok: true, heatIndex, appended: appendedRows });
+    return NextResponse.json({
+      ok: true,
+      heatIndex,
+      appended: appendedRows,
+      ...(startListAppend ? { startListAppend } : {}),
+    });
   } catch (error) {
     if (error instanceof Error && error.message === "DAY_OPS_FORBIDDEN") {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });

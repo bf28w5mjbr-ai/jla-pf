@@ -172,8 +172,10 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       competitionId,
       teamEntries.map((t) => ({ id: t.id, eventId: t.eventId }))
     );
-    const marshalBlocked = normalizedAssignments.some((a) => marshalBlockMap.get(a.teamEntryId));
-    if (marshalBlocked) {
+    const assignmentsToApply = normalizedAssignments.filter(
+      (assignment) => !marshalBlockMap.get(assignment.teamEntryId)
+    );
+    if (assignmentsToApply.length === 0) {
       return NextResponse.json(
         {
           message:
@@ -195,7 +197,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     });
     const eligibleUserIds = new Set(eligibleEntries.map((entry) => entry.userId));
 
-    const hasIneligibleUser = normalizedAssignments.some((assignment) => {
+    const hasIneligibleUser = assignmentsToApply.some((assignment) => {
       if (assignment.memberSlots) {
         return assignment.memberSlots.some(
           (uid) => uid && !eligibleUserIds.has(uid)
@@ -211,7 +213,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     }
 
     const assignedUserIds = new Set<string>();
-    for (const assignment of normalizedAssignments) {
+    for (const assignment of assignmentsToApply) {
       if (assignment.memberSlots) {
         for (const uid of assignment.memberSlots) {
           if (uid) assignedUserIds.add(uid);
@@ -238,7 +240,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     });
 
     const teamEntryById = new Map(teamEntries.map((t) => [t.id, t]));
-    const eventEligibilityViolation = normalizedAssignments.some((assignment) => {
+    const eventEligibilityViolation = assignmentsToApply.some((assignment) => {
       const te = teamEntryById.get(assignment.teamEntryId);
       if (!te?.event) return true;
       const eventJson = prismaEventToTeamAssignmentEventJson(te.event);
@@ -266,7 +268,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const memberRows = normalizedAssignments.flatMap((assignment) => {
+    const memberRows = assignmentsToApply.flatMap((assignment) => {
       if (assignment.memberSlots) {
         return assignment.memberSlots
           .map((userId, index) =>
@@ -300,7 +302,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         await tx.teamEntryMember.deleteMany({
           where: {
             teamEntryId: {
-              in: normalizedAssignments.map((assignment) => assignment.teamEntryId),
+              in: assignmentsToApply.map((assignment) => assignment.teamEntryId),
             },
           },
         });

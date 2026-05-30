@@ -61,6 +61,11 @@ export type HeatResultConfirmAppendedRow = {
   teamEntryId: string | null;
 };
 
+export type HeatResultStartListAppendResult =
+  | { ok: true; skipped: false; toRound: "SEMI" | "FINAL"; participantCount: number; heatCount: number }
+  | { ok: true; skipped: true; reason: string }
+  | { ok: false; error: string };
+
 export async function postHeatResultConfirmHeat(
   competitionId: string,
   body: {
@@ -69,7 +74,10 @@ export async function postHeatResultConfirmHeat(
     heatIndex: number;
     manualEntries?: HeatResultConfirmManualEntry[];
   }
-): Promise<{ appended: HeatResultConfirmAppendedRow[] }> {
+): Promise<{
+  appended: HeatResultConfirmAppendedRow[];
+  startListAppend?: HeatResultStartListAppendResult | null;
+}> {
   const res = await fetch(
     `/api/competitions/${competitionId}/day-ops/heat-result-capture/confirm-heat`,
     {
@@ -82,6 +90,7 @@ export async function postHeatResultConfirmHeat(
     error?: string;
     message?: string;
     appended?: HeatResultConfirmAppendedRow[];
+    startListAppend?: HeatResultStartListAppendResult | null;
   };
   if (!res.ok) {
     const msg =
@@ -92,7 +101,10 @@ export async function postHeatResultConfirmHeat(
           : "リザルトの確定に失敗しました";
     throw new Error(msg);
   }
-  return { appended: Array.isArray(data.appended) ? data.appended : [] };
+  return {
+    appended: Array.isArray(data.appended) ? data.appended : [],
+    startListAppend: data.startListAppend ?? null,
+  };
 }
 
 export async function postParticipantDsqRevert(

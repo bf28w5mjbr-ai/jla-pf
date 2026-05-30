@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { HeatMarshalParticipant } from "@/components/HeatMarshalLanePanel";
 import type { HeatResultCaptureRow } from "@/lib/heatResultCaptureApi";
 import {
@@ -86,6 +87,7 @@ export function useResultCaptureDraft(args: {
   const lastLocalResultDraftTouchRef = useRef(0);
   const heatResultConfirmBusyHeatRef = useRef<number | null>(null);
   const resultDraftSequenceRef = useRef(0);
+  const router = useRouter();
   const resultDraftSyncContextRef = useRef(resultDraftSyncContext);
   const mRef = useRef(m);
   const resultCaptureRef = useRef(resultCapture);
@@ -615,7 +617,7 @@ export function useResultCaptureDraft(args: {
           await new Promise((resolve) => setTimeout(resolve, 1500));
         }
         try {
-          const { appended } = await postHeatResultConfirmHeat(marshal.competitionId, {
+          const { appended, startListAppend } = await postHeatResultConfirmHeat(marshal.competitionId, {
             eventId,
             round: marshal.round,
             heatIndex: displayHeatNumber,
@@ -633,6 +635,13 @@ export function useResultCaptureDraft(args: {
           }
           clearResultDraftsForHeat(displayHeatNumber);
           toast.success(`ヒート ${displayHeatNumber} のリザルトを確定しました`);
+          if (startListAppend?.ok && !startListAppend.skipped) {
+            const roundLabel = startListAppend.toRound === "FINAL" ? "決勝" : "準決勝";
+            toast.success(
+              `${roundLabel}のスタートリストを自動生成しました（${startListAppend.participantCount}名・${startListAppend.heatCount}ヒート）`
+            );
+            router.refresh();
+          }
           dispatchJlaDayOpsParticipantStatusChanged(marshal.competitionId, eventId, {
             skipResultCaptureRefetch: true,
             skipParticipantPoll: true,
@@ -676,6 +685,7 @@ export function useResultCaptureDraft(args: {
       patchResultHeatUnconfirmed,
       clearResultDraftsForHeat,
       awaitResultDraftServerPatch,
+      router,
     ]
   );
 

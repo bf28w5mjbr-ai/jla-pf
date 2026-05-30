@@ -9,6 +9,7 @@ import {
   marshalTeamLegacyKey,
   resultParticipantKeyFromParts,
 } from "@/lib/dayOpsParticipantKeys";
+import { foldTeamMemberStatuses } from "@/lib/dayOpsTeamStatus";
 
 /**
  * 次ラ進出の考え方（シンプル版）
@@ -164,6 +165,24 @@ export function groupOfficialRowsByResolvedHeatAndSnapshotOrder<T extends Advanc
   return [...byHeat.entries()].sort((a, b) => a[0] - b[0]);
 }
 
+function teamMarshalStatusForNextRoundAdvance(
+  teamEntryId: string,
+  latestStatusByKey: Map<string, string>
+): string {
+  const legacyKey = marshalTeamLegacyKey(teamEntryId);
+  const memberPrefix = `${legacyKey}:`;
+  const memberStatuses: string[] = [];
+  for (const [k, st] of latestStatusByKey) {
+    if (k.startsWith(memberPrefix) && k.length > memberPrefix.length) {
+      memberStatuses.push(st);
+    }
+  }
+  if (memberStatuses.length === 0) {
+    return latestStatusByKey.get(legacyKey) ?? "PENDING";
+  }
+  return foldTeamMemberStatuses(memberStatuses);
+}
+
 async function buildParticipantStatusByKeyForRound(
   competitionId: string,
   eventId: string,
@@ -176,6 +195,7 @@ async function buildParticipantStatusByKeyForRound(
       participantType: true,
       competitionEntryId: true,
       teamEntryId: true,
+      teamMemberUserId: true,
       status: true,
       marshalRound: true,
       updatedAt: true,
@@ -215,8 +235,7 @@ export function isOfficialRowEligibleForNextRoundAdvance(
   }
   const teamId = row.teamEntryId ?? row.teamEntry?.id;
   if (!teamId) return false;
-  const key = marshalTeamLegacyKey(teamId);
-  const st = latestStatusByKey.get(key) ?? "PENDING";
+  const st = teamMarshalStatusForNextRoundAdvance(teamId, latestStatusByKey);
   if (TERMINAL_DAY_OPS_STATUSES.has(st)) return false;
   if (st !== "CALLED") return false;
   const idx = resolveParticipantMarshalHeat(snapshot, eventId, fromRound, {

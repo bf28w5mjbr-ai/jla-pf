@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Building2,
@@ -135,8 +135,10 @@ export default function CompetitionTeamAssignmentManager({
   const [draftAssignments, setDraftAssignments] =
     useState<Record<string, TeamEntryAssignment[]>>(assignmentsByClub);
   const [isSaving, setIsSaving] = useState(false);
+  const draftDirtyRef = useRef(false);
 
   useEffect(() => {
+    if (draftDirtyRef.current) return;
     setDraftAssignments(assignmentsByClub);
   }, [assignmentsByClub]);
 
@@ -175,6 +177,7 @@ export default function CompetitionTeamAssignmentManager({
   );
 
   const setSlotUser = (teamEntryId: string, slotIndex: number, userId: string | null) => {
+    draftDirtyRef.current = true;
     setDraftAssignments((prev) => ({
       ...prev,
       [selectedClubId]: (prev[selectedClubId] ?? []).map((assignment) => {
@@ -201,6 +204,14 @@ export default function CompetitionTeamAssignmentManager({
       return;
     }
 
+    const assignmentsToSave = currentAssignments.filter(
+      (assignment) => !marshalBlockByTeamEntryId[assignment.teamEntryId]
+    );
+    if (assignmentsToSave.length === 0) {
+      toast.error("編集可能なチームがありません");
+      return;
+    }
+
     setIsSaving(true);
     try {
       const response = await fetch(`/api/competitions/${competitionId}/team-assignments`, {
@@ -210,7 +221,7 @@ export default function CompetitionTeamAssignmentManager({
         },
         body: JSON.stringify({
           clubId: selectedClubId,
-          assignments: currentAssignments.map((assignment) => ({
+          assignments: assignmentsToSave.map((assignment) => ({
             teamEntryId: assignment.teamEntryId,
             memberSlots: assignment.memberSlots,
           })),
@@ -222,6 +233,7 @@ export default function CompetitionTeamAssignmentManager({
         throw new Error(data.message || "チームメンバー割当の更新に失敗しました");
       }
 
+      draftDirtyRef.current = false;
       setDraftAssignments((prev) => ({
         ...prev,
         [selectedClubId]: currentAssignments,
@@ -238,14 +250,31 @@ export default function CompetitionTeamAssignmentManager({
     }
   };
 
+  const canSaveAssignments =
+    isAssignmentWindowOpen && hasEditableTeam && currentAssignments.length > 0;
+
   const statusKind = !isAssignmentWindowOpen
     ? "closed"
-    : allTeamsMarshalBlocked
-      ? "marshal"
-      : "open";
+    : currentAssignments.length === 0
+      ? "empty"
+      : allTeamsMarshalBlocked
+        ? "marshal"
+        : canSaveAssignments
+          ? "open"
+          : "marshal";
 
   const fillPercent =
     slotSummary.total > 0 ? Math.round((slotSummary.filled / slotSummary.total) * 100) : 0;
+
+  const saveDisabledReason = isSaving
+    ? null
+    : !isAssignmentWindowOpen
+      ? "エントリー終了後から保存できます"
+      : currentAssignments.length === 0
+        ? "チームエントリーがありません"
+        : !hasEditableTeam
+          ? "編集可能なチームがありません"
+          : null;
 
   return (
     <div className="space-y-6">
@@ -305,7 +334,9 @@ export default function CompetitionTeamAssignmentManager({
                     割当可能
                   </Badge>
                 ) : statusKind === "marshal" ? (
-                  <Badge variant="destructive">全チーム・マーシャル締切済み</Badge>
+                  <Badge variant="destructive">編集不可（マーシャル締切済み）</Badge>
+                ) : statusKind === "empty" ? (
+                  <Badge variant="secondary">チーム未登録</Badge>
                 ) : (
                   <Badge variant="secondary" className="bg-amber-100/90 text-amber-950 dark:bg-amber-900/40 dark:text-amber-100">
                     期間外
@@ -314,9 +345,11 @@ export default function CompetitionTeamAssignmentManager({
               </div>
               <p className="leading-relaxed text-pretty">
                 {isAssignmentWindowOpen
-                  ? allTeamsMarshalBlocked
-                    ? "このクラブのチームはすべて、スタートリスト上のヒートでマーシャル締切済みのため、メンバーを変更できません。"
-                    : "一度保存した割当も、各チームが向かう次のヒートのマーシャル締切まで変更できます（予選締切後も、決勝枠向けの変更は可能です）。上記の日時は通知用の目安であり、編集可否の上限には使いません。"
+                  ? currentAssignments.length === 0
+                    ? "このクラブではチーム種目のエントリーがまだありません。先に申込・請求ページでチームを登録してください。"
+                    : allTeamsMarshalBlocked
+                      ? "このクラブのチームはすべて、スタートリスト上のヒートでマーシャル締切済みのため、メンバーを変更できません。"
+                      : "一度保存した割当も、各チームが向かう次のヒートのマーシャル締切まで変更できます（予選締切後も、決勝枠向けの変更は可能です）。上記の日時は通知用の目安であり、編集可否の上限には使いません。"
                   : "エントリー終了後から割当できます。現在はエントリー期間中か、終了前のため編集できません。"}
               </p>
             </div>
@@ -330,7 +363,13 @@ export default function CompetitionTeamAssignmentManager({
                   対象クラブ
                 </Label>
                 {clubs.length > 1 ? (
-                  <Select value={selectedClubId} onValueChange={setSelectedClubId}>
+                  <Select
+                    value={selectedClubId}
+                    onValueChange={(clubId) => {
+                      draftDirtyRef.current = false;
+                      setSelectedClubId(clubId);
+                    }}
+                  >
                     <SelectTrigger id="assignment-club-select" className="h-11 w-full">
                       <SelectValue placeholder="クラブを選択" />
                     </SelectTrigger>
@@ -547,7 +586,8 @@ export default function CompetitionTeamAssignmentManager({
               size="lg"
               className="w-full shrink-0 gap-2 sm:w-auto"
               onClick={handleSave}
-              disabled={isSaving || !isAssignmentWindowOpen || !hasEditableTeam}
+              disabled={Boolean(saveDisabledReason) || isSaving}
+              title={saveDisabledReason ?? undefined}
             >
               {isSaving ? (
                 "保存中…"
