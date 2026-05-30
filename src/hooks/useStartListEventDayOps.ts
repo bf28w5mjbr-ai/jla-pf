@@ -382,14 +382,13 @@ export function useStartListEventDayOps({
       dispatchJlaDayOpsParticipantStatusChanged(competitionId, eventId, {
         skipMarshalHeatRefetch,
       });
-      const refetches: Promise<void>[] = [refreshDayOpsParticipantPoll()];
+      void refreshDayOpsParticipantPoll();
       if (anyTabNeedsMarshalHeat && !skipMarshalHeatRefetch) {
-        refetches.push(refetchListMarshalHeats());
+        void refetchListMarshalHeats();
       }
       if (anyTabInResultMode && showResultOps) {
-        refetches.push(refetchResultCapture());
+        void refetchResultCapture();
       }
-      await Promise.all(refetches);
     },
     [
       refreshDayOpsParticipantPoll,

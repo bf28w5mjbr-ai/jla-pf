@@ -1,4 +1,6 @@
 import { shouldHideFromStartListLineupParticipantRow } from "@/lib/dayOpsParticipantStatusDisplay";
+import { normalizeSnapshotRoundKey } from "@/lib/heatMarshalFromSnapshot";
+import type { StartListRoundData } from "@/lib/startListRounds";
 import type {
   StartListEventPageIndividual,
   StartListEventPageTeam,
@@ -120,4 +122,74 @@ export function buildStartListLineupFromEntries(input: {
   placementTeamIds.sort();
 
   return { individuals, teams, placementIndividualIds, placementTeamIds };
+}
+
+/**
+ * ステップ1確定後のスナップショットから出場者一覧を組み立てる（ライブエントリー全件取得を省略）。
+ */
+export function buildStartListLineupFromFrozenRounds(input: {
+  frozenSnapshotRounds: ReadonlyArray<StartListRoundData>;
+  isTeam: boolean;
+  participantStatusRows: ReadonlyArray<LineupParticipantStatusRow>;
+}): {
+  individuals: StartListEventPageIndividual[];
+  teams: StartListEventPageTeam[];
+  placementIndividualIds: string[];
+  placementTeamIds: string[];
+} | null {
+  const heatRound =
+    input.frozenSnapshotRounds.find((r) => normalizeSnapshotRoundKey(r.round) === "HEAT") ??
+    input.frozenSnapshotRounds[0];
+  if (!heatRound?.heats?.length) return null;
+
+  const excludedIndividualEntryIds = collectExcludedEntryIds(
+    input.participantStatusRows,
+    "INDIVIDUAL",
+    "competitionEntryId"
+  );
+  const excludedTeamEntryIds = collectExcludedEntryIds(
+    input.participantStatusRows,
+    "TEAM",
+    "teamEntryId"
+  );
+
+  const seenIndividuals = new Map<string, StartListEventPageIndividual>();
+  const seenTeams = new Map<string, StartListEventPageTeam>();
+
+  for (const heat of heatRound.heats) {
+    for (const p of heat.participants) {
+      if (input.isTeam && p.kind === "TEAM") {
+        if (!p.teamEntryId || excludedTeamEntryIds.has(p.teamEntryId)) continue;
+        if (seenTeams.has(p.teamEntryId)) continue;
+        seenTeams.set(p.teamEntryId, {
+          teamEntryId: p.teamEntryId,
+          teamName: p.teamName,
+          clubId: p.clubId ?? null,
+          clubName: p.clubName ?? null,
+          members: [...(p.members ?? [])],
+        });
+      } else if (!input.isTeam && p.kind === "INDIVIDUAL") {
+        if (!p.entryId || excludedIndividualEntryIds.has(p.entryId)) continue;
+        if (seenIndividuals.has(p.entryId)) continue;
+        seenIndividuals.set(p.entryId, {
+          entryId: p.entryId,
+          userId: p.userId,
+          name: p.name,
+          clubId: p.clubId ?? null,
+          clubName: p.clubName ?? null,
+        });
+      }
+    }
+  }
+
+  if (seenIndividuals.size === 0 && seenTeams.size === 0) return null;
+
+  const placementIndividualIds = [...seenIndividuals.keys()].sort();
+  const placementTeamIds = [...seenTeams.keys()].sort();
+  return {
+    individuals: [...seenIndividuals.values()],
+    teams: [...seenTeams.values()],
+    placementIndividualIds,
+    placementTeamIds,
+  };
 }

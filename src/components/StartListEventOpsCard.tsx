@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -22,7 +23,22 @@ import {
 import { defaultStartListRoundTabLabels } from "@/lib/startListSettings";
 import { isCalledLikeStatus } from "@/lib/dayOpsTeamStatus";
 import { LiveRoundContent } from "@/components/StartListRoundListPanels";
-import { StartListRoundSettingsCardWithHook } from "@/components/StartListRoundSettingsCard";
+const StartListRoundSettingsCardWithHook = dynamic(
+  () =>
+    import("@/components/StartListRoundSettingsCard").then((m) => ({
+      default: m.StartListRoundSettingsCardWithHook,
+    })),
+  {
+    loading: () => (
+      <div
+        className="rounded-lg border border-border/80 bg-muted/15 px-3 py-4 text-xs text-muted-foreground"
+        role="status"
+      >
+        ラウンド設定を読み込んでいます…
+      </div>
+    ),
+  }
+);
 import { StartListMarshalModeBar } from "@/components/StartListMarshalModeBar";
 import { useStartListEventDayOps } from "@/hooks/useStartListEventDayOps";
 import type { StartListEventCardProps, StartListMarshalViewMode } from "@/lib/startListEventTypes";
@@ -140,8 +156,6 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
     return tabs.length > 0 ? 0 : -1;
   }, [tabs, selectedTabId]);
 
-  const activeTabIdResolved = tabs[activeTabIndex]?.id ?? "";
-
   const dayOps = useStartListEventDayOps({
     competitionId,
     eventId: event.id,
@@ -149,7 +163,6 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
     showResultOps,
     initialParticipantStatusRows,
     activeTabIndex,
-    activeTabId: activeTabIdResolved,
     tabCount,
   });
 

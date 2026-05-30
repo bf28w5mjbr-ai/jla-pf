@@ -14,7 +14,10 @@ import { extractFrozenRoundsForEventFromSnapshotData } from "@/lib/startListEven
 import { getMarshalActiveRoundsForEvents } from "@/lib/marshalRoundSettingsLock";
 import { buildParticipantDayOpsStatusByKey } from "@/lib/dayOpsParticipantStatusDisplay";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
-import { buildStartListLineupFromEntries } from "@/lib/buildStartListLineupParticipants";
+import {
+  buildStartListLineupFromEntries,
+  buildStartListLineupFromFrozenRounds,
+} from "@/lib/buildStartListLineupParticipants";
 import {
   countUniqueParticipantsInFrozenRounds,
   EMPTY_PUBLIC_LINEUP,
@@ -207,6 +210,11 @@ export async function loadStartListEventPage(input: {
 
   /** org 管理者のみ全種目 bar を取得（当日運用のみアンロックは ops UI だがインライン保存用データなし） */
   const needRoundHeatBarItems = isOrgAdmin && canManageStartListOps;
+  const heatPlanConfirmed = Boolean(event.startListHeatPlanConfirmedAt);
+  const hasFrozenHeats = Boolean(
+    heatPlanConfirmed &&
+      frozenSnapshotRounds?.some((r) => Array.isArray(r.heats) && r.heats.length > 0)
+  );
 
   const [
     liveEntries,
@@ -215,7 +223,9 @@ export async function loadStartListEventPage(input: {
     participantStatusRows,
     roundHeatBarItems,
   ] = await Promise.all([
-    prisma.competitionEntry.findMany({
+    hasFrozenHeats
+      ? Promise.resolve([])
+      : prisma.competitionEntry.findMany({
       where: {
         competitionId,
         status: "SUBMITTED",
@@ -231,7 +241,9 @@ export async function loadStartListEventPage(input: {
       },
       orderBy: { createdAt: "asc" },
     }),
-    prisma.teamEntry.findMany({
+    hasFrozenHeats
+      ? Promise.resolve([])
+      : prisma.teamEntry.findMany({
       where: { competitionId, eventId },
       select: {
         id: true,
@@ -345,7 +357,17 @@ export async function loadStartListEventPage(input: {
 
   const participantStatusByKey = buildParticipantDayOpsStatusByKey(participantStatusRows);
 
+  const frozenLineup =
+    hasFrozenHeats && frozenSnapshotRounds
+      ? buildStartListLineupFromFrozenRounds({
+          frozenSnapshotRounds,
+          isTeam: event.type === "TEAM",
+          participantStatusRows,
+        })
+      : null;
+
   const { individuals, teams, placementIndividualIds, placementTeamIds } =
+    frozenLineup ??
     buildStartListLineupFromEntries({
       liveEntries,
       liveTeamEntries,
@@ -419,8 +441,8 @@ export async function loadStartListEventPage(input: {
         isOrgAdmin,
         showVenueOps,
       },
-      periodicSyncEnabled: true,
-      /** 種目詳細は day-ops API で追随。30秒ごとの sync-if-needed+全SSRは避ける */
+      /** 当日運用のみの端末は day-ops ポーリングで足りる。主催設定権限があるときだけ meta 同期 */
+      periodicSyncEnabled: canManageStartListOps,
       periodicSnapshotSync: false,
       periodicSyncIntervalSec: resolveStartListPeriodicSyncIntervalSec(),
     },

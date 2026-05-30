@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildStartListLineupFromEntries } from "@/lib/buildStartListLineupParticipants";
+import {
+  buildStartListLineupFromEntries,
+  buildStartListLineupFromFrozenRounds,
+} from "@/lib/buildStartListLineupParticipants";
 
 describe("buildStartListLineupFromEntries", () => {
   const liveEntries = [
@@ -93,5 +96,39 @@ describe("buildStartListLineupFromEntries", () => {
       ],
     });
     expect(result.individuals).toHaveLength(1);
+  });
+});
+
+describe("buildStartListLineupFromFrozenRounds", () => {
+  it("builds individuals from HEAT snapshot heats", () => {
+    const result = buildStartListLineupFromFrozenRounds({
+      isTeam: false,
+      participantStatusRows: [],
+      frozenSnapshotRounds: [
+        {
+          round: "HEAT",
+          generatedAt: "2026-01-01T00:00:00.000Z",
+          generatedBy: "RECORD_CAPTURE",
+          heats: [
+            {
+              heatIndex: 1,
+              participants: [
+                {
+                  kind: "INDIVIDUAL",
+                  entryId: "e1",
+                  userId: "u1",
+                  name: "山田 太郎",
+                  clubId: null,
+                  clubName: null,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    expect(result?.individuals).toHaveLength(1);
+    expect(result?.individuals[0]?.entryId).toBe("e1");
+    expect(result?.placementIndividualIds).toEqual(["e1"]);
   });
 });
