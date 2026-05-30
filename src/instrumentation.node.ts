@@ -11,7 +11,7 @@ function onShutdown(): void {
   );
 }
 
-process.once("SIGINT", onShutdown);
-process.once("SIGTERM", onShutdown);
-
-export {};
+export function registerNodeInstrumentation(): void {
+  process.once("SIGINT", onShutdown);
+  process.once("SIGTERM", onShutdown);
+}
