@@ -15,6 +15,7 @@ import {
   getHeatOperationDraft,
   isDayOpsResultDraftServerSyncEnabled,
   parseServerResultDraftPayload,
+  patchHeatOperationDraftResultPayload,
   patchHeatOperationDraftResultPayloadFireAndForget,
   type HeatResultDraftServerEntry,
 } from "@/lib/dayOpsHeatOperationDraftSync";
@@ -37,6 +38,9 @@ type ResultDraftSyncContext = {
   competitionId: string;
   round: ResultRound;
 };
+
+/** PATCH 完了前にサーバー pull でローカルチェックが消えるのを防ぐ */
+const RESULT_DRAFT_LOCAL_SYNC_GUARD_MS = 20_000;
 
 export function useResultCaptureDraft(args: {
   eventId: string;
@@ -80,6 +84,7 @@ export function useResultCaptureDraft(args: {
   resultDraftOpsRef.current = resultDraftOps;
   const resultDraftPatchTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const lastLocalResultDraftTouchRef = useRef(0);
+  const heatResultConfirmBusyHeatRef = useRef<number | null>(null);
   const resultDraftSequenceRef = useRef(0);
   const resultDraftSyncContextRef = useRef(resultDraftSyncContext);
   const mRef = useRef(m);
@@ -96,6 +101,43 @@ export function useResultCaptureDraft(args: {
   }, [m, resultCapture]);
   localResultRowsRef.current = localResultRows;
 
+  useEffect(() => {
+    heatResultConfirmBusyHeatRef.current = heatResultConfirmBusyHeat;
+  }, [heatResultConfirmBusyHeat]);
+
+  const buildResultDraftServerEntriesForHeat = useCallback((heatIndex: number) => {
+    const entries: Record<string, HeatResultDraftServerEntry> = {};
+    for (const op of Object.values(resultDraftOpsRef.current)) {
+      if (op.heatIndex === heatIndex) {
+        entries[op.opKey] = op as HeatResultDraftServerEntry;
+      }
+    }
+    return entries;
+  }, []);
+
+  const awaitResultDraftServerPatch = useCallback(
+    async (heatIndex: number) => {
+      if (!isDayOpsResultDraftServerSyncEnabled()) return;
+      const timers = resultDraftPatchTimersRef.current;
+      clearTimeout(timers[heatIndex]);
+      delete timers[heatIndex];
+      const syncCtx = resultDraftSyncContextRef.current;
+      if (!syncCtx?.competitionId) return;
+      const entries = buildResultDraftServerEntriesForHeat(heatIndex);
+      try {
+        await patchHeatOperationDraftResultPayload(syncCtx.competitionId, {
+          eventId,
+          round: syncCtx.round,
+          heatIndex,
+          entries,
+        });
+      } catch {
+        // 確定 API が manualEntries を送るため、PATCH 失敗でも続行
+      }
+    },
+    [buildResultDraftServerEntriesForHeat, eventId]
+  );
+
   const flushResultDraftServerPatch = useCallback(
     (heatIndex: number, options?: { keepalive?: boolean }) => {
       if (!isDayOpsResultDraftServerSyncEnabled()) return;
@@ -104,12 +146,7 @@ export function useResultCaptureDraft(args: {
       delete timers[heatIndex];
       const syncCtx = resultDraftSyncContextRef.current;
       if (!syncCtx?.competitionId) return;
-      const entries: Record<string, HeatResultDraftServerEntry> = {};
-      for (const op of Object.values(resultDraftOpsRef.current)) {
-        if (op.heatIndex === heatIndex) {
-          entries[op.opKey] = op as HeatResultDraftServerEntry;
-        }
-      }
+      const entries = buildResultDraftServerEntriesForHeat(heatIndex);
       patchHeatOperationDraftResultPayloadFireAndForget(
         syncCtx.competitionId,
         {
@@ -121,7 +158,7 @@ export function useResultCaptureDraft(args: {
         options
       );
     },
-    [eventId]
+    [buildResultDraftServerEntriesForHeat, eventId]
   );
 
   const flushAllResultDraftServerPatches = useCallback(
@@ -164,6 +201,7 @@ export function useResultCaptureDraft(args: {
   const scheduleResultDraftServerPatch = useCallback(
     (heatIndex: number) => {
       if (!isDayOpsResultDraftServerSyncEnabled()) return;
+      if (heatResultConfirmBusyHeatRef.current !== null) return;
       const timers = resultDraftPatchTimersRef.current;
       clearTimeout(timers[heatIndex]);
       timers[heatIndex] = setTimeout(() => {
@@ -192,7 +230,10 @@ export function useResultCaptureDraft(args: {
   const pullResultDraftsFromServer = useCallback(() => {
     if (!isDayOpsResultDraftServerSyncEnabled()) return;
     if (!resultCaptureVisible) return;
-    if (Date.now() - lastLocalResultDraftTouchRef.current < 900) return;
+    if (heatResultConfirmBusyHeatRef.current !== null) return;
+    if (Date.now() - lastLocalResultDraftTouchRef.current < RESULT_DRAFT_LOCAL_SYNC_GUARD_MS) {
+      return;
+    }
     const syncCtx = resultDraftSyncContextRef.current;
     if (!syncCtx?.competitionId) return;
 
@@ -208,6 +249,9 @@ export function useResultCaptureDraft(args: {
             heatIndex: hi,
           });
           if (!row.updatedAt) continue;
+          const serverUpdatedMs = Date.parse(row.updatedAt);
+          if (!Number.isFinite(serverUpdatedMs)) continue;
+          if (serverUpdatedMs <= lastLocalResultDraftTouchRef.current) continue;
           const entries = parseServerResultDraftPayload(row.resultDraftPayload);
           if (!entries) continue;
           const entryKeys = Object.keys(entries);
@@ -525,11 +569,11 @@ export function useResultCaptureDraft(args: {
         return;
       }
       setHeatResultConfirmBusyHeat(displayHeatNumber);
+      setHeatResultConfirmTarget(null);
 
       const timers = resultDraftPatchTimersRef.current;
       clearTimeout(timers[displayHeatNumber]);
       delete timers[displayHeatNumber];
-      flushResultDraftServerPatch(displayHeatNumber);
 
       const draftsForHeat = Object.values(resultDraftOpsRef.current)
         .filter((op) => op.heatIndex === displayHeatNumber)
@@ -548,40 +592,69 @@ export function useResultCaptureDraft(args: {
         inputOrder: op.inputOrder,
       }));
 
+      if (draftsForHeat.length > 0) {
+        await awaitResultDraftServerPatch(displayHeatNumber);
+      }
+
       patchResultHeatConfirmed(displayHeatNumber);
 
-      try {
-        const { appended } = await postHeatResultConfirmHeat(marshal.competitionId, {
-          eventId,
-          round: marshal.round,
-          heatIndex: displayHeatNumber,
-          ...(manualEntries.length > 0 ? { manualEntries } : {}),
-        });
-        for (const row of appended) {
-          handleRankRecorded({
-            heatIndex: displayHeatNumber,
-            lane: row.lane,
-            rank: row.rank,
-            participantType: row.participantType,
-            competitionEntryId: row.competitionEntryId,
-            teamEntryId: row.teamEntryId,
-          });
+      const isRetryableConfirmError = (e: unknown): boolean => {
+        if (!(e instanceof Error)) return false;
+        const msg = e.message;
+        return (
+          msg.includes("混み合") ||
+          msg.includes("データベース") ||
+          msg.includes("Failed to fetch") ||
+          /network/i.test(msg)
+        );
+      };
+
+      let confirmError: unknown;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (attempt > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
         }
-        clearResultDraftsForHeat(displayHeatNumber);
-        setHeatResultConfirmTarget(null);
-        toast.success(`ヒート ${displayHeatNumber} のリザルトを確定しました`);
-        dispatchJlaDayOpsParticipantStatusChanged(marshal.competitionId, eventId, {
-          skipResultCaptureRefetch: true,
-          skipParticipantPoll: true,
-        });
-        deleteHeatOperationDraftFireAndForget(marshal.competitionId, {
-          eventId,
-          round: marshal.round,
-          heatIndex: displayHeatNumber,
-        });
-      } catch (e) {
+        try {
+          const { appended } = await postHeatResultConfirmHeat(marshal.competitionId, {
+            eventId,
+            round: marshal.round,
+            heatIndex: displayHeatNumber,
+            ...(manualEntries.length > 0 ? { manualEntries } : {}),
+          });
+          for (const row of appended) {
+            handleRankRecorded({
+              heatIndex: displayHeatNumber,
+              lane: row.lane,
+              rank: row.rank,
+              participantType: row.participantType,
+              competitionEntryId: row.competitionEntryId,
+              teamEntryId: row.teamEntryId,
+            });
+          }
+          clearResultDraftsForHeat(displayHeatNumber);
+          toast.success(`ヒート ${displayHeatNumber} のリザルトを確定しました`);
+          dispatchJlaDayOpsParticipantStatusChanged(marshal.competitionId, eventId, {
+            skipResultCaptureRefetch: true,
+            skipParticipantPoll: true,
+          });
+          deleteHeatOperationDraftFireAndForget(marshal.competitionId, {
+            eventId,
+            round: marshal.round,
+            heatIndex: displayHeatNumber,
+          });
+          confirmError = undefined;
+          break;
+        } catch (e) {
+          confirmError = e;
+          if (attempt === 0 && isRetryableConfirmError(e)) continue;
+          break;
+        }
+      }
+
+      if (confirmError !== undefined) {
         patchResultHeatUnconfirmed(displayHeatNumber);
-        const message = e instanceof Error ? e.message : "確定に失敗しました";
+        const message =
+          confirmError instanceof Error ? confirmError.message : "確定に失敗しました";
         if (draftsToFlush.length > 0) {
           setResultDraftErrors((prev) => {
             const next = { ...prev };
@@ -592,9 +665,9 @@ export function useResultCaptureDraft(args: {
           });
         }
         toast.error(message);
-      } finally {
-        setHeatResultConfirmBusyHeat((prev) => (prev === displayHeatNumber ? null : prev));
       }
+
+      setHeatResultConfirmBusyHeat((prev) => (prev === displayHeatNumber ? null : prev));
     },
     [
       eventId,
@@ -602,7 +675,7 @@ export function useResultCaptureDraft(args: {
       patchResultHeatConfirmed,
       patchResultHeatUnconfirmed,
       clearResultDraftsForHeat,
-      flushResultDraftServerPatch,
+      awaitResultDraftServerPatch,
     ]
   );
 

@@ -9,7 +9,7 @@ import {
   loadStartListSnapshotPayload,
   loadStartListSnapshotPayloadLoose,
 } from "@/lib/heatMarshalGate";
-import { countCalledMarshalSlotsForHeatConfirmInTransaction } from "@/lib/marshalHeatCalledCount";
+import { countCalledMarshalSlotsForHeatConfirmInTransaction, fetchParticipantStatusesForMarshalEvent } from "@/lib/marshalHeatCalledCount";
 import {
   resolveAdvanceQuotaForHeatInDayOps,
   validateHeatResultConfirmInTransaction,
@@ -20,7 +20,8 @@ import {
 } from "@/lib/heatDayOpsResolveParticipantInHeat";
 import {
   appendManualHeatResultsInTransaction,
-  assertManualResultAppendAllowed,
+  assertManualResultAppendAllowedWithGate,
+  loadManualResultAppendGateForConfirm,
   type ManualResultAppendEntry,
 } from "@/lib/heatResultCaptureManualAppend";
 import type { StartListSnapshotPayload } from "@/lib/startListSnapshot";
@@ -28,6 +29,12 @@ import { reconcileOfficialDsqRowsForHeat } from "@/lib/officialResultDsqSync";
 import { tryAutoAppendNextStartListRound } from "@/lib/startListNextRoundFromOfficial";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
 import { START_LIST_STEP1_REQUIRED_SHORT_MESSAGE } from "@/lib/startListStep1Messages";
+import {
+  DAY_OPS_HEAVY_TRANSACTION,
+  isPrismaTransactionUnavailable,
+  prismaPoolBusyUserMessage,
+  withPrismaPoolRetryOnce,
+} from "@/lib/prismaPool";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -158,23 +165,41 @@ export async function POST(request: NextRequest, context: RouteContext) {
             { status: resolvedSlot.status }
           );
         }
-        const allowed = await assertManualResultAppendAllowed({
-          competitionId,
-          eventId,
+        resolvedFlush.push({ resolved: resolvedSlot.data, entry });
+      }
+
+      const gateLoad = await loadManualResultAppendGateForConfirm({
+        competitionId,
+        eventId,
+        round: roundDb,
+        heatIndex,
+        resolvedSlots: resolvedFlush.map((r) => r.resolved),
+      });
+      if (!gateLoad.ok) {
+        return NextResponse.json({ error: gateLoad.error }, { status: gateLoad.status });
+      }
+      for (const item of resolvedFlush) {
+        const allowed = assertManualResultAppendAllowedWithGate({
           round: roundDb,
-          heatIndex,
-          resolved: resolvedSlot.data,
+          resolved: item.resolved,
+          gate: gateLoad.gate,
         });
         if (!allowed.ok) {
           return NextResponse.json({ error: allowed.error }, { status: allowed.status });
         }
-        resolvedFlush.push({ resolved: resolvedSlot.data, entry });
       }
     }
 
     let appendedRows: Awaited<ReturnType<typeof appendManualHeatResultsInTransaction>> = [];
 
-    const row = await prisma.$transaction(async (tx) => {
+    const row = await withPrismaPoolRetryOnce(() =>
+      prisma.$transaction(async (tx) => {
+      const eventStatusRows = await fetchParticipantStatusesForMarshalEvent(
+        tx,
+        competitionId,
+        eventId
+      );
+
       if (resolvedFlush.length > 0) {
         appendedRows = await appendManualHeatResultsInTransaction(tx, {
           competitionId,
@@ -184,6 +209,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           operatorUserId,
           entries: resolvedFlush,
           snapshotForDescInput,
+          eventStatusRows,
         });
       }
       const existing = await tx.officialResult.findUnique({
@@ -217,6 +243,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         round: roundDb,
         heatIndex,
         snapshot,
+        statusRows: eventStatusRows,
       });
 
       const calledInHeat = await countCalledMarshalSlotsForHeatConfirmInTransaction({
@@ -226,6 +253,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         round: roundDb,
         heatIndex,
         snapshot,
+        statusRows: eventStatusRows,
       });
 
       if (calledInHeat > 0) {
@@ -263,7 +291,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       });
 
       return officialResult.id;
-    });
+      }, DAY_OPS_HEAVY_TRANSACTION)
+    );
 
     void logAuditAction({
       action: "COMPETITION_HEAT_RESULT_CONFIRM",
@@ -401,6 +430,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
         { error: "進出枠が未設定のため、脱落式リザルトを確定できません。" },
         { status: 409 }
       );
+    }
+    if (isPrismaTransactionUnavailable(error)) {
+      return NextResponse.json({ error: prismaPoolBusyUserMessage() }, { status: 503 });
     }
     return jsonInternalError500(
       "POST api/competitions/[id]/day-ops/heat-result-capture/confirm-heat/route.ts",

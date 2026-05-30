@@ -141,7 +141,9 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
   /** 参加者行の初回取得中のみ。バックグラウンド再取得では UI を揺らさない */
   const marshalParticipantsPending = Boolean(m?.loading && !apiHeat?.participants?.length);
   const resultCaptureInitialLoading = Boolean(
-    resultCapture?.loading && localResultRows.length === 0
+    resultCapture?.loading &&
+      localResultRows.length === 0 &&
+      Object.keys(resultDraftOps).length === 0
   );
 
   if (isTeam) {
@@ -225,7 +227,9 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                 <>
                   {localConfirmedHeats.includes(displayHeatNumber) ? (
                     <span className="rounded bg-violet-200/90 px-1.5 py-0.5 text-[10px] font-medium text-violet-950 dark:bg-violet-900/70 dark:text-violet-100">
-                      リザルト確定済み
+                      {heatResultConfirmBusyHeat === displayHeatNumber
+                        ? "確定中…"
+                        : "リザルト確定済み"}
                     </span>
                   ) : null}
                   {!localConfirmedHeats.includes(displayHeatNumber) &&
@@ -699,7 +703,9 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                 <>
                   {localConfirmedHeats.includes(displayHeatNumber) ? (
                     <span className="rounded bg-violet-200/90 px-1.5 py-0.5 text-[10px] font-medium text-violet-950 dark:bg-violet-900/70 dark:text-violet-100">
-                      リザルト確定済み
+                      {heatResultConfirmBusyHeat === displayHeatNumber
+                        ? "確定中…"
+                        : "リザルト確定済み"}
                     </span>
                   ) : null}
                   {!localConfirmedHeats.includes(displayHeatNumber) && resultDraftCount > 0 ? (

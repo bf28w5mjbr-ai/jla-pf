@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Building2,
@@ -135,6 +135,10 @@ export default function CompetitionTeamAssignmentManager({
   const [draftAssignments, setDraftAssignments] =
     useState<Record<string, TeamEntryAssignment[]>>(assignmentsByClub);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setDraftAssignments(assignmentsByClub);
+  }, [assignmentsByClub]);
 
   const currentAssignments = useMemo(
     () => draftAssignments[selectedClubId] ?? [],
@@ -312,7 +316,7 @@ export default function CompetitionTeamAssignmentManager({
                 {isAssignmentWindowOpen
                   ? allTeamsMarshalBlocked
                     ? "このクラブのチームはすべて、スタートリスト上のヒートでマーシャル締切済みのため、メンバーを変更できません。"
-                    : "編集の確定は、各チームがスタートリスト上で乗るヒートのマーシャル締切までです。上記の日時は通知用の目安であり、編集可否の上限には使いません。"
+                    : "一度保存した割当も、各チームが向かう次のヒートのマーシャル締切まで変更できます（予選締切後も、決勝枠向けの変更は可能です）。上記の日時は通知用の目安であり、編集可否の上限には使いません。"
                   : "エントリー終了後から割当できます。現在はエントリー期間中か、終了前のため編集できません。"}
               </p>
             </div>
@@ -534,7 +538,7 @@ export default function CompetitionTeamAssignmentManager({
             <p className="text-xs leading-relaxed text-muted-foreground sm:max-w-md">
               {isAssignmentWindowOpen
                 ? hasEditableTeam
-                  ? "変更後は必ず保存してください。未保存の内容は失われます。"
+                  ? "変更後は必ず保存してください。保存済みの内容も、マーシャル締切までは再編集できます。"
                   : "編集可能なチームがありません（すべてマーシャル締切済み、または割当対象がありません）。"
                 : "割当期間外のため保存はできません。"}
             </p>

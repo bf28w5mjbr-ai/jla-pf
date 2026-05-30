@@ -24,6 +24,7 @@ export type LiveRoundModeBannersProps = {
   marshalBulkSubmitting: boolean;
   discardMarshalDrafts: () => void;
   submitMarshalDrafts: () => void | Promise<void>;
+  hasResultDraftOps?: boolean;
 };
 
 export function LiveRoundModeBanners({
@@ -42,12 +43,13 @@ export function LiveRoundModeBanners({
   marshalBulkSubmitting,
   discardMarshalDrafts,
   submitMarshalDrafts,
+  hasResultDraftOps = false,
 }: LiveRoundModeBannersProps) {
   const marshalParticipantsPending = Boolean(
     m?.loading && !m.heats?.some((h) => h.participants.length > 0)
   );
   const resultCaptureInitialLoading = Boolean(
-    resultCapture?.loading && (resultCapture.rows.length ?? 0) === 0
+    resultCapture?.loading && (resultCapture.rows.length ?? 0) === 0 && !hasResultDraftOps
   );
 
   return (

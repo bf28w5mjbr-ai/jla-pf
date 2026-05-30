@@ -10,6 +10,10 @@ import { isDsqOnlyOfficialRow } from "@/lib/officialResultDsqSync";
 import type { HeatDayOpsResolvedSlot } from "@/lib/heatDayOpsResolveParticipantInHeat";
 import { computeDescInputCalledBaselineInHeat } from "@/lib/marshalHeatCalledCount";
 import type { StartListSnapshotPayload } from "@/lib/startListSnapshot";
+import {
+  pickParticipantStatusForRound,
+  type ParticipantStatusRowForScope,
+} from "@/lib/competitionParticipantStatusScope";
 
 export type ManualResultAppendEntry = {
   participantType: "INDIVIDUAL" | "TEAM";
@@ -41,6 +45,8 @@ export async function appendManualHeatResultsInTransaction(
     operatorUserId: string | null;
     entries: Array<{ resolved: HeatDayOpsResolvedSlot; entry: ManualResultAppendEntry }>;
     snapshotForDescInput: StartListSnapshotPayload | null;
+    /** confirm-heat トランザクション内で既に読んだ参加者ステータス */
+    eventStatusRows?: ParticipantStatusRowForScope[];
   }
 ): Promise<ManualResultAppendCreated[]> {
   const {
@@ -51,6 +57,7 @@ export async function appendManualHeatResultsInTransaction(
     operatorUserId,
     entries,
     snapshotForDescInput,
+    eventStatusRows,
   } = params;
 
   const existing = await tx.officialResult.findUnique({
@@ -92,6 +99,38 @@ export async function appendManualHeatResultsInTransaction(
   }
 
   const createdRows: ManualResultAppendCreated[] = [];
+
+  const needsDescBaseline = entries.some(
+    (e) => e.entry.tieWithPrevious !== true && e.entry.inputOrder === "desc"
+  );
+  let descCalledBaseline: number | null = null;
+  if (needsDescBaseline) {
+    descCalledBaseline = await computeDescInputCalledBaselineInHeat({
+      tx,
+      competitionId,
+      eventId,
+      round,
+      heatIndex,
+      heatMarshalCallClosed: true,
+      snapshot: snapshotForDescInput,
+      statusRows: eventStatusRows,
+    });
+    if (descCalledBaseline <= 0) {
+      throw new Error("DESC_INPUT_NO_CALLED");
+    }
+  }
+
+  const initialAgg = await tx.officialResultRow.aggregate({
+    where: {
+      officialResultId: officialResult.id,
+      heat: heatIndex,
+      status: "OK",
+    },
+    _max: { rank: true },
+    _count: { _all: true },
+  });
+  let okRowCount = initialAgg._count._all;
+  let maxRank = initialAgg._max.rank ?? 0;
 
   for (const { resolved, entry } of entries) {
     const { target, slot } = resolved;
@@ -137,16 +176,8 @@ export async function appendManualHeatResultsInTransaction(
       }
     }
 
-    const agg = await tx.officialResultRow.aggregate({
-      where: {
-        officialResultId: officialResult.id,
-        heat: heatIndex,
-        status: "OK",
-      },
-      _max: { rank: true },
-      _count: { _all: true },
-    });
-    let nextRank = (agg._max.rank ?? 0) + 1;
+    const agg = { _max: { rank: maxRank }, _count: { _all: okRowCount } };
+    let nextRank = maxRank + 1;
     let tieGroup: string | null = null;
     if (body.tieWithPrevious === true) {
       const previous = await tx.officialResultRow.findFirst({
@@ -169,21 +200,8 @@ export async function appendManualHeatResultsInTransaction(
           data: { tieGroup },
         });
       }
-    }
-    if (body.tieWithPrevious !== true && body.inputOrder === "desc") {
-      const calledInHeat = await computeDescInputCalledBaselineInHeat({
-        tx,
-        competitionId,
-        eventId,
-        round,
-        heatIndex,
-        heatMarshalCallClosed: true,
-        snapshot: snapshotForDescInput,
-      });
-      if (calledInHeat <= 0) {
-        throw new Error("DESC_INPUT_NO_CALLED");
-      }
-      nextRank = Math.max(1, calledInHeat - agg._count._all);
+    } else if (body.inputOrder === "desc") {
+      nextRank = Math.max(1, (descCalledBaseline ?? 0) - agg._count._all);
     }
 
     const rowData = {
@@ -240,6 +258,8 @@ export async function appendManualHeatResultsInTransaction(
       competitionEntryId: target.competitionEntryId,
       teamEntryId: target.teamEntryId,
     });
+    maxRank = Math.max(maxRank, created.rank ?? nextRank);
+    okRowCount += 1;
   }
 
   return createdRows;
@@ -320,6 +340,179 @@ export async function assertManualResultAppendAllowed(params: {
   const effectiveStatus = effectiveDayOpsStatusForMarshalDisplay(
     storedStatus,
     heatMarshalCallClosed
+  );
+  if (storedStatus === "DSQ" || effectiveStatus === "DSQ") {
+    return {
+      ok: false,
+      error:
+        "失格（DSQ）のためリザルトを記録できません。マーシャル未完了による未出場とは別扱いです。",
+      status: 409,
+    };
+  }
+  if (effectiveStatus === DAY_OPS_STATUS_MARSHAL_ABSENT) {
+    return {
+      ok: false,
+      error:
+        "マーシャル締切済みで未召集のため未出場扱いです（競技中の失格 DSQ とは別）。リザルトは記録できません。",
+      status: 409,
+    };
+  }
+  if (storedStatus === "PENDING") {
+    return {
+      ok: false,
+      error: "マーシャル（召集チェック）が完了していないため、リザルトを記録できません",
+      status: 409,
+    };
+  }
+  if (!isCalledLikeStatus(storedStatus)) {
+    return {
+      ok: false,
+      error: "召集済み（CALLED）の参加者のみリザルトを記録できます",
+      status: 409,
+    };
+  }
+
+  return { ok: true };
+}
+
+function storedStatusForManualAppendTarget(
+  rows: ParticipantStatusRowForScope[],
+  round: ResultRound,
+  target: HeatDayOpsResolvedSlot["target"]
+): string {
+  const matching = rows.filter(
+    (r) =>
+      r.participantType === target.participantType &&
+      r.competitionEntryId === (target.competitionEntryId ?? null) &&
+      r.teamEntryId === (target.teamEntryId ?? null) &&
+      (target.participantType !== "TEAM" ||
+        (r.teamMemberUserId ?? null) === (target.teamMemberUserId ?? null))
+  );
+  return pickParticipantStatusForRound(matching, round).status;
+}
+
+export type ManualResultAppendGateContext = {
+  heatMarshalCallClosed: boolean;
+  validIndividualEntryIds: Set<string>;
+  validTeamEntryIds: Set<string>;
+  dayOpsRows: ParticipantStatusRowForScope[];
+};
+
+/** confirm-heat: 同一ヒートの manualEntries を一括検証するための事前読み込み */
+export async function loadManualResultAppendGateForConfirm(params: {
+  competitionId: string;
+  eventId: string;
+  round: ResultRound;
+  heatIndex: number;
+  resolvedSlots: HeatDayOpsResolvedSlot[];
+}): Promise<
+  { ok: true; gate: ManualResultAppendGateContext } | { ok: false; error: string; status: number }
+> {
+  const { competitionId, eventId, round, heatIndex, resolvedSlots } = params;
+  const individualIds = [
+    ...new Set(
+      resolvedSlots
+        .map((r) =>
+          r.target.participantType === "INDIVIDUAL" ? r.target.competitionEntryId : null
+        )
+        .filter((id): id is string => Boolean(id))
+    ),
+  ];
+  const teamIds = [
+    ...new Set(
+      resolvedSlots
+        .map((r) => (r.target.participantType === "TEAM" ? r.target.teamEntryId : null))
+        .filter((id): id is string => Boolean(id))
+    ),
+  ];
+
+  const [heatMarshalRow, dayOpsRows, validIndividuals, validTeams] = await Promise.all([
+    prisma.competitionHeatMarshalState.findUnique({
+      where: {
+        competitionId_eventId_round_heatIndex: {
+          competitionId,
+          eventId,
+          round,
+          heatIndex,
+        },
+      },
+      select: { callClosedAt: true },
+    }),
+    prisma.competitionParticipantStatus.findMany({
+      where: { competitionId, eventId, marshalRound: round },
+      select: {
+        participantType: true,
+        competitionEntryId: true,
+        teamEntryId: true,
+        teamMemberUserId: true,
+        status: true,
+        calledAt: true,
+        marshalRound: true,
+        updatedAt: true,
+      },
+    }),
+    individualIds.length
+      ? prisma.competitionEntry.findMany({
+          where: {
+            id: { in: individualIds },
+            competitionId,
+            items: { some: { eventId } },
+          },
+          select: { id: true },
+        })
+      : Promise.resolve([]),
+    teamIds.length
+      ? prisma.teamEntry.findMany({
+          where: { id: { in: teamIds }, competitionId, eventId },
+          select: { id: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const heatMarshalCallClosed = Boolean(heatMarshalRow?.callClosedAt);
+  if (!heatMarshalCallClosed) {
+    return {
+      ok: false,
+      error:
+        "マーシャル締切後にのみリザルトを記録できます。当日運用のヒート一覧で「このヒートを締切」を先に実行してください。",
+      status: 409,
+    };
+  }
+
+  return {
+    ok: true,
+    gate: {
+      heatMarshalCallClosed,
+      validIndividualEntryIds: new Set(validIndividuals.map((e) => e.id)),
+      validTeamEntryIds: new Set(validTeams.map((e) => e.id)),
+      dayOpsRows,
+    },
+  };
+}
+
+export function assertManualResultAppendAllowedWithGate(params: {
+  round: ResultRound;
+  resolved: HeatDayOpsResolvedSlot;
+  gate: ManualResultAppendGateContext;
+}): { ok: true } | { ok: false; error: string; status: number } {
+  const { round, resolved, gate } = params;
+  const { target } = resolved;
+
+  if (target.participantType === "INDIVIDUAL" && target.competitionEntryId) {
+    if (!gate.validIndividualEntryIds.has(target.competitionEntryId)) {
+      return { ok: false, error: "個人エントリーがこの種目に一致しません", status: 400 };
+    }
+  }
+  if (target.participantType === "TEAM" && target.teamEntryId) {
+    if (!gate.validTeamEntryIds.has(target.teamEntryId)) {
+      return { ok: false, error: "チームエントリーがこの種目に一致しません", status: 400 };
+    }
+  }
+
+  const storedStatus = storedStatusForManualAppendTarget(gate.dayOpsRows, round, target);
+  const effectiveStatus = effectiveDayOpsStatusForMarshalDisplay(
+    storedStatus,
+    gate.heatMarshalCallClosed
   );
   if (storedStatus === "DSQ" || effectiveStatus === "DSQ") {
     return {

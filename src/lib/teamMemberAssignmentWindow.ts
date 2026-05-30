@@ -11,7 +11,36 @@ import {
 import { resolveTeamAssignmentDeadline } from "@/lib/startListSettings";
 
 /**
- * スタートリスト上でチームが配置される各ラウンドについて、いずれかのヒートで召集締切済みなら true。
+ * スナップショット上で最も進んだラウンド（HEAT → SEMI → FINAL のうち最後に配置がある）の
+ * ヒートだけを見る。予選のマーシャル締切後も、決勝枠向けにメンバー割当を直せるようにする。
+ */
+export function isTeamEntryMarshalAssignmentBlockedForLatestPlacement(params: {
+  eventId: string;
+  roundsInSnapshotOrder: readonly ResultRound[];
+  resolveHeatIndex: (round: ResultRound) => number | null | undefined;
+  closedMarshalHeatKeys: ReadonlySet<string>;
+}): boolean {
+  let latestRound: ResultRound | null = null;
+  let latestHeatIndex: number | null = null;
+
+  for (const round of params.roundsInSnapshotOrder) {
+    const heatIndex = params.resolveHeatIndex(round);
+    if (heatIndex == null) continue;
+    latestRound = round;
+    latestHeatIndex = heatIndex;
+  }
+
+  if (latestRound == null || latestHeatIndex == null) {
+    return false;
+  }
+
+  return params.closedMarshalHeatKeys.has(
+    `${params.eventId}:${latestRound}:${latestHeatIndex}`
+  );
+}
+
+/**
+ * スタートリスト上の「いま向き合っている」ヒート（最進ラウンドの配置）でマーシャル締切済みなら true。
  * スナップショットに未掲載のチームはブロックしない（ヒート確定前）。
  */
 export async function getTeamEntryMarshalAssignmentBlockedMap(
@@ -46,20 +75,13 @@ export async function getTeamEntryMarshalAssignmentBlockedMap(
   for (const te of teamEntries) {
     ref.teamEntryId = te.id;
     const rounds = listMarshalRoundsInSnapshotForEvent(snapshot, te.eventId);
-    let blocked = false;
-    for (const round of rounds) {
-      const heatIndex = resolveParticipantMarshalHeat(
-        snapshot,
-        te.eventId,
-        round as ResultRound,
-        ref
-      );
-      if (heatIndex == null) continue;
-      if (closedSet.has(`${te.eventId}:${round}:${heatIndex}`)) {
-        blocked = true;
-        break;
-      }
-    }
+    const blocked = isTeamEntryMarshalAssignmentBlockedForLatestPlacement({
+      eventId: te.eventId,
+      roundsInSnapshotOrder: rounds,
+      resolveHeatIndex: (round) =>
+        resolveParticipantMarshalHeat(snapshot, te.eventId, round, ref),
+      closedMarshalHeatKeys: closedSet,
+    });
     out.set(te.id, blocked);
   }
 

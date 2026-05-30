@@ -256,6 +256,8 @@ export async function reconcileOfficialDsqRowsForHeat(
     round: ResultRound;
     heatIndex: number;
     snapshot: StartListSnapshotPayload | null;
+    /** 同一トランザクション内で既に読んだ場合は渡す */
+    statusRows?: Awaited<ReturnType<typeof fetchParticipantStatusesForMarshalEvent>>;
   }
 ): Promise<OfficialResultDsqSyncResult> {
   const ensured = await ensureOfficialResultForRound(
@@ -272,11 +274,9 @@ export async function reconcileOfficialDsqRowsForHeat(
   const heat = getHeatFromRoundData(roundData, opts.heatIndex);
   const refs = marshalParticipantRefsForAutoDsq(roundData, opts.heatIndex);
 
-  const statusRows = await fetchParticipantStatusesForMarshalEvent(
-    tx,
-    opts.competitionId,
-    opts.eventId
-  );
+  const statusRows =
+    opts.statusRows ??
+    (await fetchParticipantStatusesForMarshalEvent(tx, opts.competitionId, opts.eventId));
   const statusByKey = buildParticipantStatusStringMapForRound(statusRows, opts.round);
 
   let skipped = false;

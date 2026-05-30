@@ -49,6 +49,7 @@ import {
   type CompetitionManagementPageSearchParams,
 } from "@/lib/competitionManagementTab";
 import { getCompetitionManagementAccess } from "@/lib/competitionManagementAccess";
+import { toIsoStringOrNull } from "@/lib/datetimeLocal";
 import CopyAbsoluteUrlButton from "@/components/public/CopyAbsoluteUrlButton";
 import CompetitionManagementTabsClient, {
   CompetitionManagementTabTrigger,
@@ -575,9 +576,9 @@ export default async function CompetitionDetailPage({
             competitionId={competitionId}
             initialAnnouncements={competition.announcements.map(a => ({
               ...a,
-              createdAt: a.createdAt.toISOString(),
-              updatedAt: a.updatedAt.toISOString(),
-              publishedAt: a.publishedAt?.toISOString() || null,
+              createdAt: toIsoStringOrNull(a.createdAt) ?? "",
+              updatedAt: toIsoStringOrNull(a.updatedAt) ?? "",
+              publishedAt: toIsoStringOrNull(a.publishedAt),
             }))}
             canEdit={canEdit}
           />

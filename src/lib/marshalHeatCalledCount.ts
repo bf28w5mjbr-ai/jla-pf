@@ -102,16 +102,20 @@ export async function computeDescInputCalledBaselineInHeat(opts: {
   heatIndex: number;
   heatMarshalCallClosed: boolean;
   snapshot: StartListSnapshotPayload | null;
+  /** 同一トランザクション内で既に読んだ場合は渡す（二重 GET を省略） */
+  statusRows?: ParticipantStatusRowForScope[];
 }): Promise<number> {
   const roundData = getRoundDataFromSnapshot(opts.snapshot, opts.eventId, opts.round);
   const heat = getHeatFromRoundData(roundData, opts.heatIndex);
   if (!heat) return 0;
 
-  const statuses = await fetchParticipantStatusesForMarshalEvent(
-    opts.tx,
-    opts.competitionId,
-    opts.eventId
-  );
+  const statuses =
+    opts.statusRows ??
+    (await fetchParticipantStatusesForMarshalEvent(
+      opts.tx,
+      opts.competitionId,
+      opts.eventId
+    ));
   const statusByKey = buildParticipantMarshalDisplayByKeyForRound(statuses, opts.round);
   const teamIds = new Set<string>();
   for (const p of heat.participants ?? []) {
@@ -137,6 +141,8 @@ export async function countCalledMarshalSlotsForHeatConfirmInTransaction(opts: {
   round: ResultRound;
   heatIndex: number;
   snapshot: StartListSnapshotPayload | null;
+  /** 同一トランザクション内で既に読んだ場合は渡す */
+  statusRows?: ParticipantStatusRowForScope[];
 }): Promise<number> {
   const roundData = getRoundDataFromSnapshot(opts.snapshot, opts.eventId, opts.round);
   const heat = getHeatFromRoundData(roundData, opts.heatIndex);
@@ -154,7 +160,9 @@ export async function countCalledMarshalSlotsForHeatConfirmInTransaction(opts: {
       },
       select: { callClosedAt: true },
     }),
-    fetchParticipantStatusesForMarshalEvent(opts.tx, opts.competitionId, opts.eventId),
+    opts.statusRows
+      ? Promise.resolve(opts.statusRows)
+      : fetchParticipantStatusesForMarshalEvent(opts.tx, opts.competitionId, opts.eventId),
   ]);
   const heatMarshalCallClosed = Boolean(marshalRow?.callClosedAt);
   const statusByKey = buildParticipantMarshalDisplayByKeyForRound(statuses, opts.round);

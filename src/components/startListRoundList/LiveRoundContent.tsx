@@ -87,15 +87,6 @@ export function LiveRoundContent({
     statusUpdatedAtByKey,
   });
 
-  useEffect(() => {
-    const setDefer = m?.setMarshalSyncDeferred;
-    const defer = marshalInline && marshalSyncBusy;
-    setDefer?.(defer);
-    return () => {
-      setDefer?.(false);
-    };
-  }, [marshalInline, marshalSyncBusy, m?.setMarshalSyncDeferred]);
-
   const {
     localResultRows,
     resultCapturePendingKey,
@@ -141,6 +132,25 @@ export function LiveRoundContent({
     resultCapture,
     heatsRef,
   });
+
+  useEffect(() => {
+    const setDefer = m?.setMarshalSyncDeferred;
+    const hasResultDrafts = Object.keys(resultDraftOps).length > 0;
+    const confirming = heatResultConfirmBusyHeat !== null;
+    const deferMarshal = marshalInline && marshalSyncBusy;
+    const deferResult = resultCaptureVisible && (hasResultDrafts || confirming);
+    setDefer?.(deferMarshal || deferResult);
+    return () => {
+      setDefer?.(false);
+    };
+  }, [
+    marshalInline,
+    marshalSyncBusy,
+    resultCaptureVisible,
+    resultDraftOps,
+    heatResultConfirmBusyHeat,
+    m?.setMarshalSyncDeferred,
+  ]);
 
   const {
     heatCloseTarget,
@@ -210,6 +220,7 @@ export function LiveRoundContent({
         marshalBulkSubmitting={marshalBulkSubmitting}
         discardMarshalDrafts={discardMarshalDrafts}
         submitMarshalDrafts={submitMarshalDrafts}
+        hasResultDraftOps={Object.keys(resultDraftOps).length > 0}
       />
       <LiveRoundDsqLink
         showDsqManagementLink={showDsqManagementLink}

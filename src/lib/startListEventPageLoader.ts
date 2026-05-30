@@ -27,6 +27,7 @@ import {
   resolveStartListPeriodicSyncIntervalSec,
   resolveStartListPublicRefreshIntervalSec,
 } from "@/lib/startListPeriodicSync";
+import { toIsoStringOrNull } from "@/lib/datetimeLocal";
 import type {
   StartListEventCardProps,
   StartListEventPageIndividual,
@@ -141,9 +142,7 @@ export async function loadStartListEventPage(input: {
   }
 
   const scheduleLabel = formatEventScheduleJa(event.scheduledStartAt, event.scheduledEndAt);
-  const archiveRecordedAtIso = competition.startListSnapshot?.capturedAt
-    ? new Date(competition.startListSnapshot.capturedAt).toISOString()
-    : null;
+  const archiveRecordedAtIso = toIsoStringOrNull(competition.startListSnapshot?.capturedAt);
   const frozenSnapshotRounds = extractFrozenRoundsForEventFromSnapshotData(
     competition.startListSnapshot?.data,
     eventId
@@ -180,8 +179,8 @@ export async function loadStartListEventPage(input: {
           ageCategoryName: event.ageCategory?.name ?? null,
           preliminaryHeatLaneCount: event.preliminaryHeatLaneCount ?? null,
           startListRoundCount: event.startListRoundCount ?? null,
-          heatPlanConfirmedAtIso: event.startListHeatPlanConfirmedAt?.toISOString() ?? null,
-          marshalStartedAtIso: event.marshalStartedAt?.toISOString() ?? null,
+          heatPlanConfirmedAtIso: toIsoStringOrNull(event.startListHeatPlanConfirmedAt),
+          marshalStartedAtIso: toIsoStringOrNull(event.marshalStartedAt),
         },
         initialSettings: competition.startListSettings,
         defaultMaxLanesPerRace: event.preliminaryHeatLaneCount ?? null,
@@ -420,8 +419,8 @@ export async function loadStartListEventPage(input: {
         ageCategoryName: event.ageCategory?.name ?? null,
         preliminaryHeatLaneCount: event.preliminaryHeatLaneCount ?? null,
         startListRoundCount: event.startListRoundCount ?? null,
-        heatPlanConfirmedAtIso: event.startListHeatPlanConfirmedAt?.toISOString() ?? null,
-        marshalStartedAtIso: event.marshalStartedAt?.toISOString() ?? null,
+        heatPlanConfirmedAtIso: toIsoStringOrNull(event.startListHeatPlanConfirmedAt),
+        marshalStartedAtIso: toIsoStringOrNull(event.marshalStartedAt),
       },
       initialSettings: competition.startListSettings,
       defaultMaxLanesPerRace: event.preliminaryHeatLaneCount ?? null,

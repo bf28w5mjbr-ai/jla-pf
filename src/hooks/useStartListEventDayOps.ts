@@ -416,15 +416,17 @@ export function useStartListEventDayOps({
 
   const refreshDayOpsListsFromPoll = useCallback(
     (opts?: { skipMarshalHeat?: boolean; skipResultCapture?: boolean; skipParticipantPoll?: boolean }) => {
-      const skipMarshalHeat = opts?.skipMarshalHeat || marshalSyncDeferredRef.current;
-      const skipParticipantPoll = opts?.skipParticipantPoll || marshalSyncDeferredRef.current;
+      const deferred = marshalSyncDeferredRef.current;
+      const skipMarshalHeat = opts?.skipMarshalHeat || deferred;
+      const skipParticipantPoll = opts?.skipParticipantPoll || deferred;
+      const skipResultCapture = opts?.skipResultCapture || deferred;
       if (!skipParticipantPoll) {
         void refreshDayOpsParticipantPoll();
       }
       if (anyTabNeedsMarshalHeat && !skipMarshalHeat) {
         void refetchListMarshalHeats();
       }
-      if (anyTabInResultMode && showResultOps && !opts?.skipResultCapture) {
+      if (anyTabInResultMode && showResultOps && !skipResultCapture) {
         void refetchResultCapture();
       }
     },

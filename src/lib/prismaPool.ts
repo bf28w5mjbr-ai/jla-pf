@@ -22,10 +22,28 @@ export function isPrismaMaxClientConnections(error: unknown): boolean {
   );
 }
 
+export function isPrismaTransactionUnavailable(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028"
+  );
+}
+
 export function isPrismaPoolRetryable(error: unknown): boolean {
   return (
-    isPrismaConnectionPoolTimeout(error) || isPrismaMaxClientConnections(error)
+    isPrismaConnectionPoolTimeout(error) ||
+    isPrismaMaxClientConnections(error) ||
+    isPrismaTransactionUnavailable(error)
   );
+}
+
+/** 当日運用の確定・一括保存など、複数クエリを伴う $transaction 向け */
+export const DAY_OPS_HEAVY_TRANSACTION = {
+  maxWait: 20_000,
+  timeout: 55_000,
+} as const;
+
+export function prismaPoolBusyUserMessage(): string {
+  return "データベースが混み合っています。しばらく待ってから再度お試しください。";
 }
 
 function retryDelayMs(error: unknown): number {

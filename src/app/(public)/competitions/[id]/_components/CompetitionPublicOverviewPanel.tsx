@@ -7,6 +7,7 @@ import {
   Users,
 } from "lucide-react";
 import type { CompetitionPublicOverviewDetail } from "@/lib/competitionPublicPageLoader";
+import { toIsoStringOrNull } from "@/lib/datetimeLocal";
 import {
   buildParticipationEventSections,
   isUnassignedParticipationAgeBlock,
@@ -258,8 +259,8 @@ export function CompetitionPublicOverviewPanel({
             id: a.id,
             title: a.title,
             content: a.content,
-            publishedAt: a.publishedAt?.toISOString() ?? null,
-            createdAt: a.createdAt.toISOString(),
+            publishedAt: toIsoStringOrNull(a.publishedAt),
+            createdAt: toIsoStringOrNull(a.createdAt) ?? "",
           }))}
           canEdit={false}
         />
@@ -274,7 +275,7 @@ export function CompetitionPublicOverviewPanel({
             fileUrl: a.fileUrl,
             fileSize: a.fileSize,
             mimeType: a.mimeType,
-            createdAt: a.createdAt.toISOString(),
+            createdAt: toIsoStringOrNull(a.createdAt) ?? "",
           }))}
           canEdit={false}
         />

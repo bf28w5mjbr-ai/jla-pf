@@ -139,6 +139,16 @@ export function formatCompactJaDate(d: Date): string {
 /**
  * 開催期間表示。同一暦日なら1日分のみ（例: 4/12）。複数日なら「4/12 〜 4/14」。
  */
+/** Prisma Date または unstable_cache 復元後の ISO 文字列を UTC ISO に正規化 */
+export function toIsoStringOrNull(
+  value: Date | string | number | null | undefined
+): string | null {
+  if (value == null) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
 export function formatCompactJaDateRange(start: Date, end: Date | null | undefined): string {
   const s = new Date(start);
   if (end == null) {
