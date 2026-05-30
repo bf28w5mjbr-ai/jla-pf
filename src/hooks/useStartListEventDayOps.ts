@@ -270,8 +270,15 @@ export function useStartListEventDayOps({
     setListResultConfirmedHeats((prev) => prev.filter((h) => h !== heatIndex));
   }, []);
 
+  const listResultRoundKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
-    setListResultConfirmedHeats([]);
+    const roundKey =
+      listMarshalRound != null ? `${eventId}:${listMarshalRound}` : null;
+    if (listResultRoundKeyRef.current !== roundKey) {
+      listResultRoundKeyRef.current = roundKey;
+      setListResultConfirmedHeats([]);
+    }
   }, [listMarshalRound, eventId]);
 
   useEffect(() => {
@@ -279,7 +286,9 @@ export function useStartListEventDayOps({
       setListResultRows([]);
       setListResultLocked(false);
       setListResultLoading(false);
-      setListResultConfirmedHeats([]);
+      if (!anyTabInResultMode) {
+        setListResultConfirmedHeats([]);
+      }
       return;
     }
     let cancelled = false;
@@ -288,15 +297,16 @@ export function useStartListEventDayOps({
       .then((data) => {
         if (cancelled) return;
         setListResultLocked(Boolean(data.lockedAt));
-        setListResultRows(data.rows);
-        setListResultConfirmedHeats((prev) => mergeConfirmedHeats(prev, data.confirmedHeats));
+        setListResultRows((prev) =>
+          resultCaptureRowsEqual(prev, data.rows) ? prev : data.rows
+        );
+        setListResultConfirmedHeats((prev) => {
+          const merged = mergeConfirmedHeats(prev, data.confirmedHeats);
+          return confirmedHeatsEqual(prev, merged) ? prev : merged;
+        });
       })
       .catch(() => {
-        if (!cancelled) {
-          setListResultRows([]);
-          setListResultLocked(false);
-          setListResultConfirmedHeats([]);
-        }
+        /* 楽観更新済み confirmedHeats / 行データは維持（遅延 GET 失敗で確定表示が消えない） */
       })
       .finally(() => {
         if (!cancelled) setListResultLoading(false);

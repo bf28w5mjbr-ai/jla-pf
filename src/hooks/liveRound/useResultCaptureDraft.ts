@@ -82,11 +82,19 @@ export function useResultCaptureDraft(args: {
   const lastLocalResultDraftTouchRef = useRef(0);
   const resultDraftSequenceRef = useRef(0);
   const resultDraftSyncContextRef = useRef(resultDraftSyncContext);
+  const mRef = useRef(m);
+  const resultCaptureRef = useRef(resultCapture);
+  const localResultRowsRef = useRef(localResultRows);
   useEffect(() => {
     if (resultDraftSyncContext) {
       resultDraftSyncContextRef.current = resultDraftSyncContext;
     }
   }, [resultDraftSyncContext]);
+  useEffect(() => {
+    mRef.current = m;
+    resultCaptureRef.current = resultCapture;
+  }, [m, resultCapture]);
+  localResultRowsRef.current = localResultRows;
 
   const flushResultDraftServerPatch = useCallback(
     (heatIndex: number, options?: { keepalive?: boolean }) => {
@@ -510,18 +518,24 @@ export function useResultCaptureDraft(args: {
 
   const runHeatResultConfirm = useCallback(
     async (displayHeatNumber: number) => {
-      if (!m || !resultCapture) return;
+      const marshal = mRef.current;
+      const capture = resultCaptureRef.current;
+      if (!marshal || !capture) {
+        toast.error("リザルト状態を読み込めません。ページを更新してください。");
+        return;
+      }
       setHeatResultConfirmBusyHeat(displayHeatNumber);
 
       const timers = resultDraftPatchTimersRef.current;
       clearTimeout(timers[displayHeatNumber]);
       delete timers[displayHeatNumber];
+      flushResultDraftServerPatch(displayHeatNumber);
 
       const draftsForHeat = Object.values(resultDraftOpsRef.current)
         .filter((op) => op.heatIndex === displayHeatNumber)
         .sort((a, b) => (a.draftSequence ?? 0) - (b.draftSequence ?? 0));
       const rankedKeys = new Set(
-        rankedParticipantKeysForHeatFromRows(localResultRows, displayHeatNumber)
+        rankedParticipantKeysForHeatFromRows(localResultRowsRef.current, displayHeatNumber)
       );
       const draftsToFlush = draftsForHeat.filter((op) => !rankedKeys.has(op.opKey));
       const manualEntries = draftsToFlush.map((op) => ({
@@ -535,12 +549,11 @@ export function useResultCaptureDraft(args: {
       }));
 
       patchResultHeatConfirmed(displayHeatNumber);
-      setHeatResultConfirmTarget(null);
 
       try {
-        const { appended } = await postHeatResultConfirmHeat(m.competitionId, {
+        const { appended } = await postHeatResultConfirmHeat(marshal.competitionId, {
           eventId,
-          round: m.round,
+          round: marshal.round,
           heatIndex: displayHeatNumber,
           ...(manualEntries.length > 0 ? { manualEntries } : {}),
         });
@@ -555,14 +568,15 @@ export function useResultCaptureDraft(args: {
           });
         }
         clearResultDraftsForHeat(displayHeatNumber);
+        setHeatResultConfirmTarget(null);
         toast.success(`ヒート ${displayHeatNumber} のリザルトを確定しました`);
-        dispatchJlaDayOpsParticipantStatusChanged(m.competitionId, eventId, {
+        dispatchJlaDayOpsParticipantStatusChanged(marshal.competitionId, eventId, {
           skipResultCaptureRefetch: true,
           skipParticipantPoll: true,
         });
-        deleteHeatOperationDraftFireAndForget(m.competitionId, {
+        deleteHeatOperationDraftFireAndForget(marshal.competitionId, {
           eventId,
-          round: m.round,
+          round: marshal.round,
           heatIndex: displayHeatNumber,
         });
       } catch (e) {
@@ -583,14 +597,12 @@ export function useResultCaptureDraft(args: {
       }
     },
     [
-      m,
-      resultCapture,
       eventId,
       handleRankRecorded,
       patchResultHeatConfirmed,
       patchResultHeatUnconfirmed,
       clearResultDraftsForHeat,
-      localResultRows,
+      flushResultDraftServerPatch,
     ]
   );
 
