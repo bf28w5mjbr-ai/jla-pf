@@ -30,6 +30,7 @@ import {
   type TeamAssignmentCompetitionJson,
   type TeamAssignmentEventJson,
 } from "@/lib/teamMemberSlotEligibility";
+import { notifyStartListTeamMembersChanged } from "@/lib/startListTeamMembersBroadcast";
 
 const EMPTY_SLOT_VALUE = "__none__";
 
@@ -239,6 +240,7 @@ export default function CompetitionTeamAssignmentManager({
         [selectedClubId]: currentAssignments,
       }));
       toast.success("チームメンバー割当を更新しました");
+      notifyStartListTeamMembersChanged(competitionId);
       router.refresh();
     } catch (error) {
       console.error("Team assignment save error:", error);

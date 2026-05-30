@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import StartListEventPublicCard from "@/components/StartListEventPublicCard";
 import { useStartListPeriodicSync } from "@/hooks/useStartListPeriodicSync";
+import { useStartListTeamMembersBroadcastRefresh } from "@/hooks/useStartListTeamMembersBroadcastRefresh";
 import type { StartListEventCardProps } from "@/lib/startListEventTypes";
 import {
   resolveStartListPeriodicSyncIntervalSec,
@@ -38,6 +39,11 @@ export default function StartListEventUnifiedCard(props: StartListEventCardProps
     snapshotSync: !isPublic && props.periodicSnapshotSync !== false,
     intervalSec,
   });
+
+  useStartListTeamMembersBroadcastRefresh(
+    props.competitionId,
+    props.periodicSyncEnabled !== false
+  );
 
   if (isPublic) {
     return <StartListEventPublicCard {...props} />;

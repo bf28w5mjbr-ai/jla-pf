@@ -2,6 +2,11 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import {
+  parseStartListRefreshMeta,
+  shouldRefreshStartListPage,
+  type StartListRefreshMeta,
+} from "@/lib/startListRefreshMeta";
 import { resolveStartListPeriodicSyncIntervalSec } from "@/lib/startListPeriodicSync";
 
 type Args = {
@@ -22,7 +27,7 @@ export function useStartListPeriodicSync({
 }: Args) {
   const router = useRouter();
   const inFlightRef = useRef(false);
-  const lastCapturedAtRef = useRef<string | null>(null);
+  const lastMetaRef = useRef<StartListRefreshMeta | null>(null);
 
   useEffect(() => {
     if (!enabled || !competitionId) return;
@@ -61,12 +66,11 @@ export function useStartListPeriodicSync({
             { credentials: "same-origin" }
           ).catch(() => null);
           if (res?.ok) {
-            const data = (await res.json()) as { capturedAtIso?: string | null };
-            const nextCapturedAt = data.capturedAtIso ?? null;
-            if (nextCapturedAt !== lastCapturedAtRef.current) {
-              lastCapturedAtRef.current = nextCapturedAt;
+            const nextMeta = parseStartListRefreshMeta(await res.json());
+            if (shouldRefreshStartListPage(lastMetaRef.current, nextMeta)) {
               router.refresh();
             }
+            lastMetaRef.current = nextMeta;
           }
         }
       } finally {
