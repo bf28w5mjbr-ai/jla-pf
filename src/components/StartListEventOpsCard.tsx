@@ -456,7 +456,12 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
                   })}
                 </TabsList>
                 {tabs.map((t, index) => (
-                  <TabsContent key={t.id} value={t.id} className="mt-3 space-y-3">
+                  <TabsContent
+                    key={t.id}
+                    value={t.id}
+                    forceMount
+                    className="mt-3 space-y-3 data-[state=inactive]:hidden"
+                  >
                     {renderMarshalModeBar(t.id, index)}
                     <div className="rounded-lg border border-border/50 bg-muted/5 p-2 sm:p-3">
                       {renderListBlock(index)}

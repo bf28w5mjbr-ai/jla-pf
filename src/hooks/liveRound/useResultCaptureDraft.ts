@@ -85,13 +85,29 @@ export function useResultCaptureDraft(args: {
     setLocalConfirmedHeats(resultCapture?.confirmedHeats ?? []);
   }, [confirmedHeatsKey, resultCapture?.confirmedHeats]);
 
-  useEffect(() => {
-    const timers = resultDraftPatchTimersRef.current;
-    return () => {
-      for (const t of Object.values(timers)) clearTimeout(t);
-      resultDraftPatchTimersRef.current = {};
-    };
-  }, []);
+  const flushResultDraftServerPatch = useCallback(
+    (heatIndex: number) => {
+      if (!isDayOpsResultDraftServerSyncEnabled()) return;
+      const timers = resultDraftPatchTimersRef.current;
+      clearTimeout(timers[heatIndex]);
+      delete timers[heatIndex];
+      const mm = mRef.current;
+      if (!mm?.competitionId) return;
+      const entries: Record<string, HeatResultDraftServerEntry> = {};
+      for (const op of Object.values(resultDraftOpsRef.current)) {
+        if (op.heatIndex === heatIndex) {
+          entries[op.opKey] = op as HeatResultDraftServerEntry;
+        }
+      }
+      patchHeatOperationDraftResultPayloadFireAndForget(mm.competitionId, {
+        eventId,
+        round: mm.round,
+        heatIndex,
+        entries,
+      });
+    },
+    [eventId, mRef]
+  );
 
   const scheduleResultDraftServerPatch = useCallback(
     (heatIndex: number) => {
@@ -99,29 +115,28 @@ export function useResultCaptureDraft(args: {
       const timers = resultDraftPatchTimersRef.current;
       clearTimeout(timers[heatIndex]);
       timers[heatIndex] = setTimeout(() => {
-        const mm = mRef.current;
-        if (!mm?.competitionId) {
-          delete timers[heatIndex];
-          return;
-        }
         lastLocalResultDraftTouchRef.current = Date.now();
-        const entries: Record<string, HeatResultDraftServerEntry> = {};
-        for (const op of Object.values(resultDraftOpsRef.current)) {
-          if (op.heatIndex === heatIndex) {
-            entries[op.opKey] = op as HeatResultDraftServerEntry;
-          }
-        }
-        patchHeatOperationDraftResultPayloadFireAndForget(mm.competitionId, {
-          eventId,
-          round: mm.round,
-          heatIndex,
-          entries,
-        });
-        delete timers[heatIndex];
+        flushResultDraftServerPatch(heatIndex);
       }, 480);
     },
-    [eventId, mRef]
+    [flushResultDraftServerPatch]
   );
+
+  useEffect(() => {
+    return () => {
+      const timers = resultDraftPatchTimersRef.current;
+      const pendingHeats = Object.keys(timers).map((k) => Number(k));
+      for (const t of Object.values(timers)) clearTimeout(t);
+      resultDraftPatchTimersRef.current = {};
+      const heatsToFlush = new Set<number>(pendingHeats);
+      for (const op of Object.values(resultDraftOpsRef.current)) {
+        heatsToFlush.add(op.heatIndex);
+      }
+      for (const hi of heatsToFlush) {
+        if (Number.isFinite(hi)) flushResultDraftServerPatch(hi);
+      }
+    };
+  }, [flushResultDraftServerPatch]);
 
   const pullResultDraftsFromServer = useCallback(() => {
     if (!isDayOpsResultDraftServerSyncEnabled()) return;
@@ -165,10 +180,7 @@ export function useResultCaptureDraft(args: {
 
   useEffect(() => {
     if (!resultCaptureVisible || !isDayOpsResultDraftServerSyncEnabled()) return;
-    const t = window.setTimeout(() => {
-      pullResultDraftsFromServer();
-    }, 600);
-    return () => window.clearTimeout(t);
+    pullResultDraftsFromServer();
   }, [resultCaptureVisible, pullResultDraftsFromServer]);
 
   useEffect(() => {

@@ -36,9 +36,10 @@ function draftQuery(input: { eventId: string; round: string; heatIndex: number }
   }).toString();
 }
 
-/** `NEXT_PUBLIC_DAY_OPS_RESULT_DRAFT_SYNC=1` のときのみリザルトドラフトをサーバーと同期 */
+/** リザルト下書きをサーバーと同期（`NEXT_PUBLIC_DAY_OPS_RESULT_DRAFT_SYNC=0` でのみ無効化） */
 export function isDayOpsResultDraftServerSyncEnabled(): boolean {
-  return typeof process !== "undefined" && process.env.NEXT_PUBLIC_DAY_OPS_RESULT_DRAFT_SYNC === "1";
+  if (typeof process === "undefined") return true;
+  return process.env.NEXT_PUBLIC_DAY_OPS_RESULT_DRAFT_SYNC !== "0";
 }
 
 export function parseServerResultDraftPayload(
