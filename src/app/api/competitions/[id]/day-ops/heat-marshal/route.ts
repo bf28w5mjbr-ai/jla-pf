@@ -67,6 +67,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (!round) {
       return NextResponse.json({ error: "roundが不正です" }, { status: 400 });
     }
+    const summaryOnly = sp.get("summary") === "1";
 
     const TERMINAL_DAY_OPS_STATUSES = ["DNS", "WITHDRAWN", "DSQ"] as const;
 
@@ -104,33 +105,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
       roundWasAdjusted = true;
     }
 
-    const [statuses, marshalRows] = await Promise.all([
-      prisma.competitionParticipantStatus.findMany({
-        where: {
-          competitionId,
-          eventId,
-          OR: [
-            { marshalRound: effectiveRound },
-            { status: { in: [...TERMINAL_DAY_OPS_STATUSES] } },
-          ],
-        },
-        orderBy: { updatedAt: "desc" },
-        select: {
-          participantType: true,
-          competitionEntryId: true,
-          teamEntryId: true,
-          teamMemberUserId: true,
-          status: true,
-          calledAt: true,
-          marshalRound: true,
-          updatedAt: true,
-        },
-      }),
-      prisma.competitionHeatMarshalState.findMany({
-        where: { competitionId, eventId, round: effectiveRound },
-        select: { heatIndex: true, callClosedAt: true },
-      }),
-    ]);
+    const marshalRows = await prisma.competitionHeatMarshalState.findMany({
+      where: { competitionId, eventId, round: effectiveRound },
+      select: { heatIndex: true, callClosedAt: true },
+    });
     const wall2 = Date.now();
 
     const closedByHeat = new Map<number, Date | null>();
@@ -138,13 +116,84 @@ export async function GET(request: NextRequest, context: RouteContext) {
       closedByHeat.set(r.heatIndex, r.callClosedAt);
     }
 
-    const statusByKey = buildParticipantMarshalDisplayByKeyForRound(statuses, effectiveRound);
-
     const roundData = getRoundDataFromSnapshot(snapshot, eventId, effectiveRound);
     const snapshotDocumentExists = Boolean(snapshot);
     const eventInSnapshot = isEventPresentInSnapshot(snapshot, eventId);
 
     const heatsOrdered = [...(roundData?.heats ?? [])].sort((a, b) => a.heatIndex - b.heatIndex);
+
+    if (summaryOnly) {
+      const wallSummary = Date.now();
+      const heats = heatsOrdered.map((h) => ({
+        heatIndex: h.heatIndex,
+        callClosedAt: closedByHeat.get(h.heatIndex)?.toISOString() ?? null,
+        marshalReopenBlocked: false,
+        participantCount: (h.participants ?? []).length,
+        participants: [] as Array<{
+          lane: number;
+          participantType: "INDIVIDUAL" | "TEAM";
+          competitionEntryId: string | null;
+          teamEntryId: string | null;
+          label: string;
+          clubName: string | null;
+          status: string;
+          calledAt: string | null;
+        }>,
+      }));
+      const timingSummary =
+        dayOpsServerTimingEnabled() ?
+          {
+            headers: {
+              "Server-Timing": formatDayOpsServerTiming([
+                { name: "db_round1", durMs: wall1 - wall0 },
+                { name: "db_marshal_rows", durMs: wall2 - wall1 },
+                { name: "build_json", durMs: wallSummary - wall2 },
+              ]),
+            },
+          }
+        : {};
+      return NextResponse.json(
+        {
+          eventId,
+          round: effectiveRound,
+          requestedRound: round,
+          roundWasAdjusted,
+          availableRounds,
+          roundLabels,
+          heatPlanConfirmed: Boolean(eventRow.startListHeatPlanConfirmedAt),
+          hasSnapshotRound: Boolean(roundData),
+          snapshotDocumentExists,
+          eventInSnapshot,
+          heats,
+        },
+        timingSummary
+      );
+    }
+
+    const statuses = await prisma.competitionParticipantStatus.findMany({
+      where: {
+        competitionId,
+        eventId,
+        OR: [
+          { marshalRound: effectiveRound },
+          { status: { in: [...TERMINAL_DAY_OPS_STATUSES] } },
+        ],
+      },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        participantType: true,
+        competitionEntryId: true,
+        teamEntryId: true,
+        teamMemberUserId: true,
+        status: true,
+        calledAt: true,
+        marshalRound: true,
+        updatedAt: true,
+      },
+    });
+    const wall2b = Date.now();
+
+    const statusByKey = buildParticipantMarshalDisplayByKeyForRound(statuses, effectiveRound);
 
     const teamIdsInRound = new Set<string>();
     for (const h of heatsOrdered) {
@@ -159,7 +208,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       const members = await fetchTeamMembersMapForTeamIds(prisma, [...teamIdsInRound]);
       for (const [teamId, rows] of members) teamMembersByTeamId.set(teamId, rows);
     }
-    const wall3 = Date.now();
+    const wall3 = wall2b;
 
     const heatIndicesForBlock = heatsOrdered.map((h) => h.heatIndex);
     const marshalReopenBlockedHeats =
@@ -261,7 +310,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
             "Server-Timing": formatDayOpsServerTiming([
               { name: "db_round1", durMs: wall1 - wall0 },
               { name: "db_marshal_rows", durMs: wall2 - wall1 },
-              { name: "db_team_members", durMs: wall3 - wall2 },
+              { name: "db_statuses", durMs: wall2b - wall2 },
+              { name: "db_team_members", durMs: wall3 - wall2b },
               { name: "db_reopen_gate", durMs: wall4 - wall3 },
               { name: "build_json", durMs: wall5 - wall4 },
             ]),

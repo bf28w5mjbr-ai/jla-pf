@@ -80,10 +80,17 @@ export async function postHeatResultConfirmHeat(
   );
   const data = (await res.json().catch(() => ({}))) as {
     error?: string;
+    message?: string;
     appended?: HeatResultConfirmAppendedRow[];
   };
   if (!res.ok) {
-    throw new Error(typeof data.error === "string" ? data.error : "リザルトの確定に失敗しました");
+    const msg =
+      typeof data.error === "string" && data.error !== "internal_error"
+        ? data.error
+        : typeof data.message === "string"
+          ? data.message
+          : "リザルトの確定に失敗しました";
+    throw new Error(msg);
   }
   return { appended: Array.isArray(data.appended) ? data.appended : [] };
 }

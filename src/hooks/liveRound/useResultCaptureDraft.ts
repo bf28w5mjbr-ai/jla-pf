@@ -19,6 +19,7 @@ import {
   type HeatResultDraftServerEntry,
 } from "@/lib/dayOpsHeatOperationDraftSync";
 import { dispatchJlaDayOpsParticipantStatusChanged } from "@/lib/dayOpsParticipantStatusDisplay";
+import { resultCaptureRowsEqual } from "@/lib/dayOpsPollCompare";
 import { participantKeyFromResultRow } from "@/components/startListRoundList/panelHelpers";
 import {
   countResultDraftsForHeatFromOps,
@@ -69,7 +70,8 @@ export function useResultCaptureDraft(args: {
   const resultDraftSequenceRef = useRef(0);
 
   useEffect(() => {
-    setLocalResultRows(resultCapture?.rows ?? []);
+    const next = resultCapture?.rows ?? [];
+    setLocalResultRows((prev) => (resultCaptureRowsEqual(prev, next) ? prev : next));
   }, [resultCapture?.rows]);
 
   useEffect(() => {
@@ -445,7 +447,11 @@ export function useResultCaptureDraft(args: {
       const draftsForHeat = Object.values(resultDraftOpsRef.current)
         .filter((op) => op.heatIndex === displayHeatNumber)
         .sort((a, b) => (a.draftSequence ?? 0) - (b.draftSequence ?? 0));
-      const manualEntries = draftsForHeat.map((op) => ({
+      const rankedKeys = new Set(
+        rankedParticipantKeysForHeatFromRows(localResultRows, displayHeatNumber)
+      );
+      const draftsToFlush = draftsForHeat.filter((op) => !rankedKeys.has(op.opKey));
+      const manualEntries = draftsToFlush.map((op) => ({
         participantType: op.participantType,
         competitionEntryId:
           op.participantType === "INDIVIDUAL" ? op.competitionEntryId : undefined,
@@ -488,7 +494,17 @@ export function useResultCaptureDraft(args: {
         });
       } catch (e) {
         patchResultHeatUnconfirmed(displayHeatNumber);
-        toast.error(e instanceof Error ? e.message : "確定に失敗しました");
+        const message = e instanceof Error ? e.message : "確定に失敗しました";
+        if (draftsToFlush.length > 0) {
+          setResultDraftErrors((prev) => {
+            const next = { ...prev };
+            for (const op of draftsToFlush) {
+              next[op.opKey] = message;
+            }
+            return next;
+          });
+        }
+        toast.error(message);
       } finally {
         setHeatResultConfirmBusy(false);
       }
@@ -501,6 +517,7 @@ export function useResultCaptureDraft(args: {
       patchResultHeatConfirmed,
       patchResultHeatUnconfirmed,
       clearResultDraftsForHeat,
+      localResultRows,
     ]
   );
 

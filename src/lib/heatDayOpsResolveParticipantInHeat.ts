@@ -68,39 +68,45 @@ export async function resolveParticipantInHeatForDayOps(opts: {
     }
 
     const teamEntryId = body.teamEntryId ?? "";
-    const teamMemberUserId = body.teamMemberUserId?.trim() ?? "";
-    if (!teamEntryId || !teamMemberUserId) {
+    if (!teamEntryId) {
       return {
         ok: false,
         status: 400,
-        error: "チーム種目は teamEntryId と teamMemberUserId（構成員）が必要です",
+        error: "チーム種目は teamEntryId が必要です",
       };
     }
 
-    const membership = await prisma.teamEntryMember.findFirst({
-      where: {
-        teamEntryId,
-        userId: teamMemberUserId,
-        teamEntry: { competitionId, eventId },
-      },
-      select: {
-        user: { select: { profile: { select: { familyName: true, givenName: true } } } },
-      },
-    });
-    if (!membership) {
-      return {
-        ok: false,
-        status: 400,
-        error: "このチームの割当構成員ではありません",
-      };
+    const teamMemberUserId = body.teamMemberUserId?.trim() ?? "";
+    let marshalDisplayLabel: string | null = null;
+    if (teamMemberUserId) {
+      const membership = await prisma.teamEntryMember.findFirst({
+        where: {
+          teamEntryId,
+          userId: teamMemberUserId,
+          teamEntry: { competitionId, eventId },
+        },
+        select: {
+          user: { select: { profile: { select: { familyName: true, givenName: true } } } },
+        },
+      });
+      if (!membership) {
+        return {
+          ok: false,
+          status: 400,
+          error: "このチームの割当構成員ではありません",
+        };
+      }
+      marshalDisplayLabel =
+        `${membership.user.profile?.familyName ?? ""} ${membership.user.profile?.givenName ?? ""}`.trim() ||
+        null;
     }
 
     const target: MarshalParticipantRef = {
       participantType: "TEAM",
       competitionEntryId: null,
       teamEntryId,
-      teamMemberUserId,
-      marshalDisplayLabel: `${membership.user.profile?.familyName ?? ""} ${membership.user.profile?.givenName ?? ""}`.trim(),
+      teamMemberUserId: teamMemberUserId || null,
+      marshalDisplayLabel,
     };
     const resolved = resolveMarshalSlotInHeat(heat, target);
     if (!resolved) {

@@ -13,6 +13,7 @@ import {
   patchHeatMarshalCallWindowInHeats,
   pruneMarshalCommittedOps,
 } from "@/components/startListRoundList/panelHelpers";
+import { marshalHeatStatusSignature } from "@/lib/dayOpsPollCompare";
 import type { LiveRoundMarshalContext, MarshalDraftOp } from "@/hooks/liveRound/types";
 
 const MARSHAL_INLINE_AUTO_SAVE_MS = 350;
@@ -51,7 +52,10 @@ export function useMarshalDraftOps(args: {
   );
 
   useEffect(() => {
-    setLocalMarshalHeats(applyMarshalDraftOpsToHeats(m?.heats ?? [], marshalOverlayOps));
+    const merged = applyMarshalDraftOpsToHeats(m?.heats ?? [], marshalOverlayOps);
+    setLocalMarshalHeats((prev) =>
+      marshalHeatStatusSignature(prev) === marshalHeatStatusSignature(merged) ? prev : merged
+    );
   }, [m?.heats, marshalOverlayOps]);
 
   useEffect(() => {
@@ -165,12 +169,17 @@ export function useMarshalDraftOps(args: {
           return next;
         });
       }
-      if (result.failed.length > 0) {
+      if (result.failed.length > 0 && !opts?.silent) {
         toast.error(
           `${result.failed.length}件の確定に失敗しました。行ごとのエラーを確認してください`
         );
       }
-      return { committed: true as const, hadFailures: result.failed.length > 0 };
+      const firstFailedError = result.failed[0]?.error;
+      return {
+        committed: true as const,
+        hadFailures: result.failed.length > 0,
+        firstFailedError,
+      };
     },
     [m, eventId]
   );
@@ -179,7 +188,10 @@ export function useMarshalDraftOps(args: {
     async (opts?: { silent?: boolean }) => {
       if (!m || m.marshalUiMode !== "inline") return;
       if (marshalAutoSaveInFlightRef.current || marshalBulkSubmitting) return;
-      const operations = Object.values(marshalDraftOpsRef.current);
+      const operations = Object.values(marshalDraftOpsRef.current).map((op) => ({
+        ...op,
+        lastKnownUpdatedAt: undefined,
+      }));
       if (operations.length === 0) return;
       marshalAutoSaveInFlightRef.current = true;
       try {
@@ -288,25 +300,35 @@ export function useMarshalDraftOps(args: {
     });
   }, []);
 
-  /** 締切直前: 自動保存待ちを捨て、当該ヒートの未確定チェックをサーバーへ送る。失敗時は false */
+  /** 締切直前: 自動保存待ちを捨て、当該ヒートの未確定チェックをサーバーへ送る */
   const flushMarshalDraftsBeforeHeatClose = useCallback(
-    async (displayHeatNumber: number): Promise<boolean> => {
-      if (!m) return false;
+    async (
+      displayHeatNumber: number
+    ): Promise<{ ok: true } | { ok: false; message: string }> => {
+      if (!m) return { ok: false, message: "マーシャル状態を読み込めませんでした" };
       if (marshalAutoSaveTimerRef.current) {
         clearTimeout(marshalAutoSaveTimerRef.current);
         marshalAutoSaveTimerRef.current = null;
       }
       await waitForMarshalAutoSaveIdle();
-      const operations = Object.values(marshalDraftOpsRef.current).filter(
-        (op) => op.heatIndex === displayHeatNumber
-      );
-      if (operations.length === 0) return true;
+      const operations = Object.values(marshalDraftOpsRef.current)
+        .filter((op) => op.heatIndex === displayHeatNumber)
+        .map((op) => ({ ...op, lastKnownUpdatedAt: undefined }));
+      if (operations.length === 0) return { ok: true };
       if (marshalAutoSaveInFlightRef.current) {
         await waitForMarshalAutoSaveIdle();
       }
-      if (marshalAutoSaveInFlightRef.current) return false;
+      if (marshalAutoSaveInFlightRef.current) {
+        return { ok: false, message: "チェックの自動保存が完了していません。少し待ってから再度お試しください" };
+      }
       const result = await commitMarshalDraftOps(operations, { silent: true, localPatchOnly: true });
-      return !result.hadFailures;
+      if (!result.hadFailures) return { ok: true };
+      return {
+        ok: false,
+        message:
+          result.firstFailedError ??
+          "未確定チェックの反映に失敗しました。行のエラーを確認してください",
+      };
     },
     [m, waitForMarshalAutoSaveIdle, commitMarshalDraftOps]
   );

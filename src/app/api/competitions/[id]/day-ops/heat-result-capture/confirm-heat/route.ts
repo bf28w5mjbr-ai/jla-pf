@@ -211,6 +211,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
         select: { id: true },
       });
 
+      await reconcileOfficialDsqRowsForHeat(tx, {
+        competitionId,
+        eventId,
+        round: roundDb,
+        heatIndex,
+        snapshot,
+      });
+
       const calledInHeat = await countCalledMarshalSlotsForHeatConfirmInTransaction({
         tx,
         competitionId,
@@ -238,14 +246,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
           throw new Error(validation.code);
         }
       }
-
-      await reconcileOfficialDsqRowsForHeat(tx, {
-        competitionId,
-        eventId,
-        round: roundDb,
-        heatIndex,
-        snapshot,
-      });
 
       await tx.officialResultHeatConfirmed.upsert({
         where: {
@@ -376,6 +376,29 @@ export async function POST(request: NextRequest, context: RouteContext) {
             "降順入力には、このヒートでマーシャル一覧に召集済（CALLED）と表示されている参加者が1名以上必要です。一覧を更新して状態を確認してください。",
           errorCode: "DESC_INPUT_NO_CALLED",
         },
+        { status: 409 }
+      );
+    }
+    if (error instanceof Error && error.message === "RUN_UP_MUST_HAVE_NULL_RANK") {
+      return NextResponse.json(
+        {
+          error:
+            "ランアップ（着順なし進出）の行に着順が入っています。ランアップ解除後に再度確定してください。",
+        },
+        { status: 409 }
+      );
+    }
+    if (error instanceof Error && error.message === "RUN_UP_EXCEEDS_QUOTA") {
+      return NextResponse.json(
+        {
+          error: "ランアップ人数が進出枠を超えています。ランアップ解除後に再度確定してください。",
+        },
+        { status: 409 }
+      );
+    }
+    if (error instanceof Error && error.message === "ELIMINATION_QUOTA_UNKNOWN") {
+      return NextResponse.json(
+        { error: "進出枠が未設定のため、脱落式リザルトを確定できません。" },
         { status: 409 }
       );
     }

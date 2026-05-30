@@ -18,6 +18,12 @@ import {
 import type { MarshalDraftOp, OnMarshalSuccessOptions } from "@/hooks/liveRound/types";
 import { useDayOpsStartListPolling } from "@/hooks/useDayOpsStartListPolling";
 import { dispatchJlaDayOpsParticipantStatusChanged } from "@/lib/dayOpsParticipantStatusDisplay";
+import {
+  confirmedHeatsEqual,
+  marshalHeatsSemanticEqual,
+  participantStatusPollRowsEqual,
+  resultCaptureRowsEqual,
+} from "@/lib/dayOpsPollCompare";
 import { measureDayOpsAsync } from "@/lib/dayOpsMetrics";
 
 type Args = {
@@ -95,16 +101,17 @@ export function useStartListEventDayOps({
         }>;
       };
       if (Array.isArray(data.statuses)) {
-        setPolledParticipantStatusRows(
-          data.statuses.map((s) => ({
-            participantType: String(s.participantType),
-            competitionEntryId: s.competitionEntryId ?? null,
-            teamEntryId: s.teamEntryId ?? null,
-            status: String(s.status),
-            marshalRound: s.marshalRound ?? "HEAT",
-            updatedAt: s.updatedAt ? new Date(s.updatedAt) : new Date(),
-            calledAt: s.calledAt ? new Date(s.calledAt) : null,
-          }))
+        const nextRows = data.statuses.map((s) => ({
+          participantType: String(s.participantType),
+          competitionEntryId: s.competitionEntryId ?? null,
+          teamEntryId: s.teamEntryId ?? null,
+          status: String(s.status),
+          marshalRound: s.marshalRound ?? "HEAT",
+          updatedAt: s.updatedAt ? new Date(s.updatedAt) : new Date(),
+          calledAt: s.calledAt ? new Date(s.calledAt) : null,
+        }));
+        setPolledParticipantStatusRows((prev) =>
+          participantStatusPollRowsEqual(prev, nextRows) ? prev : nextRows
         );
       }
     });
@@ -217,9 +224,14 @@ export function useStartListEventDayOps({
     try {
       await measureDayOpsAsync("day-ops heat-result-capture", async () => {
         const data = await getHeatResultCapture(competitionId, eventId, listMarshalRound);
-        setListResultLocked(Boolean(data.lockedAt));
-        setListResultRows(data.rows);
-        setListResultConfirmedHeats(data.confirmedHeats);
+        const nextLocked = Boolean(data.lockedAt);
+        setListResultLocked((prev) => (prev === nextLocked ? prev : nextLocked));
+        setListResultRows((prev) =>
+          resultCaptureRowsEqual(prev, data.rows) ? prev : data.rows
+        );
+        setListResultConfirmedHeats((prev) =>
+          confirmedHeatsEqual(prev, data.confirmedHeats) ? prev : data.confirmedHeats
+        );
       });
     } catch {
       /* 楽観更新を維持 */
@@ -287,7 +299,10 @@ export function useStartListEventDayOps({
           }
           const data = (await res.json()) as { heats?: HeatMarshalHeatRow[]; round?: unknown };
           const incoming = data.heats ?? [];
-          setListMarshalHeats((prev) => mergeListMarshalHeatsOnRefetch(prev, incoming));
+          setListMarshalHeats((prev) => {
+            const merged = mergeListMarshalHeatsOnRefetch(prev, incoming);
+            return marshalHeatsSemanticEqual(prev, merged) ? prev : merged;
+          });
           setListMarshalApiRound(parseHeatMarshalResponseRound(data.round));
         });
       } finally {

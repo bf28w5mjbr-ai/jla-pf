@@ -224,8 +224,20 @@ export async function POST(request: NextRequest, context: RouteContext) {
         const where = makeParticipantWhere(op);
         const existing = await prisma.competitionParticipantStatus.findFirst({
           where: { ...where, competitionId },
-          select: { updatedAt: true },
+          select: { updatedAt: true, status: true },
         });
+
+        if (existing?.status === op.status) {
+          successes.push({
+            opKey: op.opKey,
+            lane: resolved.data.slot.lane,
+            label: resolved.data.slot.label,
+            status: op.status,
+            ...(op.status === "CALLED" ? { alreadyMarshalled: true } : {}),
+          });
+          continue;
+        }
+
         if (op.lastKnownUpdatedAt && existing?.updatedAt) {
           const current = new Date(existing.updatedAt).getTime();
           const known = new Date(op.lastKnownUpdatedAt).getTime();

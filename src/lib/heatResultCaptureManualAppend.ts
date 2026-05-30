@@ -5,6 +5,8 @@ import {
   DAY_OPS_STATUS_MARSHAL_ABSENT,
   effectiveDayOpsStatusForMarshalDisplay,
 } from "@/lib/dayOpsParticipantStatusDisplay";
+import { isCalledLikeStatus } from "@/lib/dayOpsTeamStatus";
+import { isDsqOnlyOfficialRow } from "@/lib/officialResultDsqSync";
 import type { HeatDayOpsResolvedSlot } from "@/lib/heatDayOpsResolveParticipantInHeat";
 import { computeDescInputCalledBaselineInHeat } from "@/lib/marshalHeatCalledCount";
 import type { StartListSnapshotPayload } from "@/lib/startListSnapshot";
@@ -112,7 +114,7 @@ export async function appendManualHeatResultsInTransaction(
 
     const duplicate = await tx.officialResultRow.findFirst({
       where: dupWhere,
-      select: { id: true, rank: true, advanceWithoutRank: true },
+      select: { id: true, rank: true, advanceWithoutRank: true, status: true },
     });
     if (duplicate) {
       if (duplicate.advanceWithoutRank) {
@@ -128,7 +130,11 @@ export async function appendManualHeatResultsInTransaction(
         });
         continue;
       }
-      throw new Error("ALREADY_RANKED_IN_HEAT");
+      if (isDsqOnlyOfficialRow(duplicate)) {
+        // 失格同期済みの DSQ 行（rank なし）を着順付き OK 行へ上書き
+      } else {
+        throw new Error("ALREADY_RANKED_IN_HEAT");
+      }
     }
 
     const agg = await tx.officialResultRow.aggregate({
@@ -180,21 +186,33 @@ export async function appendManualHeatResultsInTransaction(
       nextRank = Math.max(1, calledInHeat - agg._count._all);
     }
 
-    const created = await tx.officialResultRow.create({
-      data: {
-        officialResultId: officialResult.id,
-        entryType: target.participantType === "INDIVIDUAL" ? "INDIVIDUAL" : "TEAM",
-        competitionEntryId: target.competitionEntryId,
-        teamEntryId: target.teamEntryId,
-        rank: nextRank,
-        status: "OK",
-        heat: heatIndex,
-        lane: slot.lane,
-        tieGroup,
-        unit: "OTHER",
-      },
-      select: { id: true, rank: true },
-    });
+    const rowData = {
+      entryType: target.participantType === "INDIVIDUAL" ? ("INDIVIDUAL" as const) : ("TEAM" as const),
+      competitionEntryId: target.competitionEntryId,
+      teamEntryId: target.teamEntryId,
+      rank: nextRank,
+      status: "OK" as const,
+      advanceWithoutRank: false,
+      heat: heatIndex,
+      lane: slot.lane,
+      tieGroup,
+      unit: "OTHER" as const,
+      remarks: null as string | null,
+    };
+    const created =
+      duplicate && isDsqOnlyOfficialRow(duplicate)
+        ? await tx.officialResultRow.update({
+            where: { id: duplicate.id },
+            data: rowData,
+            select: { id: true, rank: true },
+          })
+        : await tx.officialResultRow.create({
+            data: {
+              officialResultId: officialResult.id,
+              ...rowData,
+            },
+            select: { id: true, rank: true },
+          });
 
     await tx.competitionHeatResultCaptureEvent.create({
       data: {
@@ -303,34 +321,33 @@ export async function assertManualResultAppendAllowed(params: {
     storedStatus,
     heatMarshalCallClosed
   );
-  if (storedStatus !== "CALLED") {
-    if (effectiveStatus === DAY_OPS_STATUS_MARSHAL_ABSENT) {
-      return {
-        ok: false,
-        error:
-          "マーシャル締切済みで未召集のため未出場扱いです（競技中の失格 DSQ とは別）。リザルトは記録できません。",
-        status: 409,
-      };
-    }
-    if (storedStatus === "DSQ" || effectiveStatus === "DSQ") {
-      return {
-        ok: false,
-        error:
-          "失格（DSQ）のためリザルトを記録できません。マーシャル未完了による未出場とは別扱いです。",
-        status: 409,
-      };
-    }
-    if (storedStatus === "PENDING") {
-      return {
-        ok: false,
-        error: "マーシャル（召集チェック）が完了していないため、リザルトを記録できません",
-        status: 409,
-      };
-    }
+  if (storedStatus === "DSQ" || effectiveStatus === "DSQ") {
     return {
       ok: false,
       error:
-        "DB 上が CALLED（召集済み）になるまでリザルトを記録できません（CHECKED_IN 等は対象外です）",
+        "失格（DSQ）のためリザルトを記録できません。マーシャル未完了による未出場とは別扱いです。",
+      status: 409,
+    };
+  }
+  if (effectiveStatus === DAY_OPS_STATUS_MARSHAL_ABSENT) {
+    return {
+      ok: false,
+      error:
+        "マーシャル締切済みで未召集のため未出場扱いです（競技中の失格 DSQ とは別）。リザルトは記録できません。",
+      status: 409,
+    };
+  }
+  if (storedStatus === "PENDING") {
+    return {
+      ok: false,
+      error: "マーシャル（召集チェック）が完了していないため、リザルトを記録できません",
+      status: 409,
+    };
+  }
+  if (!isCalledLikeStatus(storedStatus)) {
+    return {
+      ok: false,
+      error: "召集済み（CALLED）の参加者のみリザルトを記録できます",
       status: 409,
     };
   }

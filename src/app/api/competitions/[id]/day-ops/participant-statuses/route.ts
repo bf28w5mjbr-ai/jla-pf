@@ -30,17 +30,20 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     const searchParams = new URL(request.url).searchParams;
     const eventId = searchParams.get("eventId");
-    const includeCandidates = searchParams.get("includeCandidates") !== "0";
+    const dsqOnly = searchParams.get("dsqOnly") === "1";
+    const includeCandidates = !dsqOnly && searchParams.get("includeCandidates") !== "0";
     if (!eventId) {
       return NextResponse.json({ error: "eventIdが必要です" }, { status: 400 });
     }
 
     const wall0 = Date.now();
     const [competition, eventMeta, statuses, individualCandidates, teamCandidates] = await Promise.all([
-      prisma.competition.findUnique({
-        where: { id: competitionId },
-        select: { startListSettings: true },
-      }),
+      dsqOnly
+        ? Promise.resolve(null)
+        : prisma.competition.findUnique({
+            where: { id: competitionId },
+            select: { startListSettings: true },
+          }),
       prisma.event.findFirst({
         where: { id: eventId, competitionId },
         select: { startListHeatPlanConfirmedAt: true, marshalStartedAt: true },
@@ -49,8 +52,21 @@ export async function GET(request: NextRequest, context: RouteContext) {
         where: {
           competitionId,
           eventId,
+          ...(dsqOnly ? { status: "DSQ" as const } : {}),
         },
         orderBy: { updatedAt: "desc" },
+        ...(dsqOnly
+          ? {
+              select: {
+                id: true,
+                participantType: true,
+                competitionEntryId: true,
+                teamEntryId: true,
+                status: true,
+                reason: true,
+              },
+            }
+          : {}),
       }),
       includeCandidates
         ? prisma.competitionEntry.findMany({
@@ -90,20 +106,106 @@ export async function GET(request: NextRequest, context: RouteContext) {
         : Promise.resolve([]),
     ]);
     const wall1 = Date.now();
-    const callClosed = isCallClosedForEvent(competition?.startListSettings, eventId);
+
+    let dsqStatusesWithLabels: Array<{
+      id: string;
+      participantType: string;
+      competitionEntryId: string | null;
+      teamEntryId: string | null;
+      status: string;
+      reason: string | null;
+      label: string;
+    }> | null = null;
+
+    if (dsqOnly && statuses.length > 0) {
+      const individualIds = [
+        ...new Set(
+          statuses
+            .filter((s) => s.participantType === "INDIVIDUAL" && s.competitionEntryId)
+            .map((s) => s.competitionEntryId as string)
+        ),
+      ];
+      const teamIds = [
+        ...new Set(
+          statuses
+            .filter((s) => s.participantType === "TEAM" && s.teamEntryId)
+            .map((s) => s.teamEntryId as string)
+        ),
+      ];
+      const [individualRows, teamRows] = await Promise.all([
+        individualIds.length > 0
+          ? prisma.competitionEntry.findMany({
+              where: { id: { in: individualIds }, competitionId },
+              select: {
+                id: true,
+                user: {
+                  select: { profile: { select: { familyName: true, givenName: true } } },
+                },
+              },
+            })
+          : Promise.resolve([]),
+        teamIds.length > 0
+          ? prisma.teamEntry.findMany({
+              where: { id: { in: teamIds }, competitionId, eventId },
+              select: { id: true, teamName: true },
+            })
+          : Promise.resolve([]),
+      ]);
+      const labelByEntryId = new Map(
+        individualRows.map((e) => [
+          e.id,
+          `${e.user.profile?.familyName ?? ""} ${e.user.profile?.givenName ?? ""}`.trim() || e.id,
+        ])
+      );
+      const labelByTeamId = new Map(teamRows.map((t) => [t.id, t.teamName]));
+      dsqStatusesWithLabels = statuses.map((s) => {
+        const label =
+          s.participantType === "INDIVIDUAL" && s.competitionEntryId
+            ? (labelByEntryId.get(s.competitionEntryId) ?? s.competitionEntryId)
+            : s.participantType === "TEAM" && s.teamEntryId
+              ? (labelByTeamId.get(s.teamEntryId) ?? s.teamEntryId)
+              : "—";
+        return {
+          id: s.id,
+          participantType: s.participantType,
+          competitionEntryId: s.competitionEntryId,
+          teamEntryId: s.teamEntryId,
+          status: s.status,
+          reason: s.reason,
+          label,
+        };
+      });
+    }
 
     const wall2 = Date.now();
+    const callClosed = dsqOnly
+      ? false
+      : isCallClosedForEvent(competition?.startListSettings, eventId);
+
+    const wall3 = Date.now();
     const timingOpt =
       dayOpsServerTimingEnabled() ?
         {
           headers: {
             "Server-Timing": formatDayOpsServerTiming([
               { name: "db", durMs: wall1 - wall0 },
-              { name: "build", durMs: wall2 - wall1 },
+              { name: "labels", durMs: wall2 - wall1 },
+              { name: "build", durMs: wall3 - wall2 },
             ]),
           },
         }
       : {};
+
+    if (dsqOnly) {
+      return NextResponse.json(
+        {
+          statuses: dsqStatusesWithLabels ?? [],
+          heatPlanConfirmed: Boolean(eventMeta?.startListHeatPlanConfirmedAt),
+          marshalStarted: Boolean(eventMeta?.marshalStartedAt),
+        },
+        timingOpt
+      );
+    }
 
     return NextResponse.json({
       statuses,

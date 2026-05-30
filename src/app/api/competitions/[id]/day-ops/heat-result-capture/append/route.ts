@@ -10,6 +10,7 @@ import {
   DAY_OPS_STATUS_MARSHAL_ABSENT,
   effectiveDayOpsStatusForMarshalDisplay,
 } from "@/lib/dayOpsParticipantStatusDisplay";
+import { isCalledLikeStatus } from "@/lib/dayOpsTeamStatus";
 import { loadStartListSnapshotPayload, loadStartListSnapshotPayloadLoose } from "@/lib/heatMarshalGate";
 import { computeDescInputCalledBaselineInHeat } from "@/lib/marshalHeatCalledCount";
 import { resolveParticipantInHeatForDayOps } from "@/lib/heatDayOpsResolveParticipantInHeat";
@@ -207,39 +208,36 @@ export async function POST(request: NextRequest, context: RouteContext) {
       storedStatus,
       heatMarshalCallClosed
     );
-    if (storedStatus !== "CALLED") {
-      if (effectiveStatus === DAY_OPS_STATUS_MARSHAL_ABSENT) {
-        return NextResponse.json(
-          {
-            error:
-              "マーシャル締切済みで未召集のため未出場扱いです（競技中の失格 DSQ とは別）。リザルトは記録できません。",
-          },
-          { status: 409 }
-        );
-      }
-      if (storedStatus === "DSQ" || effectiveStatus === "DSQ") {
-        return NextResponse.json(
-          {
-            error:
-              "失格（DSQ）のためリザルトを記録できません。マーシャル未完了による未出場とは別扱いです。",
-          },
-          { status: 409 }
-        );
-      }
-      if (storedStatus === "PENDING") {
-        return NextResponse.json(
-          {
-            error:
-              "マーシャル（召集チェック）が完了していないため、リザルトを記録できません",
-          },
-          { status: 409 }
-        );
-      }
+    if (storedStatus === "DSQ" || effectiveStatus === "DSQ") {
       return NextResponse.json(
         {
           error:
-            "DB 上が CALLED（召集済み）になるまでリザルトを記録できません（CHECKED_IN 等は対象外です）",
+            "失格（DSQ）のためリザルトを記録できません。マーシャル未完了による未出場とは別扱いです。",
         },
+        { status: 409 }
+      );
+    }
+    if (effectiveStatus === DAY_OPS_STATUS_MARSHAL_ABSENT) {
+      return NextResponse.json(
+        {
+          error:
+            "マーシャル締切済みで未召集のため未出場扱いです（競技中の失格 DSQ とは別）。リザルトは記録できません。",
+        },
+        { status: 409 }
+      );
+    }
+    if (storedStatus === "PENDING") {
+      return NextResponse.json(
+        {
+          error:
+            "マーシャル（召集チェック）が完了していないため、リザルトを記録できません",
+        },
+        { status: 409 }
+      );
+    }
+    if (!isCalledLikeStatus(storedStatus)) {
+      return NextResponse.json(
+        { error: "召集済み（CALLED）の参加者のみリザルトを記録できます" },
         { status: 409 }
       );
     }

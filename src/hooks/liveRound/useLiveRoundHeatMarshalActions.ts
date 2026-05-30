@@ -8,7 +8,9 @@ import type { LiveRoundMarshalContext } from "@/hooks/liveRound/types";
 export function useLiveRoundHeatMarshalActions(args: {
   eventId: string;
   m: LiveRoundMarshalContext;
-  flushMarshalDraftsBeforeHeatClose?: (displayHeatNumber: number) => Promise<boolean>;
+  flushMarshalDraftsBeforeHeatClose?: (
+    displayHeatNumber: number
+  ) => Promise<{ ok: true } | { ok: false; message: string }>;
   patchHeatCallClosed: (heatIndex1Based: number) => void;
   patchHeatCallReopened: (heatIndex1Based: number) => void;
 }) {
@@ -33,9 +35,10 @@ export function useLiveRoundHeatMarshalActions(args: {
       }
       setHeatCloseBusy(true);
       try {
-        const draftsFlushed = (await flushMarshalDraftsBeforeHeatClose?.(displayHeatNumber)) ?? true;
-        if (!draftsFlushed) {
-          toast.error("未確定チェックの反映に失敗したため、締切を中止しました");
+        const flushResult =
+          (await flushMarshalDraftsBeforeHeatClose?.(displayHeatNumber)) ?? { ok: true as const };
+        if (!flushResult.ok) {
+          toast.error(`${flushResult.message}（締切を中止しました）`);
           return;
         }
 
