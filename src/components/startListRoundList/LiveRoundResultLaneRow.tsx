@@ -1,7 +1,9 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Check } from "lucide-react";
+import { Check, ChevronDown, ChevronUp } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useCoarsePointer } from "@/hooks/useCoarsePointer";
 import {
   marshalParticipantKey,
   type HeatMarshalHeatRow,
@@ -49,7 +51,8 @@ export type LiveRoundResultLaneRowProps = {
   dragSourceParticipantKey: string | null;
   dragOverParticipantKey: string | null;
   onToggleDraft: Parameters<typeof ResultStartListLaneCheckbox>[0]["onToggleDraft"];
-  onReorderRanks: (heatIndex: number, sourceKey: string, targetKey: string) => void | Promise<void>;
+  rankOrderKeys: string[];
+  onReorderOrder: (heatIndex: number, sourceKey: string, targetKey: string) => void | Promise<void>;
   setDragSourceParticipantKey: (key: string | null) => void;
   setDragOverParticipantKey: (key: string | null) => void;
 };
@@ -75,10 +78,12 @@ export function LiveRoundResultLaneRow({
   dragSourceParticipantKey,
   dragOverParticipantKey,
   onToggleDraft,
-  onReorderRanks,
+  rankOrderKeys,
+  onReorderOrder,
   setDragSourceParticipantKey,
   setDragOverParticipantKey,
 }: LiveRoundResultLaneRowProps) {
+  const coarsePointer = useCoarsePointer();
   const participant = marshalParticipantForLane(apiHeatForHeat, laneNumber, laneIndex0);
   const displayStatus = resolveHeatLaneDayOpsDisplayStatus(participant, serverStatus);
   const serverRk = resultRankForParticipant(displayHeatNumber, participant, localResultRows);
@@ -135,14 +140,32 @@ export function LiveRoundResultLaneRow({
       laneNumber
     );
   const showRankBadgeInline = displayRk != null && !heatConfirmed;
-  const canDragRank = Boolean(
-    participantRankKey &&
-      serverRk != null &&
+  const draftChecked = participant
+    ? Boolean(resultDraftOps[marshalParticipantKey(participant)])
+    : false;
+  const inRankOrder =
+    participantRankKey != null && rankOrderKeys.includes(participantRankKey);
+  const canReorderRank = Boolean(
+    inRankOrder &&
       !heatConfirmed &&
       !marshal.loading &&
       !rc.loading &&
       !captureBlocked
   );
+  const canDragRank = canReorderRank && !coarsePointer;
+  const rankOrderIndex =
+    participantRankKey != null ? rankOrderKeys.indexOf(participantRankKey) : -1;
+  const canMoveRankUp = canReorderRank && rankOrderIndex > 0;
+  const canMoveRankDown =
+    canReorderRank && rankOrderIndex >= 0 && rankOrderIndex < rankOrderKeys.length - 1;
+
+  const moveRank = (direction: "up" | "down") => {
+    if (!participantRankKey || rankOrderIndex < 0) return;
+    const targetIdx = direction === "up" ? rankOrderIndex - 1 : rankOrderIndex + 1;
+    const targetKey = rankOrderKeys[targetIdx];
+    if (!targetKey) return;
+    void onReorderOrder(displayHeatNumber, participantRankKey, targetKey);
+  };
 
   return (
     <li
@@ -155,7 +178,13 @@ export function LiveRoundResultLaneRow({
           "border-violet-400/90 bg-violet-50/70 dark:border-violet-700/90 dark:bg-violet-950/30"
       )}
       draggable={canDragRank}
-      title={canDragRank ? "ドラッグして着順を並べ替え" : undefined}
+      title={
+        canDragRank
+          ? "ドラッグして着順を並べ替え"
+          : canReorderRank && coarsePointer
+            ? "矢印で着順を並べ替え"
+            : undefined
+      }
       onDragStart={() => {
         if (!canDragRank || !participantRankKey) return;
         setDragSourceParticipantKey(participantRankKey);
@@ -177,7 +206,7 @@ export function LiveRoundResultLaneRow({
       onDrop={(e) => {
         if (!canDragRank || !dragSourceParticipantKey || !participantRankKey) return;
         e.preventDefault();
-        void onReorderRanks(displayHeatNumber, dragSourceParticipantKey, participantRankKey);
+        void onReorderOrder(displayHeatNumber, dragSourceParticipantKey, participantRankKey);
         setDragSourceParticipantKey(null);
         setDragOverParticipantKey(null);
       }}
@@ -201,7 +230,7 @@ export function LiveRoundResultLaneRow({
           capturePendingKey={resultCapturePendingKey}
           resultRows={localResultRows}
           onToggleDraft={onToggleDraft}
-          draftChecked={participant ? Boolean(resultDraftOps[marshalParticipantKey(participant)]) : false}
+          draftChecked={draftChecked}
           draftError={participant ? resultDraftErrors[marshalParticipantKey(participant)] : undefined}
           tieWithPrevious={tieNextHeatIndex === displayHeatNumber}
           inputOrder={resultInputOrder}
@@ -268,6 +297,34 @@ export function LiveRoundResultLaneRow({
           ) : null}
         </div>
       </div>
+      {canReorderRank && coarsePointer ? (
+        <div className="mt-0.5 flex shrink-0 flex-col gap-0.5 self-start">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="size-7 shrink-0 rounded-md border-violet-300/80 bg-background/90 dark:border-violet-800"
+            disabled={!canMoveRankUp}
+            aria-label="着順を上げる"
+            title="着順を上げる"
+            onClick={() => moveRank("up")}
+          >
+            <ChevronUp className="size-4" aria-hidden />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="size-7 shrink-0 rounded-md border-violet-300/80 bg-background/90 dark:border-violet-800"
+            disabled={!canMoveRankDown}
+            aria-label="着順を下げる"
+            title="着順を下げる"
+            onClick={() => moveRank("down")}
+          >
+            <ChevronDown className="size-4" aria-hidden />
+          </Button>
+        </div>
+      ) : null}
     </li>
   );
 }

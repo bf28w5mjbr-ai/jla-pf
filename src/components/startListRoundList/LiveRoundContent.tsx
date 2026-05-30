@@ -118,7 +118,9 @@ export function LiveRoundContent({
     countResultDraftsForHeat,
     toggleResultDraft,
     rankedParticipantKeysForHeat,
+    rankOrderKeysForHeatIndex,
     reorderResultRanks,
+    reorderResultOrder,
     runHeatResultConfirm,
   } = useResultCaptureDraft({
     eventId,
@@ -237,7 +239,8 @@ export function LiveRoundContent({
           setDragOverParticipantKey={setDragOverParticipantKey}
           countResultDraftsForHeat={countResultDraftsForHeat}
           toggleResultDraft={toggleResultDraft}
-          reorderResultRanks={reorderResultRanks}
+          rankOrderKeysForHeat={rankOrderKeysForHeatIndex}
+          reorderResultOrder={reorderResultOrder}
           setHeatResultConfirmTarget={setHeatResultConfirmTarget}
           heatResultConfirmBusy={heatResultConfirmBusy}
           setRunUpTarget={setRunUpTarget}

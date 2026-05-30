@@ -23,6 +23,7 @@ import { dispatchJlaDayOpsParticipantStatusChanged } from "@/lib/dayOpsParticipa
 import { participantKeyFromResultRow } from "@/components/startListRoundList/panelHelpers";
 import {
   countResultDraftsForHeatFromOps,
+  rankOrderKeysForHeat,
   rankedParticipantKeysForHeatFromRows,
 } from "@/hooks/liveRound/resultCaptureDraftHelpers";
 import type { LiveRoundMarshalContext, ResultDraftOp } from "@/hooks/liveRound/types";
@@ -302,6 +303,53 @@ export function useResultCaptureDraft(args: {
     [applyRankOrderLocally, eventId, m, rankedParticipantKeysForHeat, resultCapture]
   );
 
+  const reorderResultDrafts = useCallback(
+    (heatIndex: number, sourceKey: string, targetKey: string) => {
+      setResultDraftOps((prev) => {
+        const keys = Object.entries(prev)
+          .filter(([, op]) => op.heatIndex === heatIndex)
+          .sort(
+            (a, b) =>
+              (a[1].draftSequence ?? 0) - (b[1].draftSequence ?? 0) ||
+              a[0].localeCompare(b[0])
+          )
+          .map(([k]) => k);
+        const from = keys.indexOf(sourceKey);
+        const to = keys.indexOf(targetKey);
+        if (from < 0 || to < 0 || from === to) return prev;
+        const nextKeys = [...keys];
+        const [moved] = nextKeys.splice(from, 1);
+        nextKeys.splice(to, 0, moved!);
+        const next = { ...prev };
+        nextKeys.forEach((key, idx) => {
+          const op = next[key];
+          if (op) next[key] = { ...op, draftSequence: idx + 1 };
+        });
+        return next;
+      });
+      lastLocalResultDraftTouchRef.current = Date.now();
+      scheduleResultDraftServerPatch(heatIndex);
+    },
+    [scheduleResultDraftServerPatch]
+  );
+
+  const reorderResultOrder = useCallback(
+    async (heatIndex: number, sourceKey: string, targetKey: string) => {
+      if (rankedParticipantKeysForHeat(heatIndex).length > 0) {
+        await reorderResultRanks(heatIndex, sourceKey, targetKey);
+        return;
+      }
+      reorderResultDrafts(heatIndex, sourceKey, targetKey);
+    },
+    [rankedParticipantKeysForHeat, reorderResultRanks, reorderResultDrafts]
+  );
+
+  const rankOrderKeysForHeatIndex = useCallback(
+    (heatIndex: number) =>
+      rankOrderKeysForHeat(localResultRows, heatIndex, resultDraftOps),
+    [localResultRows, resultDraftOps]
+  );
+
   const runHeatResultRunUp = useCallback(
     async (displayHeatNumber: number) => {
       if (!m || !resultCapture) return;
@@ -532,8 +580,10 @@ export function useResultCaptureDraft(args: {
     countResultDraftsForHeat,
     toggleResultDraft,
     rankedParticipantKeysForHeat,
+    rankOrderKeysForHeatIndex,
     applyRankOrderLocally,
     reorderResultRanks,
+    reorderResultOrder,
     runHeatResultConfirm,
   };
 }

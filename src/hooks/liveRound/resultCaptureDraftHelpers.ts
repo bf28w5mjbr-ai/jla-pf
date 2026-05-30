@@ -23,3 +23,21 @@ export function rankedParticipantKeysForHeatFromRows(
     .sort((a, b) => a.rank - b.rank)
     .map((x) => x.key);
 }
+
+/** サーバー着順があればそれを、なければ未確定チェック（draftSequence）順 */
+export function rankOrderKeysForHeat(
+  rows: HeatResultCaptureRow[],
+  heatIndex: number,
+  draftOps: Record<string, ResultDraftOp>
+): string[] {
+  const server = rankedParticipantKeysForHeatFromRows(rows, heatIndex);
+  if (server.length > 0) return server;
+  return Object.entries(draftOps)
+    .filter(([, op]) => op.heatIndex === heatIndex)
+    .sort(
+      (a, b) =>
+        (a[1].draftSequence ?? 0) - (b[1].draftSequence ?? 0) ||
+        a[0].localeCompare(b[0])
+    )
+    .map(([key]) => key);
+}

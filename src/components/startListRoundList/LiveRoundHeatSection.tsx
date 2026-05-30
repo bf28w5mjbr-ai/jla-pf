@@ -34,6 +34,7 @@ import {
   marshalParticipantForLane,
   orderIndividualItemsByConfirmedResultRank,
   orderTeamItemsByConfirmedResultRank,
+  effectiveResultSortRank,
   snapshotLaneForIndividual,
   snapshotLaneForTeam,
   StartListParticipantRowBody,
@@ -76,7 +77,8 @@ export type LiveRoundHeatSectionProps = {
   setDragOverParticipantKey: (key: string | null) => void;
   countResultDraftsForHeat: (heatIndex: number) => number;
   toggleResultDraft: LiveRoundResultLaneRowProps["onToggleDraft"];
-  reorderResultRanks: LiveRoundResultLaneRowProps["onReorderRanks"];
+  rankOrderKeysForHeat: (heatIndex: number) => string[];
+  reorderResultOrder: LiveRoundResultLaneRowProps["onReorderOrder"];
   setHeatResultConfirmTarget: (n: number | null) => void;
   heatResultConfirmBusy: boolean;
   setRunUpTarget: (n: number | null) => void;
@@ -121,7 +123,8 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
     setDragOverParticipantKey,
     countResultDraftsForHeat,
     toggleResultDraft,
-    reorderResultRanks,
+    rankOrderKeysForHeat,
+    reorderResultOrder,
     setHeatResultConfirmTarget,
     heatResultConfirmBusy,
     setRunUpTarget,
@@ -182,6 +185,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
     const teamForResult = heatConfirmedForSort
       ? orderTeamItemsByConfirmedResultRank(teams, displayHeatNumber, localResultRows)
       : teams;
+    const heatRankOrderKeys = rankOrderKeysForHeat(displayHeatNumber);
     return (
       <div
         key={`${eventId}-heat-${heatIndex}`}
@@ -428,13 +432,20 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                     .map((team, index) => {
                       const originalIndex = teams.findIndex((x) => x.teamEntryId === team.teamEntryId);
                       const fallbackLane = originalIndex >= 0 ? originalIndex + 1 : index + 1;
-                      const rankForSort = localResultRows.find(
-                        (r) =>
-                          r.heat === displayHeatNumber &&
-                          r.entryType === "TEAM" &&
-                          r.teamEntryId === team.teamEntryId &&
-                          r.rank != null
-                      )?.rank;
+                      const laneIndex0 = originalIndex >= 0 ? originalIndex : index;
+                      const participant =
+                        apiHeat?.participants.find(
+                          (p) =>
+                            p.participantType === "TEAM" && p.teamEntryId === team.teamEntryId
+                        ) ?? marshalParticipantForLane(apiHeat, fallbackLane, laneIndex0);
+                      const rankForSort = effectiveResultSortRank(
+                        displayHeatNumber,
+                        participant,
+                        apiHeat,
+                        localResultRows,
+                        resultDraftOps,
+                        resultInputOrder
+                      );
                       return {
                         team,
                         originalIndex,
@@ -505,7 +516,8 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                     dragSourceParticipantKey={dragSourceParticipantKey}
                     dragOverParticipantKey={dragOverParticipantKey}
                     onToggleDraft={toggleResultDraft}
-                    onReorderRanks={reorderResultRanks}
+                    rankOrderKeys={heatRankOrderKeys}
+                    onReorderOrder={reorderResultOrder}
                     setDragSourceParticipantKey={setDragSourceParticipantKey}
                     setDragOverParticipantKey={setDragOverParticipantKey}
                   />
@@ -684,6 +696,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
     const indForResult = heatConfirmedForSort
       ? orderIndividualItemsByConfirmedResultRank(individuals, displayHeatNumber, localResultRows)
       : individuals;
+    const heatRankOrderKeys = rankOrderKeysForHeat(displayHeatNumber);
     return (
       <div
         key={`${eventId}-heat-${heatIndex}`}
@@ -929,13 +942,21 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                     .map((item, index) => {
                       const originalIndex = individuals.findIndex((x) => x.entryId === item.entryId);
                       const fallbackLane = originalIndex >= 0 ? originalIndex + 1 : index + 1;
-                      const rankForSort = localResultRows.find(
-                        (r) =>
-                          r.heat === displayHeatNumber &&
-                          r.entryType === "INDIVIDUAL" &&
-                          r.competitionEntryId === item.entryId &&
-                          r.rank != null
-                      )?.rank;
+                      const laneIndex0 = originalIndex >= 0 ? originalIndex : index;
+                      const participant =
+                        apiHeat?.participants.find(
+                          (p) =>
+                            p.participantType === "INDIVIDUAL" &&
+                            p.competitionEntryId === item.entryId
+                        ) ?? marshalParticipantForLane(apiHeat, fallbackLane, laneIndex0);
+                      const rankForSort = effectiveResultSortRank(
+                        displayHeatNumber,
+                        participant,
+                        apiHeat,
+                        localResultRows,
+                        resultDraftOps,
+                        resultInputOrder
+                      );
                       return {
                         item,
                         originalIndex,
@@ -986,7 +1007,8 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                     dragSourceParticipantKey={dragSourceParticipantKey}
                     dragOverParticipantKey={dragOverParticipantKey}
                     onToggleDraft={toggleResultDraft}
-                    onReorderRanks={reorderResultRanks}
+                    rankOrderKeys={heatRankOrderKeys}
+                    onReorderOrder={reorderResultOrder}
                     setDragSourceParticipantKey={setDragSourceParticipantKey}
                     setDragOverParticipantKey={setDragOverParticipantKey}
                   />

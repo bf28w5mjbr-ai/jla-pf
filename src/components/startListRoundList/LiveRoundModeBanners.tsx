@@ -52,7 +52,7 @@ export function LiveRoundModeBanners({
               <span className="font-semibold">リザルトモード</span>
               {" — "}
               各ヒートでマーシャル締切後にのみ記録できます。召集済みのみ対象で、ヒート単位です。チェックまたは NFC
-              で記録し、召集済み全員分そろってから「リザルト確定」してください。記録済みの行はドラッグで並べ替えられます。
+              で記録し、召集済み全員分そろってから「リザルト確定」してください。記録済みの行は PC ではドラッグ、スマホでは行右の矢印で並べ替えられます（未確定チェックのみのときも同様）。
             </p>
             <p className="text-muted-foreground dark:text-violet-200/85">
               <span className="font-semibold text-violet-950 dark:text-violet-100">脱落式</span>

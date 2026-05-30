@@ -176,6 +176,27 @@ export function marshalParticipantForLane(
   return sameLane[0];
 }
 
+/** 一覧ソート用: サーバー着順、なければ未確定チェックの仮着順 */
+export function effectiveResultSortRank(
+  heatIndex1Based: number,
+  participant: HeatMarshalParticipant | undefined,
+  apiHeat: HeatMarshalHeatRow | undefined,
+  rows: HeatResultCaptureRow[],
+  drafts: Record<string, { heatIndex: number; draftSequence?: number }>,
+  inputOrder: "asc" | "desc"
+): number | null {
+  const server = resultRankForParticipant(heatIndex1Based, participant, rows);
+  if (server != null) return server;
+  return provisionalResultRankForParticipant(
+    heatIndex1Based,
+    participant,
+    apiHeat,
+    rows,
+    drafts,
+    inputOrder
+  );
+}
+
 export function resultRankForParticipant(
   heatIndex1Based: number,
   participant: HeatMarshalParticipant | undefined,
