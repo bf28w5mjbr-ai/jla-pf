@@ -86,12 +86,14 @@ export async function patchHeatOperationDraftResultPayload(
     round: "HEAT" | "SEMI" | "FINAL";
     heatIndex: number;
     entries: Record<string, HeatResultDraftServerEntry>;
-  }
+  },
+  options?: { keepalive?: boolean }
 ): Promise<{ updatedAt: string }> {
   const res = await fetch(`/api/competitions/${competitionId}/day-ops/heat-operation-draft`, {
     method: "PATCH",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
+    keepalive: options?.keepalive ?? false,
     body: JSON.stringify({
       eventId: input.eventId,
       round: input.round,
@@ -116,7 +118,8 @@ export function patchHeatOperationDraftResultPayloadFireAndForget(
     round: "HEAT" | "SEMI" | "FINAL";
     heatIndex: number;
     entries: Record<string, HeatResultDraftServerEntry>;
-  }
+  },
+  options?: { keepalive?: boolean }
 ): void {
-  void patchHeatOperationDraftResultPayload(competitionId, input).catch(() => {});
+  void patchHeatOperationDraftResultPayload(competitionId, input, options).catch(() => {});
 }

@@ -26,21 +26,34 @@ import {
   rankOrderKeysForHeat,
   rankedParticipantKeysForHeatFromRows,
 } from "@/hooks/liveRound/resultCaptureDraftHelpers";
+import type { ResultRound } from "@prisma/client";
 import type { LiveRoundMarshalContext, ResultDraftOp } from "@/hooks/liveRound/types";
 import type { RefObject } from "react";
 import type { HeatMarshalHeatRow } from "@/components/HeatMarshalLanePanel";
 
 type ResultCaptureSlice = NonNullable<LiveRoundMarshalContext>["resultCapture"];
 
+type ResultDraftSyncContext = {
+  competitionId: string;
+  round: ResultRound;
+};
+
 export function useResultCaptureDraft(args: {
   eventId: string;
   m: LiveRoundMarshalContext;
-  mRef: RefObject<LiveRoundMarshalContext>;
+  resultDraftSyncContext: ResultDraftSyncContext | null;
   resultCaptureVisible: boolean;
   resultCapture: ResultCaptureSlice | undefined;
   heatsRef: RefObject<HeatMarshalHeatRow[]>;
 }) {
-  const { eventId, m, mRef, resultCaptureVisible, resultCapture, heatsRef } = args;
+  const {
+    eventId,
+    m,
+    resultDraftSyncContext,
+    resultCaptureVisible,
+    resultCapture,
+    heatsRef,
+  } = args;
 
   const [localResultRows, setLocalResultRows] = useState<HeatResultCaptureRow[]>([]);
   const [resultCapturePendingKey, setResultCapturePendingKey] = useState<string | null>(null);
@@ -68,6 +81,57 @@ export function useResultCaptureDraft(args: {
   const resultDraftPatchTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const lastLocalResultDraftTouchRef = useRef(0);
   const resultDraftSequenceRef = useRef(0);
+  const resultDraftSyncContextRef = useRef(resultDraftSyncContext);
+  useEffect(() => {
+    if (resultDraftSyncContext) {
+      resultDraftSyncContextRef.current = resultDraftSyncContext;
+    }
+  }, [resultDraftSyncContext]);
+
+  const flushResultDraftServerPatch = useCallback(
+    (heatIndex: number, options?: { keepalive?: boolean }) => {
+      if (!isDayOpsResultDraftServerSyncEnabled()) return;
+      const timers = resultDraftPatchTimersRef.current;
+      clearTimeout(timers[heatIndex]);
+      delete timers[heatIndex];
+      const syncCtx = resultDraftSyncContextRef.current;
+      if (!syncCtx?.competitionId) return;
+      const entries: Record<string, HeatResultDraftServerEntry> = {};
+      for (const op of Object.values(resultDraftOpsRef.current)) {
+        if (op.heatIndex === heatIndex) {
+          entries[op.opKey] = op as HeatResultDraftServerEntry;
+        }
+      }
+      patchHeatOperationDraftResultPayloadFireAndForget(
+        syncCtx.competitionId,
+        {
+          eventId,
+          round: syncCtx.round,
+          heatIndex,
+          entries,
+        },
+        options
+      );
+    },
+    [eventId]
+  );
+
+  const flushAllResultDraftServerPatches = useCallback(
+    (options?: { keepalive?: boolean }) => {
+      if (!isDayOpsResultDraftServerSyncEnabled()) return;
+      const timers = resultDraftPatchTimersRef.current;
+      for (const t of Object.values(timers)) clearTimeout(t);
+      resultDraftPatchTimersRef.current = {};
+      const heatsToFlush = new Set<number>();
+      for (const op of Object.values(resultDraftOpsRef.current)) {
+        heatsToFlush.add(op.heatIndex);
+      }
+      for (const hi of heatsToFlush) {
+        if (Number.isFinite(hi)) flushResultDraftServerPatch(hi, options);
+      }
+    },
+    [flushResultDraftServerPatch]
+  );
 
   useEffect(() => {
     const next = resultCapture?.rows ?? [];
@@ -89,30 +153,6 @@ export function useResultCaptureDraft(args: {
     });
   }, [confirmedHeatsKey, resultCapture?.confirmedHeats]);
 
-  const flushResultDraftServerPatch = useCallback(
-    (heatIndex: number) => {
-      if (!isDayOpsResultDraftServerSyncEnabled()) return;
-      const timers = resultDraftPatchTimersRef.current;
-      clearTimeout(timers[heatIndex]);
-      delete timers[heatIndex];
-      const mm = mRef.current;
-      if (!mm?.competitionId) return;
-      const entries: Record<string, HeatResultDraftServerEntry> = {};
-      for (const op of Object.values(resultDraftOpsRef.current)) {
-        if (op.heatIndex === heatIndex) {
-          entries[op.opKey] = op as HeatResultDraftServerEntry;
-        }
-      }
-      patchHeatOperationDraftResultPayloadFireAndForget(mm.competitionId, {
-        eventId,
-        round: mm.round,
-        heatIndex,
-        entries,
-      });
-    },
-    [eventId, mRef]
-  );
-
   const scheduleResultDraftServerPatch = useCallback(
     (heatIndex: number) => {
       if (!isDayOpsResultDraftServerSyncEnabled()) return;
@@ -128,25 +168,25 @@ export function useResultCaptureDraft(args: {
 
   useEffect(() => {
     return () => {
-      const timers = resultDraftPatchTimersRef.current;
-      const pendingHeats = Object.keys(timers).map((k) => Number(k));
-      for (const t of Object.values(timers)) clearTimeout(t);
-      resultDraftPatchTimersRef.current = {};
-      const heatsToFlush = new Set<number>(pendingHeats);
-      for (const op of Object.values(resultDraftOpsRef.current)) {
-        heatsToFlush.add(op.heatIndex);
-      }
-      for (const hi of heatsToFlush) {
-        if (Number.isFinite(hi)) flushResultDraftServerPatch(hi);
-      }
+      flushAllResultDraftServerPatches({ keepalive: true });
     };
-  }, [flushResultDraftServerPatch]);
+  }, [flushAllResultDraftServerPatches]);
+
+  useEffect(() => {
+    if (!isDayOpsResultDraftServerSyncEnabled()) return;
+    const onPageHide = () => {
+      flushAllResultDraftServerPatches({ keepalive: true });
+    };
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, [flushAllResultDraftServerPatches]);
 
   const pullResultDraftsFromServer = useCallback(() => {
     if (!isDayOpsResultDraftServerSyncEnabled()) return;
+    if (!resultCaptureVisible) return;
     if (Date.now() - lastLocalResultDraftTouchRef.current < 900) return;
-    const mm = mRef.current;
-    if (!mm?.competitionId || mm.marshalUiMode !== "result" || !mm.resultCapture) return;
+    const syncCtx = resultDraftSyncContextRef.current;
+    if (!syncCtx?.competitionId) return;
 
     void (async () => {
       for (const h of heatsRef.current) {
@@ -154,14 +194,21 @@ export function useResultCaptureDraft(args: {
         if (!Number.isFinite(hi) || !h.callClosedAt) continue;
         if (confirmedHeatsRef.current.includes(hi)) continue;
         try {
-          const row = await getHeatOperationDraft(mm.competitionId, {
+          const row = await getHeatOperationDraft(syncCtx.competitionId, {
             eventId,
-            round: mm.round,
+            round: syncCtx.round,
             heatIndex: hi,
           });
           if (!row.updatedAt) continue;
           const entries = parseServerResultDraftPayload(row.resultDraftPayload);
           if (!entries) continue;
+          const entryKeys = Object.keys(entries);
+          if (entryKeys.length === 0) {
+            const hasLocalForHeat = Object.values(resultDraftOpsRef.current).some(
+              (op) => op.heatIndex === hi
+            );
+            if (hasLocalForHeat) continue;
+          }
 
           setResultDraftOps((prev) => {
             const next = { ...prev };
@@ -173,6 +220,7 @@ export function useResultCaptureDraft(args: {
                 next[k] = v as ResultDraftOp;
               }
             }
+            resultDraftOpsRef.current = next;
             return next;
           });
         } catch {
@@ -180,12 +228,17 @@ export function useResultCaptureDraft(args: {
         }
       }
     })();
-  }, [eventId, mRef, heatsRef]);
+  }, [eventId, heatsRef, resultCaptureVisible]);
 
   useEffect(() => {
     if (!resultCaptureVisible || !isDayOpsResultDraftServerSyncEnabled()) return;
     pullResultDraftsFromServer();
   }, [resultCaptureVisible, pullResultDraftsFromServer]);
+
+  useEffect(() => {
+    if (resultCaptureVisible || !isDayOpsResultDraftServerSyncEnabled()) return;
+    flushAllResultDraftServerPatches();
+  }, [resultCaptureVisible, flushAllResultDraftServerPatches]);
 
   useEffect(() => {
     if (!isDayOpsResultDraftServerSyncEnabled() || !resultCaptureVisible) return;
@@ -243,29 +296,32 @@ export function useResultCaptureDraft(args: {
         return next;
       });
       setResultDraftOps((prev) => {
+        let next: Record<string, ResultDraftOp>;
         if (!checked) {
           if (!prev[opKey]) return prev;
-          const next = { ...prev };
+          next = { ...prev };
           delete next[opKey];
-          return next;
+        } else {
+          next = {
+            ...prev,
+            [opKey]: {
+              opKey,
+              heatIndex,
+              tieWithPrevious,
+              inputOrder,
+              draftSequence: ++resultDraftSequenceRef.current,
+              participantType: participant.participantType,
+              ...(participant.participantType === "INDIVIDUAL"
+                ? { competitionEntryId: participant.competitionEntryId ?? undefined }
+                : {
+                    teamEntryId: participant.teamEntryId ?? undefined,
+                    teamMemberUserId: participant.teamMemberUserId?.trim() || undefined,
+                  }),
+            },
+          };
         }
-        return {
-          ...prev,
-          [opKey]: {
-            opKey,
-            heatIndex,
-            tieWithPrevious,
-            inputOrder,
-            draftSequence: ++resultDraftSequenceRef.current,
-            participantType: participant.participantType,
-            ...(participant.participantType === "INDIVIDUAL"
-              ? { competitionEntryId: participant.competitionEntryId ?? undefined }
-              : {
-                  teamEntryId: participant.teamEntryId ?? undefined,
-                  teamMemberUserId: participant.teamMemberUserId?.trim() || undefined,
-                }),
-          },
-        };
+        resultDraftOpsRef.current = next;
+        return next;
       });
       lastLocalResultDraftTouchRef.current = Date.now();
       scheduleResultDraftServerPatch(heatIndex);
@@ -342,6 +398,7 @@ export function useResultCaptureDraft(args: {
           const op = next[key];
           if (op) next[key] = { ...op, draftSequence: idx + 1 };
         });
+        resultDraftOpsRef.current = next;
         return next;
       });
       lastLocalResultDraftTouchRef.current = Date.now();

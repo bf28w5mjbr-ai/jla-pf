@@ -275,6 +275,10 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
             setMarshalSyncDeferred: dayOps.setMarshalSyncDeferred,
           }
         : null;
+    const resultDraftSyncContext =
+      dayOps.showDayOpsShell && roundForList
+        ? { competitionId, round: roundForList }
+        : null;
     return (
       <LiveRoundContent
         key={`sl-${event.id}-${index}`}
@@ -286,6 +290,7 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
         marshalDisplayHeatIndices={row?.marshalDisplayHeatIndices ?? null}
         heatAdvanceQuotas={heatAdvanceQuotasForRow}
         startListMarshal={startListMarshal}
+        resultDraftSyncContext={resultDraftSyncContext}
         participantStatusRows={
           dayOps.polledParticipantStatusRows.length > 0
             ? dayOps.polledParticipantStatusRows

@@ -30,6 +30,7 @@ export function LiveRoundContent({
   displaySource,
   previewEstimatedParticipants,
   previewMaxLanesPerHeat,
+  resultDraftSyncContext = null,
 }: LiveRoundContentProps) {
   const snapshotHeatIndexForRow = (rowIdx: number) =>
     marshalDisplayHeatIndices?.[rowIdx] ?? rowIdx + 1;
@@ -135,7 +136,7 @@ export function LiveRoundContent({
   } = useResultCaptureDraft({
     eventId,
     m: marshalCtx,
-    mRef,
+    resultDraftSyncContext,
     resultCaptureVisible,
     resultCapture,
     heatsRef,

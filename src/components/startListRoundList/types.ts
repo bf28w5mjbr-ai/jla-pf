@@ -64,6 +64,11 @@ export type LiveRoundContentProps = {
   displaySource?: StartListTabDisplaySource;
   previewEstimatedParticipants?: number;
   previewMaxLanesPerHeat?: number;
+  /** リザルト下書きのサーバー同期（アクティブタブ外でも competitionId / round を保持） */
+  resultDraftSyncContext?: {
+    competitionId: string;
+    round: ResultRound;
+  } | null;
   startListMarshal?: {
     heats: HeatMarshalHeatRow[] | null;
     /** 参加者チェック・NFC 向け */
