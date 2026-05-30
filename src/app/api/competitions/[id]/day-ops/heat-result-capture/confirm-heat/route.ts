@@ -38,10 +38,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const { eventId, round, heatIndex } = parsed.data;
     const roundDb = round as ResultRound;
 
-    const eventRow = await prisma.event.findFirst({
-      where: { id: eventId, competitionId },
-      select: { id: true, startListHeatPlanConfirmedAt: true },
-    });
+    const [eventRow, snapshot] = await Promise.all([
+      prisma.event.findFirst({
+        where: { id: eventId, competitionId },
+        select: { id: true, startListHeatPlanConfirmedAt: true },
+      }),
+      loadStartListSnapshotPayload(competitionId),
+    ]);
     if (!eventRow) {
       return NextResponse.json({ error: "種目が見つかりません" }, { status: 404 });
     }
@@ -52,7 +55,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const snapshot = await loadStartListSnapshotPayload(competitionId);
     const advanceQuota = await resolveAdvanceQuotaForHeatInDayOps({
       competitionId,
       eventId,
@@ -160,18 +162,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
     });
 
     if (round === "HEAT" || round === "SEMI") {
-      try {
-        const append = await tryAutoAppendNextStartListRound({
-          competitionId,
-          eventId,
-          finishedRound: round,
+      void tryAutoAppendNextStartListRound({
+        competitionId,
+        eventId,
+        finishedRound: round,
+      })
+        .then((append) => {
+          if (!append.ok) {
+            console.warn("start-list auto-append after heat confirm:", append.error);
+          }
+        })
+        .catch((e) => {
+          console.error("start-list auto-append after heat confirm failed:", e);
         });
-        if (!append.ok) {
-          console.warn("start-list auto-append after heat confirm:", append.error);
-        }
-      } catch (e) {
-        console.error("start-list auto-append after heat confirm failed:", e);
-      }
     }
 
     return NextResponse.json({ ok: true, heatIndex });

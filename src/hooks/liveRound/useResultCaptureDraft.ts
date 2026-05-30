@@ -347,93 +347,156 @@ export function useResultCaptureDraft(args: {
     [m, resultCapture, eventId]
   );
 
+  const patchResultHeatConfirmed = useCallback(
+    (heatIndex: number) => {
+      setLocalConfirmedHeats((prev) =>
+        prev.includes(heatIndex) ? prev : [...prev, heatIndex].sort((a, b) => a - b)
+      );
+      resultCapture?.patchHeatConfirmed(heatIndex);
+    },
+    [resultCapture]
+  );
+
+  const patchResultHeatUnconfirmed = useCallback(
+    (heatIndex: number) => {
+      setLocalConfirmedHeats((prev) => prev.filter((h) => h !== heatIndex));
+      resultCapture?.patchHeatUnconfirmed(heatIndex);
+    },
+    [resultCapture]
+  );
+
+  const clearResultDraftsForHeat = useCallback((heatIndex: number) => {
+    const timers = resultDraftPatchTimersRef.current;
+    clearTimeout(timers[heatIndex]);
+    delete timers[heatIndex];
+    setResultDraftOps((prev) => {
+      const next: typeof prev = {};
+      for (const [k, v] of Object.entries(prev)) {
+        if (v.heatIndex !== heatIndex) next[k] = v;
+      }
+      return next;
+    });
+    setResultDraftErrors((prev) => {
+      const next = { ...prev };
+      for (const k of Object.keys(prev)) {
+        const op = resultDraftOpsRef.current[k];
+        if (op?.heatIndex === heatIndex) delete next[k];
+      }
+      return next;
+    });
+  }, []);
+
+  /** 確定直前: 当該ヒートの未確定チェックをサーバーへ送る。失敗時は false */
+  const flushResultDraftsBeforeConfirm = useCallback(
+    async (displayHeatNumber: number): Promise<boolean> => {
+      if (!m) return false;
+      const timers = resultDraftPatchTimersRef.current;
+      clearTimeout(timers[displayHeatNumber]);
+      delete timers[displayHeatNumber];
+
+      const draftsForHeat = Object.values(resultDraftOpsRef.current)
+        .filter((op) => op.heatIndex === displayHeatNumber)
+        .sort((a, b) => (a.draftSequence ?? 0) - (b.draftSequence ?? 0));
+      if (draftsForHeat.length === 0) return true;
+
+      const failedMap: Record<string, string> = {};
+      let successCount = 0;
+      for (const op of draftsForHeat) {
+        try {
+          const data = await postHeatResultCaptureAppend(m.competitionId, {
+            mode: "manual",
+            eventId,
+            round: m.round,
+            heatIndex: op.heatIndex,
+            tieWithPrevious: op.tieWithPrevious,
+            inputOrder: op.inputOrder,
+            participantType: op.participantType,
+            competitionEntryId:
+              op.participantType === "INDIVIDUAL" ? op.competitionEntryId : undefined,
+            teamEntryId: op.participantType === "TEAM" ? op.teamEntryId : undefined,
+            teamMemberUserId: op.participantType === "TEAM" ? op.teamMemberUserId : undefined,
+          });
+          handleRankRecorded({
+            heatIndex: op.heatIndex,
+            lane: data.lane,
+            rank: data.rank,
+            participantType: data.participantType,
+            competitionEntryId: data.competitionEntryId,
+            teamEntryId: data.teamEntryId,
+          });
+          successCount += 1;
+        } catch (error) {
+          failedMap[op.opKey] = error instanceof Error ? error.message : "記録に失敗しました";
+        }
+      }
+      setResultDraftErrors((prev) => ({ ...prev, ...failedMap }));
+      const failedKeys = new Set(Object.keys(failedMap));
+      setResultDraftOps((prev) => {
+        const next: typeof prev = {};
+        for (const [k, v] of Object.entries(prev)) {
+          if (failedKeys.has(k)) next[k] = v;
+        }
+        return next;
+      });
+      if (failedKeys.size > 0) {
+        if (successCount > 0) {
+          toast.error(
+            `未確定チェック ${failedKeys.size}件の反映に失敗したため、リザルト確定を中止しました`
+          );
+        } else {
+          toast.error("未確定チェックの反映に失敗したため、リザルト確定を中止しました");
+        }
+        return false;
+      }
+      clearResultDraftsForHeat(displayHeatNumber);
+      return true;
+    },
+    [m, eventId, handleRankRecorded, clearResultDraftsForHeat]
+  );
+
   const runHeatResultConfirm = useCallback(
     async (displayHeatNumber: number) => {
       if (!m || !resultCapture) return;
       setHeatResultConfirmBusy(true);
       try {
-        const draftsForHeat = Object.values(resultDraftOps).filter(
-          (op) => op.heatIndex === displayHeatNumber
-        );
-        if (draftsForHeat.length > 0) {
-          const failedMap: Record<string, string> = {};
-          let successCount = 0;
-          for (const op of draftsForHeat) {
-            try {
-              const data = await postHeatResultCaptureAppend(m.competitionId, {
-                mode: "manual",
-                eventId,
-                round: m.round,
-                heatIndex: op.heatIndex,
-                tieWithPrevious: op.tieWithPrevious,
-                inputOrder: op.inputOrder,
-                participantType: op.participantType,
-                competitionEntryId:
-                  op.participantType === "INDIVIDUAL" ? op.competitionEntryId : undefined,
-                teamEntryId: op.participantType === "TEAM" ? op.teamEntryId : undefined,
-                teamMemberUserId:
-                  op.participantType === "TEAM" ? op.teamMemberUserId : undefined,
-              });
-              handleRankRecorded({
-                heatIndex: op.heatIndex,
-                lane: data.lane,
-                rank: data.rank,
-                participantType: data.participantType,
-                competitionEntryId: data.competitionEntryId,
-                teamEntryId: data.teamEntryId,
-              });
-              successCount += 1;
-            } catch (error) {
-              failedMap[op.opKey] = error instanceof Error ? error.message : "記録に失敗しました";
-            }
-          }
-          setResultDraftErrors((prev) => ({ ...prev, ...failedMap }));
-          const failedKeys = new Set(Object.keys(failedMap));
-          setResultDraftOps((prev) => {
-            const next: typeof prev = {};
-            for (const [k, v] of Object.entries(prev)) {
-              if (failedKeys.has(k)) next[k] = v;
-            }
-            return next;
-          });
-          if (failedKeys.size > 0) {
-            if (successCount > 0) {
-              toast.error(
-                `未確定チェック ${failedKeys.size}件の反映に失敗したため、リザルト確定を中止しました`
-              );
-            } else {
-              toast.error("未確定チェックの反映に失敗したため、リザルト確定を中止しました");
-            }
-            return;
-          }
-        }
+        const draftsFlushed = await flushResultDraftsBeforeConfirm(displayHeatNumber);
+        if (!draftsFlushed) return;
+
+        patchResultHeatConfirmed(displayHeatNumber);
+        setHeatResultConfirmTarget(null);
 
         await postHeatResultConfirmHeat(m.competitionId, {
           eventId,
           round: m.round,
           heatIndex: displayHeatNumber,
         });
-        setLocalConfirmedHeats((prev) =>
-          prev.includes(displayHeatNumber)
-            ? prev
-            : [...prev, displayHeatNumber].sort((a, b) => a - b)
-        );
-        setHeatResultConfirmTarget(null);
-        void resultCapture.onRefetch();
+        clearResultDraftsForHeat(displayHeatNumber);
         toast.success(`ヒート ${displayHeatNumber} のリザルトを確定しました`);
-        dispatchJlaDayOpsParticipantStatusChanged(m.competitionId, eventId);
+        dispatchJlaDayOpsParticipantStatusChanged(m.competitionId, eventId, {
+          skipResultCaptureRefetch: true,
+          skipParticipantPoll: true,
+        });
         deleteHeatOperationDraftFireAndForget(m.competitionId, {
           eventId,
           round: m.round,
           heatIndex: displayHeatNumber,
         });
       } catch (e) {
+        patchResultHeatUnconfirmed(displayHeatNumber);
         toast.error(e instanceof Error ? e.message : "確定に失敗しました");
       } finally {
         setHeatResultConfirmBusy(false);
       }
     },
-    [m, resultCapture, resultDraftOps, eventId, handleRankRecorded]
+    [
+      m,
+      resultCapture,
+      eventId,
+      flushResultDraftsBeforeConfirm,
+      patchResultHeatConfirmed,
+      patchResultHeatUnconfirmed,
+      clearResultDraftsForHeat,
+    ]
   );
 
   return {

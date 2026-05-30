@@ -12,6 +12,7 @@ import type {
 } from "@/lib/startListEventTypes";
 import {
   applyMarshalDraftOpsToHeats,
+  mergeListMarshalHeatsOnRefetch,
   patchHeatMarshalCallWindowInHeats,
 } from "@/components/startListRoundList/panelHelpers";
 import type { MarshalDraftOp, OnMarshalSuccessOptions } from "@/hooks/liveRound/types";
@@ -225,6 +226,16 @@ export function useStartListEventDayOps({
     }
   }, [showResultOps, listMarshalRound, competitionId, eventId]);
 
+  const patchListResultHeatConfirmed = useCallback((heatIndex: number) => {
+    setListResultConfirmedHeats((prev) =>
+      prev.includes(heatIndex) ? prev : [...prev, heatIndex].sort((a, b) => a - b)
+    );
+  }, []);
+
+  const patchListResultHeatUnconfirmed = useCallback((heatIndex: number) => {
+    setListResultConfirmedHeats((prev) => prev.filter((h) => h !== heatIndex));
+  }, []);
+
   useEffect(() => {
     if (!showResultOps || listMarshalRound === null || !anyTabInResultMode) {
       setListResultRows([]);
@@ -275,7 +286,8 @@ export function useStartListEventDayOps({
             return;
           }
           const data = (await res.json()) as { heats?: HeatMarshalHeatRow[]; round?: unknown };
-          setListMarshalHeats(data.heats ?? []);
+          const incoming = data.heats ?? [];
+          setListMarshalHeats((prev) => mergeListMarshalHeatsOnRefetch(prev, incoming));
           setListMarshalApiRound(parseHeatMarshalResponseRound(data.round));
         });
       } finally {
@@ -296,11 +308,11 @@ export function useStartListEventDayOps({
   }, [fetchListMarshalHeatsCore]);
 
   const refreshMarshalAndResultLists = useCallback(
-    (opts?: { skipMarshalHeat?: boolean }) => {
+    (opts?: { skipMarshalHeat?: boolean; skipResultCapture?: boolean }) => {
       if (anyTabNeedsMarshalHeat && !opts?.skipMarshalHeat) {
         void refetchListMarshalHeats();
       }
-      if (anyTabInResultMode && showResultOps) {
+      if (anyTabInResultMode && showResultOps && !opts?.skipResultCapture) {
         void refetchResultCapture();
       }
     },
@@ -432,6 +444,8 @@ export function useStartListEventDayOps({
     listResultLoading,
     listResultConfirmedHeats,
     refetchResultCapture,
+    patchListResultHeatConfirmed,
+    patchListResultHeatUnconfirmed,
     onMarshalSuccess,
   };
 }

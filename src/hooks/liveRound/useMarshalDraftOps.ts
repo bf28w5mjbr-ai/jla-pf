@@ -9,7 +9,9 @@ import { deleteHeatOperationDraftFireAndForget } from "@/lib/dayOpsHeatOperation
 import {
   applyMarshalDraftOpsToHeats,
   marshalHeatMatchesDisplayIndex,
+  mergeMarshalHeatOverlayOps,
   patchHeatMarshalCallWindowInHeats,
+  pruneMarshalCommittedOps,
 } from "@/components/startListRoundList/panelHelpers";
 import type { LiveRoundMarshalContext, MarshalDraftOp } from "@/hooks/liveRound/types";
 
@@ -23,6 +25,8 @@ export function useMarshalDraftOps(args: {
   const { eventId, m, statusUpdatedAtByKey } = args;
 
   const [marshalDraftOps, setMarshalDraftOps] = useState<Record<string, MarshalDraftOp>>({});
+  /** サーバー保存済みだが heat-marshal GET が未反映の行（ポーリング巻き戻し防止） */
+  const [marshalCommittedOps, setMarshalCommittedOps] = useState<Record<string, MarshalDraftOp>>({});
   const [marshalDraftErrors, setMarshalDraftErrors] = useState<Record<string, string>>({});
   const [marshalBulkSubmitting, setMarshalBulkSubmitting] = useState(false);
   const [marshalPendingKey, setMarshalPendingKey] = useState<string | null>(null);
@@ -41,9 +45,34 @@ export function useMarshalDraftOps(args: {
     for (const resolve of waiters) resolve();
   }, []);
 
+  const marshalOverlayOps = useMemo(
+    () => mergeMarshalHeatOverlayOps(marshalDraftOps, marshalCommittedOps),
+    [marshalDraftOps, marshalCommittedOps]
+  );
+
   useEffect(() => {
-    setLocalMarshalHeats(applyMarshalDraftOpsToHeats(m?.heats ?? [], marshalDraftOps));
-  }, [m?.heats, marshalDraftOps]);
+    setLocalMarshalHeats(applyMarshalDraftOpsToHeats(m?.heats ?? [], marshalOverlayOps));
+  }, [m?.heats, marshalOverlayOps]);
+
+  useEffect(() => {
+    const heats = m?.heats;
+    if (!heats?.length) return;
+    setMarshalCommittedOps((prev) => {
+      if (Object.keys(prev).length === 0) return prev;
+      const pruned = pruneMarshalCommittedOps(heats, prev);
+      if (Object.keys(pruned).length === Object.keys(prev).length) {
+        let unchanged = true;
+        for (const k of Object.keys(prev)) {
+          if (pruned[k] !== prev[k]) {
+            unchanged = false;
+            break;
+          }
+        }
+        if (unchanged) return prev;
+      }
+      return pruned;
+    });
+  }, [m?.heats]);
 
   const marshalHeatByDisplayNumber = useMemo(() => {
     const map = new Map<number, HeatMarshalHeatRow>();
@@ -97,22 +126,28 @@ export function useMarshalDraftOps(args: {
       const failedMap: Record<string, string> = {};
       for (const f of result.failed) failedMap[f.opKey] = f.error;
       setMarshalDraftErrors(failedMap);
-      setMarshalDraftOps((prev) => {
-        if (result.failed.length === 0) return {};
-        const next: typeof prev = {};
-        for (const f of result.failed) {
-          if (prev[f.opKey]) next[f.opKey] = prev[f.opKey];
-        }
-        return next;
-      });
-      if (result.success.length > 0) {
+      const successOps =
+        result.success.length > 0
+          ? operations.filter((op) => result.success.some((s) => s.opKey === op.opKey))
+          : [];
+      if (successOps.length > 0) {
         if (!opts?.silent) {
           toast.success(`${result.success.length}件を確定しました`);
         }
-        const successOps = operations.filter((op) =>
-          result.success.some((s) => s.opKey === op.opKey)
+        await m.onMarshalSuccess(
+          successOps,
+          opts?.localPatchOnly ? { localPatchOnly: true } : undefined
         );
-        await m.onMarshalSuccess(successOps, opts?.localPatchOnly ? { localPatchOnly: true } : undefined);
+        setMarshalDraftOps((prev) => {
+          const next = { ...prev };
+          for (const op of successOps) delete next[op.opKey];
+          return next;
+        });
+        setMarshalCommittedOps((prev) => {
+          const next = { ...prev };
+          for (const op of successOps) next[op.opKey] = op;
+          return next;
+        });
         const heatIndicesAfterBulk = new Set(successOps.map((o) => o.heatIndex));
         for (const hi of heatIndicesAfterBulk) {
           deleteHeatOperationDraftFireAndForget(m.competitionId, {
@@ -121,6 +156,14 @@ export function useMarshalDraftOps(args: {
             heatIndex: hi,
           });
         }
+      } else if (result.failed.length > 0) {
+        setMarshalDraftOps((prev) => {
+          const next: typeof prev = {};
+          for (const f of result.failed) {
+            if (prev[f.opKey]) next[f.opKey] = prev[f.opKey];
+          }
+          return next;
+        });
       }
       if (result.failed.length > 0) {
         toast.error(
@@ -185,6 +228,12 @@ export function useMarshalDraftOps(args: {
         patchLaneCalled(heatIndex, participant.lane);
       } else {
         patchLanePending(heatIndex, participant.lane);
+        setMarshalCommittedOps((prev) => {
+          if (!prev[opKey]) return prev;
+          const next = { ...prev };
+          delete next[opKey];
+          return next;
+        });
       }
       setMarshalDraftOps((prev) => ({
         ...prev,

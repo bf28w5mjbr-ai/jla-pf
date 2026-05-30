@@ -90,6 +90,8 @@ export type LiveRoundContentProps = {
       loading: boolean;
       confirmedHeats: number[];
       onRefetch: () => void | Promise<void>;
+      patchHeatConfirmed: (heatIndex: number) => void;
+      patchHeatUnconfirmed: (heatIndex: number) => void;
     };
   } | null;
 };

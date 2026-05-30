@@ -53,5 +53,7 @@ export type LiveRoundMarshalContext = {
     loading: boolean;
     confirmedHeats: number[];
     onRefetch: () => void;
+    patchHeatConfirmed: (heatIndex: number) => void;
+    patchHeatUnconfirmed: (heatIndex: number) => void;
   };
 } | null;

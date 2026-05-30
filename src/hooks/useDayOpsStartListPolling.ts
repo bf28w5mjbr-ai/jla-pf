@@ -13,7 +13,10 @@ type Args = {
   /** いずれかのタブがマーシャル/リザルトモードのときは同期間隔を短くする */
   dayOpsListsSyncActive: boolean;
   refreshParticipantStatuses: () => void | Promise<void>;
-  refreshMarshalAndResultLists: (opts?: { skipMarshalHeat?: boolean }) => void;
+  refreshMarshalAndResultLists: (opts?: {
+    skipMarshalHeat?: boolean;
+    skipResultCapture?: boolean;
+  }) => void;
 };
 
 /** 当日運用のポーリング・visibility・SSE・カスタムイベント同期 */
@@ -63,6 +66,7 @@ export function useDayOpsStartListPolling({
           competitionId?: string;
           eventId?: string;
           skipMarshalHeatRefetch?: boolean;
+          skipResultCaptureRefetch?: boolean;
           skipParticipantPoll?: boolean;
         }>
       ).detail;
@@ -70,9 +74,10 @@ export function useDayOpsStartListPolling({
         if (!d.skipParticipantPoll) {
           void refreshParticipantStatuses();
         }
-        refreshMarshalAndResultLists(
-          d.skipMarshalHeatRefetch ? { skipMarshalHeat: true } : undefined
-        );
+        refreshMarshalAndResultLists({
+          ...(d.skipMarshalHeatRefetch ? { skipMarshalHeat: true } : {}),
+          ...(d.skipResultCaptureRefetch ? { skipResultCapture: true } : {}),
+        });
       }
     };
     window.addEventListener(JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED, handler);

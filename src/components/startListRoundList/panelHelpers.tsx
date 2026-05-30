@@ -29,9 +29,15 @@ export function foldTeamMarshalStatuses(rows: HeatMarshalParticipant[]): string 
   return foldTeamMemberStatuses(rows.map((r) => r.status));
 }
 
+type MarshalHeatOverlayOp = {
+  opKey: string;
+  heatIndex: number;
+  status: "CALLED" | "PENDING";
+};
+
 export function applyMarshalDraftOpsToHeats(
   heats: HeatMarshalHeatRow[],
-  draftOps: Record<string, { opKey: string; heatIndex: number; status: "CALLED" | "PENDING" }>
+  draftOps: Record<string, MarshalHeatOverlayOp>
 ): HeatMarshalHeatRow[] {
   const ops = Object.values(draftOps);
   if (ops.length === 0) return heats;
@@ -53,6 +59,80 @@ export function applyMarshalDraftOpsToHeats(
       }),
     };
   });
+}
+
+/** 未保存ドラフトとサーバー確定済みオーバーレイを合成（同一キーはドラフト優先） */
+export function mergeMarshalHeatOverlayOps(
+  draftOps: Record<string, MarshalHeatOverlayOp>,
+  committedOps: Record<string, MarshalHeatOverlayOp>
+): Record<string, MarshalHeatOverlayOp> {
+  return { ...committedOps, ...draftOps };
+}
+
+function participantStatusByOpKey(
+  heats: HeatMarshalHeatRow[],
+  opKey: string
+): string | undefined {
+  for (const h of heats) {
+    for (const p of h.participants) {
+      if (marshalParticipantKey(p) === opKey) return p.status;
+    }
+  }
+  return undefined;
+}
+
+/** heat-marshal GET が DB 反映前に PENDING を返したとき、サーバーが op と一致したら除去する */
+export function pruneMarshalCommittedOps<T extends MarshalHeatOverlayOp>(
+  heats: HeatMarshalHeatRow[],
+  committedOps: Record<string, T>
+): Record<string, T> {
+  if (Object.keys(committedOps).length === 0) return committedOps;
+  const next = { ...committedOps };
+  for (const [opKey, op] of Object.entries(committedOps)) {
+    const serverStatus = participantStatusByOpKey(heats, opKey);
+    if (serverStatus == null) continue;
+    if (serverStatus === op.status) {
+      delete next[opKey];
+      continue;
+    }
+    if (op.status === "CALLED" && isCalledLikeStatus(serverStatus)) {
+      delete next[opKey];
+    }
+  }
+  return next;
+}
+
+/**
+ * ポーリング再取得でローカルに CALLED 済みの行が PENDING に巻き戻らないようマージする。
+ * （自動保存直後の GET 遅延・別タブ同期の競合対策）
+ */
+export function mergeListMarshalHeatsOnRefetch(
+  prev: HeatMarshalHeatRow[] | null | undefined,
+  incoming: HeatMarshalHeatRow[]
+): HeatMarshalHeatRow[] {
+  if (!prev?.length) return incoming;
+  const prevStatusByKey = new Map<string, string>();
+  for (const h of prev) {
+    for (const p of h.participants) {
+      prevStatusByKey.set(marshalParticipantKey(p), p.status);
+    }
+  }
+  return incoming.map((heat) => ({
+    ...heat,
+    participants: heat.participants.map((p) => {
+      const key = marshalParticipantKey(p);
+      const prevStatus = prevStatusByKey.get(key);
+      if (
+        prevStatus &&
+        isCalledLikeStatus(prevStatus) &&
+        p.status === "PENDING" &&
+        !isDayOpsTerminalParticipantStatus(prevStatus)
+      ) {
+        return { ...p, status: prevStatus };
+      }
+      return p;
+    }),
+  }));
 }
 
 /** 同一チームの `T:teamId:userId` 行を `buildParticipantDayOpsStatusByKey` 相当に畳む。レガシー `T:teamId` のみのときはその値。 */

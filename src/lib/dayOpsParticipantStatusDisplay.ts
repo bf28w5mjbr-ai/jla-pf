@@ -152,6 +152,8 @@ export type DayOpsParticipantStatusChangedDetail = {
   eventId: string;
   /** 当該端末で heat-marshal を楽観更新済みのとき、全量 GET の即時再取得を省略 */
   skipMarshalHeatRefetch?: boolean;
+  /** 当該端末でリザルト確定を楽観更新済みのとき、heat-result-capture 全量 GET を省略 */
+  skipResultCaptureRefetch?: boolean;
   /** 楽観更新直後など、参加者ステータスの即時ポーリングを省略 */
   skipParticipantPoll?: boolean;
 };
@@ -161,7 +163,7 @@ export function dispatchJlaDayOpsParticipantStatusChanged(
   eventId: string,
   extra?: Pick<
     DayOpsParticipantStatusChangedDetail,
-    "skipMarshalHeatRefetch" | "skipParticipantPoll"
+    "skipMarshalHeatRefetch" | "skipResultCaptureRefetch" | "skipParticipantPoll"
   >
 ): void {
   if (typeof window === "undefined") return;
