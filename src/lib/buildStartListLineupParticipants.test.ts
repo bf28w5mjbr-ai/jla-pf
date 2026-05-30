@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildStartListLineupFromEntries,
   buildStartListLineupFromFrozenRounds,
+  overlayLiveTeamMembersFromDb,
 } from "@/lib/buildStartListLineupParticipants";
 
 describe("buildStartListLineupFromEntries", () => {
@@ -96,6 +97,48 @@ describe("buildStartListLineupFromEntries", () => {
       ],
     });
     expect(result.individuals).toHaveLength(1);
+  });
+});
+
+describe("overlayLiveTeamMembersFromDb", () => {
+  it("replaces snapshot members with DB members and adds teams missing from lineup", () => {
+    const result = overlayLiveTeamMembersFromDb(
+      [
+        {
+          teamEntryId: "t1",
+          teamName: "A",
+          clubId: "c1",
+          clubName: "Club",
+          members: ["旧 太郎"],
+        },
+      ],
+      [
+        {
+          id: "t1",
+          teamName: "A",
+          club: { id: "c1", name: "Club" },
+          members: [
+            {
+              user: { profile: { familyName: "新", givenName: "太郎" } },
+            },
+          ],
+        },
+        {
+          id: "t2",
+          teamName: "B",
+          club: null,
+          members: [
+            {
+              user: { profile: { familyName: "次", givenName: "郎" } },
+            },
+          ],
+        },
+      ]
+    );
+    expect(result).toHaveLength(2);
+    expect(result[0]?.members).toEqual(["新 太郎"]);
+    expect(result[1]?.teamEntryId).toBe("t2");
+    expect(result[1]?.members).toEqual(["次 郎"]);
   });
 });
 

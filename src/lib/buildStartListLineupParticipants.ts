@@ -124,6 +124,48 @@ export function buildStartListLineupFromEntries(input: {
   return { individuals, teams, placementIndividualIds, placementTeamIds };
 }
 
+function teamMembersFromLiveEntry(
+  teamEntry: LiveTeamEntryForLineup
+): StartListEventPageTeam {
+  return {
+    teamEntryId: teamEntry.id,
+    teamName: teamEntry.teamName,
+    clubId: teamEntry.club?.id ?? null,
+    clubName: teamEntry.club?.name ?? null,
+    members: teamEntry.members
+      .map(
+        (member) =>
+          `${member.user.profile?.familyName ?? ""} ${member.user.profile?.givenName ?? ""}`.trim()
+      )
+      .filter(Boolean),
+  };
+}
+
+/**
+ * 凍結スナップショット由来の teams に、DB の最新メンバー割当を反映する。
+ * スナップショット未更新でもスタートリスト上のメンバー名が追従する。
+ */
+export function overlayLiveTeamMembersFromDb(
+  teams: ReadonlyArray<StartListEventPageTeam>,
+  liveTeamEntries: ReadonlyArray<LiveTeamEntryForLineup>
+): StartListEventPageTeam[] {
+  if (liveTeamEntries.length === 0) return [...teams];
+
+  const dbById = new Map(
+    liveTeamEntries.map((entry) => [entry.id, teamMembersFromLiveEntry(entry)])
+  );
+  const seen = new Set<string>();
+  const merged = teams.map((team) => {
+    seen.add(team.teamEntryId);
+    const db = dbById.get(team.teamEntryId);
+    return db ? { ...team, members: db.members } : team;
+  });
+  for (const [id, dbTeam] of dbById) {
+    if (!seen.has(id)) merged.push(dbTeam);
+  }
+  return merged;
+}
+
 /**
  * ステップ1確定後のスナップショットから出場者一覧を組み立てる（ライブエントリー全件取得を省略）。
  */

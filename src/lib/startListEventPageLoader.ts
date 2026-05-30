@@ -17,6 +17,7 @@ import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
 import {
   buildStartListLineupFromEntries,
   buildStartListLineupFromFrozenRounds,
+  overlayLiveTeamMembersFromDb,
 } from "@/lib/buildStartListLineupParticipants";
 import {
   countUniqueParticipantsInFrozenRounds,
@@ -210,6 +211,7 @@ export async function loadStartListEventPage(input: {
   /** org 管理者のみ全種目 bar を取得（当日運用のみアンロックは ops UI だがインライン保存用データなし） */
   const needRoundHeatBarItems = isOrgAdmin && canManageStartListOps;
   const heatPlanConfirmed = Boolean(event.startListHeatPlanConfirmedAt);
+  const isTeamEvent = event.type === "TEAM";
   const hasFrozenHeats = Boolean(
     heatPlanConfirmed &&
       frozenSnapshotRounds?.some((r) => Array.isArray(r.heats) && r.heats.length > 0)
@@ -240,9 +242,10 @@ export async function loadStartListEventPage(input: {
       },
       orderBy: { createdAt: "asc" },
     }),
-    hasFrozenHeats
+    hasFrozenHeats && !isTeamEvent
       ? Promise.resolve([])
-      : prisma.teamEntry.findMany({
+      : isTeamEvent
+        ? prisma.teamEntry.findMany({
       where: { competitionId, eventId },
       select: {
         id: true,
@@ -256,7 +259,8 @@ export async function loadStartListEventPage(input: {
         },
       },
       orderBy: { createdAt: "asc" },
-    }),
+    })
+        : Promise.resolve([]),
     prisma.officialResult.findMany({
       where: { competitionId, eventId },
       select: {
@@ -365,13 +369,17 @@ export async function loadStartListEventPage(input: {
         })
       : null;
 
-  const { individuals, teams, placementIndividualIds, placementTeamIds } =
+  let { individuals, teams, placementIndividualIds, placementTeamIds } =
     frozenLineup ??
     buildStartListLineupFromEntries({
       liveEntries,
       liveTeamEntries,
       participantStatusRows,
     });
+
+  if (isTeamEvent && liveTeamEntries.length > 0) {
+    teams = overlayLiveTeamMembersFromDb(teams, liveTeamEntries);
+  }
 
   const officialRanksByRound: Partial<Record<ResultRound, Record<string, number>>> = {};
   for (const or of officialResults) {
