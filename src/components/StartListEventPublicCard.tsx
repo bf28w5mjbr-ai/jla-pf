@@ -25,6 +25,7 @@ export default function StartListEventPublicCard({
   entryCount,
   initialSettings,
   frozenSnapshotRounds,
+  publicHeatResultOverlays,
   teams,
 }: StartListEventCardProps) {
   const eventId = event.id;
@@ -76,6 +77,18 @@ export default function StartListEventPublicCard({
     ? new Date(archiveRecordedAtIso).toLocaleString("ja-JP")
     : null;
   const withdrawnKeySet = useMemo(() => new Set<string>(), []);
+  const overlayByRound = useMemo(() => {
+    const map = new Map<string, NonNullable<typeof publicHeatResultOverlays>[number]>();
+    for (const overlay of publicHeatResultOverlays ?? []) {
+      map.set(overlay.round, overlay);
+    }
+    return map;
+  }, [publicHeatResultOverlays]);
+  const hasAnyConfirmedHeatResults = (publicHeatResultOverlays ?? []).some(
+    (overlay) => overlay.confirmedHeatIndices.length > 0
+  );
+  const showPendingResultsHint =
+    publicPanels.length > 0 && !hasAnyConfirmedHeatResults;
 
   return (
     <Card className="overflow-hidden border-border/80 py-0 shadow-md">
@@ -111,6 +124,11 @@ export default function StartListEventPublicCard({
           ) : null}
         </div>
         <p className="text-[11px] text-muted-foreground">確定ラウンドのみ表示</p>
+        {showPendingResultsHint ? (
+          <p className="text-[11px] text-muted-foreground">
+            ヒート確定後、順位が表示されます（暫定）
+          </p>
+        ) : null}
         {archiveLabel ? (
           <p className="rounded-md border border-orange-200/80 bg-orange-50/80 px-2.5 py-1 text-[11px] text-orange-950 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-100">
             スナップショット記録: {archiveLabel}
@@ -138,6 +156,7 @@ export default function StartListEventPublicCard({
               eventId={eventId}
               roundBlock={publicPanels[0]!.block}
               withdrawnKeySet={withdrawnKeySet}
+              resultOverlay={overlayByRound.get(publicPanels[0]!.block.round) ?? null}
             />
           </div>
         ) : (
@@ -163,6 +182,7 @@ export default function StartListEventPublicCard({
                   eventId={eventId}
                   roundBlock={panel.block}
                   withdrawnKeySet={withdrawnKeySet}
+                  resultOverlay={overlayByRound.get(panel.block.round) ?? null}
                 />
               </TabsContent>
             ))}

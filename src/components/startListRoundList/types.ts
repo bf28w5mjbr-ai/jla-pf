@@ -21,6 +21,7 @@ export type SnapshotParticipant =
     }
   | {
       kind: "TEAM";
+      teamEntryId?: string;
       teamName: string;
       clubName?: string | null;
       members?: string[];

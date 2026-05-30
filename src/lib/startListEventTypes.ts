@@ -1,6 +1,7 @@
 import type { ResultRound } from "@prisma/client";
 import type { StartListRoundData } from "@/lib/startListRounds";
 import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
+import type { PublicHeatResultRoundOverlay } from "@/lib/startListPublicHeatResults";
 
 export type StartListEventPageIndividual = {
   entryId: string;
@@ -65,6 +66,8 @@ export type StartListEventCardProps = {
   officialRanksByRound: Partial<Record<ResultRound, Record<string, number>>>;
   placementSeed: number;
   frozenSnapshotRounds: StartListRoundData[] | null;
+  /** 一般公開向け: ヒート確定済み公式結果のオーバーレイ */
+  publicHeatResultOverlays?: PublicHeatResultRoundOverlay[];
   participantStatusByKey: Record<string, string>;
   initialParticipantStatusRows: StartListEventParticipantStatusRow[];
   initialRoundIndex: number | null;

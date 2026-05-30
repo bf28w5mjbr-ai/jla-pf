@@ -29,6 +29,7 @@ import {
   resolveStartListPeriodicSyncIntervalSec,
   resolveStartListPublicRefreshIntervalSec,
 } from "@/lib/startListPeriodicSync";
+import { loadPublicHeatResultOverlaysForEvent } from "@/lib/startListPublicHeatResults";
 import { toIsoStringOrNull } from "@/lib/datetimeLocal";
 import type {
   StartListEventCardProps,
@@ -170,6 +171,14 @@ export async function loadStartListEventPage(input: {
       (isTeam ? teams.length : individuals.length);
     const placementFingerprint = `${archiveRecordedAtIso ?? ""}|snapshot-public`;
     const placementSeed = computePlacementSeed(competitionId, eventId, placementFingerprint);
+    const publicHeatResultOverlays = await loadPublicHeatResultOverlaysForEvent(
+      competitionId,
+      eventId
+    );
+    const publicRefreshIntervalSec =
+      competition.status === "ONGOING"
+        ? resolveStartListPeriodicSyncIntervalSec()
+        : resolveStartListPublicRefreshIntervalSec();
 
     return {
       kind: "ok",
@@ -201,6 +210,7 @@ export async function loadStartListEventPage(input: {
         officialRanksByRound: {},
         placementSeed,
         frozenSnapshotRounds,
+        publicHeatResultOverlays,
         participantStatusByKey: {},
         initialParticipantStatusRows: [],
         initialRoundIndex: null,
@@ -212,7 +222,7 @@ export async function loadStartListEventPage(input: {
         },
         periodicSyncEnabled: true,
         periodicSnapshotSync: false,
-        periodicSyncIntervalSec: resolveStartListPublicRefreshIntervalSec(),
+        periodicSyncIntervalSec: publicRefreshIntervalSec,
       },
     };
   }

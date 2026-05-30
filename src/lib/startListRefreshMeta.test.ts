@@ -6,15 +6,17 @@ import {
 } from "./startListRefreshMeta";
 
 describe("parseStartListRefreshMeta", () => {
-  it("JSON から両フィールドを読む", () => {
+  it("JSON から全フィールドを読む", () => {
     expect(
       parseStartListRefreshMeta({
         capturedAtIso: "2026-01-01T00:00:00.000Z",
         teamMembersRevisionIso: "2026-01-02T00:00:00.000Z",
+        officialResultsRevisionIso: "2026-01-03T00:00:00.000Z",
       })
     ).toEqual({
       capturedAtIso: "2026-01-01T00:00:00.000Z",
       teamMembersRevisionIso: "2026-01-02T00:00:00.000Z",
+      officialResultsRevisionIso: "2026-01-03T00:00:00.000Z",
     });
   });
 
@@ -22,6 +24,7 @@ describe("parseStartListRefreshMeta", () => {
     expect(parseStartListRefreshMeta(null)).toEqual({
       capturedAtIso: null,
       teamMembersRevisionIso: null,
+      officialResultsRevisionIso: null,
     });
   });
 });
@@ -30,6 +33,7 @@ describe("shouldRefreshStartListPage", () => {
   const base: StartListRefreshMeta = {
     capturedAtIso: "2026-01-01T00:00:00.000Z",
     teamMembersRevisionIso: "2026-01-02T00:00:00.000Z",
+    officialResultsRevisionIso: "2026-01-03T00:00:00.000Z",
   };
 
   it("初回（prev null）は refresh しない", () => {
@@ -40,7 +44,7 @@ describe("shouldRefreshStartListPage", () => {
     expect(
       shouldRefreshStartListPage(base, {
         ...base,
-        capturedAtIso: "2026-01-03T00:00:00.000Z",
+        capturedAtIso: "2026-01-04T00:00:00.000Z",
       })
     ).toBe(true);
   });
@@ -49,7 +53,16 @@ describe("shouldRefreshStartListPage", () => {
     expect(
       shouldRefreshStartListPage(base, {
         ...base,
-        teamMembersRevisionIso: "2026-01-04T00:00:00.000Z",
+        teamMembersRevisionIso: "2026-01-05T00:00:00.000Z",
+      })
+    ).toBe(true);
+  });
+
+  it("officialResultsRevisionIso のみ変化で refresh", () => {
+    expect(
+      shouldRefreshStartListPage(base, {
+        ...base,
+        officialResultsRevisionIso: "2026-01-06T00:00:00.000Z",
       })
     ).toBe(true);
   });
@@ -62,11 +75,13 @@ describe("shouldRefreshStartListPage", () => {
     const prev: StartListRefreshMeta = {
       capturedAtIso: null,
       teamMembersRevisionIso: null,
+      officialResultsRevisionIso: null,
     };
     expect(
       shouldRefreshStartListPage(prev, {
         capturedAtIso: null,
         teamMembersRevisionIso: "2026-01-05T00:00:00.000Z",
+        officialResultsRevisionIso: null,
       })
     ).toBe(true);
   });
