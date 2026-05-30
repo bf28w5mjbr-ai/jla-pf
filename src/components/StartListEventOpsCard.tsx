@@ -263,7 +263,8 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
                 ? {
                     rows: dayOps.listResultRows,
                     locked: dayOps.listResultLocked,
-                    loading: dayOps.listResultLoading,
+                    loading:
+                      dayOps.listResultLoading && dayOps.listResultRows.length === 0,
                     confirmedHeats: dayOps.listResultConfirmedHeats,
                     onRefetch: dayOps.refetchResultCapture,
                     patchHeatConfirmed: dayOps.patchListResultHeatConfirmed,

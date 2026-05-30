@@ -52,10 +52,10 @@ export function useResultCaptureDraft(args: {
   const [dragSourceParticipantKey, setDragSourceParticipantKey] = useState<string | null>(null);
   const [dragOverParticipantKey, setDragOverParticipantKey] = useState<string | null>(null);
   const [heatResultConfirmTarget, setHeatResultConfirmTarget] = useState<number | null>(null);
-  const [heatResultConfirmBusy, setHeatResultConfirmBusy] = useState(false);
+  const [heatResultConfirmBusyHeat, setHeatResultConfirmBusyHeat] = useState<number | null>(null);
   const [runUpTarget, setRunUpTarget] = useState<number | null>(null);
   const [clearRunUpTarget, setClearRunUpTarget] = useState<number | null>(null);
-  const [runUpBusy, setRunUpBusy] = useState(false);
+  const [runUpBusyHeat, setRunUpBusyHeat] = useState<number | null>(null);
 
   const tieNextHeatIndexRef = useRef<number | null>(null);
   useEffect(() => {
@@ -354,7 +354,7 @@ export function useResultCaptureDraft(args: {
   const runHeatResultRunUp = useCallback(
     async (displayHeatNumber: number) => {
       if (!m || !resultCapture) return;
-      setRunUpBusy(true);
+      setRunUpBusyHeat(displayHeatNumber);
       try {
         const { createdCount } = await postHeatResultRunUp(m.competitionId, {
           eventId,
@@ -368,7 +368,7 @@ export function useResultCaptureDraft(args: {
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "ランアップの登録に失敗しました");
       } finally {
-        setRunUpBusy(false);
+        setRunUpBusyHeat((prev) => (prev === displayHeatNumber ? null : prev));
       }
     },
     [m, resultCapture, eventId]
@@ -377,7 +377,7 @@ export function useResultCaptureDraft(args: {
   const runHeatResultClearRunUp = useCallback(
     async (displayHeatNumber: number) => {
       if (!m || !resultCapture) return;
-      setRunUpBusy(true);
+      setRunUpBusyHeat(displayHeatNumber);
       try {
         const { deletedCount } = await postHeatResultClearRunUp(m.competitionId, {
           eventId,
@@ -390,7 +390,7 @@ export function useResultCaptureDraft(args: {
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "ランアップの解除に失敗しました");
       } finally {
-        setRunUpBusy(false);
+        setRunUpBusyHeat((prev) => (prev === displayHeatNumber ? null : prev));
       }
     },
     [m, resultCapture, eventId]
@@ -438,7 +438,7 @@ export function useResultCaptureDraft(args: {
   const runHeatResultConfirm = useCallback(
     async (displayHeatNumber: number) => {
       if (!m || !resultCapture) return;
-      setHeatResultConfirmBusy(true);
+      setHeatResultConfirmBusyHeat(displayHeatNumber);
 
       const timers = resultDraftPatchTimersRef.current;
       clearTimeout(timers[displayHeatNumber]);
@@ -506,7 +506,7 @@ export function useResultCaptureDraft(args: {
         }
         toast.error(message);
       } finally {
-        setHeatResultConfirmBusy(false);
+        setHeatResultConfirmBusyHeat((prev) => (prev === displayHeatNumber ? null : prev));
       }
     },
     [
@@ -542,12 +542,12 @@ export function useResultCaptureDraft(args: {
     setDragOverParticipantKey,
     heatResultConfirmTarget,
     setHeatResultConfirmTarget,
-    heatResultConfirmBusy,
+    heatResultConfirmBusyHeat,
     runUpTarget,
     setRunUpTarget,
     clearRunUpTarget,
     setClearRunUpTarget,
-    runUpBusy,
+    runUpBusyHeat,
     runHeatResultRunUp,
     runHeatResultClearRunUp,
     handleRankRecorded,

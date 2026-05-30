@@ -143,13 +143,14 @@ export function LiveRoundResultLaneRow({
   const draftChecked = participant
     ? Boolean(resultDraftOps[marshalParticipantKey(participant)])
     : false;
+  const rowDataPending =
+    !participant && !heatConfirmed && (marshal.loading || rc.loading);
   const inRankOrder =
     participantRankKey != null && rankOrderKeys.includes(participantRankKey);
   const canReorderRank = Boolean(
     inRankOrder &&
       !heatConfirmed &&
-      !marshal.loading &&
-      !rc.loading &&
+      !rowDataPending &&
       !captureBlocked
   );
   const canDragRank = canReorderRank && !coarsePointer;
@@ -211,7 +212,7 @@ export function LiveRoundResultLaneRow({
         setDragOverParticipantKey(null);
       }}
     >
-      {marshal.loading || rc.loading ? (
+      {rowDataPending ? (
         <span className="mt-1 size-3.5 shrink-0 animate-pulse rounded bg-muted" aria-hidden />
       ) : heatConfirmed ? (
         <span

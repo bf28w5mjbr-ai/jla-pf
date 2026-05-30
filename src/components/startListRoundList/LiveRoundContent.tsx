@@ -116,12 +116,12 @@ export function LiveRoundContent({
     setDragOverParticipantKey,
     heatResultConfirmTarget,
     setHeatResultConfirmTarget,
-    heatResultConfirmBusy,
+    heatResultConfirmBusyHeat,
     runUpTarget,
     setRunUpTarget,
     clearRunUpTarget,
     setClearRunUpTarget,
-    runUpBusy,
+    runUpBusyHeat,
     runHeatResultRunUp,
     runHeatResultClearRunUp,
     handleRankRecorded,
@@ -252,10 +252,10 @@ export function LiveRoundContent({
           rankOrderKeysForHeat={rankOrderKeysForHeatIndex}
           reorderResultOrder={reorderResultOrder}
           setHeatResultConfirmTarget={setHeatResultConfirmTarget}
-          heatResultConfirmBusy={heatResultConfirmBusy}
+          heatResultConfirmBusyHeat={heatResultConfirmBusyHeat}
           setRunUpTarget={setRunUpTarget}
           setClearRunUpTarget={setClearRunUpTarget}
-          runUpBusy={runUpBusy}
+          runUpBusyHeat={runUpBusyHeat}
           setHeatCloseTarget={setHeatCloseTarget}
           setHeatReopenTarget={setHeatReopenTarget}
           marshalBulkSubmitting={marshalBulkSubmitting}
@@ -276,11 +276,11 @@ export function LiveRoundContent({
         runHeatMarshalReopen={runHeatMarshalReopen}
         heatResultConfirmTarget={heatResultConfirmTarget}
         setHeatResultConfirmTarget={setHeatResultConfirmTarget}
-        heatResultConfirmBusy={heatResultConfirmBusy}
+        heatResultConfirmBusyHeat={heatResultConfirmBusyHeat}
         runHeatResultConfirm={runHeatResultConfirm}
         runUpTarget={runUpTarget}
         setRunUpTarget={setRunUpTarget}
-        runUpBusy={runUpBusy}
+        runUpBusyHeat={runUpBusyHeat}
         runHeatResultRunUp={runHeatResultRunUp}
         clearRunUpTarget={clearRunUpTarget}
         setClearRunUpTarget={setClearRunUpTarget}

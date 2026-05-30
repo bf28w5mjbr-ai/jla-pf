@@ -34,7 +34,6 @@ import {
   marshalParticipantForLane,
   orderIndividualItemsByConfirmedResultRank,
   orderTeamItemsByConfirmedResultRank,
-  effectiveResultSortRank,
   snapshotLaneForIndividual,
   snapshotLaneForTeam,
   StartListParticipantRowBody,
@@ -80,10 +79,10 @@ export type LiveRoundHeatSectionProps = {
   rankOrderKeysForHeat: (heatIndex: number) => string[];
   reorderResultOrder: LiveRoundResultLaneRowProps["onReorderOrder"];
   setHeatResultConfirmTarget: (n: number | null) => void;
-  heatResultConfirmBusy: boolean;
+  heatResultConfirmBusyHeat: number | null;
   setRunUpTarget: (n: number | null) => void;
   setClearRunUpTarget: (n: number | null) => void;
-  runUpBusy: boolean;
+  runUpBusyHeat: number | null;
   setHeatCloseTarget: (n: number | null) => void;
   setHeatReopenTarget: (n: number | null) => void;
   marshalBulkSubmitting: boolean;
@@ -126,10 +125,10 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
     rankOrderKeysForHeat,
     reorderResultOrder,
     setHeatResultConfirmTarget,
-    heatResultConfirmBusy,
+    heatResultConfirmBusyHeat,
     setRunUpTarget,
     setClearRunUpTarget,
-    runUpBusy,
+    runUpBusyHeat,
     setHeatCloseTarget,
     setHeatReopenTarget,
     marshalBulkSubmitting,
@@ -139,6 +138,11 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
   } = props;
 
   const callWindowLoading = Boolean(m && (m.callWindowLoading ?? m.loading));
+  /** 参加者行の初回取得中のみ。バックグラウンド再取得では UI を揺らさない */
+  const marshalParticipantsPending = Boolean(m?.loading && !apiHeat?.participants?.length);
+  const resultCaptureInitialLoading = Boolean(
+    resultCapture?.loading && localResultRows.length === 0
+  );
 
   if (isTeam) {
     const teams = heatItems as TeamItem[];
@@ -246,15 +250,15 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                       size="sm"
                       className="h-6 px-2 text-[10px]"
                       disabled={
-                        m.loading ||
-                        resultCapture.loading ||
+                        marshalParticipantsPending ||
+                        resultCaptureInitialLoading ||
                         resultCapture.locked ||
                         m.marshalOpsBlocked ||
                         marshalRoundMismatch ||
                         !apiHeat ||
                         !heatCallClosed ||
-                        heatResultConfirmBusy ||
-                        runUpBusy
+                        heatResultConfirmBusyHeat === displayHeatNumber ||
+                        runUpBusyHeat === displayHeatNumber
                       }
                       onClick={() => setClearRunUpTarget(displayHeatNumber)}
                     >
@@ -269,15 +273,15 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                       size="sm"
                       className="h-6 px-2 text-[10px]"
                       disabled={
-                        m.loading ||
-                        resultCapture.loading ||
+                        marshalParticipantsPending ||
+                        resultCaptureInitialLoading ||
                         resultCapture.locked ||
                         m.marshalOpsBlocked ||
                         marshalRoundMismatch ||
                         !apiHeat ||
                         !heatCallClosed ||
-                        heatResultConfirmBusy ||
-                        runUpBusy ||
+                        heatResultConfirmBusyHeat === displayHeatNumber ||
+                        runUpBusyHeat === displayHeatNumber ||
                         !runUpApplyEnabled
                       }
                       onClick={() => setRunUpTarget(displayHeatNumber)}
@@ -291,16 +295,16 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                     size="sm"
                     className="h-6 px-2 text-[10px]"
                     disabled={
-                      m.loading ||
-                      resultCapture.loading ||
+                      marshalParticipantsPending ||
+                      resultCaptureInitialLoading ||
                       resultCapture.locked ||
                       m.marshalOpsBlocked ||
                       marshalRoundMismatch ||
                       !apiHeat ||
                       !heatCallClosed ||
                       localConfirmedHeats.includes(displayHeatNumber) ||
-                      heatResultConfirmBusy ||
-                      runUpBusy ||
+                      heatResultConfirmBusyHeat === displayHeatNumber ||
+                      runUpBusyHeat === displayHeatNumber ||
                       !heatResultRanksComplete
                     }
                     onClick={() => setHeatResultConfirmTarget(displayHeatNumber)}
@@ -315,8 +319,8 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                     size="sm"
                     className="h-6 px-2 text-[10px]"
                     disabled={
-                      m.loading ||
-                      resultCapture.loading ||
+                      marshalParticipantsPending ||
+                      resultCaptureInitialLoading ||
                       resultCapture.locked ||
                       m.marshalOpsBlocked ||
                       marshalRoundMismatch ||
@@ -381,9 +385,9 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
             </div>
           ) : null}
         </div>
-        {(callWindowLoading || (resultCaptureVisible && resultCapture?.loading)) ? (
+        {(callWindowLoading || (resultCaptureVisible && resultCaptureInitialLoading)) ? (
           <p className="mt-1 text-[10px] text-muted-foreground">
-            {resultCaptureVisible && resultCapture?.loading && !callWindowLoading
+            {resultCaptureVisible && resultCaptureInitialLoading && !callWindowLoading
               ? "リザルト記録状況を読み込み中…"
               : "マーシャル締切状態を読み込み中…"}
           </p>
@@ -430,48 +434,11 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                     originalIndex: teams.findIndex((x) => x.teamEntryId === team.teamEntryId),
                     fallbackIndex: index,
                   }))
-                : teamForResult
-                    .map((team, index) => {
-                      const originalIndex = teams.findIndex((x) => x.teamEntryId === team.teamEntryId);
-                      const fallbackLane = originalIndex >= 0 ? originalIndex + 1 : index + 1;
-                      const laneIndex0 = originalIndex >= 0 ? originalIndex : index;
-                      const participant =
-                        apiHeat?.participants.find(
-                          (p) =>
-                            p.participantType === "TEAM" && p.teamEntryId === team.teamEntryId
-                        ) ?? marshalParticipantForLane(apiHeat, fallbackLane, laneIndex0);
-                      const rankForSort = effectiveResultSortRank(
-                        displayHeatNumber,
-                        participant,
-                        apiHeat,
-                        localResultRows,
-                        resultDraftOps,
-                        resultInputOrder
-                      );
-                      return {
-                        team,
-                        originalIndex,
-                        fallbackIndex: index,
-                        laneForSort: snapshotLaneForTeam(apiHeat, team.teamEntryId, fallbackLane),
-                        rankForSort: rankForSort ?? null,
-                      };
-                    })
-                    .sort((a, b) => {
-                      const ar = a.rankForSort;
-                      const br = b.rankForSort;
-                      if (ar != null && br != null) {
-                        if (ar !== br) {
-                          return resultInputOrder === "asc" ? ar - br : br - ar;
-                        }
-                        return a.laneForSort - b.laneForSort;
-                      }
-                      if (ar != null || br != null) {
-                        return ar != null ? -1 : 1;
-                      }
-                      return resultInputOrder === "asc"
-                        ? a.laneForSort - b.laneForSort
-                        : b.laneForSort - a.laneForSort;
-                    })).map(({ team, originalIndex, fallbackIndex }) => {
+                : teams.map((team, index) => ({
+                    team,
+                    originalIndex: index,
+                    fallbackIndex: index,
+                  }))).map(({ team, originalIndex, fallbackIndex }) => {
                 const fallLane = originalIndex >= 0 ? originalIndex + 1 : fallbackIndex + 1;
                 const snapLane = snapshotLaneForTeam(apiHeat, team.teamEntryId, fallLane);
                 const laneIndex0 = originalIndex >= 0 ? originalIndex : fallbackIndex;
@@ -603,7 +570,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                 team.clubName
               );
               const mp =
-                m && !m.loading && apiHeat
+                m && !marshalParticipantsPending && apiHeat
                   ? marshalParticipantForLane(apiHeat, lane, index)
                   : undefined;
               const serverSt = foldTeamServerStatusFromMemberKeys(
@@ -756,15 +723,15 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                       size="sm"
                       className="h-6 px-2 text-[10px]"
                       disabled={
-                        m.loading ||
-                        resultCapture.loading ||
+                        marshalParticipantsPending ||
+                        resultCaptureInitialLoading ||
                         resultCapture.locked ||
                         m.marshalOpsBlocked ||
                         marshalRoundMismatch ||
                         !apiHeat ||
                         !heatCallClosed ||
-                        heatResultConfirmBusy ||
-                        runUpBusy
+                        heatResultConfirmBusyHeat === displayHeatNumber ||
+                        runUpBusyHeat === displayHeatNumber
                       }
                       onClick={() => setClearRunUpTarget(displayHeatNumber)}
                     >
@@ -779,15 +746,15 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                       size="sm"
                       className="h-6 px-2 text-[10px]"
                       disabled={
-                        m.loading ||
-                        resultCapture.loading ||
+                        marshalParticipantsPending ||
+                        resultCaptureInitialLoading ||
                         resultCapture.locked ||
                         m.marshalOpsBlocked ||
                         marshalRoundMismatch ||
                         !apiHeat ||
                         !heatCallClosed ||
-                        heatResultConfirmBusy ||
-                        runUpBusy ||
+                        heatResultConfirmBusyHeat === displayHeatNumber ||
+                        runUpBusyHeat === displayHeatNumber ||
                         !runUpApplyEnabled
                       }
                       onClick={() => setRunUpTarget(displayHeatNumber)}
@@ -801,16 +768,16 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                     size="sm"
                     className="h-6 px-2 text-[10px]"
                     disabled={
-                      m.loading ||
-                      resultCapture.loading ||
+                      marshalParticipantsPending ||
+                      resultCaptureInitialLoading ||
                       resultCapture.locked ||
                       m.marshalOpsBlocked ||
                       marshalRoundMismatch ||
                       !apiHeat ||
                       !heatCallClosed ||
                       localConfirmedHeats.includes(displayHeatNumber) ||
-                      heatResultConfirmBusy ||
-                      runUpBusy ||
+                      heatResultConfirmBusyHeat === displayHeatNumber ||
+                      runUpBusyHeat === displayHeatNumber ||
                       !heatResultRanksComplete
                     }
                     onClick={() => setHeatResultConfirmTarget(displayHeatNumber)}
@@ -825,8 +792,8 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                     size="sm"
                     className="h-6 px-2 text-[10px]"
                     disabled={
-                      m.loading ||
-                      resultCapture.loading ||
+                      marshalParticipantsPending ||
+                      resultCaptureInitialLoading ||
                       resultCapture.locked ||
                       m.marshalOpsBlocked ||
                       marshalRoundMismatch ||
@@ -891,9 +858,9 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
             </div>
           ) : null}
         </div>
-        {(callWindowLoading || (resultCaptureVisible && resultCapture?.loading)) ? (
+        {(callWindowLoading || (resultCaptureVisible && resultCaptureInitialLoading)) ? (
           <p className="mt-1 text-[10px] text-muted-foreground">
-            {resultCaptureVisible && resultCapture?.loading && !callWindowLoading
+            {resultCaptureVisible && resultCaptureInitialLoading && !callWindowLoading
               ? "リザルト記録状況を読み込み中…"
               : "マーシャル締切状態を読み込み中…"}
           </p>
@@ -940,49 +907,11 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                     originalIndex: individuals.findIndex((x) => x.entryId === item.entryId),
                     fallbackIndex: index,
                   }))
-                : indForResult
-                    .map((item, index) => {
-                      const originalIndex = individuals.findIndex((x) => x.entryId === item.entryId);
-                      const fallbackLane = originalIndex >= 0 ? originalIndex + 1 : index + 1;
-                      const laneIndex0 = originalIndex >= 0 ? originalIndex : index;
-                      const participant =
-                        apiHeat?.participants.find(
-                          (p) =>
-                            p.participantType === "INDIVIDUAL" &&
-                            p.competitionEntryId === item.entryId
-                        ) ?? marshalParticipantForLane(apiHeat, fallbackLane, laneIndex0);
-                      const rankForSort = effectiveResultSortRank(
-                        displayHeatNumber,
-                        participant,
-                        apiHeat,
-                        localResultRows,
-                        resultDraftOps,
-                        resultInputOrder
-                      );
-                      return {
-                        item,
-                        originalIndex,
-                        fallbackIndex: index,
-                        laneForSort: snapshotLaneForIndividual(apiHeat, item.entryId, fallbackLane),
-                        rankForSort: rankForSort ?? null,
-                      };
-                    })
-                    .sort((a, b) => {
-                      const ar = a.rankForSort;
-                      const br = b.rankForSort;
-                      if (ar != null && br != null) {
-                        if (ar !== br) {
-                          return resultInputOrder === "asc" ? ar - br : br - ar;
-                        }
-                        return a.laneForSort - b.laneForSort;
-                      }
-                      if (ar != null || br != null) {
-                        return ar != null ? -1 : 1;
-                      }
-                      return resultInputOrder === "asc"
-                        ? a.laneForSort - b.laneForSort
-                        : b.laneForSort - a.laneForSort;
-                    })).map(({ item, originalIndex, fallbackIndex }) => {
+                : individuals.map((item, index) => ({
+                    item,
+                    originalIndex: index,
+                    fallbackIndex: index,
+                  }))).map(({ item, originalIndex, fallbackIndex }) => {
                 const fallLane = originalIndex >= 0 ? originalIndex + 1 : fallbackIndex + 1;
                 const snapLane = snapshotLaneForIndividual(apiHeat, item.entryId, fallLane);
                 const laneIndex0 = originalIndex >= 0 ? originalIndex : fallbackIndex;
@@ -1045,7 +974,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
             {individuals.map((item, index) => {
               const lane = index + 1;
               const mp =
-                m && !m.loading && apiHeat
+                m && !marshalParticipantsPending && apiHeat
                   ? marshalParticipantForLane(apiHeat, lane, index)
                   : undefined;
               const serverSt = statusByKey?.[marshalIndividualKey(item.entryId)];

@@ -24,11 +24,11 @@ export type LiveRoundHeatMarshalDialogsProps = {
   runHeatMarshalReopen: (heatIndex: number) => void | Promise<void>;
   heatResultConfirmTarget: number | null;
   setHeatResultConfirmTarget: (n: number | null) => void;
-  heatResultConfirmBusy: boolean;
+  heatResultConfirmBusyHeat: number | null;
   runHeatResultConfirm: (heatIndex: number) => void | Promise<void>;
   runUpTarget: number | null;
   setRunUpTarget: (n: number | null) => void;
-  runUpBusy: boolean;
+  runUpBusyHeat: number | null;
   runHeatResultRunUp: (heatIndex: number) => void | Promise<void>;
   clearRunUpTarget: number | null;
   setClearRunUpTarget: (n: number | null) => void;
@@ -48,11 +48,11 @@ export function LiveRoundHeatMarshalDialogs({
   runHeatMarshalReopen,
   heatResultConfirmTarget,
   setHeatResultConfirmTarget,
-  heatResultConfirmBusy,
+  heatResultConfirmBusyHeat,
   runHeatResultConfirm,
   runUpTarget,
   setRunUpTarget,
-  runUpBusy,
+  runUpBusyHeat,
   runHeatResultRunUp,
   clearRunUpTarget,
   setClearRunUpTarget,
@@ -60,6 +60,14 @@ export function LiveRoundHeatMarshalDialogs({
   marshalResult,
   setMarshalResult,
 }: LiveRoundHeatMarshalDialogsProps) {
+  const heatResultConfirmBusy =
+    heatResultConfirmTarget !== null &&
+    heatResultConfirmBusyHeat === heatResultConfirmTarget;
+  const runUpBusy =
+    runUpTarget !== null && runUpBusyHeat === runUpTarget;
+  const clearRunUpBusy =
+    clearRunUpTarget !== null && runUpBusyHeat === clearRunUpTarget;
+
   return (
     <>
       <AlertDialog
@@ -233,7 +241,7 @@ export function LiveRoundHeatMarshalDialogs({
       <AlertDialog
         open={clearRunUpTarget !== null}
         onOpenChange={(open) => {
-          if (!open && !runUpBusy) setClearRunUpTarget(null);
+          if (!open && !clearRunUpBusy) setClearRunUpTarget(null);
         }}
       >
         <AlertDialogContent className="max-w-md">
@@ -250,20 +258,20 @@ export function LiveRoundHeatMarshalDialogs({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:gap-0">
-            <AlertDialogCancel type="button" disabled={runUpBusy}>
+            <AlertDialogCancel type="button" disabled={clearRunUpBusy}>
               キャンセル
             </AlertDialogCancel>
             <Button
               type="button"
               variant="outline"
-              disabled={runUpBusy || clearRunUpTarget === null}
+              disabled={clearRunUpBusy || clearRunUpTarget === null}
               onClick={() =>
                 clearRunUpTarget !== null
                   ? void runHeatResultClearRunUp(clearRunUpTarget)
                   : undefined
               }
             >
-              {runUpBusy ? "処理中…" : "解除する"}
+              {clearRunUpBusy ? "処理中…" : "解除する"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

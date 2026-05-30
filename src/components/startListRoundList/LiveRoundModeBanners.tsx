@@ -43,6 +43,13 @@ export function LiveRoundModeBanners({
   discardMarshalDrafts,
   submitMarshalDrafts,
 }: LiveRoundModeBannersProps) {
+  const marshalParticipantsPending = Boolean(
+    m?.loading && !m.heats?.some((h) => h.participants.length > 0)
+  );
+  const resultCaptureInitialLoading = Boolean(
+    resultCapture?.loading && (resultCapture.rows.length ?? 0) === 0
+  );
+
   return (
     <>
       {resultCaptureVisible && m && resultCapture ? (
@@ -86,7 +93,10 @@ export function LiveRoundModeBanners({
               </p>
             ) : null}
           </div>
-          {!m.loading && !resultCapture.loading && !m.marshalOpsBlocked && !resultCapture.locked ? (
+          {!marshalParticipantsPending &&
+          !resultCaptureInitialLoading &&
+          !m.marshalOpsBlocked &&
+          !resultCapture.locked ? (
             <p
               className={cn(
                 "rounded-md border px-2 py-1 text-[10px] leading-snug",
