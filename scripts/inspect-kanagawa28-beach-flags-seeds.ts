@@ -6,6 +6,7 @@ import {
   buildDispersedIndividualParticipantHeats,
   computePlacementSeed,
   createStartListRng,
+  type RankedStartListIndividual,
 } from "@/lib/startListHeatPlacement";
 import {
   normalizeRoundTabs,
@@ -52,7 +53,7 @@ async function main() {
     orderBy: { createdAt: "asc" },
   });
 
-  const individuals = [];
+  const individuals: RankedStartListIndividual[] = [];
   for (const entry of entries) {
     if (!entry.items.some((i) => i.eventId === ev.id)) continue;
     if (hasIndividualWithdrawalForEvent(entry.participantStatuses, ev.id)) continue;
@@ -62,6 +63,7 @@ async function main() {
       name: `${entry.user.profile?.familyName ?? ""} ${entry.user.profile?.givenName ?? ""}`.trim(),
       clubId: null as string | null,
       clubName: null as string | null,
+      rank: null,
     });
   }
 
@@ -96,7 +98,10 @@ async function main() {
       officialRanksByRound: null,
       rng,
     });
-    console.log(`\n${capturedAt} heat1 lane1-3:`, heats[0]?.participants.slice(0, 3).map((p) => p.name));
+    console.log(
+      `\n${capturedAt} heat1 lane1-3:`,
+      heats[0]?.participants.slice(0, 3).map((p) => (p.kind === "INDIVIDUAL" ? p.name : "?"))
+    );
   }
 }
 
