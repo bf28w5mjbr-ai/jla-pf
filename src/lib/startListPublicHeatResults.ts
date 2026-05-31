@@ -173,3 +173,81 @@ export function formatPublicHeatResultOverlayLabel(row: PublicHeatResultRowOverl
   }
   return null;
 }
+
+/** 運用側 panelHelpers の確定後ソート（進出→着順→ターミナル）と同等 */
+export function publicConfirmedResultSortTier(
+  row: PublicHeatResultRowOverlay | undefined
+): 0 | 1 | 2 {
+  if (row?.advanceWithoutRank) return 0;
+  if (row?.rank != null) return 1;
+  return 2;
+}
+
+function overlayRowForParticipantKey(
+  overlay: PublicHeatResultRoundOverlay,
+  heatIndex: number,
+  participantKey: string | null
+): PublicHeatResultRowOverlay | undefined {
+  if (!participantKey) return undefined;
+  return overlay.rowsByKey[publicHeatResultOverlayKey(heatIndex, participantKey)];
+}
+
+/** @internal テスト用 */
+export function compareSnapshotParticipantsForConfirmedOverlay(
+  heatIndex: number,
+  overlay: PublicHeatResultRoundOverlay,
+  keyA: string | null,
+  keyB: string | null,
+  snapshotIndexA: number,
+  snapshotIndexB: number
+): number {
+  const rowA = overlayRowForParticipantKey(overlay, heatIndex, keyA);
+  const rowB = overlayRowForParticipantKey(overlay, heatIndex, keyB);
+  const tierA = publicConfirmedResultSortTier(rowA);
+  const tierB = publicConfirmedResultSortTier(rowB);
+  if (tierA !== tierB) return tierA - tierB;
+
+  if (tierA === 0) {
+    return snapshotIndexA - snapshotIndexB || (keyA ?? "").localeCompare(keyB ?? "");
+  }
+  if (tierA === 1) {
+    const rankA = rowA?.rank ?? 100_000;
+    const rankB = rowB?.rank ?? 100_000;
+    return rankA - rankB || (keyA ?? "").localeCompare(keyB ?? "");
+  }
+  return snapshotIndexA - snapshotIndexB || (keyA ?? "").localeCompare(keyB ?? "");
+}
+
+export function sortSnapshotParticipantsForConfirmedOverlay<T>(
+  participants: T[],
+  heatIndex: number,
+  overlay: PublicHeatResultRoundOverlay,
+  keyOf: (participant: T) => string | null
+): T[] {
+  return sortSnapshotParticipantEntriesForConfirmedOverlay(
+    participants.map((participant, snapshotIndex) => ({ participant, snapshotIndex })),
+    heatIndex,
+    overlay,
+    keyOf
+  );
+}
+
+export function sortSnapshotParticipantEntriesForConfirmedOverlay<T>(
+  entries: ReadonlyArray<{ participant: T; snapshotIndex: number }>,
+  heatIndex: number,
+  overlay: PublicHeatResultRoundOverlay,
+  keyOf: (participant: T) => string | null
+): T[] {
+  return [...entries]
+    .sort((a, b) =>
+      compareSnapshotParticipantsForConfirmedOverlay(
+        heatIndex,
+        overlay,
+        keyOf(a.participant),
+        keyOf(b.participant),
+        a.snapshotIndex,
+        b.snapshotIndex
+      )
+    )
+    .map(({ participant }) => participant);
+}

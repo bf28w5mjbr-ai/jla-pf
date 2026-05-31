@@ -6,6 +6,7 @@ import {
   formatPublicHeatResultOverlayLabel,
   officialResultRowParticipantKey,
   publicHeatResultOverlayKey,
+  sortSnapshotParticipantEntriesForConfirmedOverlay,
 } from "@/lib/startListPublicHeatResults";
 import { secondaryClubLabelForTeamRow, secondaryClubLineForIndividual } from "@/lib/startListTeamDisplay";
 import type { SnapshotParticipant, SnapshotRoundBlock } from "./types";
@@ -58,13 +59,27 @@ export function SnapshotRoundContent({
     <div className="space-y-1.5">
       {heatsOrdered.map((heat) => {
         const heatHasConfirmedResults = confirmedHeatSet.has(heat.heatIndex);
-        const visibleParticipants = heat.participants.filter((p) => {
-          const participant = p as SnapshotParticipant;
-          if (participant.kind !== "INDIVIDUAL") return true;
-          const eid = participant.entryId;
-          if (!eid) return true;
-          return !withdrawnKeySet.has(`${eid}:${eventId}`);
-        });
+        const filteredParticipants = heat.participants
+          .map((p, snapshotIndex) => ({ p, snapshotIndex }))
+          .filter(({ p }) => {
+            const participant = p as SnapshotParticipant;
+            if (participant.kind !== "INDIVIDUAL") return true;
+            const eid = participant.entryId;
+            if (!eid) return true;
+            return !withdrawnKeySet.has(`${eid}:${eventId}`);
+          });
+        const visibleParticipants =
+          heatHasConfirmedResults && resultOverlay
+            ? sortSnapshotParticipantEntriesForConfirmedOverlay(
+                filteredParticipants.map(({ p, snapshotIndex }) => ({
+                  participant: p,
+                  snapshotIndex,
+                })),
+                heat.heatIndex,
+                resultOverlay,
+                (p) => snapshotParticipantKey(p as SnapshotParticipant)
+              )
+            : filteredParticipants.map(({ p }) => p);
         return (
           <div
             key={`${eventId}-${roundBlock.round}-heat-${heat.heatIndex}`}
