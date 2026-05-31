@@ -10,7 +10,12 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 const ROUND = ["HEAT", "SEMI", "FINAL"] as const satisfies readonly ResultRound[];
 
-const querySchema = z.object({
+const bulkQuerySchema = z.object({
+  eventId: z.string().min(1),
+  round: z.enum(ROUND),
+});
+
+const singleQuerySchema = z.object({
   eventId: z.string().min(1),
   round: z.enum(ROUND),
   heatIndex: z.coerce.number().int().min(1),
@@ -31,20 +36,60 @@ export async function GET(request: NextRequest, context: RouteContext) {
     await assertDayOpsRecorderWriteAccess(competitionId, request);
 
     const sp = request.nextUrl.searchParams;
-    const parsed = querySchema.safeParse({
-      eventId: sp.get("eventId"),
-      round: sp.get("round"),
-      heatIndex: sp.get("heatIndex"),
+    const heatIndexRaw = sp.get("heatIndex");
+    const eventId = sp.get("eventId");
+    const round = sp.get("round");
+
+    const eventOk = await prisma.event.findFirst({
+      where: { id: eventId ?? "", competitionId },
+      select: { id: true },
+    });
+
+    if (heatIndexRaw == null || heatIndexRaw.trim() === "") {
+      const parsed = bulkQuerySchema.safeParse({ eventId, round });
+      if (!parsed.success) {
+        return NextResponse.json(zodFlattenJsonBody(parsed.error), { status: 400 });
+      }
+      const bulk = parsed.data;
+      if (!eventOk) {
+        return NextResponse.json({ error: "種目が見つかりません" }, { status: 404 });
+      }
+
+      const rows = await prisma.dayOpsHeatOperationDraft.findMany({
+        where: {
+          competitionId,
+          eventId: bulk.eventId,
+          round: bulk.round,
+        },
+        select: {
+          heatIndex: true,
+          marshalDraftPayload: true,
+          resultDraftPayload: true,
+          updatedAt: true,
+        },
+        orderBy: { heatIndex: "asc" },
+      });
+
+      return NextResponse.json({
+        drafts: rows.map((row) => ({
+          heatIndex: row.heatIndex,
+          marshalDraftPayload: row.marshalDraftPayload ?? null,
+          resultDraftPayload: row.resultDraftPayload ?? null,
+          updatedAt: row.updatedAt.toISOString(),
+        })),
+      });
+    }
+
+    const parsed = singleQuerySchema.safeParse({
+      eventId,
+      round,
+      heatIndex: heatIndexRaw,
     });
     if (!parsed.success) {
       return NextResponse.json(zodFlattenJsonBody(parsed.error), { status: 400 });
     }
-    const { eventId, round, heatIndex } = parsed.data;
+    const { eventId: singleEventId, round: singleRound, heatIndex } = parsed.data;
 
-    const eventOk = await prisma.event.findFirst({
-      where: { id: eventId, competitionId },
-      select: { id: true },
-    });
     if (!eventOk) {
       return NextResponse.json({ error: "種目が見つかりません" }, { status: 404 });
     }
@@ -53,8 +98,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
       where: {
         competitionId_eventId_round_heatIndex: {
           competitionId,
-          eventId,
-          round,
+          eventId: singleEventId,
+          round: singleRound,
           heatIndex,
         },
       },
@@ -194,7 +239,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     await assertDayOpsRecorderWriteAccess(competitionId, request);
 
     const sp = request.nextUrl.searchParams;
-    const parsed = querySchema.safeParse({
+    const parsed = singleQuerySchema.safeParse({
       eventId: sp.get("eventId"),
       round: sp.get("round"),
       heatIndex: sp.get("heatIndex"),

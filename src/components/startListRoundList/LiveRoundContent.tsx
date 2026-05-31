@@ -11,6 +11,7 @@ import { useMarshalDraftOps } from "@/hooks/liveRound/useMarshalDraftOps";
 import { useResultCaptureDraft } from "@/hooks/liveRound/useResultCaptureDraft";
 import { useLiveRoundHeatMarshalActions } from "@/hooks/liveRound/useLiveRoundHeatMarshalActions";
 import { useLiveRoundNfc } from "@/hooks/liveRound/useLiveRoundNfc";
+import { resultDraftHeatsSyncKeyFromHeats } from "@/hooks/liveRound/resultCaptureDraftHelpers";
 import { toLiveRoundMarshalContext } from "@/hooks/liveRound/toLiveRoundMarshalContext";
 import type { LiveRoundContentProps } from "./types";
 import { sexLabel } from "./panelHelpers";
@@ -62,6 +63,10 @@ export function LiveRoundContent({
   );
   const resultCapture = m?.resultCapture;
   const resultCaptureVisible = Boolean(resultMode && m && resultCapture);
+  const resultDraftHeatsSyncKey = useMemo(
+    () => resultDraftHeatsSyncKeyFromHeats(m?.heats),
+    [m?.heats]
+  );
 
   const {
     marshalHeatByDisplayNumber,
@@ -138,6 +143,7 @@ export function LiveRoundContent({
     resultDraftSyncActive,
     resultCapture,
     heatsRef,
+    resultDraftHeatsSyncKey,
   });
 
   useEffect(() => {

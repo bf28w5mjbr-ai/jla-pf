@@ -13,10 +13,9 @@ import {
 import { toast } from "sonner";
 import {
   deleteHeatOperationDraftFireAndForget,
-  getHeatOperationDraft,
   isDayOpsResultDraftServerSyncEnabled,
   JLA_DAY_OPS_DRAFT_CHANGED,
-  parseServerResultDraftPayload,
+  listHeatOperationDrafts,
   patchHeatOperationDraftResultPayload,
   patchHeatOperationDraftResultPayloadFireAndForget,
   type HeatResultDraftServerEntry,
@@ -29,6 +28,7 @@ import {
   draftsPendingAppendForHeat,
   rankOrderKeysForHeat,
   rankedParticipantKeysForHeatFromRows,
+  resultDraftOpsForHeatFromServerRow,
 } from "@/hooks/liveRound/resultCaptureDraftHelpers";
 import type { ResultRound } from "@prisma/client";
 import type { LiveRoundMarshalContext, ResultDraftOp } from "@/hooks/liveRound/types";
@@ -55,6 +55,8 @@ export function useResultCaptureDraft(args: {
   resultDraftSyncActive: boolean;
   resultCapture: ResultCaptureSlice | undefined;
   heatsRef: RefObject<HeatMarshalHeatRow[]>;
+  /** 締切済みヒート到着時に pull を再実行するための安定キー */
+  resultDraftHeatsSyncKey?: string;
 }) {
   const {
     eventId,
@@ -64,6 +66,7 @@ export function useResultCaptureDraft(args: {
     resultDraftSyncActive,
     resultCapture,
     heatsRef,
+    resultDraftHeatsSyncKey = "",
   } = args;
 
   const [localResultRows, setLocalResultRows] = useState<HeatResultCaptureRow[]>([]);
@@ -269,45 +272,29 @@ export function useResultCaptureDraft(args: {
         );
       if (heatsToPull.length === 0) return;
 
-      const pulled = await Promise.all(
-        heatsToPull.map(async (hi) => {
-          try {
-            const row = await getHeatOperationDraft(syncCtx.competitionId, {
-              eventId,
-              round: syncCtx.round,
-              heatIndex: hi,
-            });
-            return { hi, row };
-          } catch {
-            return null;
-          }
-        })
-      );
+      const heatsToPullSet = new Set(heatsToPull);
+      let draftRows: Awaited<ReturnType<typeof listHeatOperationDrafts>>;
+      try {
+        draftRows = await listHeatOperationDrafts(syncCtx.competitionId, {
+          eventId,
+          round: syncCtx.round,
+        });
+      } catch {
+        return;
+      }
 
       const updates = new Map<number, Record<string, ResultDraftOp>>();
-      for (const item of pulled) {
-        if (!item) continue;
-        const { hi, row } = item;
-        if (!row.updatedAt) continue;
-        const serverUpdatedMs = Date.parse(row.updatedAt);
-        if (!Number.isFinite(serverUpdatedMs)) continue;
-        if (serverUpdatedMs <= lastLocalResultDraftTouchRef.current) continue;
-        const entries = parseServerResultDraftPayload(row.resultDraftPayload);
-        if (!entries) continue;
-        const entryKeys = Object.keys(entries);
-        if (entryKeys.length === 0) {
-          const hasLocalForHeat = Object.values(resultDraftOpsRef.current).some(
-            (op) => op.heatIndex === hi
-          );
-          if (hasLocalForHeat) continue;
+      for (const row of draftRows) {
+        if (!heatsToPullSet.has(row.heatIndex)) continue;
+        const forHeat = resultDraftOpsForHeatFromServerRow(row.heatIndex, row, {
+          lastLocalTouchMs: lastLocalResultDraftTouchRef.current,
+          hasLocalForHeat: Object.values(resultDraftOpsRef.current).some(
+            (op) => op.heatIndex === row.heatIndex
+          ),
+        });
+        if (forHeat != null) {
+          updates.set(row.heatIndex, forHeat);
         }
-        const forHeat: Record<string, ResultDraftOp> = {};
-        for (const [k, v] of Object.entries(entries)) {
-          if (v && typeof v === "object" && v.heatIndex === hi) {
-            forHeat[k] = v as ResultDraftOp;
-          }
-        }
-        updates.set(hi, forHeat);
       }
 
       if (updates.size === 0) return;
@@ -330,7 +317,7 @@ export function useResultCaptureDraft(args: {
   useEffect(() => {
     if (!resultDraftSyncActive || !isDayOpsResultDraftServerSyncEnabled()) return;
     pullResultDraftsFromServer();
-  }, [resultDraftSyncActive, pullResultDraftsFromServer]);
+  }, [resultDraftSyncActive, resultDraftHeatsSyncKey, pullResultDraftsFromServer]);
 
   useEffect(() => {
     if (resultDraftSyncActive || !isDayOpsResultDraftServerSyncEnabled()) return;

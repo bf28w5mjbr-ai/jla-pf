@@ -1,6 +1,40 @@
+import type { HeatMarshalHeatRow } from "@/components/HeatMarshalLanePanel";
 import type { HeatResultCaptureRow } from "@/lib/heatResultCaptureApi";
 import { participantKeyFromResultRow } from "@/components/startListRoundList/panelHelpers";
 import type { ResultDraftOp } from "@/hooks/liveRound/types";
+import { parseServerResultDraftPayload } from "@/lib/dayOpsHeatOperationDraftSync";
+
+/** マーシャル締切済みヒートの安定キー（pull 再実行トリガー用） */
+export function resultDraftHeatsSyncKeyFromHeats(heats: HeatMarshalHeatRow[] | null | undefined): string {
+  return (heats ?? [])
+    .filter((h) => h.callClosedAt)
+    .map((h) => h.heatIndex)
+    .sort((a, b) => a - b)
+    .join(",");
+}
+
+/** bulk / 単体 GET の 1 ヒート分から resultDraftOps 用エントリを組み立てる */
+export function resultDraftOpsForHeatFromServerRow(
+  heatIndex: number,
+  row: { resultDraftPayload: unknown; updatedAt: string | null },
+  opts: { lastLocalTouchMs: number; hasLocalForHeat: boolean }
+): Record<string, ResultDraftOp> | null {
+  if (!row.updatedAt) return null;
+  const serverUpdatedMs = Date.parse(row.updatedAt);
+  if (!Number.isFinite(serverUpdatedMs)) return null;
+  if (serverUpdatedMs <= opts.lastLocalTouchMs) return null;
+  const entries = parseServerResultDraftPayload(row.resultDraftPayload);
+  if (!entries) return null;
+  const entryKeys = Object.keys(entries);
+  if (entryKeys.length === 0 && opts.hasLocalForHeat) return null;
+  const forHeat: Record<string, ResultDraftOp> = {};
+  for (const [k, v] of Object.entries(entries)) {
+    if (v && typeof v === "object" && v.heatIndex === heatIndex) {
+      forHeat[k] = v as ResultDraftOp;
+    }
+  }
+  return forHeat;
+}
 
 export function countResultDraftsForHeatFromOps(
   ops: Record<string, ResultDraftOp>,

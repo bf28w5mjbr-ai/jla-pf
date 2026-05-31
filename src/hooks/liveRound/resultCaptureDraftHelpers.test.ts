@@ -3,8 +3,65 @@ import {
   countResultDraftsForHeatFromOps,
   draftsPendingAppendForHeat,
   rankedParticipantKeysForHeatFromRows,
+  resultDraftHeatsSyncKeyFromHeats,
+  resultDraftOpsForHeatFromServerRow,
 } from "@/hooks/liveRound/resultCaptureDraftHelpers";
+import type { HeatMarshalHeatRow } from "@/components/HeatMarshalLanePanel";
 import type { ResultDraftOp } from "@/hooks/liveRound/types";
+
+describe("resultDraftHeatsSyncKeyFromHeats", () => {
+  it("returns empty string for no heats", () => {
+    expect(resultDraftHeatsSyncKeyFromHeats([])).toBe("");
+    expect(resultDraftHeatsSyncKeyFromHeats(null)).toBe("");
+    expect(resultDraftHeatsSyncKeyFromHeats(undefined)).toBe("");
+  });
+
+  it("includes only call-closed heats in sorted order", () => {
+    const heats: HeatMarshalHeatRow[] = [
+      { heatIndex: 3, callClosedAt: "2026-05-30T10:00:00.000Z", participants: [] },
+      { heatIndex: 1, callClosedAt: null, participants: [] },
+      { heatIndex: 2, callClosedAt: "2026-05-30T09:00:00.000Z", participants: [] },
+    ];
+    expect(resultDraftHeatsSyncKeyFromHeats(heats)).toBe("2,3");
+  });
+});
+
+describe("resultDraftOpsForHeatFromServerRow", () => {
+  it("returns ops when server is newer than local touch", () => {
+    const ops = resultDraftOpsForHeatFromServerRow(
+      1,
+      {
+        resultDraftPayload: {
+          entries: {
+            "I:e1": {
+              opKey: "I:e1",
+              heatIndex: 1,
+              tieWithPrevious: false,
+              inputOrder: "asc",
+              participantType: "INDIVIDUAL",
+              competitionEntryId: "e1",
+            },
+          },
+        },
+        updatedAt: "2026-05-31T12:00:00.000Z",
+      },
+      { lastLocalTouchMs: Date.parse("2026-05-31T11:00:00.000Z"), hasLocalForHeat: false }
+    );
+    expect(ops?.["I:e1"]?.opKey).toBe("I:e1");
+  });
+
+  it("returns null when server is older than local touch", () => {
+    const ops = resultDraftOpsForHeatFromServerRow(
+      1,
+      {
+        resultDraftPayload: { entries: {} },
+        updatedAt: "2026-05-31T10:00:00.000Z",
+      },
+      { lastLocalTouchMs: Date.parse("2026-05-31T11:00:00.000Z"), hasLocalForHeat: false }
+    );
+    expect(ops).toBeNull();
+  });
+});
 
 describe("countResultDraftsForHeatFromOps", () => {
   it("counts ops for the given heat only", () => {

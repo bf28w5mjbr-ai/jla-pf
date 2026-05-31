@@ -57,6 +57,12 @@ export function useDayOpsStartListPolling({
     lastFingerprintRef.current = null;
   }, [competitionId, eventId]);
 
+  /** ページ復帰直後に fingerprint 待ちせず draft pull を 1 回走らせる */
+  useEffect(() => {
+    if (!enabled) return;
+    refreshRef.current({ draftOnly: true });
+  }, [enabled, competitionId, eventId]);
+
   const refreshIfFingerprintChanged = useCallback(async () => {
     const fp = await fetchDayOpsLiveFingerprint(competitionId, eventId);
     if (fp == null) return;

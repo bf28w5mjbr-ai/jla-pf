@@ -104,6 +104,55 @@ export function parseServerResultDraftPayload(
   return o.entries as Record<string, HeatResultDraftServerEntry>;
 }
 
+export type HeatOperationDraftListItem = {
+  heatIndex: number;
+  marshalDraftPayload: unknown;
+  resultDraftPayload: unknown;
+  updatedAt: string;
+};
+
+export async function listHeatOperationDrafts(
+  competitionId: string,
+  input: { eventId: string; round: string }
+): Promise<HeatOperationDraftListItem[]> {
+  const q = new URLSearchParams({
+    eventId: input.eventId,
+    round: input.round,
+  });
+  const res = await fetch(
+    `/api/competitions/${competitionId}/day-ops/heat-operation-draft?${q}`,
+    { credentials: "same-origin" }
+  );
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    drafts?: unknown;
+  };
+  if (!res.ok) {
+    throw new Error(typeof data.error === "string" ? data.error : "ドラフト一覧の取得に失敗しました");
+  }
+  if (!Array.isArray(data.drafts)) return [];
+  const out: HeatOperationDraftListItem[] = [];
+  for (const item of data.drafts) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as {
+      heatIndex?: unknown;
+      marshalDraftPayload?: unknown;
+      resultDraftPayload?: unknown;
+      updatedAt?: unknown;
+    };
+    const heatIndex = Number(o.heatIndex);
+    if (!Number.isFinite(heatIndex) || heatIndex < 1) continue;
+    if (typeof o.updatedAt !== "string") continue;
+    out.push({
+      heatIndex,
+      marshalDraftPayload: o.marshalDraftPayload ?? null,
+      resultDraftPayload: o.resultDraftPayload ?? null,
+      updatedAt: o.updatedAt,
+    });
+  }
+  return out;
+}
+
 export async function getHeatOperationDraft(
   competitionId: string,
   input: { eventId: string; round: string; heatIndex: number }
