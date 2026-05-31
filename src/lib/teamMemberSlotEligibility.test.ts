@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  filterEligibleMembersForTeamAssignmentEvent,
   isClubMemberEligibleForTeamAssignmentSlot,
   type TeamAssignmentCompetitionJson,
   type TeamAssignmentEventJson,
@@ -69,5 +70,30 @@ describe("isClubMemberEligibleForTeamAssignmentSlot", () => {
         competition: competitionBase(),
       })
     ).toBe(true);
+  });
+});
+
+describe("filterEligibleMembersForTeamAssignmentEvent", () => {
+  it("男子種目では女性を除外する", () => {
+    const members = [
+      {
+        userId: "m1",
+        name: "男子",
+        sex: "MALE" as const,
+        dateOfBirth: "2010-01-01T00:00:00.000Z",
+      },
+      {
+        userId: "f1",
+        name: "女子",
+        sex: "FEMALE" as const,
+        dateOfBirth: "2010-01-01T00:00:00.000Z",
+      },
+    ];
+    const filtered = filterEligibleMembersForTeamAssignmentEvent(
+      members,
+      eventBase({ sex: "MALE", minAge: 10, maxAge: 18 }),
+      competitionBase()
+    );
+    expect(filtered.map((m) => m.userId)).toEqual(["m1"]);
   });
 });

@@ -12,6 +12,7 @@ import {
   prismaCompetitionToTeamAssignmentCompetitionJson,
   prismaEventToTeamAssignmentEventJson,
 } from "@/lib/teamMemberSlotEligibility";
+import { loadTeamAssignmentClubPayload } from "@/lib/teamAssignmentClubData";
 import {
   normalizeMemberSlotsInput,
   resolveTeamRelaySlotCount,
@@ -21,6 +22,104 @@ import {
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
+
+async function assertClubAdminForTeamAssignment(params: {
+  competitionId: string;
+  clubId: string;
+  userId: string;
+}) {
+  const { competitionId, clubId, userId } = params;
+
+  const [membership, competition] = await Promise.all([
+    prisma.membership.findFirst({
+      where: {
+        clubId,
+        userId,
+        status: "APPROVED",
+      },
+      select: {
+        role: true,
+      },
+    }),
+    prisma.competition.findUnique({
+      where: { id: competitionId },
+      select: {
+        id: true,
+        entryEndDate: true,
+        startDate: true,
+        startListSettings: true,
+        ageCategories: {
+          orderBy: { displayOrder: "asc" },
+          select: {
+            id: true,
+            displayOrder: true,
+            eligibleBirthDateFrom: true,
+            eligibleBirthDateTo: true,
+          },
+        },
+      },
+    }),
+  ]);
+
+  if (!membership || !isClubAdminRole(membership.role)) {
+    return {
+      ok: false as const,
+      response: NextResponse.json(
+        { message: "クラブ管理者のみがメンバー割当を操作できます" },
+        { status: 403 }
+      ),
+    };
+  }
+
+  if (!competition) {
+    return {
+      ok: false as const,
+      response: NextResponse.json({ message: "大会が見つかりません" }, { status: 404 }),
+    };
+  }
+
+  return { ok: true as const, competition };
+}
+
+export async function GET(request: NextRequest, context: RouteContext) {
+  const { id: competitionId } = await context.params;
+
+  try {
+    const token = request.cookies.get("session")?.value;
+    const session = token ? await verifySession(token) : null;
+
+    if (!session?.userId) {
+      return NextResponse.json({ message: "認証が必要です" }, { status: 401 });
+    }
+
+    const clubId = request.nextUrl.searchParams.get("clubId");
+    if (!clubId) {
+      return NextResponse.json({ message: "クラブを選択してください" }, { status: 400 });
+    }
+
+    const auth = await assertClubAdminForTeamAssignment({
+      competitionId,
+      clubId,
+      userId: session.userId,
+    });
+    if (!auth.ok) return auth.response;
+
+    const payload = await loadTeamAssignmentClubPayload(prisma, {
+      competitionId,
+      clubId,
+      competitionStartDate: auth.competition.startDate,
+      ageCategories: auth.competition.ageCategories,
+    });
+
+    return NextResponse.json({
+      assignments: payload.assignments,
+      eligibleMembers: payload.eligibleMembers,
+      marshalBlockByTeamEntryId: payload.marshalBlockByTeamEntryId,
+    });
+  } catch (error) {
+    return jsonInternalError500("GET api/competitions/[id]/team-assignments/route.ts", error);
+  }
+}
 
 export async function PUT(request: NextRequest, context: RouteContext) {
   const { id: competitionId } = await context.params;
@@ -44,47 +143,14 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ message: "割当情報が不正です" }, { status: 400 });
     }
 
-    const membership = await prisma.membership.findFirst({
-      where: {
-        clubId,
-        userId: session.userId,
-        status: "APPROVED",
-      },
-      select: {
-        role: true,
-      },
+    const auth = await assertClubAdminForTeamAssignment({
+      competitionId,
+      clubId,
+      userId: session.userId,
     });
+    if (!auth.ok) return auth.response;
 
-    if (!membership || !isClubAdminRole(membership.role)) {
-      return NextResponse.json(
-        { message: "クラブ管理者のみがメンバー割当を更新できます" },
-        { status: 403 }
-      );
-    }
-
-    const competition = await prisma.competition.findUnique({
-      where: { id: competitionId },
-      select: {
-        id: true,
-        entryEndDate: true,
-        startDate: true,
-        startListSettings: true,
-        ageCategories: {
-          orderBy: { displayOrder: "asc" },
-          select: {
-            id: true,
-            displayOrder: true,
-            eligibleBirthDateFrom: true,
-            eligibleBirthDateTo: true,
-          },
-        },
-      },
-    });
-
-    if (!competition) {
-      return NextResponse.json({ message: "大会が見つかりません" }, { status: 404 });
-    }
-
+    const competition = auth.competition;
     const now = new Date();
     const { open: isAssignmentWindowOpen } = await getTeamMemberAssignmentWindowState(
       prisma,
@@ -182,11 +248,22 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       }
     }
 
-    const marshalBlockMap = await getTeamEntryMarshalAssignmentBlockedMap(
-      prisma,
-      competitionId,
-      teamEntries.map((t) => ({ id: t.id, eventId: t.eventId }))
-    );
+    const teamEntryRefs = teamEntries.map((t) => ({ id: t.id, eventId: t.eventId }));
+
+    const [marshalBlockMap, eligibleEntries] = await Promise.all([
+      getTeamEntryMarshalAssignmentBlockedMap(prisma, competitionId, teamEntryRefs),
+      prisma.competitionEntry.findMany({
+        where: {
+          competitionId,
+          clubId,
+          status: "SUBMITTED",
+        },
+        select: {
+          userId: true,
+        },
+      }),
+    ]);
+
     const assignmentsToApply = normalizedAssignments.filter(
       (assignment) => !marshalBlockMap.get(assignment.teamEntryId)
     );
@@ -200,16 +277,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const eligibleEntries = await prisma.competitionEntry.findMany({
-      where: {
-        competitionId,
-        clubId,
-        status: "SUBMITTED",
-      },
-      select: {
-        userId: true,
-      },
-    });
     const eligibleUserIds = new Set(eligibleEntries.map((entry) => entry.userId));
 
     const hasIneligibleUser = assignmentsToApply.some((assignment) =>

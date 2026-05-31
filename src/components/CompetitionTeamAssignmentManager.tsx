@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Building2,
   CalendarClock,
@@ -24,12 +23,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import type { Sex } from "@prisma/client";
-import {
-  isClubMemberEligibleForTeamAssignmentSlot,
-  type TeamAssignmentCompetitionJson,
-  type TeamAssignmentEventJson,
-} from "@/lib/teamMemberSlotEligibility";
+import type { TeamAssignmentCompetitionJson } from "@/lib/teamMemberSlotEligibility";
 import {
   type TeamEntryAssignmentDto,
   validateMemberSlotsForSave,
@@ -43,29 +37,20 @@ type ClubOption = {
   name: string;
 };
 
-type EligibleMember = {
-  userId: string;
-  name: string;
-  sex: Sex;
-  dateOfBirth: string | null;
-};
-
 type TeamEntryAssignment = TeamEntryAssignmentDto;
 
 type Props = {
   competitionId: string;
   clubs: ClubOption[];
   assignmentsByClub: Record<string, TeamEntryAssignment[]>;
-  eligibleMembersByClub: Record<string, EligibleMember[]>;
+  eligibleMembersByClub: Record<string, { userId: string; name: string }[]>;
   isAssignmentWindowOpen: boolean;
   assignmentDeadlineLabel: string;
-  /** チームがスタートリスト上で乗るヒートのマーシャル締切済みなら true（編集不可） */
   marshalBlockByTeamEntryId?: Record<string, boolean>;
-  /** URL の `?clubId=` と同期（クラブ詳細からの導線用） */
   initialClubId?: string | null;
-  /** 種目ごとの性別・年齢候補絞り込み（未指定なら従来どおり全員を表示） */
   teamAssignmentCompetition?: TeamAssignmentCompetitionJson | null;
-  teamAssignmentEventsById?: Record<string, TeamAssignmentEventJson> | null;
+  /** 複数クラブ管理者向け: 初回未ロードのクラブは切替時に GET で取得 */
+  lazyLoadClubs?: boolean;
 };
 
 function slotLabel(assignment: TeamEntryAssignment, index: number): string {
@@ -85,27 +70,148 @@ function countTotalSlots(assignments: TeamEntryAssignment[]): number {
   return assignments.reduce((acc, a) => acc + a.memberSlots.length, 0);
 }
 
-function memberOptionDisabledReason(params: {
-  member: EligibleMember;
+function slotOptionDisabledReason(params: {
+  memberUserId: string;
   selectedUserId: string | null;
   takenElsewhere: Set<string>;
-  eventJson: TeamAssignmentEventJson | undefined;
-  competitionJson: TeamAssignmentCompetitionJson | undefined;
 }): string | null {
-  const { member, selectedUserId, takenElsewhere, eventJson, competitionJson } = params;
-  if (takenElsewhere.has(member.userId) && member.userId !== selectedUserId) {
+  const { memberUserId, selectedUserId, takenElsewhere } = params;
+  if (takenElsewhere.has(memberUserId) && memberUserId !== selectedUserId) {
     return "他ポジションに配属済み";
   }
-  if (!eventJson || !competitionJson) return null;
-  if (member.userId === selectedUserId) return null;
-  const ok = isClubMemberEligibleForTeamAssignmentSlot({
-    memberSex: member.sex,
-    memberDateOfBirth: member.dateOfBirth ? new Date(member.dateOfBirth) : null,
-    event: eventJson,
-    competition: competitionJson,
-  });
-  return ok ? null : "種目の条件外";
+  return null;
 }
+
+type TeamAssignmentCardProps = {
+  assignment: TeamEntryAssignment;
+  marshalBlocked: boolean;
+  isAssignmentWindowOpen: boolean;
+  onSlotChange: (teamEntryId: string, slotIndex: number, userId: string | null) => void;
+};
+
+const TeamAssignmentCard = memo(function TeamAssignmentCard({
+  assignment,
+  marshalBlocked,
+  isAssignmentWindowOpen,
+  onSlotChange,
+}: TeamAssignmentCardProps) {
+  const slotOptionsByIndex = useMemo(() => {
+    return assignment.memberSlots.map((selectedUserId, slotIndex) => {
+      const takenElsewhere = new Set(
+        assignment.memberSlots
+          .map((uid, i) => (i !== slotIndex && uid ? uid : null))
+          .filter((x): x is string => Boolean(x))
+      );
+      return assignment.eligibleMembers.map((member) => ({
+        member,
+        reason: slotOptionDisabledReason({
+          memberUserId: member.userId,
+          selectedUserId,
+          takenElsewhere,
+        }),
+      }));
+    });
+  }, [assignment.eligibleMembers, assignment.memberSlots]);
+
+  return (
+    <div
+      className={cn(
+        "overflow-hidden rounded-xl border bg-card shadow-sm transition-shadow",
+        marshalBlocked
+          ? "border-amber-500/35 border-l-4 border-l-amber-500/70"
+          : "border-border/80 border-l-4 border-l-primary/45"
+      )}
+    >
+      <div className="border-b border-border/60 bg-gradient-to-r from-muted/50 to-transparent px-4 py-3 sm:px-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 space-y-1">
+            <p className="text-base font-semibold leading-snug text-foreground">
+              {assignment.eventName}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              チーム <span className="font-medium text-foreground">{assignment.teamName}</span>
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="font-normal">
+              {assignment.sexLabel}
+            </Badge>
+            <Badge variant="secondary" className="tabular-nums">
+              {assignment.memberSlots.length} 枠
+            </Badge>
+            {assignment.relayPositionCount == null ? (
+              <span className="text-xs text-muted-foreground">種目のポジション数は未設定</span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      {marshalBlocked ? (
+        <div className="flex items-start gap-2 border-b border-amber-200/80 bg-amber-50/90 px-4 py-2.5 text-xs text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-50 sm:px-5">
+          <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <span className="leading-relaxed">
+            このチームが乗るヒートはマーシャル締切済みのため、メンバーを変更できません。
+          </span>
+        </div>
+      ) : null}
+      <div className="divide-y divide-border/50">
+        {assignment.memberSlots.map((selectedUserId, slotIndex) => {
+          const options = slotOptionsByIndex[slotIndex] ?? [];
+          return (
+            <div
+              key={`${assignment.teamEntryId}-slot-${slotIndex}`}
+              className={cn(
+                "flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-4",
+                slotIndex % 2 === 1 && "bg-muted/25"
+              )}
+            >
+              <div className="flex min-w-0 items-center gap-3 sm:w-[min(100%,14rem)] sm:shrink-0">
+                <span
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold tabular-nums text-muted-foreground"
+                  aria-hidden
+                >
+                  {slotIndex + 1}
+                </span>
+                <span className="truncate text-sm font-medium text-foreground">
+                  {slotLabel(assignment, slotIndex)}
+                </span>
+              </div>
+              <div className="min-w-0 flex-1 sm:max-w-xl">
+                <Select
+                  value={selectedUserId ?? EMPTY_SLOT_VALUE}
+                  onValueChange={(v) =>
+                    onSlotChange(
+                      assignment.teamEntryId,
+                      slotIndex,
+                      v === EMPTY_SLOT_VALUE ? null : v
+                    )
+                  }
+                  disabled={!isAssignmentWindowOpen || marshalBlocked}
+                >
+                  <SelectTrigger className="h-11 w-full">
+                    <SelectValue placeholder="メンバーを選択" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={EMPTY_SLOT_VALUE}>未選択</SelectItem>
+                    {options.map(({ member, reason }) => (
+                      <SelectItem
+                        key={`${assignment.teamEntryId}-${slotIndex}-${member.userId}`}
+                        value={member.userId}
+                        disabled={Boolean(reason)}
+                      >
+                        {member.name}
+                        {reason ? `（${reason}）` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
 
 export default function CompetitionTeamAssignmentManager({
   competitionId,
@@ -114,12 +220,10 @@ export default function CompetitionTeamAssignmentManager({
   eligibleMembersByClub,
   isAssignmentWindowOpen,
   assignmentDeadlineLabel,
-  marshalBlockByTeamEntryId = {},
+  marshalBlockByTeamEntryId: initialMarshalBlockByTeamEntryId = {},
   initialClubId,
-  teamAssignmentCompetition = null,
-  teamAssignmentEventsById = null,
+  lazyLoadClubs = false,
 }: Props) {
-  const router = useRouter();
   const [selectedClubId, setSelectedClubId] = useState(() => {
     if (initialClubId && clubs.some((c) => c.id === initialClubId)) {
       return initialClubId;
@@ -128,21 +232,103 @@ export default function CompetitionTeamAssignmentManager({
   });
   const [draftAssignments, setDraftAssignments] =
     useState<Record<string, TeamEntryAssignment[]>>(assignmentsByClub);
+  const [eligibleMembersByClubState, setEligibleMembersByClubState] =
+    useState(eligibleMembersByClub);
+  const [marshalBlockByTeamEntryId, setMarshalBlockByTeamEntryId] = useState(
+    initialMarshalBlockByTeamEntryId
+  );
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingClub, setIsLoadingClub] = useState(false);
+  const [dirtyTeamEntryIds, setDirtyTeamEntryIds] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
   const draftDirtyRef = useRef(false);
+  const loadedClubIdsRef = useRef<Set<string>>(
+    new Set(
+      [
+        initialClubId,
+        ...Object.keys(assignmentsByClub).filter(
+          (clubId) => assignmentsByClub[clubId] !== undefined
+        ),
+      ].filter(Boolean) as string[]
+    )
+  );
+  const savedAssignmentsByTeamEntryRef = useRef<Map<string, (string | null)[]>>(new Map());
+
+  const seedSavedSnapshot = useCallback((assignments: Record<string, TeamEntryAssignment[]>) => {
+    const map = new Map<string, (string | null)[]>();
+    for (const list of Object.values(assignments)) {
+      for (const a of list) {
+        map.set(a.teamEntryId, [...a.memberSlots]);
+      }
+    }
+    savedAssignmentsByTeamEntryRef.current = map;
+  }, []);
+
+  useEffect(() => {
+    seedSavedSnapshot(assignmentsByClub);
+  }, [assignmentsByClub, seedSavedSnapshot]);
 
   useEffect(() => {
     if (draftDirtyRef.current) return;
     setDraftAssignments(assignmentsByClub);
-  }, [assignmentsByClub]);
+    setEligibleMembersByClubState(eligibleMembersByClub);
+    setMarshalBlockByTeamEntryId(initialMarshalBlockByTeamEntryId);
+  }, [assignmentsByClub, eligibleMembersByClub, initialMarshalBlockByTeamEntryId]);
+
+  const loadClubData = useCallback(
+    async (clubId: string) => {
+      if (!lazyLoadClubs || loadedClubIdsRef.current.has(clubId)) return;
+      setIsLoadingClub(true);
+      try {
+        const response = await fetch(
+          `/api/competitions/${competitionId}/team-assignments?clubId=${encodeURIComponent(clubId)}`
+        );
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || "クラブの割当情報の取得に失敗しました");
+        }
+        loadedClubIdsRef.current.add(clubId);
+        setDraftAssignments((prev) => ({
+          ...prev,
+          [clubId]: data.assignments ?? [],
+        }));
+        setEligibleMembersByClubState((prev) => ({
+          ...prev,
+          [clubId]: data.eligibleMembers ?? [],
+        }));
+        setMarshalBlockByTeamEntryId((prev) => ({
+          ...prev,
+          ...(data.marshalBlockByTeamEntryId ?? {}),
+        }));
+        const nextSaved = new Map(savedAssignmentsByTeamEntryRef.current);
+        for (const a of data.assignments ?? []) {
+          nextSaved.set(a.teamEntryId, [...a.memberSlots]);
+        }
+        savedAssignmentsByTeamEntryRef.current = nextSaved;
+      } catch (error) {
+        console.error("Team assignment club load error:", error);
+        toast.error(
+          error instanceof Error ? error.message : "クラブの割当情報の取得に失敗しました"
+        );
+      } finally {
+        setIsLoadingClub(false);
+      }
+    },
+    [competitionId, lazyLoadClubs]
+  );
+
+  useEffect(() => {
+    if (selectedClubId) void loadClubData(selectedClubId);
+  }, [selectedClubId, loadClubData]);
 
   const currentAssignments = useMemo(
     () => draftAssignments[selectedClubId] ?? [],
     [draftAssignments, selectedClubId]
   );
   const eligibleMembers = useMemo(
-    () => eligibleMembersByClub[selectedClubId] ?? [],
-    [eligibleMembersByClub, selectedClubId]
+    () => eligibleMembersByClubState[selectedClubId] ?? [],
+    [eligibleMembersByClubState, selectedClubId]
   );
   const selectedClubLabel = useMemo(
     () => clubs.find((c) => c.id === selectedClubId)?.name ?? "",
@@ -170,27 +356,31 @@ export default function CompetitionTeamAssignmentManager({
     [currentAssignments]
   );
 
-  const setSlotUser = (teamEntryId: string, slotIndex: number, userId: string | null) => {
-    draftDirtyRef.current = true;
-    setDraftAssignments((prev) => ({
-      ...prev,
-      [selectedClubId]: (prev[selectedClubId] ?? []).map((assignment) => {
-        if (assignment.teamEntryId !== teamEntryId) return assignment;
-        const nextSlots = [...assignment.memberSlots];
-        if (slotIndex < 0 || slotIndex >= nextSlots.length) return assignment;
+  const setSlotUser = useCallback(
+    (teamEntryId: string, slotIndex: number, userId: string | null) => {
+      draftDirtyRef.current = true;
+      setDirtyTeamEntryIds((prev) => new Set(prev).add(teamEntryId));
+      setDraftAssignments((prev) => ({
+        ...prev,
+        [selectedClubId]: (prev[selectedClubId] ?? []).map((assignment) => {
+          if (assignment.teamEntryId !== teamEntryId) return assignment;
+          const nextSlots = [...assignment.memberSlots];
+          if (slotIndex < 0 || slotIndex >= nextSlots.length) return assignment;
 
-        if (userId) {
-          for (let i = 0; i < nextSlots.length; i++) {
-            if (i !== slotIndex && nextSlots[i] === userId) {
-              nextSlots[i] = null;
+          if (userId) {
+            for (let i = 0; i < nextSlots.length; i++) {
+              if (i !== slotIndex && nextSlots[i] === userId) {
+                nextSlots[i] = null;
+              }
             }
           }
-        }
-        nextSlots[slotIndex] = userId;
-        return { ...assignment, memberSlots: nextSlots };
-      }),
-    }));
-  };
+          nextSlots[slotIndex] = userId;
+          return { ...assignment, memberSlots: nextSlots };
+        }),
+      }));
+    },
+    [selectedClubId]
+  );
 
   const editableAssignments = useMemo(
     () =>
@@ -210,6 +400,12 @@ export default function CompetitionTeamAssignmentManager({
     return null;
   }, [editableAssignments]);
 
+  const assignmentsToSave = useMemo(
+    () =>
+      editableAssignments.filter((assignment) => dirtyTeamEntryIds.has(assignment.teamEntryId)),
+    [editableAssignments, dirtyTeamEntryIds]
+  );
+
   const handleSave = async () => {
     if (!selectedClubId) {
       toast.error("クラブを選択してください");
@@ -221,9 +417,8 @@ export default function CompetitionTeamAssignmentManager({
       return;
     }
 
-    const assignmentsToSave = editableAssignments;
     if (assignmentsToSave.length === 0) {
-      toast.error("編集可能なチームがありません");
+      toast.error("保存する変更がありません");
       return;
     }
 
@@ -249,13 +444,18 @@ export default function CompetitionTeamAssignmentManager({
       }
 
       draftDirtyRef.current = false;
-      setDraftAssignments((prev) => ({
-        ...prev,
-        [selectedClubId]: currentAssignments,
-      }));
+      setDirtyTeamEntryIds((prev) => {
+        const next = new Set(prev);
+        for (const assignment of assignmentsToSave) {
+          next.delete(assignment.teamEntryId);
+          savedAssignmentsByTeamEntryRef.current.set(assignment.teamEntryId, [
+            ...assignment.memberSlots,
+          ]);
+        }
+        return next;
+      });
       toast.success("チームメンバー割当を更新しました");
       notifyStartListTeamMembersChanged(competitionId);
-      router.refresh();
     } catch (error) {
       console.error("Team assignment save error:", error);
       toast.error(
@@ -270,7 +470,8 @@ export default function CompetitionTeamAssignmentManager({
     isAssignmentWindowOpen &&
     hasEditableTeam &&
     currentAssignments.length > 0 &&
-    !saveValidationError;
+    !saveValidationError &&
+    assignmentsToSave.length > 0;
 
   const statusKind = !isAssignmentWindowOpen
     ? "closed"
@@ -278,7 +479,7 @@ export default function CompetitionTeamAssignmentManager({
       ? "empty"
       : allTeamsMarshalBlocked
         ? "marshal"
-        : canSaveAssignments
+        : canSaveAssignments || (hasEditableTeam && !saveValidationError)
           ? "open"
           : "marshal";
 
@@ -287,15 +488,19 @@ export default function CompetitionTeamAssignmentManager({
 
   const saveDisabledReason = isSaving
     ? null
-    : !isAssignmentWindowOpen
-      ? "エントリー終了後から保存できます"
-      : currentAssignments.length === 0
-        ? "チームエントリーがありません"
-        : !hasEditableTeam
-          ? "編集可能なチームがありません"
-          : saveValidationError
-            ? saveValidationError
-            : null;
+    : isLoadingClub
+      ? "クラブの割当情報を読み込み中です"
+      : !isAssignmentWindowOpen
+        ? "エントリー終了後から保存できます"
+        : currentAssignments.length === 0
+          ? "チームエントリーがありません"
+          : !hasEditableTeam
+            ? "編集可能なチームがありません"
+            : saveValidationError
+              ? saveValidationError
+              : assignmentsToSave.length === 0
+                ? "変更がありません"
+                : null;
 
   return (
     <div className="space-y-6">
@@ -388,6 +593,7 @@ export default function CompetitionTeamAssignmentManager({
                     value={selectedClubId}
                     onValueChange={(clubId) => {
                       draftDirtyRef.current = false;
+                      setDirtyTeamEntryIds(new Set());
                       setSelectedClubId(clubId);
                     }}
                   >
@@ -449,7 +655,11 @@ export default function CompetitionTeamAssignmentManager({
             </div>
           </div>
 
-          {currentAssignments.length === 0 ? (
+          {isLoadingClub ? (
+            <div className="flex min-h-[8rem] items-center justify-center rounded-xl border border-dashed border-border/80 bg-muted/20 px-6 py-10 text-sm text-muted-foreground">
+              クラブの割当情報を読み込んでいます…
+            </div>
+          ) : currentAssignments.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/80 bg-gradient-to-b from-muted/30 to-muted/10 px-6 py-14 text-center">
               <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground shadow-inner">
                 <Users className="h-7 w-7" aria-hidden />
@@ -471,126 +681,15 @@ export default function CompetitionTeamAssignmentManager({
             </div>
           ) : (
             <div className="space-y-5">
-              {currentAssignments.map((assignment) => {
-                const teamMarshalBlocked = Boolean(marshalBlockByTeamEntryId[assignment.teamEntryId]);
-                return (
-                <div
+              {currentAssignments.map((assignment) => (
+                <TeamAssignmentCard
                   key={assignment.teamEntryId}
-                  className={cn(
-                    "overflow-hidden rounded-xl border bg-card shadow-sm transition-shadow",
-                    teamMarshalBlocked
-                      ? "border-amber-500/35 border-l-4 border-l-amber-500/70"
-                      : "border-border/80 border-l-4 border-l-primary/45"
-                  )}
-                >
-                  <div className="border-b border-border/60 bg-gradient-to-r from-muted/50 to-transparent px-4 py-3 sm:px-5">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0 space-y-1">
-                        <p className="text-base font-semibold leading-snug text-foreground">
-                          {assignment.eventName}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          チーム <span className="font-medium text-foreground">{assignment.teamName}</span>
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline" className="font-normal">
-                          {assignment.sexLabel}
-                        </Badge>
-                        <Badge variant="secondary" className="tabular-nums">
-                          {assignment.memberSlots.length} 枠
-                        </Badge>
-                        {assignment.relayPositionCount == null ? (
-                          <span className="text-xs text-muted-foreground">種目のポジション数は未設定</span>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                  {teamMarshalBlocked ? (
-                    <div className="flex items-start gap-2 border-b border-amber-200/80 bg-amber-50/90 px-4 py-2.5 text-xs text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-50 sm:px-5">
-                      <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                      <span className="leading-relaxed">
-                        このチームが乗るヒートはマーシャル締切済みのため、メンバーを変更できません。
-                      </span>
-                    </div>
-                  ) : null}
-                  <div className="divide-y divide-border/50">
-                    {assignment.memberSlots.map((selectedUserId, slotIndex) => {
-                      const takenElsewhere = new Set(
-                        assignment.memberSlots
-                          .map((uid, i) => (i !== slotIndex && uid ? uid : null))
-                          .filter((x): x is string => Boolean(x))
-                      );
-                      const eventJson = teamAssignmentEventsById?.[assignment.eventId];
-                      const competitionJson = teamAssignmentCompetition ?? undefined;
-                      return (
-                        <div
-                          key={`${assignment.teamEntryId}-slot-${slotIndex}`}
-                          className={cn(
-                            "flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-4",
-                            slotIndex % 2 === 1 && "bg-muted/25"
-                          )}
-                        >
-                          <div className="flex min-w-0 items-center gap-3 sm:w-[min(100%,14rem)] sm:shrink-0">
-                            <span
-                              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold tabular-nums text-muted-foreground"
-                              aria-hidden
-                            >
-                              {slotIndex + 1}
-                            </span>
-                            <span className="truncate text-sm font-medium text-foreground">
-                              {slotLabel(assignment, slotIndex)}
-                            </span>
-                          </div>
-                          <div className="min-w-0 flex-1 sm:max-w-xl">
-                            <Select
-                              value={selectedUserId ?? EMPTY_SLOT_VALUE}
-                              onValueChange={(v) =>
-                                setSlotUser(
-                                  assignment.teamEntryId,
-                                  slotIndex,
-                                  v === EMPTY_SLOT_VALUE ? null : v
-                                )
-                              }
-                              disabled={
-                                !isAssignmentWindowOpen ||
-                                Boolean(marshalBlockByTeamEntryId[assignment.teamEntryId])
-                              }
-                            >
-                              <SelectTrigger className="h-11 w-full">
-                                <SelectValue placeholder="メンバーを選択" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value={EMPTY_SLOT_VALUE}>未選択</SelectItem>
-                                {eligibleMembers.map((member) => {
-                                  const reason = memberOptionDisabledReason({
-                                    member,
-                                    selectedUserId,
-                                    takenElsewhere,
-                                    eventJson,
-                                    competitionJson,
-                                  });
-                                  return (
-                                    <SelectItem
-                                      key={`${assignment.teamEntryId}-${slotIndex}-${member.userId}`}
-                                      value={member.userId}
-                                      disabled={Boolean(reason)}
-                                    >
-                                      {member.name}
-                                      {reason ? `（${reason}）` : ""}
-                                    </SelectItem>
-                                  );
-                                })}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-                );
-              })}
+                  assignment={assignment}
+                  marshalBlocked={Boolean(marshalBlockByTeamEntryId[assignment.teamEntryId])}
+                  isAssignmentWindowOpen={isAssignmentWindowOpen}
+                  onSlotChange={setSlotUser}
+                />
+              ))}
             </div>
           )}
 

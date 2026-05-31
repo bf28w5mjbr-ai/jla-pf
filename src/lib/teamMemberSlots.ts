@@ -1,3 +1,5 @@
+import type { TeamAssignmentEligibleMemberJson } from "@/lib/teamMemberSlotEligibility";
+
 /** エントリー提出時に付与される内部マーカー（割当 UI・スタートリスト表示対象外） */
 export const TEAM_ENTRY_APPLICANT_ROLE = "申請者";
 
@@ -16,6 +18,8 @@ export type TeamEntryAssignmentDto = {
   relayPositionCount: number | null;
   relayPositionLabels: string[];
   memberSlots: (string | null)[];
+  /** 種目条件を満たす候補（現在割当中のメンバーを含む） */
+  eligibleMembers: TeamAssignmentEligibleMemberJson[];
 };
 
 export function isAssignableTeamEntryMember(member: { role?: string | null }): boolean {

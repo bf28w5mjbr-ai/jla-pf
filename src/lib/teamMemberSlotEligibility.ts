@@ -2,6 +2,13 @@ import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityA
 import { meetsCompetitionEventAgeEligibility } from "@/lib/competitionEventAgeEligibility";
 import type { Sex } from "@prisma/client";
 
+export type TeamAssignmentEligibleMemberJson = {
+  userId: string;
+  name: string;
+  sex: Sex;
+  dateOfBirth: string | null;
+};
+
 export type TeamAssignmentCompetitionJson = {
   startDate: string;
   ageCategories: {
@@ -55,6 +62,22 @@ export function isClubMemberEligibleForTeamAssignmentSlot(params: {
     userDateOfBirth: memberDateOfBirth,
     seasonalAgeYears,
   });
+}
+
+/** 種目条件を満たす候補メンバー（割当 UI 用） */
+export function filterEligibleMembersForTeamAssignmentEvent(
+  members: readonly TeamAssignmentEligibleMemberJson[],
+  event: TeamAssignmentEventJson,
+  competition: TeamAssignmentCompetitionJson
+): TeamAssignmentEligibleMemberJson[] {
+  return members.filter((member) =>
+    isClubMemberEligibleForTeamAssignmentSlot({
+      memberSex: member.sex,
+      memberDateOfBirth: member.dateOfBirth ? new Date(member.dateOfBirth) : null,
+      event,
+      competition,
+    })
+  );
 }
 
 /** Prisma の Event 行（割当に必要な列）をクライアント／API で共通利用する JSON に */

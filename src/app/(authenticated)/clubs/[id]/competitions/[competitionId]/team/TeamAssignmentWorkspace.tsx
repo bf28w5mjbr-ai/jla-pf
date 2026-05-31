@@ -6,15 +6,12 @@ import {
   getTeamEntryMarshalAssignmentBlockedMap,
   getTeamMemberAssignmentWindowState,
 } from "@/lib/teamMemberAssignmentWindow";
+import { prismaCompetitionToTeamAssignmentCompetitionJson } from "@/lib/teamMemberSlotEligibility";
 import {
-  prismaCompetitionToTeamAssignmentCompetitionJson,
-  prismaEventToTeamAssignmentEventJson,
-} from "@/lib/teamMemberSlotEligibility";
-import {
-  buildMemberSlotsFromDb,
-  parseRelayPositionNames,
-  resolveTeamRelaySlotCount,
-} from "@/lib/teamMemberSlots";
+  buildAssignmentsForClub,
+  buildTeamAssignmentEventsByIdFromEntries,
+  mapEligibleEntriesToMembers,
+} from "@/lib/teamAssignmentClubData";
 
 type ClubOption = {
   id: string;
@@ -54,19 +51,6 @@ export default async function TeamAssignmentWorkspace({
           eligibleBirthDateTo: true,
         },
       },
-      events: {
-        where: { type: "TEAM" },
-        orderBy: [
-          { category: "asc" },
-          { ageCategory: { displayOrder: "asc" } },
-          { displayOrder: "asc" },
-        ],
-        include: {
-          ageCategory: {
-            select: { id: true, displayOrder: true },
-          },
-        },
-      },
     },
   });
 
@@ -82,11 +66,24 @@ export default async function TeamAssignmentWorkspace({
   }
 
   const now = new Date();
+  const teamAssignmentWindow = await getTeamMemberAssignmentWindowState(
+    prisma,
+    competition.id,
+    {
+      entryEndDate: competition.entryEndDate,
+      startListSettings: competition.startListSettings,
+      startDate: competition.startDate,
+    },
+    now
+  );
+
+  const lazyLoadClubs = adminClubIds.length > 1;
+  const clubIdsToLoad = lazyLoadClubs ? [initialClubId] : adminClubIds;
 
   const teamEntriesFull = await prisma.teamEntry.findMany({
     where: {
       competitionId: competition.id,
-      clubId: { in: adminClubIds },
+      clubId: { in: clubIdsToLoad },
     },
     include: {
       event: {
@@ -101,9 +98,6 @@ export default async function TeamAssignmentWorkspace({
           ageCategoryId: true,
           teamRelayPositionCount: true,
           teamRelayPositionNames: true,
-          ageCategory: {
-            select: { id: true, displayOrder: true },
-          },
         },
       },
       members: {
@@ -125,13 +119,18 @@ export default async function TeamAssignmentWorkspace({
     ],
   });
 
-  const teamEntryRefs = teamEntriesFull.map((e) => ({ id: e.id, eventId: e.eventId }));
+  const marshalTeamEntryRefs =
+    adminClubIds.length === 1
+      ? teamEntriesFull.map((e) => ({ id: e.id, eventId: e.eventId }))
+      : teamEntriesFull
+          .filter((e) => e.clubId === initialClubId)
+          .map((e) => ({ id: e.id, eventId: e.eventId }));
 
   const [eligibleEntries, marshalBlockByTeamEntryId] = await Promise.all([
     prisma.competitionEntry.findMany({
       where: {
         competitionId: competition.id,
-        clubId: { in: adminClubIds },
+        clubId: { in: clubIdsToLoad },
         status: "SUBMITTED",
       },
       include: {
@@ -146,91 +145,38 @@ export default async function TeamAssignmentWorkspace({
       },
       orderBy: [{ clubId: "asc" }, { createdAt: "asc" }],
     }),
-    getTeamEntryMarshalAssignmentBlockedMap(prisma, competition.id, teamEntryRefs).then((map) =>
-      Object.fromEntries(map)
+    getTeamEntryMarshalAssignmentBlockedMap(prisma, competition.id, marshalTeamEntryRefs).then(
+      (map) => Object.fromEntries(map)
     ),
   ]);
 
-  const assignmentsByClub = Object.fromEntries(
-    adminClubIds.map((cid) => [
-      cid,
-      teamEntriesFull
-        .filter((entry) => entry.clubId === cid)
-        .map((entry) => {
-          const slotCount = resolveTeamRelaySlotCount(
-            entry.event.teamRelayPositionCount,
-            entry.members
-          );
-          const memberSlots = buildMemberSlotsFromDb(entry.members, slotCount);
-          return {
-            teamEntryId: entry.id,
-            eventId: entry.eventId,
-            eventName: entry.event.name,
-            sexLabel:
-              entry.event.sex === "MALE"
-                ? "男子"
-                : entry.event.sex === "FEMALE"
-                  ? "女子"
-                  : "混合",
-            teamName: entry.teamName,
-            relayPositionCount: entry.event.teamRelayPositionCount ?? null,
-            relayPositionLabels: parseRelayPositionNames(entry.event.teamRelayPositionNames),
-            memberSlots,
-          };
-        }),
-    ])
-  );
-
-  const eligibleMembersByClub = Object.fromEntries(
-    adminClubIds.map((cid) => [
-      cid,
-      eligibleEntries
-        .filter((entry) => entry.clubId === cid)
-        .flatMap((entry) =>
-          entry.user.profile
-            ? [
-                {
-                  userId: entry.user.id,
-                  name: `${entry.user.profile.familyName} ${entry.user.profile.givenName}`.trim(),
-                  sex: entry.user.profile.sex,
-                  dateOfBirth: entry.user.profile.dateOfBirth
-                    ? entry.user.profile.dateOfBirth.toISOString()
-                    : null,
-                },
-              ]
-            : []
-        ),
-    ])
-  );
-
-  const teamAssignmentWindow = await getTeamMemberAssignmentWindowState(
-    prisma,
-    competition.id,
-    {
-      entryEndDate: competition.entryEndDate,
-      startListSettings: competition.startListSettings,
-      startDate: competition.startDate,
-    },
-    now
-  );
-
-  const teamAssignmentCompetition = prismaCompetitionToTeamAssignmentCompetitionJson({
+  const competitionJson = prismaCompetitionToTeamAssignmentCompetitionJson({
     startDate: competition.startDate,
     ageCategories: competition.ageCategories,
   });
+  const teamAssignmentEventsById = buildTeamAssignmentEventsByIdFromEntries(teamEntriesFull);
 
-  const teamAssignmentEventsById = Object.fromEntries(
-    competition.events.map((e) => [
-      e.id,
-      prismaEventToTeamAssignmentEventJson({
-        sex: e.sex,
-        minAge: e.minAge,
-        maxAge: e.maxAge,
-        eligibleBirthDateFrom: e.eligibleBirthDateFrom,
-        eligibleBirthDateTo: e.eligibleBirthDateTo,
-        ageCategoryId: e.ageCategoryId,
-      }),
+  const eligibleMembersByClub = Object.fromEntries(
+    clubIdsToLoad.map((cid) => [
+      cid,
+      mapEligibleEntriesToMembers(eligibleEntries.filter((entry) => entry.clubId === cid)),
     ])
+  );
+
+  const assignmentsByClub = Object.fromEntries(
+    clubIdsToLoad.map((cid) => {
+      const clubEligibleMembers = eligibleMembersByClub[cid] ?? [];
+      const clubTeamEntries = teamEntriesFull.filter((entry) => entry.clubId === cid);
+      return [
+        cid,
+        buildAssignmentsForClub({
+          teamEntries: clubTeamEntries,
+          clubEligibleMembers,
+          competitionJson,
+          eventsById: teamAssignmentEventsById,
+        }),
+      ];
+    })
   );
 
   return (
@@ -261,8 +207,7 @@ export default async function TeamAssignmentWorkspace({
         assignmentDeadlineLabel={teamAssignmentWindow.deadlineLabel}
         marshalBlockByTeamEntryId={marshalBlockByTeamEntryId}
         initialClubId={initialClubId}
-        teamAssignmentCompetition={teamAssignmentCompetition}
-        teamAssignmentEventsById={teamAssignmentEventsById}
+        lazyLoadClubs={lazyLoadClubs}
       />
     </>
   );

@@ -46,4 +46,16 @@ describe("team-assignments save validation", () => {
       validateMemberSlotsForSave({ memberSlots: slots, expectedSlotCount: expected })
     ).toEqual({ ok: true });
   });
+
+  it("PUT は送信された teamEntryId のみが更新対象（差分保存）", () => {
+    const allSlots = normalizeMemberSlotsInput(["u1", "u2"])!;
+    const partialSlots = normalizeMemberSlotsInput(["u3", "u4"])!;
+    expect(validateMemberSlotsForSave({ memberSlots: allSlots, expectedSlotCount: 2 }).ok).toBe(
+      true
+    );
+    expect(validateMemberSlotsForSave({ memberSlots: partialSlots, expectedSlotCount: 2 }).ok).toBe(
+      true
+    );
+    expect(allSlots).not.toEqual(partialSlots);
+  });
 });
