@@ -242,10 +242,29 @@ export async function postHeatResultReorder(
   return { updatedCount: Number(data.updatedCount ?? 0) };
 }
 
+export type HeatResultRunUpCreatedRow = {
+  heat: number;
+  lane: number;
+  rank: null;
+  advanceWithoutRank: true;
+  entryType: "INDIVIDUAL" | "TEAM";
+  competitionEntryId: string | null;
+  teamEntryId: string | null;
+};
+
 export async function postHeatResultRunUp(
   competitionId: string,
-  body: { eventId: string; round: "HEAT" | "SEMI" | "FINAL"; heatIndex: number }
-): Promise<{ createdCount: number }> {
+  body: {
+    eventId: string;
+    round: "HEAT" | "SEMI" | "FINAL";
+    heatIndex: number;
+    manualEntries?: HeatResultConfirmManualEntry[];
+  }
+): Promise<{
+  createdCount: number;
+  created: HeatResultRunUpCreatedRow[];
+  appended: HeatResultConfirmAppendedRow[];
+}> {
   const res = await fetch(
     `/api/competitions/${competitionId}/day-ops/heat-result-capture/run-up`,
     {
@@ -257,11 +276,17 @@ export async function postHeatResultRunUp(
   const data = (await res.json().catch(() => ({}))) as {
     error?: string;
     createdCount?: number;
+    created?: HeatResultRunUpCreatedRow[];
+    appended?: HeatResultConfirmAppendedRow[];
   };
   if (!res.ok) {
     throw new Error(typeof data.error === "string" ? data.error : "ランアップの登録に失敗しました");
   }
-  return { createdCount: Number(data.createdCount ?? 0) };
+  return {
+    createdCount: Number(data.createdCount ?? 0),
+    created: Array.isArray(data.created) ? data.created : [],
+    appended: Array.isArray(data.appended) ? data.appended : [],
+  };
 }
 
 export async function postHeatResultClearRunUp(

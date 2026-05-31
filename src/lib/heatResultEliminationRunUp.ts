@@ -10,6 +10,7 @@ import {
 import { loadStartListSnapshotPayload } from "@/lib/heatMarshalGate";
 import {
   buildParticipantMarshalDisplayByKeyForRound,
+  type ParticipantStatusRowForScope,
 } from "@/lib/competitionParticipantStatusScope";
 import { effectiveDayOpsStatusForMarshalDisplay } from "@/lib/dayOpsParticipantStatusDisplay";
 import {
@@ -209,26 +210,43 @@ export async function listCalledSlotsMissingOkResultRow(opts: {
   heatIndex: number;
   officialResultId: string;
   snapshot: StartListSnapshotPayload | null;
+  /** 同一 TX 内で既に読んだ場合は渡す */
+  statusRows?: ParticipantStatusRowForScope[];
+  /** statusRows 渡し時は省略可（未指定なら DB から取得） */
+  heatMarshalCallClosed?: boolean;
 }): Promise<CalledSlotMissingResult[]> {
   const roundData = getRoundDataFromSnapshot(opts.snapshot, opts.eventId, opts.round);
   const heat = getHeatFromRoundData(roundData, opts.heatIndex);
   if (!heat) return [];
 
-  const [marshalRow, statuses] = await Promise.all([
-    opts.tx.competitionHeatMarshalState.findUnique({
-      where: {
-        competitionId_eventId_round_heatIndex: {
-          competitionId: opts.competitionId,
-          eventId: opts.eventId,
-          round: opts.round,
-          heatIndex: opts.heatIndex,
+  const statusesPromise =
+    opts.statusRows !== undefined
+      ? Promise.resolve(opts.statusRows)
+      : fetchParticipantStatusesForMarshalEvent(opts.tx, opts.competitionId, opts.eventId);
+
+  let heatMarshalCallClosed = opts.heatMarshalCallClosed;
+  const statuses = await (async () => {
+    if (heatMarshalCallClosed !== undefined) {
+      return statusesPromise;
+    }
+    const [marshalRow, rows] = await Promise.all([
+      opts.tx.competitionHeatMarshalState.findUnique({
+        where: {
+          competitionId_eventId_round_heatIndex: {
+            competitionId: opts.competitionId,
+            eventId: opts.eventId,
+            round: opts.round,
+            heatIndex: opts.heatIndex,
+          },
         },
-      },
-      select: { callClosedAt: true },
-    }),
-    fetchParticipantStatusesForMarshalEvent(opts.tx, opts.competitionId, opts.eventId),
-  ]);
-  const heatMarshalCallClosed = Boolean(marshalRow?.callClosedAt);
+        select: { callClosedAt: true },
+      }),
+      statusesPromise,
+    ]);
+    heatMarshalCallClosed = Boolean(marshalRow?.callClosedAt);
+    return rows;
+  })();
+  const callClosed = heatMarshalCallClosed ?? false;
   const statusByKey = buildParticipantMarshalDisplayByKeyForRound(statuses, opts.round);
 
   const existingRows = await opts.tx.officialResultRow.findMany({
@@ -261,7 +279,7 @@ export async function listCalledSlotsMissingOkResultRow(opts: {
   const teamMembersByTeamId = await fetchTeamMembersMapForTeamIds(opts.tx, [...teamIds]);
 
   const calledCount = countCalledMarshalSlotsInHeat({
-    heatMarshalCallClosed,
+    heatMarshalCallClosed: callClosed,
     heat,
     statusByKey,
     teamMembersByTeamId,
@@ -273,7 +291,7 @@ export async function listCalledSlotsMissingOkResultRow(opts: {
     if (p.kind === "INDIVIDUAL") {
       const st = statusByKey.get(marshalIndividualKey(p.entryId));
       const stored = st?.status ?? "PENDING";
-      const eff = effectiveDayOpsStatusForMarshalDisplay(stored, heatMarshalCallClosed);
+      const eff = effectiveDayOpsStatusForMarshalDisplay(stored, callClosed);
       if (!isCalledLikeStatus(eff)) continue;
       const key = marshalIndividualKey(p.entryId);
       if (hasRow.has(key)) continue;
@@ -293,13 +311,13 @@ export async function listCalledSlotsMissingOkResultRow(opts: {
       if (members.length === 0) {
         const st = statusByKey.get(marshalTeamLegacyKey(p.teamEntryId));
         const stored = st?.status ?? "PENDING";
-        const eff = effectiveDayOpsStatusForMarshalDisplay(stored, heatMarshalCallClosed);
+        const eff = effectiveDayOpsStatusForMarshalDisplay(stored, callClosed);
         teamCalled = isCalledLikeStatus(eff);
       } else {
         const statuses = members.map((mem) => {
           const st = statusByKey.get(marshalTeamMemberKey(p.teamEntryId, mem.userId));
           const stored = st?.status ?? "PENDING";
-          return effectiveDayOpsStatusForMarshalDisplay(stored, heatMarshalCallClosed);
+          return effectiveDayOpsStatusForMarshalDisplay(stored, callClosed);
         });
         teamCalled = isTeamFullyCalled(statuses);
       }

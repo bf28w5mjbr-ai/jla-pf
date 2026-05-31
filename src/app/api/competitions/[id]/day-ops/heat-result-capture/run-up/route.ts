@@ -5,24 +5,86 @@ import type { ResultRound } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { assertDayOpsRecorderWriteAccess } from "@/lib/dayOpsAccess";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
-import { loadStartListSnapshotPayload } from "@/lib/heatMarshalGate";
+import {
+  loadStartListSnapshotPayload,
+  loadStartListSnapshotPayloadLoose,
+} from "@/lib/heatMarshalGate";
 import {
   countHeatResultRows,
   eliminationSlots,
   listCalledSlotsMissingOkResultRow,
   resolveAdvanceQuotaForHeatInDayOps,
 } from "@/lib/heatResultEliminationRunUp";
-import { countCalledMarshalSlotsForHeatConfirmInTransaction } from "@/lib/marshalHeatCalledCount";
+import {
+  countCalledMarshalSlotsForHeatConfirmInTransaction,
+  fetchParticipantStatusesForMarshalEvent,
+} from "@/lib/marshalHeatCalledCount";
+import {
+  resolveParticipantInHeatForDayOps,
+  type HeatDayOpsResolvedSlot,
+} from "@/lib/heatDayOpsResolveParticipantInHeat";
+import {
+  appendManualHeatResultsInTransaction,
+  assertManualResultAppendAllowedWithGate,
+  loadManualResultAppendGateForConfirm,
+  type ManualResultAppendEntry,
+} from "@/lib/heatResultCaptureManualAppend";
+import type { StartListSnapshotPayload } from "@/lib/startListSnapshot";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
 import { START_LIST_STEP1_REQUIRED_SHORT_MESSAGE } from "@/lib/startListStep1Messages";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+const manualEntrySchema = z
+  .object({
+    participantType: z.enum(["INDIVIDUAL", "TEAM"]),
+    competitionEntryId: z.string().optional(),
+    teamEntryId: z.string().optional(),
+    teamMemberUserId: z.string().optional(),
+    tieWithPrevious: z.boolean().optional(),
+    inputOrder: z.enum(["asc", "desc"]).optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.participantType === "INDIVIDUAL" && !val.competitionEntryId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "competitionEntryIdが必要です",
+        path: ["competitionEntryId"],
+      });
+    }
+    if (val.participantType === "TEAM" && !val.teamEntryId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "teamEntryIdが必要です",
+        path: ["teamEntryId"],
+      });
+    }
+    if (val.participantType === "TEAM" && !val.teamMemberUserId?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "teamMemberUserId（構成員）が必要です",
+        path: ["teamMemberUserId"],
+      });
+    }
+  });
+
 const bodySchema = z.object({
   eventId: z.string().min(1),
   round: z.enum(["HEAT", "SEMI", "FINAL"]),
   heatIndex: z.number().int().min(1),
+  /** 未確定チェックをランアップと同一リクエストで反映（往復を省略） */
+  manualEntries: z.array(manualEntrySchema).max(128).optional(),
 });
+
+export type RunUpCreatedRow = {
+  heat: number;
+  lane: number;
+  rank: null;
+  advanceWithoutRank: true;
+  entryType: "INDIVIDUAL" | "TEAM";
+  competitionEntryId: string | null;
+  teamEntryId: string | null;
+};
 
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
@@ -35,13 +97,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json(zodFlattenJsonBody(parsed.error), { status: 400 });
     }
 
-    const { eventId, round, heatIndex } = parsed.data;
+    const { eventId, round, heatIndex, manualEntries } = parsed.data;
     const roundDb = round as ResultRound;
 
-    const eventRow = await prisma.event.findFirst({
-      where: { id: eventId, competitionId },
-      select: { id: true, startListHeatPlanConfirmedAt: true },
-    });
+    const [eventRow, snapshot] = await Promise.all([
+      prisma.event.findFirst({
+        where: { id: eventId, competitionId },
+        select: { id: true, startListHeatPlanConfirmedAt: true },
+      }),
+      loadStartListSnapshotPayload(competitionId),
+    ]);
     if (!eventRow) {
       return NextResponse.json({ error: "種目が見つかりません" }, { status: 404 });
     }
@@ -73,7 +138,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const snapshot = await loadStartListSnapshotPayload(competitionId);
     const quota = await resolveAdvanceQuotaForHeatInDayOps({
       competitionId,
       eventId,
@@ -88,7 +152,101 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
+    const entriesToFlush = manualEntries ?? [];
+    const resolvedFlush: Array<{
+      resolved: HeatDayOpsResolvedSlot;
+      entry: ManualResultAppendEntry;
+    }> = [];
+    let snapshotForDescInput: StartListSnapshotPayload | null = null;
+
+    if (entriesToFlush.length > 0) {
+      const needsDescSnapshot = entriesToFlush.some(
+        (e) => e.tieWithPrevious !== true && e.inputOrder === "desc"
+      );
+      snapshotForDescInput = needsDescSnapshot
+        ? (snapshot ??
+          (await loadStartListSnapshotPayload(competitionId)) ??
+          (await loadStartListSnapshotPayloadLoose(competitionId)))
+        : null;
+
+      const resolvedSlots = await Promise.all(
+        entriesToFlush.map((entry) =>
+          resolveParticipantInHeatForDayOps({
+            competitionId,
+            eventId,
+            round: roundDb,
+            heatIndex,
+            snapshot,
+            body: {
+              mode: "manual",
+              participantType: entry.participantType,
+              competitionEntryId: entry.competitionEntryId,
+              teamEntryId: entry.teamEntryId,
+              teamMemberUserId:
+                entry.participantType === "TEAM" ? entry.teamMemberUserId?.trim() : undefined,
+            },
+          })
+        )
+      );
+      for (let i = 0; i < entriesToFlush.length; i += 1) {
+        const resolvedSlot = resolvedSlots[i]!;
+        const entry = entriesToFlush[i]!;
+        if (!resolvedSlot.ok) {
+          return NextResponse.json(
+            {
+              error: resolvedSlot.error,
+              ...(resolvedSlot.errorCode ? { errorCode: resolvedSlot.errorCode } : {}),
+            },
+            { status: resolvedSlot.status }
+          );
+        }
+        resolvedFlush.push({ resolved: resolvedSlot.data, entry });
+      }
+
+      const gateLoad = await loadManualResultAppendGateForConfirm({
+        competitionId,
+        eventId,
+        round: roundDb,
+        heatIndex,
+        resolvedSlots: resolvedFlush.map((r) => r.resolved),
+      });
+      if (!gateLoad.ok) {
+        return NextResponse.json({ error: gateLoad.error }, { status: gateLoad.status });
+      }
+      for (const item of resolvedFlush) {
+        const allowed = assertManualResultAppendAllowedWithGate({
+          round: roundDb,
+          resolved: item.resolved,
+          gate: gateLoad.gate,
+        });
+        if (!allowed.ok) {
+          return NextResponse.json({ error: allowed.error }, { status: allowed.status });
+        }
+      }
+    }
+
+    let appendedRows: Awaited<ReturnType<typeof appendManualHeatResultsInTransaction>> = [];
+
     const result = await prisma.$transaction(async (tx) => {
+      const eventStatusRows = await fetchParticipantStatusesForMarshalEvent(
+        tx,
+        competitionId,
+        eventId
+      );
+
+      if (resolvedFlush.length > 0) {
+        appendedRows = await appendManualHeatResultsInTransaction(tx, {
+          competitionId,
+          eventId,
+          round: roundDb,
+          heatIndex,
+          operatorUserId,
+          entries: resolvedFlush,
+          snapshotForDescInput,
+          eventStatusRows,
+        });
+      }
+
       const existing = await tx.officialResult.findUnique({
         where: {
           competitionId_eventId_round: { competitionId, eventId, round: roundDb },
@@ -134,6 +292,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         round: roundDb,
         heatIndex,
         snapshot,
+        statusRows: eventStatusRows,
       });
 
       const existingRows = await tx.officialResultRow.findMany({
@@ -164,6 +323,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         heatIndex,
         officialResultId: officialResult.id,
         snapshot,
+        statusRows: eventStatusRows,
+        heatMarshalCallClosed: true,
       });
       if (toCreate.length === 0) {
         throw new Error("RUN_UP_NO_TARGETS");
@@ -175,25 +336,39 @@ export async function POST(request: NextRequest, context: RouteContext) {
         throw new Error("RUN_UP_NO_TARGETS");
       }
 
-      for (const slot of createSlice) {
-        await tx.officialResultRow.create({
-          data: {
-            officialResultId: officialResult.id,
-            entryType:
-              slot.target.participantType === "INDIVIDUAL" ? "INDIVIDUAL" : "TEAM",
-            competitionEntryId: slot.target.competitionEntryId,
-            teamEntryId: slot.target.teamEntryId,
-            rank: null,
-            advanceWithoutRank: true,
-            status: "OK",
-            heat: heatIndex,
-            lane: slot.lane,
-            unit: "OTHER",
-          },
-        });
-      }
+      await tx.officialResultRow.createMany({
+        data: createSlice.map((slot) => ({
+          officialResultId: officialResult.id,
+          entryType:
+            slot.target.participantType === "INDIVIDUAL" ? ("INDIVIDUAL" as const) : ("TEAM" as const),
+          competitionEntryId: slot.target.competitionEntryId,
+          teamEntryId: slot.target.teamEntryId,
+          rank: null,
+          advanceWithoutRank: true,
+          status: "OK" as const,
+          heat: heatIndex,
+          lane: slot.lane,
+          unit: "OTHER" as const,
+        })),
+      });
 
-      return { createdCount: createSlice.length, officialResultId: officialResult.id };
+      const created: RunUpCreatedRow[] = createSlice.map((slot) => ({
+        heat: heatIndex,
+        lane: slot.lane,
+        rank: null,
+        advanceWithoutRank: true as const,
+        entryType:
+          slot.target.participantType === "INDIVIDUAL" ? ("INDIVIDUAL" as const) : ("TEAM" as const),
+        competitionEntryId: slot.target.competitionEntryId,
+        teamEntryId: slot.target.teamEntryId,
+      }));
+
+      return {
+        createdCount: createSlice.length,
+        officialResultId: officialResult.id,
+        created,
+        appended: appendedRows,
+      };
     });
 
     await logAuditAction({
@@ -210,12 +385,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
         round,
         heatIndex,
         createdCount: result.createdCount,
+        manualEntriesFlushed: entriesToFlush.length,
       },
       request: getRequestContext(request),
       result: "SUCCESS",
     });
 
-    return NextResponse.json({ ok: true, createdCount: result.createdCount });
+    return NextResponse.json({
+      ok: true,
+      createdCount: result.createdCount,
+      created: result.created,
+      appended: result.appended.map((row) => ({
+        rank: row.rank,
+        lane: row.lane,
+        participantType: row.participantType,
+        competitionEntryId: row.competitionEntryId,
+        teamEntryId: row.teamEntryId,
+      })),
+    });
   } catch (error) {
     if (error instanceof Error && error.message === "DAY_OPS_FORBIDDEN") {
       return NextResponse.json({ error: "権限がありません" }, { status: 403 });

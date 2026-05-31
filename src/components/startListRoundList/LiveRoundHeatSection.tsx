@@ -191,7 +191,13 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
       resultDraftCount,
     });
     const teamForResult = heatConfirmedForSort
-      ? orderTeamItemsByConfirmedResultRank(teams, displayHeatNumber, localResultRows)
+      ? orderTeamItemsByConfirmedResultRank(
+          teams,
+          displayHeatNumber,
+          localResultRows,
+          statusByKey,
+          apiHeat
+        )
       : teams;
     const heatRankOrderKeys = rankOrderKeysForHeat(displayHeatNumber);
     return (
@@ -667,7 +673,13 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
       resultDraftCount,
     });
     const indForResult = heatConfirmedForSort
-      ? orderIndividualItemsByConfirmedResultRank(individuals, displayHeatNumber, localResultRows)
+      ? orderIndividualItemsByConfirmedResultRank(
+          individuals,
+          displayHeatNumber,
+          localResultRows,
+          statusByKey,
+          apiHeat
+        )
       : individuals;
     const heatRankOrderKeys = rankOrderKeysForHeat(displayHeatNumber);
     return (

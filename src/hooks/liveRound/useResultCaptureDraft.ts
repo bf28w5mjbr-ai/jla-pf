@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import type { HeatMarshalParticipant } from "@/components/HeatMarshalLanePanel";
 import type { HeatResultCaptureRow } from "@/lib/heatResultCaptureApi";
 import {
-  postHeatResultCaptureAppend,
   postHeatResultClearRunUp,
   postHeatResultConfirmHeat,
   postHeatResultReorder,
@@ -363,6 +362,39 @@ export function useResultCaptureDraft(args: {
     []
   );
 
+  const handleRunUpRecorded = useCallback(
+    (
+      rows: Array<{
+        heat: number;
+        lane: number;
+        entryType: "INDIVIDUAL" | "TEAM";
+        competitionEntryId: string | null;
+        teamEntryId: string | null;
+      }>
+    ) => {
+      if (rows.length === 0) return;
+      setLocalResultRows((prev) => [
+        ...prev,
+        ...rows.map((row) => ({
+          heat: row.heat,
+          lane: row.lane,
+          rank: null as number | null,
+          advanceWithoutRank: true,
+          entryType: row.entryType,
+          competitionEntryId: row.competitionEntryId,
+          teamEntryId: row.teamEntryId,
+        })),
+      ]);
+    },
+    []
+  );
+
+  const clearRunUpRowsForHeat = useCallback((heatIndex: number) => {
+    setLocalResultRows((prev) =>
+      prev.filter((r) => !(r.heat === heatIndex && r.advanceWithoutRank))
+    );
+  }, []);
+
   const countResultDraftsForHeat = useCallback(
     (heatIndex: number) => countResultDraftsForHeatFromOps(resultDraftOps, heatIndex),
     [resultDraftOps]
@@ -515,142 +547,6 @@ export function useResultCaptureDraft(args: {
     [localResultRows, resultDraftOps]
   );
 
-  /** ランアップ前: 未確定チェックを append API で公式行へ反映（confirm の一括 append とは別経路） */
-  const flushResultDraftsViaAppend = useCallback(
-    async (displayHeatNumber: number): Promise<boolean> => {
-      if (!m) return false;
-      const pending = draftsPendingAppendForHeat(
-        resultDraftOpsRef.current,
-        displayHeatNumber,
-        localResultRowsRef.current
-      );
-      if (pending.length === 0) return true;
-
-      const timers = resultDraftPatchTimersRef.current;
-      clearTimeout(timers[displayHeatNumber]);
-      delete timers[displayHeatNumber];
-      await awaitResultDraftServerPatch(displayHeatNumber);
-
-      const failedMap: Record<string, string> = {};
-      let successCount = 0;
-      for (const op of pending) {
-        try {
-          const data = await postHeatResultCaptureAppend(m.competitionId, {
-            mode: "manual",
-            eventId,
-            round: m.round,
-            heatIndex: op.heatIndex,
-            tieWithPrevious: op.tieWithPrevious,
-            inputOrder: op.inputOrder,
-            participantType: op.participantType,
-            competitionEntryId:
-              op.participantType === "INDIVIDUAL" ? op.competitionEntryId : undefined,
-            teamEntryId: op.participantType === "TEAM" ? op.teamEntryId : undefined,
-            teamMemberUserId: op.participantType === "TEAM" ? op.teamMemberUserId : undefined,
-          });
-          handleRankRecorded({
-            heatIndex: op.heatIndex,
-            lane: data.lane,
-            rank: data.rank,
-            participantType: data.participantType,
-            competitionEntryId: data.competitionEntryId,
-            teamEntryId: data.teamEntryId,
-          });
-          successCount += 1;
-        } catch (error) {
-          failedMap[op.opKey] = error instanceof Error ? error.message : "記録に失敗しました";
-        }
-      }
-      setResultDraftErrors((prev) => ({ ...prev, ...failedMap }));
-      const failedKeys = new Set(Object.keys(failedMap));
-      setResultDraftOps((prev) => {
-        const next = { ...prev };
-        for (const op of pending) {
-          if (!failedKeys.has(op.opKey)) delete next[op.opKey];
-        }
-        resultDraftOpsRef.current = next;
-        return next;
-      });
-      if (failedKeys.size > 0) {
-        if (successCount > 0) {
-          toast.error(
-            `未確定チェック ${failedKeys.size}件の反映に失敗したため、ランアップを中止しました`
-          );
-        } else {
-          toast.error("未確定チェックの反映に失敗したため、ランアップを中止しました");
-        }
-        return false;
-      }
-      return true;
-    },
-    [m, eventId, handleRankRecorded, awaitResultDraftServerPatch]
-  );
-
-  const runHeatResultRunUp = useCallback(
-    async (displayHeatNumber: number) => {
-      if (!m || !resultCapture) return;
-      setRunUpBusyHeat(displayHeatNumber);
-      try {
-        const flushed = await flushResultDraftsViaAppend(displayHeatNumber);
-        if (!flushed) return;
-        const { createdCount } = await postHeatResultRunUp(m.competitionId, {
-          eventId,
-          round: m.round,
-          heatIndex: displayHeatNumber,
-        });
-        setRunUpTarget(null);
-        void resultCapture.onRefetch();
-        toast.success(`ランアップ ${createdCount} 名を登録しました`);
-        dispatchJlaDayOpsParticipantStatusChanged(m.competitionId, eventId);
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : "ランアップの登録に失敗しました");
-      } finally {
-        setRunUpBusyHeat((prev) => (prev === displayHeatNumber ? null : prev));
-      }
-    },
-    [m, resultCapture, eventId, flushResultDraftsViaAppend]
-  );
-
-  const runHeatResultClearRunUp = useCallback(
-    async (displayHeatNumber: number) => {
-      if (!m || !resultCapture) return;
-      setRunUpBusyHeat(displayHeatNumber);
-      try {
-        const { deletedCount } = await postHeatResultClearRunUp(m.competitionId, {
-          eventId,
-          round: m.round,
-          heatIndex: displayHeatNumber,
-        });
-        setClearRunUpTarget(null);
-        void resultCapture.onRefetch();
-        toast.success(`ランアップ ${deletedCount} 名を解除しました`);
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : "ランアップの解除に失敗しました");
-      } finally {
-        setRunUpBusyHeat((prev) => (prev === displayHeatNumber ? null : prev));
-      }
-    },
-    [m, resultCapture, eventId]
-  );
-
-  const patchResultHeatConfirmed = useCallback(
-    (heatIndex: number) => {
-      setLocalConfirmedHeats((prev) =>
-        prev.includes(heatIndex) ? prev : [...prev, heatIndex].sort((a, b) => a - b)
-      );
-      resultCapture?.patchHeatConfirmed(heatIndex);
-    },
-    [resultCapture]
-  );
-
-  const patchResultHeatUnconfirmed = useCallback(
-    (heatIndex: number) => {
-      setLocalConfirmedHeats((prev) => prev.filter((h) => h !== heatIndex));
-      resultCapture?.patchHeatUnconfirmed(heatIndex);
-    },
-    [resultCapture]
-  );
-
   const clearResultDraftsForHeat = useCallback((heatIndex: number) => {
     const timers = resultDraftPatchTimersRef.current;
     clearTimeout(timers[heatIndex]);
@@ -671,6 +567,123 @@ export function useResultCaptureDraft(args: {
       return next;
     });
   }, []);
+
+  const runHeatResultRunUp = useCallback(
+    async (displayHeatNumber: number) => {
+      if (!m || !resultCapture) return;
+      setRunUpBusyHeat(displayHeatNumber);
+      try {
+        const draftsToFlush = draftsPendingAppendForHeat(
+          resultDraftOpsRef.current,
+          displayHeatNumber,
+          localResultRowsRef.current
+        );
+        const manualEntries = draftsToFlush.map((op) => ({
+          participantType: op.participantType,
+          competitionEntryId:
+            op.participantType === "INDIVIDUAL" ? op.competitionEntryId : undefined,
+          teamEntryId: op.participantType === "TEAM" ? op.teamEntryId : undefined,
+          teamMemberUserId: op.participantType === "TEAM" ? op.teamMemberUserId : undefined,
+          tieWithPrevious: op.tieWithPrevious,
+          inputOrder: op.inputOrder,
+        }));
+
+        if (draftsToFlush.length > 0) {
+          const timers = resultDraftPatchTimersRef.current;
+          clearTimeout(timers[displayHeatNumber]);
+          delete timers[displayHeatNumber];
+          await awaitResultDraftServerPatch(displayHeatNumber);
+        }
+
+        const { createdCount, created, appended } = await postHeatResultRunUp(m.competitionId, {
+          eventId,
+          round: m.round,
+          heatIndex: displayHeatNumber,
+          ...(manualEntries.length > 0 ? { manualEntries } : {}),
+        });
+
+        for (const row of appended) {
+          handleRankRecorded({
+            heatIndex: displayHeatNumber,
+            lane: row.lane,
+            rank: row.rank,
+            participantType: row.participantType,
+            competitionEntryId: row.competitionEntryId,
+            teamEntryId: row.teamEntryId,
+          });
+        }
+        handleRunUpRecorded(created);
+        clearResultDraftsForHeat(displayHeatNumber);
+        setRunUpTarget(null);
+        toast.success(`ランアップ ${createdCount} 名を登録しました`);
+        dispatchJlaDayOpsParticipantStatusChanged(m.competitionId, eventId, {
+          skipResultCaptureRefetch: true,
+          skipParticipantPoll: true,
+          skipMarshalHeatRefetch: true,
+        });
+      } catch (e) {
+        void resultCapture.onRefetch();
+        toast.error(e instanceof Error ? e.message : "ランアップの登録に失敗しました");
+      } finally {
+        setRunUpBusyHeat((prev) => (prev === displayHeatNumber ? null : prev));
+      }
+    },
+    [
+      m,
+      resultCapture,
+      eventId,
+      awaitResultDraftServerPatch,
+      handleRankRecorded,
+      handleRunUpRecorded,
+      clearResultDraftsForHeat,
+    ]
+  );
+
+  const runHeatResultClearRunUp = useCallback(
+    async (displayHeatNumber: number) => {
+      if (!m || !resultCapture) return;
+      setRunUpBusyHeat(displayHeatNumber);
+      try {
+        const { deletedCount } = await postHeatResultClearRunUp(m.competitionId, {
+          eventId,
+          round: m.round,
+          heatIndex: displayHeatNumber,
+        });
+        clearRunUpRowsForHeat(displayHeatNumber);
+        setClearRunUpTarget(null);
+        toast.success(`ランアップ ${deletedCount} 名を解除しました`);
+        dispatchJlaDayOpsParticipantStatusChanged(m.competitionId, eventId, {
+          skipResultCaptureRefetch: true,
+          skipParticipantPoll: true,
+          skipMarshalHeatRefetch: true,
+        });
+      } catch (e) {
+        void resultCapture.onRefetch();
+        toast.error(e instanceof Error ? e.message : "ランアップの解除に失敗しました");
+      } finally {
+        setRunUpBusyHeat((prev) => (prev === displayHeatNumber ? null : prev));
+      }
+    },
+    [m, resultCapture, eventId, clearRunUpRowsForHeat]
+  );
+
+  const patchResultHeatConfirmed = useCallback(
+    (heatIndex: number) => {
+      setLocalConfirmedHeats((prev) =>
+        prev.includes(heatIndex) ? prev : [...prev, heatIndex].sort((a, b) => a - b)
+      );
+      resultCapture?.patchHeatConfirmed(heatIndex);
+    },
+    [resultCapture]
+  );
+
+  const patchResultHeatUnconfirmed = useCallback(
+    (heatIndex: number) => {
+      setLocalConfirmedHeats((prev) => prev.filter((h) => h !== heatIndex));
+      resultCapture?.patchHeatUnconfirmed(heatIndex);
+    },
+    [resultCapture]
+  );
 
   const runHeatResultConfirm = useCallback(
     async (displayHeatNumber: number) => {
