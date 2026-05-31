@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import type { HeatMarshalHeatRow } from "@/components/HeatMarshalLanePanel";
+import {
+  marshalParticipantKey,
+  type HeatMarshalHeatRow,
+} from "@/components/HeatMarshalLanePanel";
 import type { MarshalResultPayload } from "@/components/MarshalStartListWidgets";
 import { postHeatMarshalComplete } from "@/lib/heatMarshalApi";
 import { postHeatResultCaptureAppend } from "@/lib/heatResultCaptureApi";
@@ -24,6 +27,7 @@ export function useLiveRoundNfc(args: {
   confirmedHeatsRef: RefObject<number[]>;
   resultInputOrder: "asc" | "desc";
   patchLaneCalled: (heatIndex1Based: number, lane: number) => void;
+  removeMarshalDraftOp?: (opKey: string, heatIndex: number) => void;
   handleMarshalResult: (r: MarshalResultPayload) => void;
   handleRankRecorded: (payload: {
     heatIndex: number;
@@ -48,6 +52,7 @@ export function useLiveRoundNfc(args: {
     confirmedHeatsRef,
     resultInputOrder,
     patchLaneCalled,
+    removeMarshalDraftOp,
     handleMarshalResult,
     handleRankRecorded,
     setMarshalPendingKey,
@@ -108,7 +113,13 @@ export function useLiveRoundNfc(args: {
               nfcTagId: serial,
             });
             const lane = Number(data.lane);
-            if (Number.isFinite(lane)) patchLaneCalled(h.heatIndex, lane);
+            if (Number.isFinite(lane)) {
+              patchLaneCalled(h.heatIndex, lane);
+              const participant = h.participants.find((p) => p.lane === lane);
+              if (participant) {
+                removeMarshalDraftOp?.(marshalParticipantKey(participant), h.heatIndex);
+              }
+            }
             handleMarshalResult({
               lane,
               label: String(data.label ?? ""),
@@ -140,7 +151,15 @@ export function useLiveRoundNfc(args: {
         setMarshalPendingKey(null);
       }
     },
-    [eventId, handleMarshalResult, patchLaneCalled, mRef, heatsRef, setMarshalPendingKey]
+    [
+      eventId,
+      handleMarshalResult,
+      patchLaneCalled,
+      removeMarshalDraftOp,
+      mRef,
+      heatsRef,
+      setMarshalPendingKey,
+    ]
   );
 
   const stopResultNfcInline = useCallback(() => {

@@ -31,6 +31,9 @@ export function LiveRoundContent({
   previewEstimatedParticipants,
   previewMaxLanesPerHeat,
   resultDraftSyncContext = null,
+  marshalDraftSyncContext = null,
+  marshalDraftSyncActive = false,
+  resultDraftSyncActive = false,
 }: LiveRoundContentProps) {
   const snapshotHeatIndexForRow = (rowIdx: number) =>
     marshalDisplayHeatIndices?.[rowIdx] ?? rowIdx + 1;
@@ -79,12 +82,15 @@ export function LiveRoundContent({
     patchHeatCallClosed,
     patchHeatCallReopened,
     patchLaneCalled,
+    removeMarshalDraftOp,
     handleMarshalResult,
     marshalSyncBusy,
   } = useMarshalDraftOps({
     eventId,
     m: marshalCtx,
     statusUpdatedAtByKey,
+    marshalDraftSyncContext,
+    marshalDraftSyncActive,
   });
 
   const {
@@ -129,6 +135,7 @@ export function LiveRoundContent({
     m: marshalCtx,
     resultDraftSyncContext,
     resultCaptureVisible,
+    resultDraftSyncActive,
     resultCapture,
     heatsRef,
   });
@@ -180,6 +187,7 @@ export function LiveRoundContent({
     confirmedHeatsRef,
     resultInputOrder,
     patchLaneCalled,
+    removeMarshalDraftOp,
     handleMarshalResult,
     handleRankRecorded,
     setMarshalPendingKey,

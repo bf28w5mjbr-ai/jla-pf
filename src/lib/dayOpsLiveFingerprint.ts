@@ -7,14 +7,8 @@ export async function computeDayOpsLiveFingerprint(
   competitionId: string,
   eventId: string
 ): Promise<string> {
-  const [
-    participantMax,
-    marshalMax,
-    officialResultMax,
-    officialRowMax,
-    captureEventMax,
-    draftMax,
-  ] = await prisma.$transaction([
+  const [participantMax, marshalMax, officialResultMax, officialRowMax, captureEventMax] =
+    await prisma.$transaction([
     prisma.competitionParticipantStatus.aggregate({
       where: { competitionId, eventId },
       _max: { updatedAt: true },
@@ -35,10 +29,6 @@ export async function computeDayOpsLiveFingerprint(
       where: { competitionId, eventId },
       _max: { createdAt: true },
     }),
-    prisma.dayOpsHeatOperationDraft.aggregate({
-      where: { competitionId, eventId },
-      _max: { updatedAt: true },
-    }),
   ]);
 
   const t = (d: Date | null | undefined) => (d ? d.getTime() : 0);
@@ -48,6 +38,5 @@ export async function computeDayOpsLiveFingerprint(
     t(officialResultMax._max.updatedAt),
     t(officialRowMax._max.updatedAt),
     t(captureEventMax._max.createdAt),
-    t(draftMax._max.updatedAt),
   ].join(":");
 }

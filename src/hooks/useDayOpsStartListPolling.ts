@@ -5,12 +5,14 @@ import { JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED } from "@/lib/dayOpsParticipantS
 import { dayOpsFetch } from "@/lib/dayOpsFetch";
 
 const DAY_OPS_POLL_INTERVAL_NORMAL_MS = 20_000;
-const DAY_OPS_POLL_INTERVAL_SYNC_MS = 6_000;
+const DAY_OPS_POLL_INTERVAL_FALLBACK_MS = 60_000;
 
 type RefreshOpts = {
   skipMarshalHeat?: boolean;
   skipResultCapture?: boolean;
   skipParticipantPoll?: boolean;
+  /** true のとき heat-marshal / heat-result-capture を省略し draft pull のみ */
+  draftOnly?: boolean;
 };
 
 type Args = {
@@ -47,6 +49,7 @@ export function useDayOpsStartListPolling({
   refreshDayOpsListsFromPoll,
 }: Args) {
   const lastFingerprintRef = useRef<string | null>(null);
+  const sseConnectedRef = useRef(false);
   const refreshRef = useRef(refreshDayOpsListsFromPoll);
   refreshRef.current = refreshDayOpsListsFromPoll;
 
@@ -65,11 +68,12 @@ export function useDayOpsStartListPolling({
   useEffect(() => {
     if (!enabled) return;
     const tick = () => {
+      if (sseConnectedRef.current) return;
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       void refreshIfFingerprintChanged();
     };
     const intervalMs = dayOpsListsSyncActive
-      ? DAY_OPS_POLL_INTERVAL_SYNC_MS
+      ? DAY_OPS_POLL_INTERVAL_FALLBACK_MS
       : DAY_OPS_POLL_INTERVAL_NORMAL_MS;
     const id = setInterval(tick, intervalMs);
     return () => clearInterval(id);
@@ -114,22 +118,38 @@ export function useDayOpsStartListPolling({
     if (!enabled || process.env.NEXT_PUBLIC_DAY_OPS_LIVE_STREAM !== "1") return;
     const url = `/api/competitions/${competitionId}/day-ops/live-events?eventId=${encodeURIComponent(eventId)}`;
     const es = new EventSource(url, { withCredentials: true });
+    es.onopen = () => {
+      sseConnectedRef.current = true;
+    };
+    es.onerror = () => {
+      sseConnectedRef.current = false;
+    };
     es.onmessage = (ev) => {
       try {
         const msg = JSON.parse(ev.data) as { type?: string; fingerprint?: string };
+        if (msg.type === "hello") {
+          sseConnectedRef.current = true;
+          return;
+        }
         if (msg.type === "changes") {
+          sseConnectedRef.current = true;
           if (typeof msg.fingerprint === "string") {
             lastFingerprintRef.current = msg.fingerprint;
           } else {
             lastFingerprintRef.current = null;
           }
-          refreshRef.current();
+          refreshRef.current({
+            skipMarshalHeat: true,
+            skipResultCapture: true,
+            draftOnly: true,
+          });
         }
       } catch {
         /* ignore */
       }
     };
     return () => {
+      sseConnectedRef.current = false;
       es.close();
     };
   }, [enabled, competitionId, eventId]);

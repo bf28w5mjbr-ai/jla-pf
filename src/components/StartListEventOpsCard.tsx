@@ -275,10 +275,12 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
             setMarshalSyncDeferred: dayOps.setMarshalSyncDeferred,
           }
         : null;
-    const resultDraftSyncContext =
+    const draftSyncContext =
       dayOps.showDayOpsShell && roundForList
         ? { competitionId, round: roundForList }
         : null;
+    const marshalDraftSyncActive = viewModeForRow === "marshal";
+    const resultDraftSyncActive = viewModeForRow === "result";
     return (
       <LiveRoundContent
         key={`sl-${event.id}-${index}`}
@@ -290,7 +292,10 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
         marshalDisplayHeatIndices={row?.marshalDisplayHeatIndices ?? null}
         heatAdvanceQuotas={heatAdvanceQuotasForRow}
         startListMarshal={startListMarshal}
-        resultDraftSyncContext={resultDraftSyncContext}
+        resultDraftSyncContext={draftSyncContext}
+        marshalDraftSyncContext={draftSyncContext}
+        marshalDraftSyncActive={marshalDraftSyncActive}
+        resultDraftSyncActive={resultDraftSyncActive}
         participantStatusRows={
           dayOps.polledParticipantStatusRows.length > 0
             ? dayOps.polledParticipantStatusRows
@@ -519,8 +524,9 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
                 {showMarshalOps ? (
                   <>
                     <span className="font-medium text-foreground">表示モード</span>
-                    ：通常＝一覧のみ。マーシャル＝召集・NFC・ヒート締切（締切前は付け外し可）。リザルト＝召集済みのみ着順入力・NFC。
-                    マーシャル締切は各ヒート見出しから。タブごとにモードは独立です。
+                    ：通常＝一覧のみ。マーシャル＝召集チェック（下書き共有）・NFC・ヒート締切。リザルト＝召集済みのみ着順入力・NFC。
+                    チェックの下書きは端末間で同期されます（確定／締切／リザルト確定で本番データへ反映）。
+                    他端末の変更は SSE（有効時）または操作反映で更新。タブごとにモードは独立です。
                   </>
                 ) : (
                   <>

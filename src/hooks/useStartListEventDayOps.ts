@@ -28,6 +28,7 @@ import {
 } from "@/lib/dayOpsPollCompare";
 import { measureDayOpsAsync } from "@/lib/dayOpsMetrics";
 import { dayOpsFetch } from "@/lib/dayOpsFetch";
+import { dispatchJlaDayOpsDraftChanged } from "@/lib/dayOpsHeatOperationDraftSync";
 
 type Args = {
   competitionId: string;
@@ -424,14 +425,27 @@ export function useStartListEventDayOps({
   }, [fetchListMarshalHeatsCore, eventId, listMarshalRound]);
 
   const refreshDayOpsListsFromPoll = useCallback(
-    (opts?: { skipMarshalHeat?: boolean; skipResultCapture?: boolean; skipParticipantPoll?: boolean }) => {
+    (opts?: {
+      skipMarshalHeat?: boolean;
+      skipResultCapture?: boolean;
+      skipParticipantPoll?: boolean;
+      draftOnly?: boolean;
+    }) => {
       const deferred = marshalSyncDeferredRef.current;
       const skipMarshalHeat = opts?.skipMarshalHeat || deferred;
       const skipParticipantPoll = opts?.skipParticipantPoll || deferred;
       const skipResultCapture = opts?.skipResultCapture || deferred;
+      if (opts?.draftOnly) {
+        if (!skipParticipantPoll) {
+          void refreshDayOpsParticipantPoll();
+        }
+        dispatchJlaDayOpsDraftChanged(competitionId, eventId);
+        return;
+      }
       if (!skipParticipantPoll) {
         void refreshDayOpsParticipantPoll();
       }
+      dispatchJlaDayOpsDraftChanged(competitionId, eventId);
       if (anyTabNeedsMarshalHeat && !skipMarshalHeat) {
         void refetchListMarshalHeats();
       }
@@ -446,6 +460,8 @@ export function useStartListEventDayOps({
       refetchListMarshalHeats,
       refetchResultCapture,
       showResultOps,
+      competitionId,
+      eventId,
     ]
   );
 

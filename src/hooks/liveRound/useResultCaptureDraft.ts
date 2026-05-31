@@ -15,6 +15,7 @@ import {
   deleteHeatOperationDraftFireAndForget,
   getHeatOperationDraft,
   isDayOpsResultDraftServerSyncEnabled,
+  JLA_DAY_OPS_DRAFT_CHANGED,
   parseServerResultDraftPayload,
   patchHeatOperationDraftResultPayload,
   patchHeatOperationDraftResultPayloadFireAndForget,
@@ -42,12 +43,15 @@ type ResultDraftSyncContext = {
 
 /** PATCH 完了前にサーバー pull でローカルチェックが消えるのを防ぐ */
 const RESULT_DRAFT_LOCAL_SYNC_GUARD_MS = 20_000;
+const RESULT_DRAFT_DEBOUNCE_MS = 200;
 
 export function useResultCaptureDraft(args: {
   eventId: string;
   m: LiveRoundMarshalContext;
   resultDraftSyncContext: ResultDraftSyncContext | null;
   resultCaptureVisible: boolean;
+  /** リザルトモード（非アクティブタブ含む）で下書き PATCH を継続 */
+  resultDraftSyncActive: boolean;
   resultCapture: ResultCaptureSlice | undefined;
   heatsRef: RefObject<HeatMarshalHeatRow[]>;
 }) {
@@ -56,6 +60,7 @@ export function useResultCaptureDraft(args: {
     m,
     resultDraftSyncContext,
     resultCaptureVisible,
+    resultDraftSyncActive,
     resultCapture,
     heatsRef,
   } = args;
@@ -203,22 +208,35 @@ export function useResultCaptureDraft(args: {
   const scheduleResultDraftServerPatch = useCallback(
     (heatIndex: number) => {
       if (!isDayOpsResultDraftServerSyncEnabled()) return;
+      if (!resultDraftSyncActive) return;
       if (heatResultConfirmBusyHeatRef.current !== null) return;
       const timers = resultDraftPatchTimersRef.current;
       clearTimeout(timers[heatIndex]);
       timers[heatIndex] = setTimeout(() => {
         lastLocalResultDraftTouchRef.current = Date.now();
         flushResultDraftServerPatch(heatIndex);
-      }, 480);
+      }, RESULT_DRAFT_DEBOUNCE_MS);
     },
-    [flushResultDraftServerPatch]
+    [flushResultDraftServerPatch, resultDraftSyncActive]
   );
 
   useEffect(() => {
     return () => {
+      if (heatResultConfirmBusyHeatRef.current !== null) {
+        flushAllResultDraftServerPatches({ keepalive: true });
+        return;
+      }
+      void (async () => {
+        const heats = new Set(
+          Object.values(resultDraftOpsRef.current).map((o) => o.heatIndex)
+        );
+        for (const hi of heats) {
+          if (Number.isFinite(hi)) await awaitResultDraftServerPatch(hi);
+        }
+      })();
       flushAllResultDraftServerPatches({ keepalive: true });
     };
-  }, [flushAllResultDraftServerPatches]);
+  }, [flushAllResultDraftServerPatches, awaitResultDraftServerPatch]);
 
   useEffect(() => {
     if (!isDayOpsResultDraftServerSyncEnabled()) return;
@@ -231,7 +249,7 @@ export function useResultCaptureDraft(args: {
 
   const pullResultDraftsFromServer = useCallback(() => {
     if (!isDayOpsResultDraftServerSyncEnabled()) return;
-    if (!resultCaptureVisible) return;
+    if (!resultDraftSyncActive) return;
     if (heatResultConfirmBusyHeatRef.current !== null) return;
     if (Date.now() - lastLocalResultDraftTouchRef.current < RESULT_DRAFT_LOCAL_SYNC_GUARD_MS) {
       return;
@@ -282,26 +300,41 @@ export function useResultCaptureDraft(args: {
         }
       }
     })();
-  }, [eventId, heatsRef, resultCaptureVisible]);
+  }, [eventId, heatsRef, resultDraftSyncActive]);
 
   useEffect(() => {
-    if (!resultCaptureVisible || !isDayOpsResultDraftServerSyncEnabled()) return;
+    if (!resultDraftSyncActive || !isDayOpsResultDraftServerSyncEnabled()) return;
     pullResultDraftsFromServer();
-  }, [resultCaptureVisible, pullResultDraftsFromServer]);
+  }, [resultDraftSyncActive, pullResultDraftsFromServer]);
 
   useEffect(() => {
-    if (resultCaptureVisible || !isDayOpsResultDraftServerSyncEnabled()) return;
+    if (resultDraftSyncActive || !isDayOpsResultDraftServerSyncEnabled()) return;
     flushAllResultDraftServerPatches();
-  }, [resultCaptureVisible, flushAllResultDraftServerPatches]);
+  }, [resultDraftSyncActive, flushAllResultDraftServerPatches]);
 
   useEffect(() => {
-    if (!isDayOpsResultDraftServerSyncEnabled() || !resultCaptureVisible) return;
+    if (!isDayOpsResultDraftServerSyncEnabled() || !resultDraftSyncActive) return;
     const onVis = () => {
       if (document.visibilityState === "visible") pullResultDraftsFromServer();
     };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
-  }, [resultCaptureVisible, pullResultDraftsFromServer]);
+  }, [resultDraftSyncActive, pullResultDraftsFromServer]);
+
+  useEffect(() => {
+    if (!resultDraftSyncActive || !resultDraftSyncContext) return;
+    const handler = (ev: Event) => {
+      const d = (ev as CustomEvent<{ competitionId?: string; eventId?: string }>).detail;
+      if (
+        d?.competitionId === resultDraftSyncContext.competitionId &&
+        d?.eventId === eventId
+      ) {
+        pullResultDraftsFromServer();
+      }
+    };
+    window.addEventListener(JLA_DAY_OPS_DRAFT_CHANGED, handler);
+    return () => window.removeEventListener(JLA_DAY_OPS_DRAFT_CHANGED, handler);
+  }, [resultDraftSyncActive, resultDraftSyncContext, eventId, pullResultDraftsFromServer]);
 
   const handleRankRecorded = useCallback(
     (payload: {
@@ -379,8 +412,9 @@ export function useResultCaptureDraft(args: {
       });
       lastLocalResultDraftTouchRef.current = Date.now();
       scheduleResultDraftServerPatch(heatIndex);
+      flushResultDraftServerPatch(heatIndex);
     },
-    [scheduleResultDraftServerPatch]
+    [scheduleResultDraftServerPatch, flushResultDraftServerPatch]
   );
 
   const rankedParticipantKeysForHeat = useCallback(
@@ -457,8 +491,9 @@ export function useResultCaptureDraft(args: {
       });
       lastLocalResultDraftTouchRef.current = Date.now();
       scheduleResultDraftServerPatch(heatIndex);
+      flushResultDraftServerPatch(heatIndex);
     },
-    [scheduleResultDraftServerPatch]
+    [scheduleResultDraftServerPatch, flushResultDraftServerPatch]
   );
 
   const reorderResultOrder = useCallback(

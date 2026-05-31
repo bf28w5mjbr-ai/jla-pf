@@ -173,6 +173,17 @@ export function LiveRoundModeBanners({
       ) : null}
       {marshalInline && m ? (
         <div className="space-y-1.5">
+          <div className="rounded-md border border-emerald-200/90 bg-emerald-50/60 px-2 py-1.5 text-[10px] leading-snug text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/35 dark:text-emerald-100">
+            <p>
+              <span className="font-semibold">マーシャルモード</span>
+              {" — "}
+              チェックは端末間で下書き共有されます。データベースへの召集反映は、上部の
+              <span className="font-medium text-foreground"> 確定 </span>
+              または各ヒートの
+              <span className="font-medium text-foreground"> マーシャル締切 </span>
+              のときです。
+            </p>
+          </div>
           {Object.keys(marshalDraftOps).length > 0 ? (
             <div className="rounded-md border border-primary/30 bg-primary/5 px-2 py-1.5 text-[10px]">
               <div className="flex flex-wrap items-center justify-between gap-1.5">
@@ -245,7 +256,7 @@ export function LiveRoundModeBanners({
           <span className="font-medium text-foreground"> 「リザルト」モード </span>
           に切り替えてください。マーシャルモードでは、各ヒートの
           <span className="font-medium text-foreground"> マーシャル締切まで </span>
-          召集チェックの付け外しが可能です（締切の解除は公式リザルト記録前に限ります）。
+          召集チェックの付け外しが可能です（確定または締切で反映。締切の解除は公式リザルト記録前に限ります）。
         </p>
       ) : null}
     </>

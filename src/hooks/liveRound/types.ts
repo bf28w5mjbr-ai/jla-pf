@@ -11,6 +11,7 @@ export type MarshalDraftOp = {
   teamMemberUserId?: string | null;
   status: "CALLED" | "PENDING";
   lastKnownUpdatedAt?: string | null;
+  draftSequence?: number;
 };
 
 export type ResultDraftOp = {

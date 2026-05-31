@@ -70,6 +70,15 @@ export type LiveRoundContentProps = {
     competitionId: string;
     round: ResultRound;
   } | null;
+  /** マーシャル下書きのサーバー同期（非アクティブタブでも PATCH 可能） */
+  marshalDraftSyncContext?: {
+    competitionId: string;
+    round: ResultRound;
+  } | null;
+  /** 当該タブがマーシャル表示モードのとき true */
+  marshalDraftSyncActive?: boolean;
+  /** 当該タブがリザルト表示モードのとき true（非アクティブタブでも下書き PATCH） */
+  resultDraftSyncActive?: boolean;
   startListMarshal?: {
     heats: HeatMarshalHeatRow[] | null;
     /** 参加者チェック・NFC 向け */
