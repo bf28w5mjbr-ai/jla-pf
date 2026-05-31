@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { HeatMarshalParticipant } from "@/components/HeatMarshalLanePanel";
 import type { HeatResultCaptureRow } from "@/lib/heatResultCaptureApi";
 import {
+  postHeatResultCaptureAppend,
   postHeatResultClearRunUp,
   postHeatResultConfirmHeat,
   postHeatResultReorder,
@@ -26,6 +27,7 @@ import { resultCaptureRowsEqual, mergeConfirmedHeats, confirmedHeatsEqual } from
 import { participantKeyFromResultRow } from "@/components/startListRoundList/panelHelpers";
 import {
   countResultDraftsForHeatFromOps,
+  draftsPendingAppendForHeat,
   rankOrderKeysForHeat,
   rankedParticipantKeysForHeatFromRows,
 } from "@/hooks/liveRound/resultCaptureDraftHelpers";
@@ -513,11 +515,84 @@ export function useResultCaptureDraft(args: {
     [localResultRows, resultDraftOps]
   );
 
+  /** ランアップ前: 未確定チェックを append API で公式行へ反映（confirm の一括 append とは別経路） */
+  const flushResultDraftsViaAppend = useCallback(
+    async (displayHeatNumber: number): Promise<boolean> => {
+      if (!m) return false;
+      const pending = draftsPendingAppendForHeat(
+        resultDraftOpsRef.current,
+        displayHeatNumber,
+        localResultRowsRef.current
+      );
+      if (pending.length === 0) return true;
+
+      const timers = resultDraftPatchTimersRef.current;
+      clearTimeout(timers[displayHeatNumber]);
+      delete timers[displayHeatNumber];
+      await awaitResultDraftServerPatch(displayHeatNumber);
+
+      const failedMap: Record<string, string> = {};
+      let successCount = 0;
+      for (const op of pending) {
+        try {
+          const data = await postHeatResultCaptureAppend(m.competitionId, {
+            mode: "manual",
+            eventId,
+            round: m.round,
+            heatIndex: op.heatIndex,
+            tieWithPrevious: op.tieWithPrevious,
+            inputOrder: op.inputOrder,
+            participantType: op.participantType,
+            competitionEntryId:
+              op.participantType === "INDIVIDUAL" ? op.competitionEntryId : undefined,
+            teamEntryId: op.participantType === "TEAM" ? op.teamEntryId : undefined,
+            teamMemberUserId: op.participantType === "TEAM" ? op.teamMemberUserId : undefined,
+          });
+          handleRankRecorded({
+            heatIndex: op.heatIndex,
+            lane: data.lane,
+            rank: data.rank,
+            participantType: data.participantType,
+            competitionEntryId: data.competitionEntryId,
+            teamEntryId: data.teamEntryId,
+          });
+          successCount += 1;
+        } catch (error) {
+          failedMap[op.opKey] = error instanceof Error ? error.message : "記録に失敗しました";
+        }
+      }
+      setResultDraftErrors((prev) => ({ ...prev, ...failedMap }));
+      const failedKeys = new Set(Object.keys(failedMap));
+      setResultDraftOps((prev) => {
+        const next = { ...prev };
+        for (const op of pending) {
+          if (!failedKeys.has(op.opKey)) delete next[op.opKey];
+        }
+        resultDraftOpsRef.current = next;
+        return next;
+      });
+      if (failedKeys.size > 0) {
+        if (successCount > 0) {
+          toast.error(
+            `未確定チェック ${failedKeys.size}件の反映に失敗したため、ランアップを中止しました`
+          );
+        } else {
+          toast.error("未確定チェックの反映に失敗したため、ランアップを中止しました");
+        }
+        return false;
+      }
+      return true;
+    },
+    [m, eventId, handleRankRecorded, awaitResultDraftServerPatch]
+  );
+
   const runHeatResultRunUp = useCallback(
     async (displayHeatNumber: number) => {
       if (!m || !resultCapture) return;
       setRunUpBusyHeat(displayHeatNumber);
       try {
+        const flushed = await flushResultDraftsViaAppend(displayHeatNumber);
+        if (!flushed) return;
         const { createdCount } = await postHeatResultRunUp(m.competitionId, {
           eventId,
           round: m.round,
@@ -533,7 +608,7 @@ export function useResultCaptureDraft(args: {
         setRunUpBusyHeat((prev) => (prev === displayHeatNumber ? null : prev));
       }
     },
-    [m, resultCapture, eventId]
+    [m, resultCapture, eventId, flushResultDraftsViaAppend]
   );
 
   const runHeatResultClearRunUp = useCallback(
@@ -612,13 +687,11 @@ export function useResultCaptureDraft(args: {
       clearTimeout(timers[displayHeatNumber]);
       delete timers[displayHeatNumber];
 
-      const draftsForHeat = Object.values(resultDraftOpsRef.current)
-        .filter((op) => op.heatIndex === displayHeatNumber)
-        .sort((a, b) => (a.draftSequence ?? 0) - (b.draftSequence ?? 0));
-      const rankedKeys = new Set(
-        rankedParticipantKeysForHeatFromRows(localResultRowsRef.current, displayHeatNumber)
+      const draftsToFlush = draftsPendingAppendForHeat(
+        resultDraftOpsRef.current,
+        displayHeatNumber,
+        localResultRowsRef.current
       );
-      const draftsToFlush = draftsForHeat.filter((op) => !rankedKeys.has(op.opKey));
       const manualEntries = draftsToFlush.map((op) => ({
         participantType: op.participantType,
         competitionEntryId:
@@ -629,7 +702,7 @@ export function useResultCaptureDraft(args: {
         inputOrder: op.inputOrder,
       }));
 
-      if (draftsForHeat.length > 0) {
+      if (draftsToFlush.length > 0) {
         await awaitResultDraftServerPatch(displayHeatNumber);
       }
 

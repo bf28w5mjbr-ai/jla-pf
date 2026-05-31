@@ -9,6 +9,21 @@ export function countResultDraftsForHeatFromOps(
   return Object.values(ops).filter((op) => op.heatIndex === heatIndex).length;
 }
 
+/** 公式行未反映の未確定チェック（append / confirm manualEntries 対象）を draftSequence 昇順で返す */
+export function draftsPendingAppendForHeat(
+  ops: Record<string, ResultDraftOp>,
+  heatIndex: number,
+  localRows: HeatResultCaptureRow[]
+): ResultDraftOp[] {
+  const rankedKeys = new Set(rankedParticipantKeysForHeatFromRows(localRows, heatIndex));
+  return Object.values(ops)
+    .filter((op) => op.heatIndex === heatIndex && !rankedKeys.has(op.opKey))
+    .sort(
+      (a, b) =>
+        (a.draftSequence ?? 0) - (b.draftSequence ?? 0) || a.opKey.localeCompare(b.opKey)
+    );
+}
+
 export function rankedParticipantKeysForHeatFromRows(
   rows: HeatResultCaptureRow[],
   heatIndex: number

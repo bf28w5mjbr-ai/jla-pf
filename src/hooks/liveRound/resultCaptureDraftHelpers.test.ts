@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   countResultDraftsForHeatFromOps,
+  draftsPendingAppendForHeat,
   rankedParticipantKeysForHeatFromRows,
 } from "@/hooks/liveRound/resultCaptureDraftHelpers";
 import type { ResultDraftOp } from "@/hooks/liveRound/types";
@@ -90,5 +91,87 @@ describe("rankedParticipantKeysForHeatFromRows", () => {
       1
     );
     expect(keys).toEqual(["I:e1", "I:e2", "I:e3"]);
+  });
+});
+
+describe("draftsPendingAppendForHeat", () => {
+  const eliminationDrafts: Record<string, ResultDraftOp> = {
+    d1: {
+      opKey: "I:e1",
+      heatIndex: 1,
+      tieWithPrevious: false,
+      inputOrder: "desc",
+      draftSequence: 1,
+      participantType: "INDIVIDUAL",
+      competitionEntryId: "e1",
+    },
+    d2: {
+      opKey: "I:e2",
+      heatIndex: 1,
+      tieWithPrevious: false,
+      inputOrder: "desc",
+      draftSequence: 2,
+      participantType: "INDIVIDUAL",
+      competitionEntryId: "e2",
+    },
+    d3: {
+      opKey: "I:e3",
+      heatIndex: 1,
+      tieWithPrevious: false,
+      inputOrder: "desc",
+      draftSequence: 3,
+      participantType: "INDIVIDUAL",
+      competitionEntryId: "e3",
+    },
+    d4: {
+      opKey: "I:e4",
+      heatIndex: 1,
+      tieWithPrevious: false,
+      inputOrder: "desc",
+      draftSequence: 4,
+      participantType: "INDIVIDUAL",
+      competitionEntryId: "e4",
+    },
+    otherHeat: {
+      opKey: "I:ex",
+      heatIndex: 2,
+      tieWithPrevious: false,
+      inputOrder: "desc",
+      draftSequence: 1,
+      participantType: "INDIVIDUAL",
+      competitionEntryId: "ex",
+    },
+  };
+
+  it("returns all heat drafts sorted by draftSequence when no official rows", () => {
+    const pending = draftsPendingAppendForHeat(eliminationDrafts, 1, []);
+    expect(pending.map((op) => op.opKey)).toEqual(["I:e1", "I:e2", "I:e3", "I:e4"]);
+  });
+
+  it("excludes participants already in official rows", () => {
+    const rows = [
+      {
+        heat: 1,
+        lane: 1,
+        rank: 8,
+        entryType: "INDIVIDUAL" as const,
+        competitionEntryId: "e1",
+        teamEntryId: null,
+      },
+      {
+        heat: 1,
+        lane: 2,
+        rank: 7,
+        entryType: "INDIVIDUAL" as const,
+        competitionEntryId: "e2",
+        teamEntryId: null,
+      },
+    ];
+    const pending = draftsPendingAppendForHeat(eliminationDrafts, 1, rows);
+    expect(pending.map((op) => op.opKey)).toEqual(["I:e3", "I:e4"]);
+  });
+
+  it("returns empty for heat with no pending drafts", () => {
+    expect(draftsPendingAppendForHeat(eliminationDrafts, 3, [])).toEqual([]);
   });
 });
