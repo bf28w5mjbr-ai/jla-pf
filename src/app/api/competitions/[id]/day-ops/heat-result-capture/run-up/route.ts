@@ -32,6 +32,12 @@ import {
 import type { StartListSnapshotPayload } from "@/lib/startListSnapshot";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
 import { START_LIST_STEP1_REQUIRED_SHORT_MESSAGE } from "@/lib/startListStep1Messages";
+import {
+  DAY_OPS_HEAVY_TRANSACTION,
+  isPrismaTransactionUnavailable,
+  prismaPoolBusyUserMessage,
+  withPrismaPoolRetryOnce,
+} from "@/lib/prismaPool";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -227,7 +233,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     let appendedRows: Awaited<ReturnType<typeof appendManualHeatResultsInTransaction>> = [];
 
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await withPrismaPoolRetryOnce(() =>
+      prisma.$transaction(async (tx) => {
       const eventStatusRows = await fetchParticipantStatusesForMarshalEvent(
         tx,
         competitionId,
@@ -369,7 +376,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         created,
         appended: appendedRows,
       };
-    });
+      }, DAY_OPS_HEAVY_TRANSACTION)
+    );
 
     await logAuditAction({
       action: "COMPETITION_HEAT_RESULT_RUN_UP",
@@ -448,6 +456,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
         { error: "ランアップ対象の召集済み参加者がいません" },
         { status: 409 }
       );
+    }
+    if (isPrismaTransactionUnavailable(error)) {
+      return NextResponse.json({ error: prismaPoolBusyUserMessage() }, { status: 503 });
     }
     return jsonInternalError500(
       "POST api/competitions/[id]/day-ops/heat-result-capture/run-up/route.ts",
