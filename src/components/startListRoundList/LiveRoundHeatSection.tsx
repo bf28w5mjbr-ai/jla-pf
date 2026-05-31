@@ -174,7 +174,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
     const elimSlots = eliminationStyle
       ? eliminationSlots({ called: calledForResultConfirm, quota: heatAdvanceQuota ?? null })
       : null;
-    const canTieInHeat = rankOkCount > 0;
+    const canTieInHeat = rankOkCount > 0 || resultDraftCount > 0;
     const heatResultRanksComplete = isHeatResultReadyForConfirm({
       called: calledForResultConfirm,
       quota: heatAdvanceQuota ?? null,
@@ -650,7 +650,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
     const elimSlots = eliminationStyle
       ? eliminationSlots({ called: calledForResultConfirm, quota: heatAdvanceQuota ?? null })
       : null;
-    const canTieInHeat = rankOkCount > 0;
+    const canTieInHeat = rankOkCount > 0 || resultDraftCount > 0;
     const heatResultRanksComplete = isHeatResultReadyForConfirm({
       called: calledForResultConfirm,
       quota: heatAdvanceQuota ?? null,

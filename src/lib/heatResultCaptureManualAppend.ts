@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { Prisma, ResultRound } from "@prisma/client";
+import {
+  resolveHeatResultNextRank,
+  statsFromHeatOkRows,
+  type LastOkRowRef,
+} from "@/lib/heatResultCaptureNextRank";
 import { prisma } from "@/server/db";
 import {
   DAY_OPS_STATUS_MARSHAL_ABSENT,
@@ -120,17 +125,16 @@ export async function appendManualHeatResultsInTransaction(
     }
   }
 
-  const initialAgg = await tx.officialResultRow.aggregate({
+  const initialOkRows = await tx.officialResultRow.findMany({
     where: {
       officialResultId: officialResult.id,
       heat: heatIndex,
       status: "OK",
     },
-    _max: { rank: true },
-    _count: { _all: true },
+    select: { rank: true },
   });
-  let okRowCount = initialAgg._count._all;
-  let maxRank = initialAgg._max.rank ?? 0;
+  let stats = statsFromHeatOkRows(initialOkRows);
+  let lastOkRowInBatch: LastOkRowRef | null = null;
 
   for (const { resolved, entry } of entries) {
     const { target, slot } = resolved;
@@ -176,32 +180,21 @@ export async function appendManualHeatResultsInTransaction(
       }
     }
 
-    const agg = { _max: { rank: maxRank }, _count: { _all: okRowCount } };
-    let nextRank = maxRank + 1;
-    let tieGroup: string | null = null;
-    if (body.tieWithPrevious === true) {
-      const previous = await tx.officialResultRow.findFirst({
-        where: {
-          officialResultId: officialResult.id,
-          heat: heatIndex,
-          status: "OK",
-        },
-        orderBy: [{ rank: "desc" }, { createdAt: "desc" }],
-        select: { id: true, rank: true, tieGroup: true },
+    const { nextRank, tieGroup, previousRowTieGroupUpdate } = await resolveHeatResultNextRank({
+      tx,
+      officialResultId: officialResult.id,
+      heatIndex,
+      tieWithPrevious: body.tieWithPrevious === true,
+      inputOrder: body.inputOrder ?? "asc",
+      descCalledBaseline,
+      stats,
+      lastOkRowInBatch,
+    });
+    if (previousRowTieGroupUpdate) {
+      await tx.officialResultRow.update({
+        where: { id: previousRowTieGroupUpdate.id },
+        data: { tieGroup: previousRowTieGroupUpdate.tieGroup },
       });
-      if (!previous || previous.rank == null) {
-        throw new Error("TIE_NEEDS_PREVIOUS_RESULT");
-      }
-      nextRank = previous.rank;
-      tieGroup = previous.tieGroup ?? randomUUID();
-      if (!previous.tieGroup) {
-        await tx.officialResultRow.update({
-          where: { id: previous.id },
-          data: { tieGroup },
-        });
-      }
-    } else if (body.inputOrder === "desc") {
-      nextRank = Math.max(1, (descCalledBaseline ?? 0) - agg._count._all);
     }
 
     const rowData = {
@@ -251,15 +244,23 @@ export async function appendManualHeatResultsInTransaction(
       },
     });
 
+    const assignedRank = created.rank ?? nextRank;
     createdRows.push({
-      rank: created.rank ?? nextRank,
+      rank: assignedRank,
       lane: slot.lane,
       participantType: target.participantType,
       competitionEntryId: target.competitionEntryId,
       teamEntryId: target.teamEntryId,
     });
-    maxRank = Math.max(maxRank, created.rank ?? nextRank);
-    okRowCount += 1;
+    stats = statsFromHeatOkRows([
+      ...initialOkRows,
+      ...createdRows.map((r) => ({ rank: r.rank })),
+    ]);
+    lastOkRowInBatch = {
+      id: created.id,
+      rank: assignedRank,
+      tieGroup,
+    };
   }
 
   return createdRows;

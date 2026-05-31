@@ -21,6 +21,7 @@ import {
   isCalledLikeStatus,
   isTeamFullyCalled,
 } from "@/lib/dayOpsTeamStatus";
+import { computeProvisionalDraftRanks } from "@/lib/heatResultCaptureNextRank";
 import { cn } from "@/lib/utils";
 import { sexLabelJa } from "@/lib/sexLabelJa";
 import type { IndividualItem, SnapshotParticipant, TeamItem } from "./types";
@@ -211,7 +212,10 @@ export function effectiveResultSortRank(
   participant: HeatMarshalParticipant | undefined,
   apiHeat: HeatMarshalHeatRow | undefined,
   rows: HeatResultCaptureRow[],
-  drafts: Record<string, { heatIndex: number; draftSequence?: number }>,
+  drafts: Record<
+    string,
+    { heatIndex: number; draftSequence?: number; tieWithPrevious?: boolean }
+  >,
   inputOrder: "asc" | "desc"
 ): number | null {
   const server = resultRankForParticipant(heatIndex1Based, participant, rows);
@@ -248,15 +252,17 @@ export function resultRankForParticipant(
 }
 
 /**
- * 未 append のチェックのみのときの仮着順。`draftSequence` の昇順で昇順入力は空き番の小さい方から、
- * 降順入力は空き番の大きい方から割り当てる。
+ * 未 append のチェックのみのときの仮着順。`draftSequence` 昇順で割り当て、同着は直前行と同 rank。
  */
 export function provisionalResultRankForParticipant(
   heatIndex: number,
   participant: HeatMarshalParticipant | undefined,
   apiHeat: HeatMarshalHeatRow | undefined,
   rows: HeatResultCaptureRow[],
-  drafts: Record<string, { heatIndex: number; draftSequence?: number }>,
+  drafts: Record<
+    string,
+    { heatIndex: number; draftSequence?: number; tieWithPrevious?: boolean }
+  >,
   inputOrder: "asc" | "desc"
 ): number | null {
   if (!participant) return null;
@@ -267,31 +273,24 @@ export function provisionalResultRankForParticipant(
   const calledN = countCalledInMarshalHeat(apiHeat);
   if (calledN <= 0) return null;
 
-  const used = new Set(
-    rows.filter((r) => r.heat === heatIndex && r.rank != null).map((r) => r.rank as number)
-  );
+  const serverRanks = rows
+    .filter((r) => r.heat === heatIndex && r.rank != null)
+    .map((r) => r.rank as number);
 
-  const draftsInHeat = Object.entries(drafts)
+  const draftInputs = Object.entries(drafts)
     .filter(([, op]) => op.heatIndex === heatIndex)
-    .map(([key, op]) => ({ key, seq: op.draftSequence ?? 0 }))
-    .sort((a, b) => a.seq - b.seq || a.key.localeCompare(b.key));
+    .map(([key, op]) => ({
+      key,
+      seq: op.draftSequence ?? 0,
+      tieWithPrevious: op.tieWithPrevious === true,
+    }));
 
-  const keyToRank = new Map<string, number>();
-  for (const { key } of draftsInHeat) {
-    if (inputOrder === "asc") {
-      let r = 1;
-      while (r <= calledN && used.has(r)) r++;
-      if (r > calledN) break;
-      used.add(r);
-      keyToRank.set(key, r);
-    } else {
-      let r = calledN;
-      while (r >= 1 && used.has(r)) r--;
-      if (r < 1) break;
-      used.add(r);
-      keyToRank.set(key, r);
-    }
-  }
+  const keyToRank = computeProvisionalDraftRanks({
+    serverRanks,
+    drafts: draftInputs,
+    inputOrder,
+    calledN,
+  });
   return keyToRank.get(pKey) ?? null;
 }
 

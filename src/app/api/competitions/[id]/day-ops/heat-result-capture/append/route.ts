@@ -12,6 +12,10 @@ import {
 } from "@/lib/dayOpsParticipantStatusDisplay";
 import { isCalledLikeStatus } from "@/lib/dayOpsTeamStatus";
 import { loadStartListSnapshotPayload, loadStartListSnapshotPayloadLoose } from "@/lib/heatMarshalGate";
+import {
+  resolveHeatResultNextRank,
+  statsFromHeatOkRows,
+} from "@/lib/heatResultCaptureNextRank";
 import { computeDescInputCalledBaselineInHeat } from "@/lib/marshalHeatCalledCount";
 import { resolveParticipantInHeatForDayOps } from "@/lib/heatDayOpsResolveParticipantInHeat";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
@@ -313,41 +317,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
         throw new Error("ALREADY_RANKED_IN_HEAT");
       }
 
-      const agg = await tx.officialResultRow.aggregate({
+      const okRows = await tx.officialResultRow.findMany({
         where: {
           officialResultId: officialResult.id,
           heat: heatIndex,
           status: "OK",
         },
-        _max: { rank: true },
-        _count: { _all: true },
+        select: { rank: true },
       });
-      let nextRank = (agg._max.rank ?? 0) + 1;
-      let tieGroup: string | null = null;
-      if (body.tieWithPrevious === true) {
-        const previous = await tx.officialResultRow.findFirst({
-          where: {
-            officialResultId: officialResult.id,
-            heat: heatIndex,
-            status: "OK",
-          },
-          orderBy: [{ rank: "desc" }, { createdAt: "desc" }],
-          select: { id: true, rank: true, tieGroup: true },
-        });
-        if (!previous || previous.rank == null) {
-          throw new Error("TIE_NEEDS_PREVIOUS_RESULT");
-        }
-        nextRank = previous.rank;
-        tieGroup = previous.tieGroup ?? randomUUID();
-        if (!previous.tieGroup) {
-          await tx.officialResultRow.update({
-            where: { id: previous.id },
-            data: { tieGroup },
-          });
-        }
-      }
+      const stats = statsFromHeatOkRows(okRows);
+      let descCalledBaseline: number | null = null;
       if (body.tieWithPrevious !== true && body.inputOrder === "desc") {
-        const calledInHeat = await computeDescInputCalledBaselineInHeat({
+        descCalledBaseline = await computeDescInputCalledBaselineInHeat({
           tx,
           competitionId,
           eventId,
@@ -356,10 +337,22 @@ export async function POST(request: NextRequest, context: RouteContext) {
           heatMarshalCallClosed: true,
           snapshot: snapshotForDescInput,
         });
-        if (calledInHeat <= 0) {
-          throw new Error("DESC_INPUT_NO_CALLED");
-        }
-        nextRank = Math.max(1, calledInHeat - agg._count._all);
+      }
+      const { nextRank, tieGroup, previousRowTieGroupUpdate } = await resolveHeatResultNextRank({
+        tx,
+        officialResultId: officialResult.id,
+        heatIndex,
+        tieWithPrevious: body.tieWithPrevious === true,
+        inputOrder: body.inputOrder ?? "asc",
+        descCalledBaseline,
+        stats,
+        lastOkRowInBatch: null,
+      });
+      if (previousRowTieGroupUpdate) {
+        await tx.officialResultRow.update({
+          where: { id: previousRowTieGroupUpdate.id },
+          data: { tieGroup: previousRowTieGroupUpdate.tieGroup },
+        });
       }
 
       const created = await tx.officialResultRow.create({
