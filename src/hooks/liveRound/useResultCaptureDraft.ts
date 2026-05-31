@@ -259,47 +259,71 @@ export function useResultCaptureDraft(args: {
     if (!syncCtx?.competitionId) return;
 
     void (async () => {
-      for (const h of heatsRef.current) {
-        const hi = Number(h.heatIndex);
-        if (!Number.isFinite(hi) || !h.callClosedAt) continue;
-        if (confirmedHeatsRef.current.includes(hi)) continue;
-        try {
-          const row = await getHeatOperationDraft(syncCtx.competitionId, {
-            eventId,
-            round: syncCtx.round,
-            heatIndex: hi,
-          });
-          if (!row.updatedAt) continue;
-          const serverUpdatedMs = Date.parse(row.updatedAt);
-          if (!Number.isFinite(serverUpdatedMs)) continue;
-          if (serverUpdatedMs <= lastLocalResultDraftTouchRef.current) continue;
-          const entries = parseServerResultDraftPayload(row.resultDraftPayload);
-          if (!entries) continue;
-          const entryKeys = Object.keys(entries);
-          if (entryKeys.length === 0) {
-            const hasLocalForHeat = Object.values(resultDraftOpsRef.current).some(
-              (op) => op.heatIndex === hi
-            );
-            if (hasLocalForHeat) continue;
-          }
+      const heatsToPull = heatsRef.current
+        .map((h) => Number(h.heatIndex))
+        .filter(
+          (hi) =>
+            Number.isFinite(hi) &&
+            heatsRef.current.some((h) => Number(h.heatIndex) === hi && h.callClosedAt) &&
+            !confirmedHeatsRef.current.includes(hi)
+        );
+      if (heatsToPull.length === 0) return;
 
-          setResultDraftOps((prev) => {
-            const next = { ...prev };
-            for (const k of Object.keys(next)) {
-              if (next[k]!.heatIndex === hi) delete next[k];
-            }
-            for (const [k, v] of Object.entries(entries)) {
-              if (v && typeof v === "object" && v.heatIndex === hi) {
-                next[k] = v as ResultDraftOp;
-              }
-            }
-            resultDraftOpsRef.current = next;
-            return next;
-          });
-        } catch {
-          // ignore per-heat errors
+      const pulled = await Promise.all(
+        heatsToPull.map(async (hi) => {
+          try {
+            const row = await getHeatOperationDraft(syncCtx.competitionId, {
+              eventId,
+              round: syncCtx.round,
+              heatIndex: hi,
+            });
+            return { hi, row };
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      const updates = new Map<number, Record<string, ResultDraftOp>>();
+      for (const item of pulled) {
+        if (!item) continue;
+        const { hi, row } = item;
+        if (!row.updatedAt) continue;
+        const serverUpdatedMs = Date.parse(row.updatedAt);
+        if (!Number.isFinite(serverUpdatedMs)) continue;
+        if (serverUpdatedMs <= lastLocalResultDraftTouchRef.current) continue;
+        const entries = parseServerResultDraftPayload(row.resultDraftPayload);
+        if (!entries) continue;
+        const entryKeys = Object.keys(entries);
+        if (entryKeys.length === 0) {
+          const hasLocalForHeat = Object.values(resultDraftOpsRef.current).some(
+            (op) => op.heatIndex === hi
+          );
+          if (hasLocalForHeat) continue;
         }
+        const forHeat: Record<string, ResultDraftOp> = {};
+        for (const [k, v] of Object.entries(entries)) {
+          if (v && typeof v === "object" && v.heatIndex === hi) {
+            forHeat[k] = v as ResultDraftOp;
+          }
+        }
+        updates.set(hi, forHeat);
       }
+
+      if (updates.size === 0) return;
+      setResultDraftOps((prev) => {
+        const next = { ...prev };
+        for (const hi of updates.keys()) {
+          for (const k of Object.keys(next)) {
+            if (next[k]!.heatIndex === hi) delete next[k];
+          }
+        }
+        for (const entries of updates.values()) {
+          Object.assign(next, entries);
+        }
+        resultDraftOpsRef.current = next;
+        return next;
+      });
     })();
   }, [eventId, heatsRef, resultDraftSyncActive]);
 
@@ -592,7 +616,6 @@ export function useResultCaptureDraft(args: {
           const timers = resultDraftPatchTimersRef.current;
           clearTimeout(timers[displayHeatNumber]);
           delete timers[displayHeatNumber];
-          await awaitResultDraftServerPatch(displayHeatNumber);
         }
 
         const { createdCount, created, appended } = await postHeatResultRunUp(m.competitionId, {
@@ -628,15 +651,7 @@ export function useResultCaptureDraft(args: {
         setRunUpBusyHeat((prev) => (prev === displayHeatNumber ? null : prev));
       }
     },
-    [
-      m,
-      resultCapture,
-      eventId,
-      awaitResultDraftServerPatch,
-      handleRankRecorded,
-      handleRunUpRecorded,
-      clearResultDraftsForHeat,
-    ]
+    [m, resultCapture, eventId, handleRankRecorded, handleRunUpRecorded, clearResultDraftsForHeat]
   );
 
   const runHeatResultClearRunUp = useCallback(
@@ -714,10 +729,6 @@ export function useResultCaptureDraft(args: {
         tieWithPrevious: op.tieWithPrevious,
         inputOrder: op.inputOrder,
       }));
-
-      if (draftsToFlush.length > 0) {
-        await awaitResultDraftServerPatch(displayHeatNumber);
-      }
 
       patchResultHeatConfirmed(displayHeatNumber);
 
@@ -805,7 +816,6 @@ export function useResultCaptureDraft(args: {
       patchResultHeatConfirmed,
       patchResultHeatUnconfirmed,
       clearResultDraftsForHeat,
-      awaitResultDraftServerPatch,
       router,
     ]
   );

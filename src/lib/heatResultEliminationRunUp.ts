@@ -136,25 +136,39 @@ export async function resolveAdvanceQuotaForHeatInDayOps(opts: {
   heatIndex: number;
   /** 呼び出し元で既に読み込んでいる場合は渡す（$transaction 内の二重接続を避ける） */
   snapshot?: StartListSnapshotPayload | null;
+  competition?: { startListSettings: unknown } | null;
+  event?: {
+    preliminaryHeatLaneCount: number | null;
+    startListRoundCount: number | null;
+    startListHeatPlanConfirmedAt: Date | null;
+  } | null;
 }): Promise<number | null> {
   const { competitionId, eventId, round, heatIndex } = opts;
   const snapshotPromise =
     opts.snapshot !== undefined
       ? Promise.resolve(opts.snapshot)
       : loadStartListSnapshotPayload(competitionId);
+  const competitionPromise =
+    opts.competition !== undefined
+      ? Promise.resolve(opts.competition)
+      : prisma.competition.findUnique({
+          where: { id: competitionId },
+          select: { startListSettings: true },
+        });
+  const eventPromise =
+    opts.event !== undefined
+      ? Promise.resolve(opts.event)
+      : prisma.event.findUnique({
+          where: { id: eventId, competitionId },
+          select: {
+            preliminaryHeatLaneCount: true,
+            startListRoundCount: true,
+            startListHeatPlanConfirmedAt: true,
+          },
+        });
   const [competition, event, snapshot] = await Promise.all([
-    prisma.competition.findUnique({
-      where: { id: competitionId },
-      select: { startListSettings: true },
-    }),
-    prisma.event.findUnique({
-      where: { id: eventId, competitionId },
-      select: {
-        preliminaryHeatLaneCount: true,
-        startListRoundCount: true,
-        startListHeatPlanConfirmedAt: true,
-      },
-    }),
+    competitionPromise,
+    eventPromise,
     snapshotPromise,
   ]);
   if (!event?.startListHeatPlanConfirmedAt || !snapshot) return null;
@@ -214,6 +228,14 @@ export async function listCalledSlotsMissingOkResultRow(opts: {
   statusRows?: ParticipantStatusRowForScope[];
   /** statusRows 渡し時は省略可（未指定なら DB から取得） */
   heatMarshalCallClosed?: boolean;
+  /** 同一 TX 内で既に読んだ OK 行（findMany の二重実行を避ける） */
+  existingOkRows?: ReadonlyArray<{
+    entryType: string;
+    competitionEntryId: string | null;
+    teamEntryId: string | null;
+  }>;
+  /** 同一 TX 内で既に読んだチーム構成員 */
+  teamMembersByTeamId?: Map<string, Array<{ userId: string; label: string }>>;
 }): Promise<CalledSlotMissingResult[]> {
   const roundData = getRoundDataFromSnapshot(opts.snapshot, opts.eventId, opts.round);
   const heat = getHeatFromRoundData(roundData, opts.heatIndex);
@@ -249,20 +271,22 @@ export async function listCalledSlotsMissingOkResultRow(opts: {
   const callClosed = heatMarshalCallClosed ?? false;
   const statusByKey = buildParticipantMarshalDisplayByKeyForRound(statuses, opts.round);
 
-  const existingRows = await opts.tx.officialResultRow.findMany({
-    where: {
-      officialResultId: opts.officialResultId,
-      heat: opts.heatIndex,
-      status: "OK",
-    },
-    select: {
-      entryType: true,
-      competitionEntryId: true,
-      teamEntryId: true,
-      rank: true,
-      advanceWithoutRank: true,
-    },
-  });
+  const existingRows =
+    opts.existingOkRows ??
+    (await opts.tx.officialResultRow.findMany({
+      where: {
+        officialResultId: opts.officialResultId,
+        heat: opts.heatIndex,
+        status: "OK",
+      },
+      select: {
+        entryType: true,
+        competitionEntryId: true,
+        teamEntryId: true,
+        rank: true,
+        advanceWithoutRank: true,
+      },
+    }));
   const hasRow = new Set<string>();
   for (const r of existingRows) {
     if (r.entryType === "INDIVIDUAL" && r.competitionEntryId) {
@@ -276,7 +300,9 @@ export async function listCalledSlotsMissingOkResultRow(opts: {
   for (const p of heat.participants ?? []) {
     if (p.kind === "TEAM" && p.teamEntryId) teamIds.add(p.teamEntryId);
   }
-  const teamMembersByTeamId = await fetchTeamMembersMapForTeamIds(opts.tx, [...teamIds]);
+  const teamMembersByTeamId =
+    opts.teamMembersByTeamId ??
+    (await fetchTeamMembersMapForTeamIds(opts.tx, [...teamIds]));
 
   const calledCount = countCalledMarshalSlotsInHeat({
     heatMarshalCallClosed: callClosed,

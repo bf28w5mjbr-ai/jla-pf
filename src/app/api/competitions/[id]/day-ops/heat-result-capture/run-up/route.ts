@@ -29,6 +29,11 @@ import {
   loadManualResultAppendGateForConfirm,
   type ManualResultAppendEntry,
 } from "@/lib/heatResultCaptureManualAppend";
+import {
+  getHeatFromRoundData,
+  getRoundDataFromSnapshot,
+} from "@/lib/heatMarshalFromSnapshot";
+import { fetchTeamMembersMapForTeamIds } from "@/lib/teamMarshalExpand";
 import type { StartListSnapshotPayload } from "@/lib/startListSnapshot";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
 import { START_LIST_STEP1_REQUIRED_SHORT_MESSAGE } from "@/lib/startListStep1Messages";
@@ -106,12 +111,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const { eventId, round, heatIndex, manualEntries } = parsed.data;
     const roundDb = round as ResultRound;
 
-    const [eventRow, snapshot] = await Promise.all([
+    const [eventRow, snapshot, competition] = await Promise.all([
       prisma.event.findFirst({
         where: { id: eventId, competitionId },
-        select: { id: true, startListHeatPlanConfirmedAt: true },
+        select: {
+          id: true,
+          startListHeatPlanConfirmedAt: true,
+          preliminaryHeatLaneCount: true,
+          startListRoundCount: true,
+        },
       }),
       loadStartListSnapshotPayload(competitionId),
+      prisma.competition.findUnique({
+        where: { id: competitionId },
+        select: { startListSettings: true },
+      }),
     ]);
     if (!eventRow) {
       return NextResponse.json({ error: "種目が見つかりません" }, { status: 404 });
@@ -150,6 +164,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       round: roundDb,
       heatIndex,
       snapshot,
+      competition,
+      event: eventRow,
     });
     if (quota == null) {
       return NextResponse.json(
@@ -164,6 +180,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       entry: ManualResultAppendEntry;
     }> = [];
     let snapshotForDescInput: StartListSnapshotPayload | null = null;
+
+    const eventStatusRowsPromise = fetchParticipantStatusesForMarshalEvent(
+      prisma,
+      competitionId,
+      eventId
+    );
 
     if (entriesToFlush.length > 0) {
       const needsDescSnapshot = entriesToFlush.some(
@@ -215,6 +237,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         round: roundDb,
         heatIndex,
         resolvedSlots: resolvedFlush.map((r) => r.resolved),
+        eventStatusRows: await eventStatusRowsPromise,
+        heatMarshalCallClosed: true,
       });
       if (!gateLoad.ok) {
         return NextResponse.json({ error: gateLoad.error }, { status: gateLoad.status });
@@ -235,11 +259,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const result = await withPrismaPoolRetryOnce(() =>
       prisma.$transaction(async (tx) => {
-      const eventStatusRows = await fetchParticipantStatusesForMarshalEvent(
-        tx,
-        competitionId,
-        eventId
-      );
+      const eventStatusRows = await eventStatusRowsPromise;
 
       if (resolvedFlush.length > 0) {
         appendedRows = await appendManualHeatResultsInTransaction(tx, {
@@ -292,6 +312,30 @@ export async function POST(request: NextRequest, context: RouteContext) {
         throw new Error("HEAT_RESULT_CONFIRMED");
       }
 
+      const roundData = getRoundDataFromSnapshot(snapshot, eventId, roundDb);
+      const heat = getHeatFromRoundData(roundData, heatIndex);
+      const teamIds = new Set<string>();
+      for (const p of heat?.participants ?? []) {
+        if (p.kind === "TEAM" && p.teamEntryId) teamIds.add(p.teamEntryId);
+      }
+      const teamMembersByTeamId = await fetchTeamMembersMapForTeamIds(tx, [...teamIds]);
+
+      const existingRows = await tx.officialResultRow.findMany({
+        where: {
+          officialResultId: officialResult.id,
+          heat: heatIndex,
+          status: "OK",
+        },
+        select: {
+          heat: true,
+          rank: true,
+          advanceWithoutRank: true,
+          entryType: true,
+          competitionEntryId: true,
+          teamEntryId: true,
+        },
+      });
+
       const calledInHeat = await countCalledMarshalSlotsForHeatConfirmInTransaction({
         tx,
         competitionId,
@@ -300,16 +344,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
         heatIndex,
         snapshot,
         statusRows: eventStatusRows,
+        heatMarshalCallClosed: true,
+        teamMembersByTeamId,
       });
 
-      const existingRows = await tx.officialResultRow.findMany({
-        where: {
-          officialResultId: officialResult.id,
-          heat: heatIndex,
-          status: "OK",
-        },
-        select: { heat: true, rank: true, advanceWithoutRank: true },
-      });
       const { rankedCount, runUpCount } = countHeatResultRows(existingRows, heatIndex);
       const slots = eliminationSlots({ called: calledInHeat, quota });
       if (!slots) {
@@ -332,6 +370,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         snapshot,
         statusRows: eventStatusRows,
         heatMarshalCallClosed: true,
+        existingOkRows: existingRows,
+        teamMembersByTeamId,
       });
       if (toCreate.length === 0) {
         throw new Error("RUN_UP_NO_TARGETS");

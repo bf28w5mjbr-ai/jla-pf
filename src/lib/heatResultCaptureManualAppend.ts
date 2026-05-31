@@ -399,17 +399,29 @@ export type ManualResultAppendGateContext = {
   dayOpsRows: ParticipantStatusRowForScope[];
 };
 
-/** confirm-heat: 同一ヒートの manualEntries を一括検証するための事前読み込み */
+/** confirm-heat / run-up: 同一ヒートの manualEntries を一括検証するための事前読み込み */
 export async function loadManualResultAppendGateForConfirm(params: {
   competitionId: string;
   eventId: string;
   round: ResultRound;
   heatIndex: number;
   resolvedSlots: HeatDayOpsResolvedSlot[];
+  /** 呼び出し元で既に読んだ参加者ステータス（findMany の二重実行を避ける） */
+  eventStatusRows?: ParticipantStatusRowForScope[];
+  /** 呼び出し元で既知の場合は渡す（marshal 行の findUnique を省略） */
+  heatMarshalCallClosed?: boolean;
 }): Promise<
   { ok: true; gate: ManualResultAppendGateContext } | { ok: false; error: string; status: number }
 > {
-  const { competitionId, eventId, round, heatIndex, resolvedSlots } = params;
+  const {
+    competitionId,
+    eventId,
+    round,
+    heatIndex,
+    resolvedSlots,
+    eventStatusRows,
+    heatMarshalCallClosed: heatMarshalCallClosedKnown,
+  } = params;
   const individualIds = [
     ...new Set(
       resolvedSlots
@@ -427,31 +439,40 @@ export async function loadManualResultAppendGateForConfirm(params: {
     ),
   ];
 
+  const dayOpsRowsPromise =
+    eventStatusRows !== undefined
+      ? Promise.resolve(eventStatusRows)
+      : prisma.competitionParticipantStatus.findMany({
+          where: { competitionId, eventId, marshalRound: round },
+          select: {
+            participantType: true,
+            competitionEntryId: true,
+            teamEntryId: true,
+            teamMemberUserId: true,
+            status: true,
+            calledAt: true,
+            marshalRound: true,
+            updatedAt: true,
+          },
+        });
+
   const [heatMarshalRow, dayOpsRows, validIndividuals, validTeams] = await Promise.all([
-    prisma.competitionHeatMarshalState.findUnique({
-      where: {
-        competitionId_eventId_round_heatIndex: {
-          competitionId,
-          eventId,
-          round,
-          heatIndex,
-        },
-      },
-      select: { callClosedAt: true },
-    }),
-    prisma.competitionParticipantStatus.findMany({
-      where: { competitionId, eventId, marshalRound: round },
-      select: {
-        participantType: true,
-        competitionEntryId: true,
-        teamEntryId: true,
-        teamMemberUserId: true,
-        status: true,
-        calledAt: true,
-        marshalRound: true,
-        updatedAt: true,
-      },
-    }),
+    heatMarshalCallClosedKnown !== undefined
+      ? Promise.resolve(
+          heatMarshalCallClosedKnown ? { callClosedAt: new Date() } : { callClosedAt: null }
+        )
+      : prisma.competitionHeatMarshalState.findUnique({
+          where: {
+            competitionId_eventId_round_heatIndex: {
+              competitionId,
+              eventId,
+              round,
+              heatIndex,
+            },
+          },
+          select: { callClosedAt: true },
+        }),
+    dayOpsRowsPromise,
     individualIds.length
       ? prisma.competitionEntry.findMany({
           where: {
@@ -470,7 +491,8 @@ export async function loadManualResultAppendGateForConfirm(params: {
       : Promise.resolve([]),
   ]);
 
-  const heatMarshalCallClosed = Boolean(heatMarshalRow?.callClosedAt);
+  const heatMarshalCallClosed =
+    heatMarshalCallClosedKnown ?? Boolean(heatMarshalRow?.callClosedAt);
   if (!heatMarshalCallClosed) {
     return {
       ok: false,

@@ -143,36 +143,51 @@ export async function countCalledMarshalSlotsForHeatConfirmInTransaction(opts: {
   snapshot: StartListSnapshotPayload | null;
   /** 同一トランザクション内で既に読んだ場合は渡す */
   statusRows?: ParticipantStatusRowForScope[];
+  /** 呼び出し元で既知の場合は渡す（marshal 行の findUnique を省略） */
+  heatMarshalCallClosed?: boolean;
+  /** 同一 TX 内で既に読んだチーム構成員 */
+  teamMembersByTeamId?: Map<string, Array<{ userId: string; label: string }>>;
 }): Promise<number> {
   const roundData = getRoundDataFromSnapshot(opts.snapshot, opts.eventId, opts.round);
   const heat = getHeatFromRoundData(roundData, opts.heatIndex);
   if (!heat || !(heat.participants?.length)) return 0;
 
-  const [marshalRow, statuses] = await Promise.all([
-    opts.tx.competitionHeatMarshalState.findUnique({
-      where: {
-        competitionId_eventId_round_heatIndex: {
-          competitionId: opts.competitionId,
-          eventId: opts.eventId,
-          round: opts.round,
-          heatIndex: opts.heatIndex,
+  let heatMarshalCallClosed = opts.heatMarshalCallClosed;
+  const statusesPromise = opts.statusRows
+    ? Promise.resolve(opts.statusRows)
+    : fetchParticipantStatusesForMarshalEvent(opts.tx, opts.competitionId, opts.eventId);
+
+  const statuses = await (async () => {
+    if (heatMarshalCallClosed !== undefined) {
+      return statusesPromise;
+    }
+    const [marshalRow, rows] = await Promise.all([
+      opts.tx.competitionHeatMarshalState.findUnique({
+        where: {
+          competitionId_eventId_round_heatIndex: {
+            competitionId: opts.competitionId,
+            eventId: opts.eventId,
+            round: opts.round,
+            heatIndex: opts.heatIndex,
+          },
         },
-      },
-      select: { callClosedAt: true },
-    }),
-    opts.statusRows
-      ? Promise.resolve(opts.statusRows)
-      : fetchParticipantStatusesForMarshalEvent(opts.tx, opts.competitionId, opts.eventId),
-  ]);
-  const heatMarshalCallClosed = Boolean(marshalRow?.callClosedAt);
+        select: { callClosedAt: true },
+      }),
+      statusesPromise,
+    ]);
+    heatMarshalCallClosed = Boolean(marshalRow?.callClosedAt);
+    return rows;
+  })();
   const statusByKey = buildParticipantMarshalDisplayByKeyForRound(statuses, opts.round);
   const teamIds = new Set<string>();
   for (const p of heat.participants ?? []) {
     if (p.kind === "TEAM" && p.teamEntryId) teamIds.add(p.teamEntryId);
   }
-  const teamMembersByTeamId = await fetchTeamMembersMapForTeamIds(opts.tx, [...teamIds]);
+  const teamMembersByTeamId =
+    opts.teamMembersByTeamId ??
+    (await fetchTeamMembersMapForTeamIds(opts.tx, [...teamIds]));
   return countCalledMarshalSlotsInHeat({
-    heatMarshalCallClosed,
+    heatMarshalCallClosed: heatMarshalCallClosed ?? false,
     heat,
     statusByKey,
     teamMembersByTeamId,

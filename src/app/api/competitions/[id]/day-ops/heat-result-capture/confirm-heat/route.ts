@@ -93,12 +93,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const { eventId, round, heatIndex, manualEntries } = parsed.data;
     const roundDb = round as ResultRound;
 
-    const [eventRow, snapshot] = await Promise.all([
+    const [eventRow, snapshot, competition] = await Promise.all([
       prisma.event.findFirst({
         where: { id: eventId, competitionId },
-        select: { id: true, startListHeatPlanConfirmedAt: true },
+        select: {
+          id: true,
+          startListHeatPlanConfirmedAt: true,
+          preliminaryHeatLaneCount: true,
+          startListRoundCount: true,
+        },
       }),
       loadStartListSnapshotPayload(competitionId),
+      prisma.competition.findUnique({
+        where: { id: competitionId },
+        select: { startListSettings: true },
+      }),
     ]);
     if (!eventRow) {
       return NextResponse.json({ error: "種目が見つかりません" }, { status: 404 });
@@ -116,6 +125,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       round: roundDb,
       heatIndex,
       snapshot,
+      competition,
+      event: eventRow,
     });
 
     const entriesToFlush = manualEntries ?? [];
@@ -124,6 +135,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       entry: ManualResultAppendEntry;
     }> = [];
     let snapshotForDescInput: StartListSnapshotPayload | null = null;
+
+    const eventStatusRowsPromise = fetchParticipantStatusesForMarshalEvent(
+      prisma,
+      competitionId,
+      eventId
+    );
 
     if (entriesToFlush.length > 0) {
       const needsDescSnapshot = entriesToFlush.some(
@@ -174,6 +191,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         round: roundDb,
         heatIndex,
         resolvedSlots: resolvedFlush.map((r) => r.resolved),
+        eventStatusRows: await eventStatusRowsPromise,
       });
       if (!gateLoad.ok) {
         return NextResponse.json({ error: gateLoad.error }, { status: gateLoad.status });
@@ -194,11 +212,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const row = await withPrismaPoolRetryOnce(() =>
       prisma.$transaction(async (tx) => {
-      const eventStatusRows = await fetchParticipantStatusesForMarshalEvent(
-        tx,
-        competitionId,
-        eventId
-      );
+      const eventStatusRows = await eventStatusRowsPromise;
 
       if (resolvedFlush.length > 0) {
         appendedRows = await appendManualHeatResultsInTransaction(tx, {
