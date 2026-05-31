@@ -164,9 +164,7 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
     submitDeleteTab,
   } = props;
 
-  const [scheduleCardMode, setScheduleCardMode] = useState<ScheduleCardMode>(
-    canReorder ? "assign" : "schedule"
-  );
+  const [scheduleCardMode, setScheduleCardMode] = useState<ScheduleCardMode>("schedule");
   const [areaTabsEditMode, setAreaTabsEditMode] = useState(false);
 
   const effectiveMode: ScheduleCardMode = canReorder ? scheduleCardMode : "schedule";
