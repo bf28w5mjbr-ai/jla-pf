@@ -42,7 +42,7 @@ export async function GET(
         eventId,
         ...(canViewUnpublished ? {} : { publishedAt: { not: null } }),
       },
-      include: { rows: true },
+      include: { rows: { orderBy: [{ heat: "asc" }, { rank: "asc" }] } },
       orderBy: { round: "asc" },
     });
 

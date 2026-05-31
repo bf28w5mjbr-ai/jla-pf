@@ -95,6 +95,7 @@ export async function GET(
             lane: true,
             heat: true,
           },
+          orderBy: [{ heat: "asc" }, { rank: "asc" }],
         },
       },
       orderBy: { round: "asc" },

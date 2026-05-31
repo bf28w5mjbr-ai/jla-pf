@@ -22,8 +22,9 @@ const officialResultListInclude = {
       lane: true,
       heat: true,
     },
+    orderBy: [{ heat: "asc" }, { rank: "asc" }],
   },
-} as const;
+} satisfies Prisma.OfficialResultInclude;
 
 export type CompetitionOfficialResultsPayload = {
   results: Prisma.OfficialResultGetPayload<{ include: typeof officialResultListInclude }>[];
