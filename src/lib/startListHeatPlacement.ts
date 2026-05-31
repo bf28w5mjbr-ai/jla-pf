@@ -94,7 +94,7 @@ export type StartListTeamDisplayItem = {
   members: string[];
 };
 
-function shuffleHeatsParticipantsInPlace(heats: StartListHeat[], rng: StartListRandomFn) {
+export function shuffleHeatsParticipantsInPlace(heats: StartListHeat[], rng: StartListRandomFn) {
   for (const heat of heats) {
     const shuffled = shuffleWithRng(heat.participants, rng);
     heat.participants.length = 0;

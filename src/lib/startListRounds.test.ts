@@ -263,6 +263,55 @@ describe("buildNextRoundHeatsFromPreviousResults", () => {
     );
   });
 
+  function isMonotonicBySourceRank(parts: StartListParticipant[]): boolean {
+    for (let i = 1; i < parts.length; i += 1) {
+      const prev = parts[i - 1]!.sourceRank ?? 1_000_000;
+      const cur = parts[i]!.sourceRank ?? 1_000_000;
+      if (prev > cur) return false;
+    }
+    return true;
+  }
+
+  it("ヒート内レーン順が着順の push 順（昇順固定）にならない", () => {
+    const participants = [
+      ind("a", 1, 1),
+      ind("b", 1, 2),
+      ind("c", 2, 3),
+      ind("d", 2, 4),
+    ];
+    let foundNonMonotonic = false;
+    for (let s = 1; s < 200; s += 1) {
+      const heats = buildNextRoundHeatsFromPreviousResults({
+        participants,
+        heatCount: 1,
+        shuffleSeed: s,
+      });
+      const laneOrder = heats[0]?.participants ?? [];
+      if (laneOrder.length === 4 && !isMonotonicBySourceRank(laneOrder)) {
+        foundNonMonotonic = true;
+        break;
+      }
+    }
+    expect(foundNonMonotonic).toBe(true);
+  });
+
+  it("同一 shuffleSeed ならヒート所属（参加者集合）は再現される", () => {
+    const participants = [ind("a", 1, 1), ind("b", 1, 2), ind("c", 2, 1), ind("d", 3, 2)];
+    const heatSets = (heats: ReturnType<typeof buildNextRoundHeatsFromPreviousResults>) =>
+      heats.map((h) => [...h.participants.map(participantKey)].sort());
+    const h1 = buildNextRoundHeatsFromPreviousResults({
+      participants,
+      heatCount: 2,
+      shuffleSeed: 0xdeadbeef,
+    });
+    const h2 = buildNextRoundHeatsFromPreviousResults({
+      participants,
+      heatCount: 2,
+      shuffleSeed: 0xdeadbeef,
+    });
+    expect(heatSets(h1)).toEqual(heatSets(h2));
+  });
+
   it("同一着順が多いとき、異なる shuffleSeed で割当が変わりうる", () => {
     const participants = Array.from({ length: 8 }, (_, i) => ind(`u${i}`, 1, i + 1));
     let foundDiff = false;

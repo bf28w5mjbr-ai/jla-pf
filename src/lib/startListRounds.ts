@@ -1,3 +1,8 @@
+import {
+  createStartListRng,
+  shuffleHeatsParticipantsInPlace,
+} from "@/lib/startListHeatPlacement";
+
 /** スナップショット／DB 用の内部識別子（最大3種）。UI タブ位置から割り当てられ、競技の「予選」等と一致しない場合がある。 */
 export type StartListRound = "HEAT" | "SEMI" | "FINAL";
 
@@ -629,13 +634,15 @@ export function buildNextRoundHeatsFromPreviousResults(params: {
       heats[idx].participants.push(participant);
       room[idx] -= 1;
     });
-    return heats;
+  } else {
+    ordered.forEach((participant, index) => {
+      const idx = chooseBestHeat(heats, participant, preferred[index] ?? null, rng);
+      heats[idx].participants.push(participant);
+    });
   }
-  ordered.forEach((participant, index) => {
-    const idx = chooseBestHeat(heats, participant, preferred[index] ?? null, rng);
-    heats[idx].participants.push(participant);
-  });
 
+  const laneRng = createStartListRng(seed ^ 0xa5a5_a5a5);
+  shuffleHeatsParticipantsInPlace(heats, laneRng);
   return heats;
 }
 

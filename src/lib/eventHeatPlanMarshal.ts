@@ -1,8 +1,15 @@
 import { prisma } from "@/server/db";
+import { roundTabSplitFingerprint } from "@/lib/marshalRoundSettingsLock";
 import type { HeatSetting } from "@/lib/startListSettings";
 import { normalizeRoundTabs } from "@/lib/startListSettings";
 
 const EMPTY_HEAT: HeatSetting = { mode: "count", heatCount: "1", heatSize: "" };
+
+/** 先頭 HEAT タブの分割だけを比較する（スナップショット HEAT 再計算の要否判定用） */
+export function headHeatPlanSplitFingerprint(setting: HeatSetting | undefined): string {
+  const tabs = normalizeRoundTabs(setting ?? {});
+  return roundTabSplitFingerprint(tabs[0]);
+}
 
 /** マーシャル後も変更不可にする分割設定の比較用フィンガープリント（ラベル・タブ id は含めない） */
 export function heatPlanSplitFingerprint(setting: HeatSetting | undefined): string {

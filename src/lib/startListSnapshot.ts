@@ -1,6 +1,6 @@
 import { prisma } from "@/server/db";
 import { competitionEntryEligibleForStartListWhere } from "@/lib/entryCheckoutSessionPaid";
-import { heatPlanSplitFingerprint } from "@/lib/eventHeatPlanMarshal";
+import { headHeatPlanSplitFingerprint } from "@/lib/eventHeatPlanMarshal";
 import { hasIndividualWithdrawalForEvent } from "@/lib/entryWithdrawalAdminLabel";
 import {
   normalizeRoundTabs,
@@ -211,7 +211,10 @@ export function eventIdsWhereHeatPlanSplitChanged(params: {
 }): string[] {
   const out: string[] = [];
   for (const id of params.orderedEventIds) {
-    if (heatPlanSplitFingerprint(params.previous[id]) !== heatPlanSplitFingerprint(params.next[id])) {
+    if (
+      headHeatPlanSplitFingerprint(params.previous[id]) !==
+      headHeatPlanSplitFingerprint(params.next[id])
+    ) {
       out.push(id);
     }
   }
