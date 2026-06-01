@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
+import { Prisma, MembershipStatus } from "@prisma/client";
 import { assertClubOperational, ClubOperationalError } from "@/lib/clubLifecycle";
 import { isClubAdminRole } from "@/lib/roleScopes";
 import { createNotification } from "@/lib/notificationService";
 import { appRoutes } from "@/lib/appRoutes";
+import { isMembershipAutoApproveEnabled } from "@/lib/membershipAutoApprove";
 
 const MEMBERSHIP_APPLICATIONS_PER_HOUR_LIMIT = 3;
 const MEMBERSHIP_REAPPLY_COOLDOWN_DAYS = 7;
@@ -23,6 +24,30 @@ const includeUserClub = {
     },
   },
 } as const;
+
+function membershipStatusOnApply(): MembershipStatus {
+  return isMembershipAutoApproveEnabled() ? "APPROVED" : "PENDING";
+}
+
+async function notifyApplicantOfMembershipApproved(
+  userId: string,
+  clubId: string,
+  clubName: string,
+  membershipId: string
+): Promise<void> {
+  await createNotification({
+    userId,
+    category: "CLUB",
+    type: "MEMBERSHIP_APPROVED",
+    title: "クラブ参加が承認されました",
+    body: `${clubName}への参加が承認されました。`,
+    relatedId: membershipId,
+    linkUrl: appRoutes.clubs.root(clubId),
+    sendEmail: true,
+  }).catch((err) => {
+    console.error("Membership approved notification error:", err);
+  });
+}
 
 async function notifyClubAdminsOfMembershipApplication(
   clubId: string,
@@ -78,9 +103,13 @@ function mapClubError(error: unknown): MembershipApplicationError | null {
  * 参加は PENDING。管理者承認後に APPROVED。
  */
 export async function applyForMembership(userId: string, clubId: string) {
+  const autoApprove = isMembershipAutoApproveEnabled();
+
   try {
     const membership = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await assertClubOperational(tx, clubId);
+
+      const applyStatus = membershipStatusOnApply();
 
       const existing = await tx.membership.findUnique({
         where: {
@@ -101,10 +130,29 @@ export async function applyForMembership(userId: string, clubId: string) {
           );
         }
         if (existing.status === "PENDING") {
-          throw new MembershipApplicationError(
-            "PENDING_APPLICATION",
-            "既に参加申請中です"
-          );
+          if (!autoApprove) {
+            throw new MembershipApplicationError(
+              "PENDING_APPLICATION",
+              "既に参加申請中です"
+            );
+          }
+
+          const approved = await tx.membership.update({
+            where: { id: existing.id },
+            data: { status: "APPROVED" },
+            include: includeUserClub,
+          });
+
+          await tx.auditLog.create({
+            data: {
+              actorUserId: userId,
+              action: "MEMBERSHIP_APPROVE",
+              target: approved.id,
+              meta: { autoApprove: true },
+            },
+          });
+
+          return approved;
         }
         if (existing.status === "REJECTED") {
           const cooldownMs = MEMBERSHIP_REAPPLY_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
@@ -139,7 +187,7 @@ export async function applyForMembership(userId: string, clubId: string) {
       const newMembership = isReapplyFromRejected
         ? await tx.membership.update({
             where: { id: existing!.id },
-            data: { status: "PENDING", role: "MEMBER" },
+            data: { status: applyStatus, role: "MEMBER" },
             include: includeUserClub,
           })
         : await tx.membership.create({
@@ -147,7 +195,7 @@ export async function applyForMembership(userId: string, clubId: string) {
               userId,
               clubId,
               role: "MEMBER",
-              status: "PENDING",
+              status: applyStatus,
             },
             include: includeUserClub,
           });
@@ -157,11 +205,38 @@ export async function applyForMembership(userId: string, clubId: string) {
           actorUserId: userId,
           action: "MEMBERSHIP_APPLY",
           target: newMembership.id,
+          meta: autoApprove ? { autoApprove: true } : undefined,
         },
       });
 
+      if (autoApprove) {
+        await tx.auditLog.create({
+          data: {
+            actorUserId: userId,
+            action: "MEMBERSHIP_APPROVE",
+            target: newMembership.id,
+            meta: { autoApprove: true },
+          },
+        });
+      }
+
       return newMembership;
     });
+
+    if (autoApprove) {
+      void notifyApplicantOfMembershipApproved(
+        membership.user.id,
+        clubId,
+        membership.club.name,
+        membership.id
+      );
+
+      return {
+        success: true,
+        membership,
+        message: `${membership.club.name}に参加しました。`,
+      };
+    }
 
     const applicantName =
       `${membership.user.profile?.familyName ?? ""} ${membership.user.profile?.givenName ?? ""}`.trim() ||
@@ -292,16 +367,12 @@ export async function approveMembership(
       return updated;
     });
 
-    void createNotification({
-      userId: result.user.id,
-      category: "CLUB",
-      type: "MEMBERSHIP_APPROVED",
-      title: "クラブ参加が承認されました",
-      body: `${result.club.name}への参加が承認されました。`,
-      relatedId: membershipId,
-      linkUrl: appRoutes.clubs.root(clubId),
-      sendEmail: true,
-    }).catch((err) => console.error("Membership approved notification error:", err));
+    void notifyApplicantOfMembershipApproved(
+      result.user.id,
+      clubId,
+      result.club.name,
+      membershipId
+    );
 
     return {
       success: true,
