@@ -2,6 +2,7 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
+import { safePostLoginPath } from "@/lib/postLoginRedirect";
 import { prisma } from "@/server/db";
 
 const MIN_AUTH_SECRET_LEN = 32;
@@ -88,6 +89,15 @@ export const getOptionalAuthenticatedUserId = cache(async (): Promise<string | n
   const session = await verifySessionCached(token);
   return session?.userId ?? null;
 });
+
+/** ログイン画面用: セッション有効なら post-login 先（未指定時はダッシュボード）へ遷移 */
+export async function redirectIfAuthenticated(
+  redirectParam: string | null | undefined
+): Promise<void> {
+  const userId = await getOptionalAuthenticatedUserId();
+  if (!userId) return;
+  redirect(safePostLoginPath(redirectParam) ?? "/dashboard");
+}
 
 export async function isAssociationAdmin(userId: string): Promise<boolean> {
   const associationAdmin = await prisma.associationAdmin.findFirst({
