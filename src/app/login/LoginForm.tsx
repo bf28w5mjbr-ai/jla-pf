@@ -37,7 +37,6 @@ export default function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
   const [supportsPasskey, setSupportsPasskey] = useState(true);
-  const [smsLoginAvailable, setSmsLoginAvailable] = useState<boolean | null>(null);
   const [passwordRetryRemainingSec, setPasswordRetryRemainingSec] = useState<number | null>(null);
   const [passkeyRetryRemainingSec, setPasskeyRetryRemainingSec] = useState<number | null>(null);
 
@@ -75,19 +74,6 @@ export default function LoginForm() {
     }, 1000);
     return () => window.clearInterval(id);
   }, [passkeyRateLimited]);
-
-  useEffect(() => {
-    fetch("/api/health")
-      .then(async (r) => {
-        const j = (await r.json()) as { smsLoginAvailable?: boolean };
-        if (typeof j.smsLoginAvailable === "boolean") {
-          setSmsLoginAvailable(j.smsLoginAvailable);
-        } else {
-          setSmsLoginAvailable(true);
-        }
-      })
-      .catch(() => setSmsLoginAvailable(true));
-  }, []);
 
   const handlePasskeyLoginSuccess = useCallback(() => {
     setPasswordRetryRemainingSec(null);
@@ -254,11 +240,7 @@ export default function LoginForm() {
     <AuthShell
       maxWidth="md"
       title="ログイン"
-      subtitle={
-        smsLoginAvailable === false
-          ? "メールアドレスとパスワード、または端末に保存したパスキーでログインできます。"
-          : "メールアドレスとパスワード、パスキー、または SMS でログインできます。"
-      }
+      subtitle="メールアドレスとパスワード、または端末に保存したパスキーでログインできます。"
       subtitleDensity="balanced"
     >
       <AuthPanel>
@@ -354,9 +336,7 @@ export default function LoginForm() {
             </div>
             <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
               <p className={fieldHintClass("guided")}>
-                {smsLoginAvailable === false
-                  ? "パスワードを忘れた場合は案内ページからメールで再設定するか、パスキー・お問い合わせをご利用ください（この環境では SMS ログインはありません）。"
-                  : "パスワードを忘れた場合は案内ページからメールで再設定するか、SMS・パスキーでもログインできます。"}
+                パスワードを忘れた場合は案内ページからメールで再設定するか、パスキー・お問い合わせをご利用ください。
               </p>
               <Button variant="link" className="h-auto shrink-0 justify-start p-0 text-sm font-medium" asChild>
                 <Link href={appendRedirectQuery("/login/forgot-password", redirectAfterLogin)}>
@@ -385,21 +365,11 @@ export default function LoginForm() {
             >
               {passkeyLoading ? "パスキー認証中..." : "パスキーでログイン"}
             </Button>
-
-            {smsLoginAvailable !== false && (
-              <Button variant="outline" className="w-full" asChild>
-                <Link href={appendRedirectQuery("/login/sms", redirectAfterLogin)}>
-                  SMS認証でログイン
-                </Link>
-              </Button>
-            )}
           </div>
 
           {!supportsPasskey && (
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-              {smsLoginAvailable === false
-                ? "この端末はパスキーに対応していません。メールアドレスとパスワードでログインしてください。"
-                : "この端末はパスキーに対応していません。SMSをご利用ください。"}
+              この端末はパスキーに対応していません。メールアドレスとパスワードでログインしてください。
             </p>
           )}
 

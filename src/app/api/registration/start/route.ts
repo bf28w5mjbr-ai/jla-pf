@@ -1,5 +1,5 @@
 // POST /api/registration/start
-// 基本情報入力 -> SMS OTP送信
+// 基本情報入力 -> メール OTP 送信
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
@@ -154,9 +154,8 @@ export async function POST(req: NextRequest) {
       let delivery: RegistrationOtpDeliveryStored;
       try {
         delivery = await sendRegistrationOtpResendDelivery({
-          phoneE164,
           otp,
-          emailForOtp: existingSession.email ?? null,
+          emailForOtp: existingSession.email ?? "",
           priorDelivery: existingSession.registrationOtpDelivery,
         });
       } catch (sendErr) {
@@ -197,27 +196,22 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      const otpDelivery = delivery === "EMAIL" ? "email" : "sms";
+      const otpDelivery = "email";
 
       const fromAddr = resolveResendRegistrationFrom();
 
       return NextResponse.json({
         sessionId: updatedSession.id,
-        message:
-          delivery === "EMAIL"
-            ? "認証コードをメールで再送信しました"
-            : "認証コードを再送信しました",
+        message: "認証コードをメールで再送信しました",
         resent: true,
         otpDelivery,
-        ...(delivery === "EMAIL" &&
-          existingSession.email && {
-            otpDeliveryHint: maskEmailForHint(existingSession.email),
-          }),
-        ...(delivery === "EMAIL" &&
-          isResendOnboardingFrom(fromAddr) && {
-            resendDeliveryHint:
-              "テスト用送信元のため、届くのは Resend アカウントのメールアドレス宛に限られることがあります。別アドレスで試す場合は Resend でドメインを検証し、REGISTRATION_EMAIL_FROM を設定してください。",
-          }),
+        ...(existingSession.email && {
+          otpDeliveryHint: maskEmailForHint(existingSession.email),
+        }),
+        ...(isResendOnboardingFrom(fromAddr) && {
+          resendDeliveryHint:
+            "テスト用送信元のため、届くのは Resend アカウントのメールアドレス宛に限られることがあります。別アドレスで試す場合は Resend でドメインを検証し、REGISTRATION_EMAIL_FROM を設定してください。",
+        }),
       });
     }
 
@@ -265,7 +259,6 @@ export async function POST(req: NextRequest) {
     let delivery: RegistrationOtpDeliveryStored;
     try {
       delivery = await sendRegistrationOtpDelivery({
-        phoneE164,
         otp,
         emailForOtp: normalizedEmail,
       });
@@ -325,50 +318,20 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const otpDelivery = delivery === "EMAIL" ? "email" : "sms";
+    const otpDelivery = "email";
     const fromAddr = resolveResendRegistrationFrom();
 
     return NextResponse.json({
       sessionId: session.id,
-      message:
-        delivery === "EMAIL"
-          ? "認証コードを登録メールアドレス宛に送信しました"
-          : "認証コードを送信しました",
+      message: "認証コードを登録メールアドレス宛に送信しました",
       otpDelivery,
-      ...(delivery === "EMAIL" && {
-        otpDeliveryHint: maskEmailForHint(normalizedEmail),
+      otpDeliveryHint: maskEmailForHint(normalizedEmail),
+      ...(isResendOnboardingFrom(fromAddr) && {
+        resendDeliveryHint:
+          "テスト用送信元のため、届くのは Resend アカウントのメールアドレス宛に限られることがあります。別アドレスで試す場合は Resend でドメインを検証し、REGISTRATION_EMAIL_FROM を設定してください。",
       }),
-      ...(delivery === "EMAIL" &&
-        isResendOnboardingFrom(fromAddr) && {
-          resendDeliveryHint:
-            "テスト用送信元のため、届くのは Resend アカウントのメールアドレス宛に限られることがあります。別アドレスで試す場合は Resend でドメインを検証し、REGISTRATION_EMAIL_FROM を設定してください。",
-        }),
     });
   } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.includes("Alphanumeric Sender ID cannot be used as the 'From' number on trial accounts")
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Twilio trialアカウントでは英数字Sender IDを使用できません。Twilioの電話番号をFromに設定するか、trial解除後に再試行してください。",
-        },
-        { status: 503 }
-      );
-    }
-    if (error instanceof Error && error.message.includes("Invalid 'To' Phone Number")) {
-      return NextResponse.json(
-        { error: "SMS送信先の電話番号が無効です。E.164形式で有効な実在番号をご確認ください。" },
-        { status: 400 }
-      );
-    }
-    if (error instanceof Error && error.message.toLowerCase().includes("unsupported phone provider")) {
-      return NextResponse.json(
-        { error: "SupabaseのSMSプロバイダ設定が未完了です。管理者にお問い合わせください。" },
-        { status: 503 }
-      );
-    }
     if (error instanceof Error && error.message === "RESEND_API_KEY が未設定です") {
       return NextResponse.json(
         {

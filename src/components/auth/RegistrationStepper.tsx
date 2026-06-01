@@ -4,7 +4,7 @@ type RegistrationStep = 1 | 2 | 3;
 
 const STEPS: { step: RegistrationStep; label: string }[] = [
   { step: 1, label: "基本情報" },
-  { step: 2, label: "SMS認証" },
+  { step: 2, label: "メール認証" },
   { step: 3, label: "パスキー" },
 ];
 

@@ -2,15 +2,12 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import { getSmsAuthPublicFlags } from "@/lib/smsHoldPolicy";
+import { getAuthPublicFlags } from "@/lib/smsHoldPolicy";
 
 export async function GET() {
-  return NextResponse.json(
-    getSmsAuthPublicFlags(),
-    {
-      headers: {
-        "Cache-Control": "no-store",
-      },
-    }
-  );
+  return NextResponse.json(getAuthPublicFlags(), {
+    headers: {
+      "Cache-Control": "no-store",
+    },
+  });
 }

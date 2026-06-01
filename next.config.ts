@@ -190,6 +190,16 @@ const nextConfig: NextConfig = {
         permanent: true,
       },
       {
+        source: "/login/sms",
+        destination: "/login",
+        permanent: false,
+      },
+      {
+        source: "/login/sms/:path*",
+        destination: "/login",
+        permanent: false,
+      },
+      {
         source: "/organizations",
         destination: "/dashboard",
         permanent: true,

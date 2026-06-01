@@ -74,25 +74,7 @@ function RegisterFormInner() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [draftHydrated, setDraftHydrated] = useState(false);
-  const [registrationEmailOtp, setRegistrationEmailOtp] = useState(false);
   const [formData, setFormData] = useState<FormState>(INITIAL_FORM);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/auth/capabilities")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!cancelled && data?.registrationEmailOtp === true) {
-          setRegistrationEmailOtp(true);
-        }
-      })
-      .catch(() => {
-        // fallback to SMS-oriented copy
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     try {
@@ -225,16 +207,11 @@ function RegisterFormInner() {
         return;
       }
 
-      const viaEmail = data.otpDelivery === "email";
-      const emailTitle = viaEmail
-        ? `認証コードをメールで送信しました${
-            typeof data.otpDeliveryHint === "string"
-              ? `（${data.otpDeliveryHint}）`
-              : ""
-          }`
-        : "認証コードを送信しました。SMSを確認してください。";
+      const emailTitle = `認証コードをメールで送信しました${
+        typeof data.otpDeliveryHint === "string" ? `（${data.otpDeliveryHint}）` : ""
+      }`;
 
-      if (viaEmail && typeof data.resendDeliveryHint === "string") {
+      if (typeof data.resendDeliveryHint === "string") {
         toast.success(emailTitle, {
           description: data.resendDeliveryHint,
           duration: 14_000,
@@ -242,8 +219,7 @@ function RegisterFormInner() {
       } else {
         toast.success(emailTitle);
       }
-      const deliveryQ = viaEmail ? "&delivery=email" : "";
-      const otpBase = `/register/sms/otp?sessionId=${data.sessionId}&phone=${encodeURIComponent(formData.phoneNumber)}${deliveryQ}`;
+      const otpBase = `/register/sms/otp?sessionId=${data.sessionId}&phone=${encodeURIComponent(formData.phoneNumber)}`;
       router.push(appendRedirectQuery(otpBase, redirectAfterRegister));
     } catch (err) {
       console.error("Register error:", err);
@@ -258,9 +234,7 @@ function RegisterFormInner() {
       <div className="mb-6 border-b border-border pb-6">
         <h2 className="text-lg font-semibold tracking-tight text-foreground">必須情報の入力</h2>
         <p className={pageLeadClass("balanced")}>
-          {registrationEmailOtp
-            ? "登録メールアドレス宛に認証コードを送信し、本人確認のうえアカウントを作成します。パスキーは任意です。JLA番号は選手登録の申請時に入力します。"
-            : "登録メールまたはSMSで届く認証コードにより本人確認を行い、アカウントを作成します。パスキーは任意です。JLA番号は選手登録の申請時に入力します。"}
+          登録メールアドレス宛に認証コードを送信し、本人確認のうえアカウントを作成します。パスキーは任意です。JLA番号は選手登録の申請時に入力します。
         </p>
       </div>
       <AutofillSyncForm onSubmit={handleSubmit} className="space-y-8">
@@ -368,11 +342,7 @@ function RegisterFormInner() {
             onChange={(phoneNumber) => setFormData({ ...formData, phoneNumber })}
             mobileOnly
             required
-            hint={
-              registrationEmailOtp
-                ? "連絡先として利用する携帯電話番号"
-                : "SMSで認証できる携帯電話番号"
-            }
+            hint="連絡先として利用する携帯電話番号"
           />
         </FormSection>
 

@@ -9,9 +9,9 @@ export const PASSWORD_LOGIN_EMAIL_WINDOW_MS = 15 * 60 * 1000;
 export const PASSWORD_LOGIN_IP_MAX = 25;
 export const PASSWORD_LOGIN_IP_WINDOW_MS = 15 * 60 * 1000;
 
-/** SMS ログイン OTP 送信: IP あたり（1 時間） */
-export const SMS_LOGIN_START_IP_MAX = 30;
-export const SMS_LOGIN_START_IP_WINDOW_MS = 60 * 60 * 1000;
+/** 新規登録 OTP 送信（開始・再送）: IP あたり（1 時間） */
+export const REGISTRATION_START_IP_MAX = 25;
+export const REGISTRATION_START_IP_WINDOW_MS = 60 * 60 * 1000;
 
 /** パスキー認証オプション取得: IP あたり（1 時間） */
 export const PASSKEY_AUTH_OPTIONS_IP_MAX = 80;
@@ -20,10 +20,6 @@ export const PASSKEY_AUTH_OPTIONS_IP_WINDOW_MS = 60 * 60 * 1000;
 /** パスキー認証検証: IP あたりの失敗カウント（15 分） */
 export const PASSKEY_AUTH_VERIFY_IP_MAX = 30;
 export const PASSKEY_AUTH_VERIFY_IP_WINDOW_MS = 15 * 60 * 1000;
-
-/** 新規登録 SMS 送信（開始・再送）: IP あたり（1 時間） */
-export const REGISTRATION_START_IP_MAX = 25;
-export const REGISTRATION_START_IP_WINDOW_MS = 60 * 60 * 1000;
 
 /** パスワード再設定メール依頼: IP あたり（1 時間） */
 export const PASSWORD_RESET_REQUEST_IP_MAX = 20;
@@ -50,10 +46,6 @@ export function throttleKeyPasswordEmail(email: string): string {
 
 export function throttleKeyPasswordIp(ip: string): string {
   return `pwd:ip:${ip}`;
-}
-
-export function throttleKeySmsStartIp(ip: string): string {
-  return `smsstart:ip:${ip}`;
 }
 
 export function throttleKeyPasskeyAuthOptionsIp(ip: string): string {

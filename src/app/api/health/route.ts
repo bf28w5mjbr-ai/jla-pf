@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/env";
-import { getSmsAuthPublicFlags, getRegistrationEmailOtpConfigWarnings } from "@/lib/smsHoldPolicy";
+import { getAuthPublicFlags, getRegistrationEmailOtpConfigWarnings } from "@/lib/smsHoldPolicy";
 
 export async function GET(request: NextRequest) {
   const deepCheck = request.nextUrl.searchParams.get("deep") === "1";
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
         required,
         integrations,
         warnings: registrationWarnings,
-        ...getSmsAuthPublicFlags(),
+        ...getAuthPublicFlags(),
       },
       { status: 503 }
     );
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
         integrations,
         warnings: registrationWarnings,
         deep,
-        ...getSmsAuthPublicFlags(),
+        ...getAuthPublicFlags(),
       },
       { status: ok ? 200 : 503 }
     );
@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
         required,
         integrations,
         warnings: registrationWarnings,
-        ...getSmsAuthPublicFlags(),
+        ...getAuthPublicFlags(),
       },
       { status: 503 }
     );
