@@ -29,7 +29,11 @@
 | 状態 | 挙動 |
 |------|------|
 | 未ログイン | `HomeLanding` を表示（本文 CTA は `/login`・`/register`） |
-| ログイン済み | `redirectIfAuthenticated(null)` により **`/dashboard`** へサーバーリダイレクト |
+| ログイン済み | **`/dashboard`** へリダイレクト（Edge の [`src/proxy.ts`](../src/proxy.ts) で先行。未適用時は [`redirectIfAuthenticated`](../src/lib/auth.ts) がフォールバック） |
+
+### ログイン済みの早期リダイレクト（Edge）
+
+[`src/lib/auth/earlyAuthenticatedRedirect.ts`](../src/lib/auth/earlyAuthenticatedRedirect.ts) が、カバーページホストの `/` および `/login` で有効な `session` Cookie を検出した場合、**ランディングの Node SSR を省略**して 307 で post-login 先へ送る。JWT 検証は [`src/lib/auth/sessionEdge.ts`](../src/lib/auth/sessionEdge.ts)（Prisma 非依存）。
 
 ---
 
@@ -67,15 +71,16 @@
 
 ## 3. URL 挙動マトリクス
 
-`middleware.ts` は **未使用**。ガードは App Router のルートグループと各 Server Component / API で実施します。
+Next.js **proxy**（[`src/proxy.ts`](../src/proxy.ts)）は Supabase セッション更新と、上記のログイン済み早期リダイレクトのみ。認可ガードは App Router のルートグループと各 Server Component / API で実施します。
 
 | URL / 領域 | 未ログイン | ログイン済み | ガード実装 |
 |------------|-----------|-------------|-----------|
-| `/`（カバーホスト） | ランディング | → `/dashboard` | [`src/app/page.tsx`](../src/app/page.tsx) |
+| `/`（カバーホスト） | ランディング | → `/dashboard` | [`src/proxy.ts`](../src/proxy.ts)（Edge） / [`src/app/page.tsx`](../src/app/page.tsx)（フォールバック） |
+| `/dashboard` | → `/login` | 会員シェル（エントリー等は Suspense ストリーミング） | [`src/app/(authenticated)/layout.tsx`](../src/app/(authenticated)/layout.tsx)。ブックマーク・WebView は **直リンク推奨** |
 | `/competitions`, `/clubs`, その他 `(public)/*` | 公開シェル | 公開シェル（リダイレクトなし） | [`src/app/(public)/layout.tsx`](../src/app/(public)/layout.tsx) |
 | `/login` | ログインフォーム | → `redirect` 先 or `/dashboard` | [`src/app/login/page.tsx`](../src/app/login/page.tsx) |
 | `/register` 等（認証シェル） | フォーム | リダイレクトなし（現状） | 各 page |
-| `(authenticated)/*`（例: `/dashboard`） | → `/login` | 会員シェル | [`src/app/(authenticated)/layout.tsx`](../src/app/(authenticated)/layout.tsx) |
+| `(authenticated)/*`（`/dashboard` 以外） | → `/login` | 会員シェル | [`src/app/(authenticated)/layout.tsx`](../src/app/(authenticated)/layout.tsx) |
 
 ---
 

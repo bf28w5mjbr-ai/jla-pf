@@ -159,6 +159,18 @@ pnpm build
 - 必要に応じて Secret `DEPLOY_TOKEN` を設定してください。
 - ワークフローは `MIGRATE_COMMAND` -> `DEPLOY_COMMAND` -> `HEALTHCHECK_URL` 検証の順に実行し、失敗時は `ROLLBACK_COMMAND` を実行します。
 
+## 表示速度（TTFB）計測
+
+本番の HTML 応答時間（TTFB）を curl で計測する:
+
+```bash
+pnpm measure:ttfb -- -n 5 --warmup 1 /
+CURL_EXTRA_ARGS='["-H","Cookie: session=YOUR_JWT"]' \
+  pnpm measure:ttfb -- -n 5 --warmup 1 / /dashboard
+```
+
+ベースライン記録: [`docs/PERFORMANCE_BASELINE.md`](./PERFORMANCE_BASELINE.md)
+
 ## 監視・セキュリティ
 - CI/CodeQL は PR 必須。
 - `security-scan.yml` が日次スケジュールで実行。

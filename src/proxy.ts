@@ -1,7 +1,15 @@
 import { type NextRequest } from "next/server";
+import { tryEarlyAuthenticatedRedirect } from "@/lib/auth/earlyAuthenticatedRedirect";
 import { updateSession } from "@/lib/supabase/middleware";
 
 export async function proxy(request: NextRequest) {
+  const earlyRedirect = await tryEarlyAuthenticatedRedirect(request);
+  if (earlyRedirect) {
+    const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+    earlyRedirect.headers.set("x-request-id", requestId);
+    return earlyRedirect;
+  }
+
   const requestHeaders = new Headers(request.headers);
   const requestId = requestHeaders.get("x-request-id") ?? crypto.randomUUID();
   requestHeaders.set("x-request-id", requestId);

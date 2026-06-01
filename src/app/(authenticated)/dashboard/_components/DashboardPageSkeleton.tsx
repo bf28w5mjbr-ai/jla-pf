@@ -26,6 +26,15 @@ export function DashboardMainSkeleton() {
     <div className="space-y-8" aria-busy="true">
       <div className="h-28 animate-pulse rounded-xl border border-border/60 bg-muted/25" />
       <div className="h-[7.5rem] animate-pulse rounded-xl border border-border/60 bg-muted/25" />
+      <DashboardDeferredSkeleton />
+    </div>
+  );
+}
+
+/** エントリー・経歴ブロック（DashboardMainDeferred）用 */
+export function DashboardDeferredSkeleton() {
+  return (
+    <div className="space-y-8" aria-busy="true">
       <div className="h-96 animate-pulse rounded-xl border border-border/60 bg-muted/25" />
       <div className="h-52 animate-pulse rounded-xl border border-border/60 bg-muted/25" />
     </div>
