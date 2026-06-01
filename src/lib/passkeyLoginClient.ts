@@ -11,7 +11,7 @@ export type PasskeyLoginOptionsRequest = {
 export type PasskeyLoginResult =
   | { ok: true }
   | { ok: false; kind: "rate_limited"; retryAfterSec: number }
-  | { ok: false; kind: "error"; message: string };
+  | { ok: false; kind: "error"; message: string; code?: string };
 
 type PublicKeyCredentialRequestOptionsJSON = Parameters<typeof startAuthentication>[0];
 
@@ -28,6 +28,7 @@ export async function runPasskeyLoginFlow(
   const optionsRes = await fetch("/api/passkeys/authentication/options", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify(
       request.email ? { email: request.email } : {}
     ),
@@ -71,10 +72,15 @@ export async function runPasskeyLoginFlow(
   const verifyRes = await fetch("/api/passkeys/authentication/verify", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify({ credential: assertion, attemptId }),
   });
 
-  const verifyData = (await verifyRes.json()) as { error?: string; retryAfterSec?: unknown };
+  const verifyData = (await verifyRes.json()) as {
+    error?: string;
+    code?: string;
+    retryAfterSec?: unknown;
+  };
 
   if (!verifyRes.ok) {
     if (verifyRes.status === 429) {
@@ -87,6 +93,7 @@ export async function runPasskeyLoginFlow(
       ok: false,
       kind: "error",
       message: verifyData.error ?? "パスキー認証に失敗しました。もう一度最初からお試しください",
+      code: typeof verifyData.code === "string" ? verifyData.code : undefined,
     };
   }
 

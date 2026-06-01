@@ -16,7 +16,7 @@ import {
   tryWebAuthnVerifyErrorResponse,
   webAuthnRequireUserVerification,
 } from "@/lib/webauthnServer";
-import { resolveWebAuthnRpId } from "@/lib/webauthnRpId";
+import { resolveWebAuthnRpId, credentialIdBufferFromAssertion } from "@/lib/webauthnRpId";
 import { getTrustedClientIp, isLoginIpBlocklisted } from "@/lib/clientIp";
 import {
   isThrottleBlocked,
@@ -149,16 +149,27 @@ export async function POST(req: NextRequest) {
     const rpID = resolveWebAuthnRpId(req);
     const expectedOrigin = resolveWebAuthnExpectedOrigins(req);
 
-    const credentialId = isoBase64URL.toBuffer(data.credential?.id ?? "");
+    const credentialIdBuffer = credentialIdBufferFromAssertion(data.credential);
+    if (!credentialIdBuffer) {
+      await notePasskeyVerifyFailure(ip);
+      return NextResponse.json({ error: "パスキー情報の形式が不正です" }, { status: 400 });
+    }
 
     const credential = await passkeyPrisma.passkeyCredential.findFirst({
-      where: { credentialId: Buffer.from(credentialId) },
+      where: { credentialId: credentialIdBuffer },
       include: { user: true },
     });
 
     if (!credential) {
       await notePasskeyVerifyFailure(ip);
-      return NextResponse.json({ error: "パスキーが見つかりません" }, { status: 404 });
+      return NextResponse.json(
+        {
+          error:
+            "端末のパスキーがサーバーに登録されていません。パスワードでログイン後、セキュリティ設定からパスキーを再登録してください。",
+          code: "PASSKEY_NOT_REGISTERED",
+        },
+        { status: 400 }
+      );
     }
 
     const verification = await verifyAuthenticationResponse({

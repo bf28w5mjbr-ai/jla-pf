@@ -23,6 +23,7 @@ import {
   supportsPasskeyAutofill,
   type PasskeyLoginResult,
 } from "@/lib/passkeyLoginClient";
+import { WebAuthnAbortService } from "@simplewebauthn/browser";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -111,7 +112,9 @@ export default function LoginForm() {
         }
         return true;
       }
-      if (showToastOnError) {
+      const shouldNotify =
+        showToastOnError || result.code === "PASSKEY_NOT_REGISTERED";
+      if (shouldNotify) {
         setError(result.message);
         toast.error("パスキー認証失敗", { description: result.message });
       }
@@ -142,6 +145,7 @@ export default function LoginForm() {
 
     return () => {
       cancelled = true;
+      WebAuthnAbortService.cancelCeremony();
     };
   }, [supportsPasskey, passkeyRateLimited, handlePasskeyLoginResult]);
 
@@ -208,6 +212,7 @@ export default function LoginForm() {
     }
 
     passkeyButtonActiveRef.current = true;
+    WebAuthnAbortService.cancelCeremony();
     setPasskeyLoading(true);
     setError(null);
 
