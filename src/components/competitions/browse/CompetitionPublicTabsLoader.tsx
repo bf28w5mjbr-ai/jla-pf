@@ -11,7 +11,6 @@ import {
   CompetitionPublicOverviewPanelSkeleton,
   CompetitionPublicStartListPanelSkeleton,
 } from "./CompetitionPublicPageSkeleton";
-import { DayOpsUnlockBannerLazy } from "./competitionPublicDynamicClients";
 
 type TabValue = CompetitionPublicTabValue;
 
@@ -41,11 +40,6 @@ export async function CompetitionPublicTabsLoader({
 
   return (
     <div className="space-y-4">
-      <DayOpsUnlockBannerLazy
-        competitionId={competitionId}
-        passphraseConfigured={dayOpsUnlockConfigured}
-        alreadyUnlocked={hasDayOpsUnlock}
-      />
       <CompetitionPublicPageTabs
         competitionId={competitionId}
         detailBasePath={detailBasePath}
@@ -66,6 +60,7 @@ export async function CompetitionPublicTabsLoader({
                 competitionId={competitionId}
                 sessionUserId={sessionUserId}
                 hasDayOpsUnlock={hasDayOpsUnlock}
+                dayOpsUnlockConfigured={dayOpsUnlockConfigured}
               />
             </Suspense>
           ) : null

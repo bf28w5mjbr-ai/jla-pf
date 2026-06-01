@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type FormEvent } from "react";
+import { useEffect, useRef, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -29,7 +29,14 @@ export default function DayOpsUnlockBanner({
   const [code, setCode] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [pending, startTransition] = useTransition();
+  const codeInputRef = useRef<HTMLInputElement>(null);
   const unlocked = useDayOpsUnlockEffective(competitionId, alreadyUnlocked);
+
+  useEffect(() => {
+    if (expanded) {
+      codeInputRef.current?.focus();
+    }
+  }, [expanded]);
 
   if (!passphraseConfigured || unlocked) {
     return null;
@@ -63,54 +70,61 @@ export default function DayOpsUnlockBanner({
     });
   };
 
+  if (!expanded) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-8 px-3 text-xs"
+        onClick={() => setExpanded(true)}
+        aria-expanded={false}
+        aria-controls="dayops-unlock-form"
+        disabled={pending}
+      >
+        マーシャル・リザルト
+      </Button>
+    );
+  }
+
   return (
-    <div className="rounded-lg border border-primary/25 bg-primary/[0.04] px-3 py-3 sm:px-4">
-      <p className="text-xs font-medium text-foreground">当日運用（マーシャル・リザルト等）</p>
-      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-        通常の閲覧では暗号入力は不要です。主催から共有された場合のみ入力すると、このブラウザでマーシャル・リザルト・ヒート運用（当日のスタートリスト操作）が利用できます。公開ページのタイムスケジュールやラウンド数の編集は主催の管理者のみが行えます。
-      </p>
-      <div className="mt-3">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 px-3 text-xs"
-          onClick={() => setExpanded((prev) => !prev)}
-          aria-expanded={expanded}
-          aria-controls="dayops-unlock-form"
-          disabled={pending}
-        >
-          {expanded ? "詳細設定を閉じる" : "当日運用暗号を入力する（必要な場合のみ）"}
-        </Button>
-      </div>
-      {expanded ? (
-        <AutofillSyncForm
-          id="dayops-unlock-form"
-          onSubmit={onSubmit}
-          className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end"
-        >
-          <div className="min-w-0 flex-1 space-y-1">
-            <Label htmlFor="dayops-code" className="text-xs">
-              当日運用暗号（任意）
-            </Label>
-            <Input
-              id="dayops-code"
-              type="password"
-              autoComplete="off"
-              value={code}
-              onChange={(ev) => setCode(ev.target.value)}
-              className="h-9"
-              disabled={pending}
-            />
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
-              通常は入力不要です。主催から暗号が共有された場合のみ入力してください。有効化後はこの端末で大会終了まで再入力不要です。
-            </p>
-          </div>
-          <Button type="submit" size="sm" className="h-9 shrink-0" disabled={pending}>
-            {pending ? "確認中…" : "有効化"}
-          </Button>
-        </AutofillSyncForm>
-      ) : null}
-    </div>
+    <AutofillSyncForm
+      id="dayops-unlock-form"
+      onSubmit={onSubmit}
+      className="flex flex-wrap items-center gap-2"
+    >
+      <Label htmlFor="dayops-code" className="sr-only">
+        当日運用暗号
+      </Label>
+      <Input
+        ref={codeInputRef}
+        id="dayops-code"
+        type="password"
+        autoComplete="off"
+        placeholder="当日運用暗号"
+        value={code}
+        onChange={(ev) => setCode(ev.target.value)}
+        className="h-8 w-full min-w-[10rem] max-w-xs placeholder:text-muted-foreground/55"
+        disabled={pending}
+      />
+      <Button type="submit" size="sm" className="h-8 shrink-0 px-3 text-xs" disabled={pending}>
+        {pending ? "確認中…" : "有効化"}
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-8 px-2 text-xs text-muted-foreground"
+        onClick={() => {
+          setExpanded(false);
+          setCode("");
+        }}
+        disabled={pending}
+        aria-expanded
+        aria-controls="dayops-unlock-form"
+      >
+        閉じる
+      </Button>
+    </AutofillSyncForm>
   );
 }
