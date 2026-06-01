@@ -41,13 +41,13 @@ export function HomeLanding() {
           </p>
           <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
             <Button asChild size="lg" className="w-full sm:w-auto">
-              <Link href="/login">
-                ログイン
+              <Link href="/competitions">
+                大会情報を見る
                 <ArrowRight className="size-4" aria-hidden />
               </Link>
             </Button>
             <Button asChild variant="outline" size="lg" className="w-full sm:w-auto">
-              <Link href="/register">新規登録</Link>
+              <Link href="/clubs">クラブを探す</Link>
             </Button>
           </div>
         </header>
@@ -65,15 +65,6 @@ export function HomeLanding() {
             </li>
           ))}
         </ul>
-
-        <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <Button asChild variant="outline" size="sm">
-            <Link href="/competitions">大会情報を見る</Link>
-          </Button>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/clubs">クラブを探す</Link>
-          </Button>
-        </div>
 
         <footer className="mt-auto pt-14 text-center text-xs text-muted-foreground">
           <p className="flex flex-wrap items-center justify-center gap-2">

@@ -60,7 +60,7 @@ export function PublicSiteHeader({ isLoggedIn, onOpenMenu, isMenuOpen }: Props) 
             </Button>
           ) : (
             <>
-              <Button variant="outline" size="sm" className="hidden h-8 text-xs sm:inline-flex" asChild>
+              <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
                 <Link href={registerHref}>新規登録</Link>
               </Button>
               <Button size="sm" className="h-8 text-xs shadow-sm" asChild>

@@ -28,7 +28,7 @@
 
 | 状態 | 挙動 |
 |------|------|
-| 未ログイン | `HomeLanding` を表示（本文 CTA は `/login`・`/register`） |
+| 未ログイン | `HomeLanding` を表示（本文主 CTA は `/competitions`・`/clubs`。ログイン・新規登録はヘッダーのみ） |
 | ログイン済み | **`/dashboard`** へリダイレクト（Edge の [`src/proxy.ts`](../src/proxy.ts) で先行。未適用時は [`redirectIfAuthenticated`](../src/lib/auth.ts) がフォールバック） |
 
 ### ログイン済みの早期リダイレクト（Edge）
