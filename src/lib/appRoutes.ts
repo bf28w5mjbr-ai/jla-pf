@@ -16,12 +16,25 @@ export const appRoutes = {
     clubs: () => "/profile/clubs",
   },
 
+  /** 一般公開（大会・クラブディレクトリ） */
+  public: {
+    competitions: () => "/competitions",
+    clubs: () => "/clubs",
+    clubView: (clubId: string) => `/clubs/view/${clubId}`,
+  },
+
   clubs: {
-    /** アプリ内のクラブ一覧 */
-    list: () => "/clubs",
+    /** 一般公開のクラブ一覧 */
+    directory: () => "/clubs",
+    /** 会員向け: クラブを探して参加 */
+    join: () => "/clubs/join",
+    /** @deprecated 会員の「戻る」は profile.clubs() を使用 */
+    list: () => "/clubs/join",
     /** 新規クラブ作成 */
     create: () => "/clubs/create",
     root: (clubId: string) => `/clubs/${clubId}`,
+    /** 一般公開のクラブ基本情報 */
+    publicView: (clubId: string) => `/clubs/view/${clubId}`,
     /** `tab` クエリ。`hash` は # を除いたアンカー id（例: club-team-assignment） */
     tab: (clubId: string, tab: "members" | "competitions", options?: { hash?: string }) => {
       const q = `/clubs/${clubId}?tab=${tab}`;

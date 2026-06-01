@@ -43,9 +43,9 @@ export function CompetitionPublicOverviewPanelSkeleton() {
   );
 }
 
-export function CompetitionPublicStartListPanelSkeleton() {
+export function CompetitionPublicResultsTimetableSkeleton() {
   return (
-    <div className="space-y-4" role="status" aria-label="スタートリストを読み込み中">
+    <div className="space-y-4" role="status" aria-label="競技結果タイムテーブルを読み込み中">
       <div className="h-10 animate-pulse rounded-lg border border-border/60 bg-muted/30" />
       <div className="min-h-[240px] animate-pulse rounded-xl border border-border/60 bg-muted/25" />
     </div>
@@ -63,10 +63,10 @@ export function CompetitionPublicPageTabsSkeleton({ competitionId }: { competiti
           大会ページ
         </Link>
         <Link
-          href={`/competitions/${competitionId}?tab=start-list`}
+          href={`/competitions/${competitionId}?tab=results`}
           className="flex h-9 items-center justify-center rounded-lg border border-border/70 bg-muted/40 px-3 text-xs font-medium text-foreground/70 shadow-sm sm:h-8"
         >
-          スタートリスト
+          競技結果
         </Link>
       </div>
       <CompetitionPublicOverviewPanelSkeleton />

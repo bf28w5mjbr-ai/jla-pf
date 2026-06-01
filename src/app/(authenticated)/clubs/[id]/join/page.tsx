@@ -35,7 +35,7 @@ export default async function JoinClubPage({ params }: { params: Promise<{ id: s
   });
 
   if (!club) {
-    redirect(appRoutes.clubs.list());
+    redirect(appRoutes.profile.clubs());
   }
 
   const existingMembership = await prisma.membership.findUnique({
@@ -49,7 +49,7 @@ export default async function JoinClubPage({ params }: { params: Promise<{ id: s
   });
 
   if (existingMembership?.status === "APPROVED") {
-    redirect(appRoutes.clubs.list());
+    redirect(appRoutes.profile.clubs());
   }
 
   return (

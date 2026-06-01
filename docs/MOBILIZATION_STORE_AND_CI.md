@@ -18,7 +18,7 @@
 | バンドル表示名 | [ios/App/App/Info.plist](../ios/App/App/Info.plist) | `Bluvium` |
 | バックグラウンド | 同上 | `remote-notification` |
 | NFC 利用説明 | 同上 | `NFCReaderUsageDescription` |
-| Entitlements | [ios/App/App/App.entitlements](../ios/App/App/App.entitlements) | `aps-environment`（**development** 固定 → 本番ビルドでは **release 用に production** へ切り替え手順が必要）、NFC formats |
+| Entitlements | [ios/App/App/App.entitlements](../ios/App/App/App.entitlements) | `aps-environment`（**development** 固定 → 本番ビルドでは **release 用に production** へ切り替え手順が必要）、NFC formats、Associated Domains（`webcredentials:bluvium.jp`, `applinks:bluvium.jp`） |
 
 **アクション:** Xcode の Release 用設定で `aps-environment` を `production` にする運用（スキーム・Configuration）をチームで決める。
 
@@ -48,16 +48,31 @@
 
 ### 完了条件
 
-- 本番ドメイン（`NEXT_PUBLIC_APP_URL` / Capacitor `server.url` と一致するホスト）で次が **リダイレクトなし**で取得できる
-  - `https://<host>/.well-known/apple-app-site-association`（`application/json`）
-  - `https://<host>/.well-known/assetlinks.json`（`application/json`）
-- iOS: Xcode **Associated Domains** に `applinks:<host>` を追加済み
+- 本番ドメイン（`NEXT_PUBLIC_APP_URL` / Capacitor `server.url` と一致するホスト、既定 **`bluvium.jp`**）で次が **リダイレクトなし**で取得できる
+  - `https://bluvium.jp/.well-known/apple-app-site-association`（`application/json`）
+  - `https://bluvium.jp/.well-known/assetlinks.json`（`application/json`）
+- 配信実装: [src/app/.well-known/](../src/app/.well-known/)（`APPLE_TEAM_ID` / `ANDROID_RELEASE_SHA256` を Vercel 環境変数に設定）
+- iOS: Xcode **Associated Domains** に `webcredentials:bluvium.jp` と `applinks:bluvium.jp` を追加済み
 - Android: `assetlinks.json` の `package_name` が `com.bluvium.app` と一致、`sha256_cert_fingerprints` に **アップロード鍵または App Signing 鍵**のフィンガープリント
+
+### 環境変数（パスキー / ディープリンク）
+
+| 変数名 | 説明 |
+|--------|------|
+| `WEBAUTHN_RP_ID` | 本番は `bluvium.jp` |
+| `WEBAUTHN_ORIGIN` | 本番は `https://bluvium.jp`（ステージング URL があればカンマ区切りで追加） |
+| `NEXT_PUBLIC_APP_URL` | Capacitor `server.url` と同一ホスト（本番 `https://bluvium.jp`） |
+| `CAPACITOR_SERVER_URL` | 同上 |
+| `APPLE_TEAM_ID` | AASA の `webcredentials` / `applinks` 用 Team ID |
+| `ANDROID_RELEASE_SHA256` | `assetlinks.json` のリリース署名フィンガープリント |
 
 ### `apple-app-site-association` 例（`TEAMID` は Apple Developer の Team ID に置換）
 
 ```json
 {
+  "webcredentials": {
+    "apps": ["TEAMID.com.bluvium.app"]
+  },
   "applinks": {
     "apps": [],
     "details": [
@@ -74,6 +89,14 @@
 
 ```json
 [
+  {
+    "relation": ["delegate_permission/common.get_login_creds"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.bluvium.app",
+      "sha256_cert_fingerprints": ["REPLACE_WITH_RELEASE_KEY_SHA256"]
+    }
+  },
   {
     "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {

@@ -106,7 +106,7 @@ export default function PasskeyManager({ promoteWhenEmpty = false }: Props) {
       <CardHeader>
         <CardTitle>パスキー管理</CardTitle>
         <CardDescription>
-          パスキー（FIDO2 / 顔・指紋など）は、SMS やパスワードよりフィッシングに強く、端末に紐づくログイン手段です。複数端末にはそれぞれ登録してください。
+          パスキー（FIDO2 / 顔・指紋など）は、SMS やパスワードよりフィッシングに強く、端末に紐づくログイン手段です。複数端末にはそれぞれ登録してください。再登録すると、ログイン画面でメール入力なしのパスキー利用がしやすくなります。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

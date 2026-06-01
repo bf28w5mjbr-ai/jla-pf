@@ -42,6 +42,6 @@ export async function canViewClubDetailPage(clubId: string, userId: string): Pro
 export async function redirectUnlessCanViewClubDetail(clubId: string, userId: string): Promise<void> {
   const allowed = await canViewClubDetailPage(clubId, userId);
   if (!allowed) {
-    redirect(appRoutes.clubs.list());
+    redirect(appRoutes.profile.clubs());
   }
 }

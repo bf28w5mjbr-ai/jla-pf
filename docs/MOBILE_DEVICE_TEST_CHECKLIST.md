@@ -9,6 +9,10 @@
 - [ ] メール＋パスワードログイン後、画面遷移してもセッションが維持される（[api/auth/login/route.ts](../src/app/api/auth/login/route.ts) の Cookie 属性とオリジンが一致しているか）
 - [ ] SMS ログイン（利用する環境）でも同様
 - [ ] パスキー登録・ログイン（`src/app/api/passkeys/`）が同一オリジンで完走する
+- [ ] **メール入力なし**で「パスキーでログイン」またはメール欄のオートフィル提案からログインできる（discoverable パスキー）
+- [ ] 旧パスキー（メール入力 + パスキーボタン）のフォールバックが動作する
+- [ ] iOS: 設定 → パスワード に Bluvium のパスキーが表示される（`webcredentials` / Associated Domains 設定後）
+- [ ] Android: Credential Manager からパスキー選択できる（`get_login_creds` / assetlinks 設定後）
 - [ ] アプリを長時間バックグラウンド → 復帰後の操作
 
 ## フェーズ 3 追記（Stripe / PDF / 外部リンク）
@@ -62,7 +66,7 @@
   "userId": "対象ユーザーID",
   "title": "Pushテスト",
   "body": "通知テスト本文です",
-  "linkUrl": "https://app.bluvium.com/dashboard"
+  "linkUrl": "https://bluvium.jp/dashboard"
 }
 ```
 
@@ -82,7 +86,7 @@ curl -i -X POST "http://localhost:3000/api/admin/notifications/test" \
     "userId": "<通知対象ユーザーID>",
     "title": "Pushテスト",
     "body": "通知テスト本文です",
-    "linkUrl": "https://app.bluvium.com/dashboard"
+    "linkUrl": "https://bluvium.jp/dashboard"
   }'
 ```
 

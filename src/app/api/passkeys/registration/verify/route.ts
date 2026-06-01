@@ -13,6 +13,7 @@ import {
   tryWebAuthnVerifyErrorResponse,
   webAuthnRequireUserVerification,
 } from "@/lib/webauthnServer";
+import { resolveWebAuthnRpId } from "@/lib/webauthnRpId";
 
 type PasskeyPrismaClient = typeof prisma & {
   passkeyCredential: {
@@ -71,8 +72,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "チャレンジの有効期限が切れました" }, { status: 400 });
     }
 
-    const host = req.headers.get("host") ?? "localhost";
-    const rpID = process.env.WEBAUTHN_RP_ID ?? host.split(":")[0];
+    const rpID = resolveWebAuthnRpId(req);
     const expectedOrigin = resolveWebAuthnExpectedOrigins(req);
 
     const verification = await verifyRegistrationResponse({

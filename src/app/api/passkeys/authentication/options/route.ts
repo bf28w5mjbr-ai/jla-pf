@@ -2,7 +2,6 @@ export const runtime = "nodejs";
 
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 import { prisma } from "@/server/db";
 import { generateAuthenticationOptions } from "@simplewebauthn/server";
 import { isoBase64URL } from "@simplewebauthn/server/helpers";
@@ -14,7 +13,9 @@ import {
   PASSKEY_AUTH_OPTIONS_IP_MAX,
   PASSKEY_AUTH_OPTIONS_IP_WINDOW_MS,
 } from "@/lib/loginThrottle";
+import { parsePasskeyAuthOptionsBody } from "@/lib/passkeyAuthenticationOptions";
 import { webAuthnRequireUserVerification } from "@/lib/webauthnServer";
+import { resolveWebAuthnRpId } from "@/lib/webauthnRpId";
 import { issuePasskeyAuthAttempt } from "@/lib/passkeyAuthAttemptCookie";
 
 const CHALLENGE_COOKIE = "passkey_auth_challenge";
@@ -32,10 +33,6 @@ function parseStoredTransports(value: unknown): ("usb" | "nfc" | "ble" | "intern
   return out.length > 0 ? out : undefined;
 }
 
-const BodySchema = z.object({
-  email: z.string().email().max(320),
-});
-
 export async function POST(req: NextRequest) {
   try {
     const ip = getTrustedClientIp(req);
@@ -47,12 +44,10 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const parsed = BodySchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json({ error: "メールアドレスの形式が正しくありません" }, { status: 400 });
+    const parsedBody = parsePasskeyAuthOptionsBody(body);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: parsedBody.error }, { status: 400 });
     }
-
-    const email = parsed.data.email.trim().toLowerCase();
 
     const skipIpSlot = ip === "127.0.0.1" || ip === "::1";
     if (!skipIpSlot) {
@@ -76,40 +71,48 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email },
-      select: { id: true },
-    });
+    const rpID = resolveWebAuthnRpId(req);
+    const userVerification = webAuthnRequireUserVerification() ? "required" : "preferred";
 
-    const credentials = user
-      ? await prisma.passkeyCredential.findMany({
-          where: { userId: user.id },
-          select: { credentialId: true, transports: true },
-        })
-      : [];
+    let options;
+    if (parsedBody.mode === "discoverable") {
+      options = await generateAuthenticationOptions({
+        rpID,
+        userVerification,
+      });
+    } else {
+      const user = await prisma.user.findUnique({
+        where: { email: parsedBody.email },
+        select: { id: true },
+      });
 
-    if (credentials.length === 0) {
-      return NextResponse.json(
-        { error: "パスキーが登録されていません" },
-        { status: 400 }
-      );
+      const credentials = user
+        ? await prisma.passkeyCredential.findMany({
+            where: { userId: user.id },
+            select: { credentialId: true, transports: true },
+          })
+        : [];
+
+      if (credentials.length === 0) {
+        return NextResponse.json(
+          { error: "パスキーが登録されていません" },
+          { status: 400 }
+        );
+      }
+
+      options = await generateAuthenticationOptions({
+        rpID,
+        userVerification,
+        allowCredentials: credentials.map((credential) => {
+          const transports = parseStoredTransports(credential.transports);
+          return {
+            id: isoBase64URL.fromBuffer(credential.credentialId),
+            type: "public-key" as const,
+            ...(transports ? { transports } : {}),
+          };
+        }),
+      });
     }
-
-    const host = req.headers.get("host") ?? "localhost";
-    const rpID = process.env.WEBAUTHN_RP_ID ?? host.split(":")[0];
-
-    const options = await generateAuthenticationOptions({
-      rpID,
-      userVerification: webAuthnRequireUserVerification() ? "required" : "preferred",
-      allowCredentials: credentials.map((credential) => {
-        const transports = parseStoredTransports(credential.transports);
-        return {
-          id: isoBase64URL.fromBuffer(credential.credentialId),
-          type: "public-key" as const,
-          ...(transports ? { transports } : {}),
-        };
-      }),
-    });
 
     const jar = await cookies();
     const current = jar.get(CHALLENGE_COOKIE)?.value;

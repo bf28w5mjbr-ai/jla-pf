@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { Metadata } from "next";
+import { parseCompetitionPublicTab } from "@/lib/competitionPublicTab";
 import { competitionMetadataTitleOnly } from "@/lib/competitionMetadata";
 import { CompetitionPublicHeaderLoader } from "./_components/CompetitionPublicHeaderLoader";
 import { CompetitionPublicTabsLoader } from "./_components/CompetitionPublicTabsLoader";
@@ -28,9 +29,7 @@ export default async function CompetitionDetailPage({
 }) {
   const { id } = await params;
   const { tab } = await searchParams;
-  const requestedTab = tab ?? "overview";
-  const activeTab =
-    requestedTab === "overview" || requestedTab === "start-list" ? requestedTab : "overview";
+  const activeTab = parseCompetitionPublicTab(tab);
 
   return (
     <div className="app-page mx-auto w-full max-w-6xl space-y-5 px-4 py-5 sm:space-y-6 sm:px-6 sm:py-6 lg:px-8">

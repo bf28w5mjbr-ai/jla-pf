@@ -40,8 +40,8 @@ pnpm install
 
 ### 1-1. チームで URL を一つに決める
 
-- **決める:** アプリの WebView が開く URL（例: 本番 `https://app.bluvium.com`、検証ならステージング URL）。
-- **根拠:** [capacitor.config.ts](../capacitor.config.ts) の `server.url` は、環境変数 `CAPACITOR_SERVER_URL` が無いとき既定で `https://app.bluvium.com` になる。
+- **決める:** アプリの WebView が開く URL（例: 本番 `https://bluvium.jp`、検証ならステージング URL）。
+- **根拠:** [capacitor.config.ts](../capacitor.config.ts) の `server.url` は、環境変数 `CAPACITOR_SERVER_URL` が無いとき既定で `https://bluvium.jp` になる。
 
 ### 1-2. ローカル環境変数（各自のマシン）
 
@@ -193,7 +193,7 @@ CSP 関連: [next.config.ts](../next.config.ts) の `buildContentSecurityPolicy`
 
 ## フェーズ 6: Universal Links / App Links
 
-1. **本番ホスト**を決める（例: `app.bluvium.com`）。フェーズ 1 の URL と **同じホスト**にすると運用が楽。
+1. **本番ホスト**を決める（例: `bluvium.jp`）。フェーズ 1 の URL と **同じホスト**にすると運用が楽。
 2. ブラウザの **シークレット窓**で次を開き、**JSON がそのまま表示される**（302 で別 URL に飛ばない）ことを確認する。
    - `https://<ホスト>/.well-known/apple-app-site-association`
    - `https://<ホスト>/.well-known/assetlinks.json`

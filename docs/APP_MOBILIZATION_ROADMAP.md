@@ -13,7 +13,7 @@ Next.js（Bluvium）＋ [Capacitor 8](../capacitor.config.ts) 前提。プラン
 | 項目 | 内容 |
 |------|------|
 | シェル | Capacitor（`@capacitor/ios` / `@capacitor/android`） |
-| Web の読み込み | **リモート URL**（`server.url`）。ビルド時環境変数 `CAPACITOR_SERVER_URL`、未設定時は `https://app.bluvium.com` |
+| Web の読み込み | **リモート URL**（`server.url`）。ビルド時環境変数 `CAPACITOR_SERVER_URL`、未設定時は `https://bluvium.jp` |
 | `webDir` | `out`（Cap CLI がコピー先として参照。リモート運用でも `cap sync` 前に `out` にプレースホルダが必要な場合あり） |
 | Bundle / Application ID | `com.bluvium.app`（[capacitor.config.ts](../capacitor.config.ts)） |
 | 静的オフラインのみ | **当面採用しない**（`next export` 相当と SSR/API の整合が別プロジェクトになる） |
@@ -32,7 +32,12 @@ Next.js（Bluvium）＋ [Capacitor 8](../capacitor.config.ts) 前提。プラン
 
 | 変数名 | 説明 |
 |--------|------|
-| `CAPACITOR_SERVER_URL` | 任意。未設定時は [capacitor.config.ts](../capacitor.config.ts) の既定 `https://app.bluvium.com` |
+| `CAPACITOR_SERVER_URL` | 任意。未設定時は [capacitor.config.ts](../capacitor.config.ts) の既定 `https://bluvium.jp` |
+| `WEBAUTHN_RP_ID` | 本番 `bluvium.jp`（パスキー RP ID） |
+| `WEBAUTHN_ORIGIN` | 本番 `https://bluvium.jp` |
+| `NEXT_PUBLIC_APP_URL` | Capacitor と同一ホスト推奨 |
+| `APPLE_TEAM_ID` | iOS AASA / webcredentials 用 |
+| `ANDROID_RELEASE_SHA256` | Android assetlinks 用 |
 
 ---
 

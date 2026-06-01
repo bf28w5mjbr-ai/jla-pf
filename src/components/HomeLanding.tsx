@@ -22,7 +22,7 @@ const features = [
 
 export function HomeLanding() {
   return (
-    <main className={cn(authShellMainClassName, "flex flex-col")}>
+    <div className={cn(authShellMainClassName, "flex flex-col")}>
       <div className="relative z-[1] mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-10 sm:py-14">
         <div className="mb-10 flex justify-center sm:mb-12">
           <div className="inline-flex items-center rounded-2xl px-2 py-1.5">
@@ -66,6 +66,15 @@ export function HomeLanding() {
           ))}
         </ul>
 
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <Button asChild variant="outline" size="sm">
+            <Link href="/competitions">大会情報を見る</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/clubs">クラブを探す</Link>
+          </Button>
+        </div>
+
         <footer className="mt-auto pt-14 text-center text-xs text-muted-foreground">
           <p className="flex flex-wrap items-center justify-center gap-2">
             <Button asChild variant="outline" size="sm" className="h-auto px-3 py-1 text-xs font-normal">
@@ -77,6 +86,6 @@ export function HomeLanding() {
           </p>
         </footer>
       </div>
-    </main>
+    </div>
   );
 }

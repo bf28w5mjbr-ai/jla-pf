@@ -44,14 +44,8 @@ const competitionPublicShellInclude = (sessionUserId: string | null) =>
 const competitionPublicOverviewInclude = (sessionUserId: string | null) =>
   ({
     ...orgAdminsForSession(sessionUserId),
-    technicalOfficialQualificationTemplate: {
-      select: { name: true },
-    },
     announcements: {
       where: { publishedAt: { not: null } },
-      orderBy: { createdAt: "desc" as const },
-    },
-    attachments: {
       orderBy: { createdAt: "desc" as const },
     },
     galleryPhotos: {

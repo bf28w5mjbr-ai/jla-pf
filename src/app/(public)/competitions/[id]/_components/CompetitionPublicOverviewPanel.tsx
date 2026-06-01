@@ -3,7 +3,6 @@ import {
   Coins,
   FileText,
   ListOrdered,
-  UserCog,
   Users,
 } from "lucide-react";
 import type { CompetitionPublicOverviewDetail } from "@/lib/competitionPublicPageLoader";
@@ -13,11 +12,9 @@ import {
   isUnassignedParticipationAgeBlock,
 } from "@/lib/competitionPublicParticipationEvents";
 import { relationLogosWithDisplaySrc } from "@/lib/relationLogos";
-import { parseTechnicalOfficialTiers } from "@/lib/technicalOfficialRules";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   CompetitionAnnouncementsManagerLazy,
-  CompetitionAttachmentsManagerLazy,
   CompetitionPublicGalleryLazy,
   CompetitionRelationsEditorLazy,
 } from "./competitionPublicDynamicClients";
@@ -45,12 +42,6 @@ export function CompetitionPublicOverviewPanel({
     competition.events,
     competition.ageCategories
   );
-  const technicalOfficialTiers = parseTechnicalOfficialTiers(competition.technicalOfficialTiers);
-  const showTechnicalOfficialPublicBlock =
-    (competition.officialRecruitmentEnabled ?? true) &&
-    (competition.technicalOfficialRecruitmentEnabled ?? true) &&
-    technicalOfficialTiers.length > 0 &&
-    competition.technicalOfficialQualificationTemplate;
 
   const entryFeeDisplay = renderEntryFeeForCategories(competition.entryFee, competition.ageCategories, {
     hasIndividualEvents,
@@ -180,49 +171,6 @@ export function CompetitionPublicOverviewPanel({
                 </div>
               </div>
 
-              {showTechnicalOfficialPublicBlock ? (
-                <div className="flex gap-3 px-4 py-3 sm:px-5">
-                  <UserCog className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      クラブ参加資格（テクニカルオフィシャル）
-                    </p>
-                    <p className="text-sm leading-relaxed">
-                      閾値の「件数」は、
-                      <strong className="font-medium text-foreground">
-                        クラブに紐づく個人エントリーの件数（キャンセル除く）
-                      </strong>
-                      です。チーム種目のエントリー件数は含みません。段階表のうち、
-                      <strong className="font-medium text-foreground">
-                        条件を満たす行のうち最も高い閾値の行だけ
-                      </strong>
-                      が適用されます。
-                    </p>
-                    <p className="text-sm leading-relaxed text-muted-foreground">
-                      指定の資格を持つテクニカルオフィシャルが、上記に応じてクラブ単位で必要になります。
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      必要な資格:{" "}
-                      <span className="font-medium text-foreground">
-                        {competition.technicalOfficialQualificationTemplate?.name ?? "—"}
-                      </span>
-                    </p>
-                    <ul className="space-y-1 text-sm">
-                      {technicalOfficialTiers.map((t, i) => (
-                        <li key={i} className="tabular-nums">
-                          個人エントリー合計 {t.minEntries} 件以上 → テクニカルオフィシャル{" "}
-                          {t.requiredCount} 人
-                        </li>
-                      ))}
-                    </ul>
-                    {competition.requireClubMembership ? null : (
-                      <p className="text-xs text-amber-900 dark:text-amber-100/90">
-                        この大会は所属クラブの指定が不要なエントリーもあります。クラブに紐づくエントリーがある場合に限り、上記がクラブ単位の要件となります。
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ) : null}
             </div>
           </CardContent>
         </Card>
@@ -260,21 +208,6 @@ export function CompetitionPublicOverviewPanel({
             title: a.title,
             content: a.content,
             publishedAt: toIsoStringOrNull(a.publishedAt),
-            createdAt: toIsoStringOrNull(a.createdAt) ?? "",
-          }))}
-          canEdit={false}
-        />
-      ) : null}
-
-      {competition.attachments.length > 0 ? (
-        <CompetitionAttachmentsManagerLazy
-          competitionId={competition.id}
-          initialAttachments={competition.attachments.map((a) => ({
-            id: a.id,
-            fileName: a.fileName,
-            fileUrl: a.fileUrl,
-            fileSize: a.fileSize,
-            mimeType: a.mimeType,
             createdAt: toIsoStringOrNull(a.createdAt) ?? "",
           }))}
           canEdit={false}

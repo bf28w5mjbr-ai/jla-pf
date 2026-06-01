@@ -44,7 +44,7 @@ export default function DeleteClubButton({
       }
 
       toast.success("クラブを削除しました");
-      router.push(appRoutes.clubs.list());
+      router.push(appRoutes.profile.clubs());
     } catch (error) {
       console.error("Delete club error:", error);
       toast.error(

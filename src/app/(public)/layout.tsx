@@ -1,13 +1,10 @@
+import type { ReactNode } from "react";
+import { PublicSiteShellWrapper } from "@/components/public/PublicSiteShellWrapper";
+
 /**
- * 未ログインでも閲覧できるルート用。サイドバーなし。
- * 大会の公開URL（/competitions/...）では子レイアウトでサインイン導線を出す。
+ * 未ログインでも閲覧できるルート用（大会・クラブ・法定表示など）。
+ * 共通ヘッダー・サイドバーで Bluvium 公開サイトとして表示する。
  */
-export default function PublicShellLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <main className="app-main-canvas min-h-0 min-w-0 flex-1 pb-[var(--safe-area-bottom)] pl-[var(--safe-area-left)] pr-[var(--safe-area-right)] pt-[var(--safe-area-top)]">
-        {children}
-      </main>
-    </div>
-  );
+export default function PublicShellLayout({ children }: { children: ReactNode }) {
+  return <PublicSiteShellWrapper>{children}</PublicSiteShellWrapper>;
 }

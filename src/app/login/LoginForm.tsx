@@ -1,11 +1,10 @@
 // src/app/login/LoginForm.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import Link from "next/link";
-import { startAuthentication } from "@simplewebauthn/browser";
 import { Eye, EyeOff } from "lucide-react";
 import { fieldHintClass } from "@/lib/explanation";
 import { AuthPanel, AuthShell } from "@/components/auth/AuthShell";
@@ -18,6 +17,12 @@ import {
   formatJaRemainingDuration,
   parseRetryAfterSeconds,
 } from "@/lib/loginRetryCountdown";
+import {
+  isPasskeyUserCancellation,
+  runPasskeyLoginFlow,
+  supportsPasskeyAutofill,
+  type PasskeyLoginResult,
+} from "@/lib/passkeyLoginClient";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -38,6 +43,7 @@ export default function LoginForm() {
   const emailInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
   const errorRef = useRef<HTMLParagraphElement>(null);
+  const passkeyButtonActiveRef = useRef(false);
 
   useEffect(() => {
     if (error) {
@@ -81,6 +87,63 @@ export default function LoginForm() {
       })
       .catch(() => setSmsLoginAvailable(true));
   }, []);
+
+  const handlePasskeyLoginSuccess = useCallback(() => {
+    setPasswordRetryRemainingSec(null);
+    setPasskeyRetryRemainingSec(null);
+    toast.success("パスキーでログインしました");
+    router.replace(redirectAfterLogin ?? "/dashboard");
+  }, [redirectAfterLogin, router]);
+
+  const handlePasskeyLoginResult = useCallback(
+    (result: PasskeyLoginResult, showToastOnError: boolean): boolean => {
+      if (result.ok) {
+        handlePasskeyLoginSuccess();
+        return true;
+      }
+      if (result.kind === "rate_limited") {
+        setPasskeyRetryRemainingSec(result.retryAfterSec);
+        setError(null);
+        if (showToastOnError) {
+          toast.error("パスキー操作の上限に達しました", {
+            description: `再試行可能まであと ${formatJaRemainingDuration(result.retryAfterSec)}`,
+          });
+        }
+        return true;
+      }
+      if (showToastOnError) {
+        setError(result.message);
+        toast.error("パスキー認証失敗", { description: result.message });
+      }
+      return false;
+    },
+    [handlePasskeyLoginSuccess]
+  );
+
+  useEffect(() => {
+    if (!supportsPasskey || passkeyRateLimited) return;
+
+    let cancelled = false;
+
+    (async () => {
+      if (!(await supportsPasskeyAutofill())) return;
+
+      try {
+        const result = await runPasskeyLoginFlow({ useBrowserAutofill: true });
+        if (cancelled || passkeyButtonActiveRef.current) return;
+        handlePasskeyLoginResult(result, false);
+      } catch (err) {
+        if (cancelled || passkeyButtonActiveRef.current) return;
+        if (!isPasskeyUserCancellation(err)) {
+          console.error("Passkey autofill login error:", err);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supportsPasskey, passkeyRateLimited, handlePasskeyLoginResult]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -144,90 +207,40 @@ export default function LoginForm() {
       return;
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail) {
-      const msg = "パスキーでログインするにはメールアドレスを入力してください";
-      setError(msg);
-      toast.error("入力が必要です", { description: msg });
-      emailInputRef.current?.focus();
-      return;
-    }
-
+    passkeyButtonActiveRef.current = true;
     setPasskeyLoading(true);
     setError(null);
 
+    const normalizedEmail = email.trim().toLowerCase();
+
     try {
-      const optionsRes = await fetch("/api/passkeys/authentication/options", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: normalizedEmail }),
-      });
-
-      const options = await optionsRes.json();
-
-      if (!optionsRes.ok) {
-        if (optionsRes.status === 429) {
-          const sec = parseRetryAfterSeconds(optionsRes, options);
-          if (sec != null) {
-            setPasskeyRetryRemainingSec(sec);
-            setError(null);
-            toast.error("パスキー操作の上限に達しました", {
-              description: `再試行可能まであと ${formatJaRemainingDuration(sec)}`,
-            });
-            return;
-          }
+      if (normalizedEmail) {
+        const legacyResult = await runPasskeyLoginFlow({ email: normalizedEmail });
+        if (legacyResult.ok || legacyResult.kind === "rate_limited") {
+          handlePasskeyLoginResult(legacyResult, true);
+          return;
         }
-        const msg = options?.error ?? "パスキー認証を開始できませんでした";
-        setError(msg);
-        toast.error("パスキー認証失敗", { description: msg });
-        return;
-      }
-
-      const attemptId = typeof options?.attemptId === "string" ? options.attemptId : null;
-      if (!attemptId) {
-        const msg = "パスキー認証の準備に失敗しました。もう一度お試しください";
-        setError(msg);
-        toast.error("パスキー認証失敗", { description: msg });
-        return;
-      }
-
-      const assertion = await startAuthentication(options);
-
-      const verifyRes = await fetch("/api/passkeys/authentication/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ credential: assertion, attemptId }),
-      });
-
-      const verifyData = await verifyRes.json();
-
-      if (!verifyRes.ok) {
-        if (verifyRes.status === 429) {
-          const sec = parseRetryAfterSeconds(verifyRes, verifyData);
-          if (sec != null) {
-            setPasskeyRetryRemainingSec(sec);
-            setError(null);
-            toast.error("パスキー認証の試行上限に達しました", {
-              description: `再試行可能まであと ${formatJaRemainingDuration(sec)}`,
-            });
-            return;
-          }
+        if (legacyResult.message.includes("パスキーが登録されていません")) {
+          const discoverableResult = await runPasskeyLoginFlow({});
+          if (handlePasskeyLoginResult(discoverableResult, true)) return;
+          setError(
+            "このメールアドレス向けのパスキーが見つかりませんでした。セキュリティ設定からパスキーを再登録してください。"
+          );
+          return;
         }
-        const msg = verifyData?.error ?? "パスキー認証に失敗しました。もう一度最初からお試しください";
-        setError(msg);
-        toast.error("パスキー認証失敗", { description: msg });
+        handlePasskeyLoginResult(legacyResult, true);
         return;
       }
 
-      setPasswordRetryRemainingSec(null);
-      setPasskeyRetryRemainingSec(null);
-      toast.success("パスキーでログインしました");
-      router.replace(redirectAfterLogin ?? "/dashboard");
+      const result = await runPasskeyLoginFlow({});
+      handlePasskeyLoginResult(result, true);
     } catch (err: unknown) {
+      if (isPasskeyUserCancellation(err)) return;
       const msg = err instanceof Error ? err.message : "パスキー認証に失敗しました";
       setError(msg);
       toast.error("パスキー認証失敗", { description: msg });
     } finally {
+      passkeyButtonActiveRef.current = false;
       setPasskeyLoading(false);
     }
   }
@@ -238,8 +251,8 @@ export default function LoginForm() {
       title="ログイン"
       subtitle={
         smsLoginAvailable === false
-          ? "メールアドレスとパスワード、またはパスキーでログインできます。パスキーは同じメールアドレスを入力してから実行してください。"
-          : "メールアドレスとパスワード、またはパスキー・SMSでログインできます。パスキーは同じメールアドレスを入力してから実行してください。"
+          ? "メールアドレスとパスワード、または端末に保存したパスキーでログインできます。"
+          : "メールアドレスとパスワード、パスキー、または SMS でログインできます。"
       }
       subtitleDensity="balanced"
     >
@@ -304,6 +317,11 @@ export default function LoginForm() {
               required
               aria-invalid={!!error}
             />
+            {supportsPasskey ? (
+              <p className={fieldHintClass("guided")}>
+                端末に保存したパスキーはメール欄をタップすると提案されることがあります。うまくいかない場合はメールアドレスを入力して「パスキーでログイン」を試してください。
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-1.5">

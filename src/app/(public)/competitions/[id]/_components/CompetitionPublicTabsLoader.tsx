@@ -4,15 +4,16 @@ import { verifySessionCached } from "@/lib/auth";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
 import { prisma } from "@/server/db";
 import CompetitionPublicPageTabs from "@/components/public/CompetitionPublicPageTabs";
+import type { CompetitionPublicTabValue } from "@/lib/competitionPublicTab";
 import { CompetitionPublicOverviewPanelLoader } from "./CompetitionPublicOverviewPanelLoader";
-import { CompetitionPublicStartListPanelLoader } from "./CompetitionPublicStartListPanelLoader";
+import { CompetitionPublicResultsTimetableLoader } from "./CompetitionPublicResultsTimetableLoader";
 import {
   CompetitionPublicOverviewPanelSkeleton,
-  CompetitionPublicStartListPanelSkeleton,
+  CompetitionPublicResultsTimetableSkeleton,
 } from "./CompetitionPublicPageSkeleton";
 import { DayOpsUnlockBannerLazy } from "./competitionPublicDynamicClients";
 
-type TabValue = "overview" | "start-list";
+type TabValue = CompetitionPublicTabValue;
 
 type Props = {
   competitionId: string;
@@ -52,14 +53,10 @@ export async function CompetitionPublicTabsLoader({ competitionId, activeTab }: 
             </Suspense>
           ) : null
         }
-        startList={
-          activeTab === "start-list" ? (
-            <Suspense fallback={<CompetitionPublicStartListPanelSkeleton />}>
-              <CompetitionPublicStartListPanelLoader
-                competitionId={competitionId}
-                sessionUserId={sessionUserId}
-                hasDayOpsUnlock={hasDayOpsUnlock}
-              />
+        results={
+          activeTab === "results" ? (
+            <Suspense fallback={<CompetitionPublicResultsTimetableSkeleton />}>
+              <CompetitionPublicResultsTimetableLoader competitionId={competitionId} />
             </Suspense>
           ) : null
         }

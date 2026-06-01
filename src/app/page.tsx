@@ -2,11 +2,12 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { HomeLanding } from "@/components/HomeLanding";
+import { PublicSiteShellWrapper } from "@/components/public/PublicSiteShellWrapper";
 
 export const metadata: Metadata = {
   title: "Bluvium",
   description:
-    "会員・所属・資格・大会エントリー・決済を一気通貫で扱うプラットフォーム",
+    "ライフセービングの大会情報・クラブ情報を閲覧でき、会員・所属・資格・エントリー・決済を一括で扱えるプラットフォーム",
 };
 
 const COVER_PAGE_URL = "https://bluvium.jp/";
@@ -32,7 +33,11 @@ function isCoverPageHost(hostname: string | null): boolean {
 export default async function Home() {
   const headerList = await headers();
   if (isCoverPageHost(hostnameFromHeaders(headerList))) {
-    return <HomeLanding />;
+    return (
+      <PublicSiteShellWrapper>
+        <HomeLanding />
+      </PublicSiteShellWrapper>
+    );
   }
   redirect(COVER_PAGE_URL);
 }

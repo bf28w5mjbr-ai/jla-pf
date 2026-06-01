@@ -6,5 +6,5 @@ export default async function CompetitionStartListLegacyPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  redirect(`/competitions/${id}?tab=start-list`);
+  redirect(`/competitions/${id}?tab=results`);
 }

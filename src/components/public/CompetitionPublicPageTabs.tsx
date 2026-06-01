@@ -5,39 +5,41 @@ import { Suspense, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  parseCompetitionPublicTab,
+  type CompetitionPublicTabValue,
+} from "@/lib/competitionPublicTab";
 import { cn } from "@/lib/utils";
 
-type TabValue = "overview" | "start-list";
-
-function tabFromSearchParams(sp: URLSearchParams | null): TabValue {
-  const raw = sp?.get("tab");
-  return raw === "start-list" ? "start-list" : "overview";
+function tabFromSearchParams(sp: URLSearchParams | null): CompetitionPublicTabValue {
+  return parseCompetitionPublicTab(sp?.get("tab"));
 }
 
 function CompetitionPublicPageTabsInner({
   competitionId,
   overview,
-  startList,
+  results,
 }: {
   competitionId: string;
   overview: ReactNode;
-  startList: ReactNode;
+  results: ReactNode;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const value = tabFromSearchParams(searchParams);
 
   const hrefForTab = useCallback(
-    (next: TabValue) => {
+    (next: CompetitionPublicTabValue) => {
       const base = `/competitions/${competitionId}`;
-      return next === "start-list" ? `${base}?tab=start-list` : base;
+      if (next === "overview") return base;
+      return `${base}?tab=${next}`;
     },
     [competitionId]
   );
 
   const onValueChange = useCallback(
     (next: string) => {
-      const v: TabValue = next === "start-list" ? "start-list" : "overview";
+      const v = parseCompetitionPublicTab(next);
       router.replace(hrefForTab(v), { scroll: false });
     },
     [hrefForTab, router]
@@ -62,18 +64,18 @@ function CompetitionPublicPageTabsInner({
             大会ページ
           </TabsTrigger>
           <TabsTrigger
-            value="start-list"
+            value="results"
             className="h-9 rounded-lg px-3 text-xs font-medium data-[state=active]:shadow-sm sm:h-8"
           >
-            スタートリスト
+            競技結果
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4 space-y-3 sm:space-y-4">
           {overview}
         </TabsContent>
-        <TabsContent value="start-list" className="mt-4 space-y-3 sm:mt-4">
-          {startList}
+        <TabsContent value="results" className="mt-4 space-y-3 sm:mt-4">
+          {results}
         </TabsContent>
       </Tabs>
     </div>
@@ -91,10 +93,10 @@ function TabsFallback({ competitionId }: { competitionId: string }) {
           大会ページ
         </Link>
         <Link
-          href={`/competitions/${competitionId}?tab=start-list`}
+          href={`/competitions/${competitionId}?tab=results`}
           className="flex h-9 items-center justify-center rounded-lg border border-border/70 bg-muted/40 px-3 text-xs font-medium text-foreground/70 shadow-sm sm:h-8"
         >
-          スタートリスト
+          競技結果
         </Link>
       </div>
       <div className="h-48 animate-pulse rounded-xl border border-border/60 bg-muted/40" />
@@ -105,18 +107,18 @@ function TabsFallback({ competitionId }: { competitionId: string }) {
 export default function CompetitionPublicPageTabs({
   competitionId,
   overview,
-  startList,
+  results,
 }: {
   competitionId: string;
   overview: ReactNode;
-  startList: ReactNode;
+  results: ReactNode;
 }) {
   return (
     <Suspense fallback={<TabsFallback competitionId={competitionId} />}>
       <CompetitionPublicPageTabsInner
         competitionId={competitionId}
         overview={overview}
-        startList={startList}
+        results={results}
       />
     </Suspense>
   );

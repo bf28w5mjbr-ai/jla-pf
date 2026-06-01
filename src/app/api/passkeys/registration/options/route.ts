@@ -1,7 +1,8 @@
 export const runtime = "nodejs";
 
 import { jsonInternalError500 } from "@/lib/apiInternalError";
-import { tryWebAuthnRegistrationOptionsError } from "@/lib/webauthnServer";
+import { tryWebAuthnRegistrationOptionsError, webAuthnRequireUserVerification } from "@/lib/webauthnServer";
+import { resolveWebAuthnRpId } from "@/lib/webauthnRpId";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { generateRegistrationOptions } from "@simplewebauthn/server";
@@ -44,8 +45,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "ユーザーが見つかりません" }, { status: 404 });
     }
 
-    const host = req.headers.get("host") ?? "localhost";
-    const rpID = process.env.WEBAUTHN_RP_ID ?? host.split(":")[0];
+    const rpID = resolveWebAuthnRpId(req);
 
     const existingCredentials = await passkeyPrisma.passkeyCredential.findMany({
       where: { userId: user.id },
@@ -62,6 +62,10 @@ export async function POST(req: NextRequest) {
       excludeCredentials: existingCredentials.map((credential) => ({
         id: isoBase64URL.fromBuffer(Buffer.from(credential.credentialId)),
       })),
+      authenticatorSelection: {
+        residentKey: "required",
+        userVerification: webAuthnRequireUserVerification() ? "required" : "preferred",
+      },
     });
 
     await passkeyPrisma.passkeyChallenge.deleteMany({ where: { userId: user.id } });

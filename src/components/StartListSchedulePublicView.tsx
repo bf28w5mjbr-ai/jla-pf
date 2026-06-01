@@ -20,11 +20,20 @@ export type PublicScheduleViewSection = {
   }>;
 };
 
+type RowHrefArgs = {
+  eventId: string;
+  roundIndex: number;
+  nRounds: number;
+};
+
 type StartListSchedulePublicViewProps = {
   competitionId: string;
   sections: PublicScheduleViewSection[];
   scheduleTabCount: number;
   roundCounts: Record<string, string>;
+  /** 未指定時はスタートリストへのリンク（直接URL用） */
+  getRowHref?: (args: RowHrefArgs) => string;
+  scheduleHintText?: string;
 };
 
 export function StartListSchedulePublicView({
@@ -32,11 +41,25 @@ export function StartListSchedulePublicView({
   sections,
   scheduleTabCount,
   roundCounts,
+  getRowHref,
+  scheduleHintText,
 }: StartListSchedulePublicViewProps) {
   const showAreaHeadings = scheduleTabCount > 1;
 
+  const defaultGetRowHref = ({ eventId, roundIndex, nRounds }: RowHrefArgs) =>
+    nRounds > 1
+      ? `/competitions/${competitionId}/start-list/${eventId}?roundIndex=${roundIndex}`
+      : `/competitions/${competitionId}/start-list/${eventId}`;
+
+  const resolveRowHref = getRowHref ?? defaultGetRowHref;
+
   return (
     <div className="divide-y divide-border/50">
+      {scheduleHintText ? (
+        <p className="border-b border-border/40 bg-muted/[0.04] px-2.5 py-2 text-[10px] leading-relaxed text-muted-foreground">
+          {scheduleHintText}
+        </p>
+      ) : null}
       {sections.map((section) => (
         <section key={section.dayKey} className="py-3">
           <h3 className="border-b border-border/40 bg-muted/10 px-2.5 py-2 text-[11px] font-semibold text-foreground">
@@ -72,10 +95,11 @@ export function StartListSchedulePublicView({
                       roundCounts[event.id],
                       savedRound
                     );
-                    const startListHref =
-                      nRounds > 1
-                        ? `/competitions/${competitionId}/start-list/${event.id}?roundIndex=${roundIndex}`
-                        : `/competitions/${competitionId}/start-list/${event.id}`;
+                    const rowHref = resolveRowHref({
+                      eventId: event.id,
+                      roundIndex,
+                      nRounds,
+                    });
 
                     return (
                       <li
@@ -83,7 +107,7 @@ export function StartListSchedulePublicView({
                         className={rowIdx % 2 === 1 ? "bg-muted/[0.04]" : undefined}
                       >
                         <Link
-                          href={startListHref}
+                          href={rowHref}
                           prefetch={false}
                           className="flex min-w-0 items-stretch text-left transition hover:bg-muted/30"
                         >

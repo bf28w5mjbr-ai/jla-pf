@@ -31,7 +31,7 @@ export const loadClubDetailPageData = cache(async (clubId: string, userId: strin
   ]);
 
   if (!club) {
-    redirect(appRoutes.clubs.list());
+    redirect(appRoutes.profile.clubs());
   }
 
   const isClubAdmin = !!(userMembership && isClubAdminRole(userMembership.role));

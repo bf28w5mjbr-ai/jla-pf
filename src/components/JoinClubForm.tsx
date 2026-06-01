@@ -39,7 +39,7 @@ export default function JoinClubForm({ club }: JoinClubFormProps) {
       }
 
       toast.success(data.message || "参加申請を送りました。");
-      router.push(appRoutes.clubs.list());
+      router.push(appRoutes.profile.clubs());
       router.refresh();
     } catch (err) {
       console.error("Join club error:", err);

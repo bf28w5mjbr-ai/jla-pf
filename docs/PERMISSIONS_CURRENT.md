@@ -86,13 +86,24 @@
 - `GET /api/qualifications`
 - `PATCH /api/qualifications/[id]`
 
-## 6. 運用ルール
+## 6. 一般公開サイト（未ログイン）
+
+トップ・`/competitions`・`/clubs` は `PublicSiteShell` で表示。会員向け操作はログイン後。
+
+| リソース | 公開範囲 | 非公開（会員・主催向け） |
+|----------|----------|-------------------------|
+| クラブ一覧・`/clubs/view/[id]` | `clubPublicSelect` の基本情報のみ（氏名・電話・番地なし） | メンバー一覧、代表者、事務局連絡先 |
+| 大会一覧・詳細 | タブは「大会ページ」「競技結果」のみ。競技結果タブはタイムテーブル→種目別公式結果（**氏名・クラブ名可**）。概要・お知らせ・ギャラリー | 添付 PDF、テクニカルオフィシャル募集、エントリー操作 |
+| スタートリスト（直接URL） | `/competitions/[id]/start-list/...`（主催が公開設定時）。公開タブには載せない | — |
+| API | `GET /api/public/clubs`, `GET /api/public/clubs/[clubId]` | `GET /api/clubs/search`（要認証） |
+
+## 7. 運用ルール
 
 - 重要操作は `AuditLog` 記録を原則化する。
 - 新規管理APIは、ロール判定だけでなく「対象リソースのスコープ検証」を必須とする。
 - 権限仕様を更新した場合は、同時に `docs/PERMISSIONS.md` と本書を更新する。
 
-## 7. 参照
+## 8. 参照
 
 - `prisma/schema.prisma`
 - `src/lib/accessControl.ts`

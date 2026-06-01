@@ -16,6 +16,7 @@ import {
   tryWebAuthnVerifyErrorResponse,
   webAuthnRequireUserVerification,
 } from "@/lib/webauthnServer";
+import { resolveWebAuthnRpId } from "@/lib/webauthnRpId";
 import { getTrustedClientIp, isLoginIpBlocklisted } from "@/lib/clientIp";
 import {
   isThrottleBlocked,
@@ -145,8 +146,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const host = req.headers.get("host") ?? "localhost";
-    const rpID = process.env.WEBAUTHN_RP_ID ?? host.split(":")[0];
+    const rpID = resolveWebAuthnRpId(req);
     const expectedOrigin = resolveWebAuthnExpectedOrigins(req);
 
     const credentialId = isoBase64URL.toBuffer(data.credential?.id ?? "");

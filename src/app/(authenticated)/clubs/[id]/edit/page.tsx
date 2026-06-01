@@ -35,7 +35,7 @@ export default async function EditClubPage({ params }: { params: Promise<{ id: s
   });
 
   if (!club) {
-    redirect(appRoutes.clubs.list());
+    redirect(appRoutes.profile.clubs());
   }
 
   // 管理者かチェック

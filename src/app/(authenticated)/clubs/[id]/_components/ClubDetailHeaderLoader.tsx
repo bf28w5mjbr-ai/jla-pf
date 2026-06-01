@@ -58,9 +58,9 @@ export async function ClubDetailHeaderLoader({ clubId }: Props) {
         <div className="space-y-2 p-3 sm:space-y-2.5 sm:p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <Button variant="outline" size="sm" className="h-8 gap-1.5 px-2.5 text-xs sm:text-sm" asChild>
-              <Link href={appRoutes.clubs.list()}>
+              <Link href={appRoutes.profile.clubs()}>
                 <ArrowLeft className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" aria-hidden />
-                <span className="max-sm:sr-only">クラブ一覧に戻る</span>
+                <span className="max-sm:sr-only">所属クラブに戻る</span>
                 <span className="sm:hidden">戻る</span>
               </Link>
             </Button>

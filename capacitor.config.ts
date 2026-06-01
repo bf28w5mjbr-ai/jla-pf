@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: "Bluvium",
   webDir: "out",
   server: {
-    url: process.env.CAPACITOR_SERVER_URL ?? "https://app.bluvium.com",
+    url: process.env.CAPACITOR_SERVER_URL ?? "https://bluvium.jp",
     cleartext: false,
   },
   plugins: {
