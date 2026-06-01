@@ -11,8 +11,11 @@
 
 - **症状**: ログに `code: 'P2024'`、`connection_limit: 5`、`pool_timeout: 10`。`prisma.*` の呼び出しがまとめて失敗する。
 - **原因**: Vercel 等の 1 プロセスあたり Prisma 接続上限（本番 `DATABASE_URL` の `connection_limit`、多くは 5）に対し、**同一リクエスト内の並列クエリが多すぎる**。DB ダウンとは限らない。
-- **よくある箇所**: 公開大会 `/competitions/[id]`（ログイン時の `Promise.all`）、認証レイアウト + ダッシュボードの同時読み込み。
+- **よくある箇所**: 公開大会 `/competitions/[id]`（認証レイアウト・`generateMetadata`・ヘッダー/タブの Suspense が同時に走る）、認証レイアウト + ダッシュボードの同時読み込み。本番は `connection_limit=8`・`pool_timeout=20`（`src/server/db.ts`）。
 - **アプリ側の対策（実装済み）**:
+  - 公開大会のメタデータ用名と当日運用フラグは `getCompetitionPublicLightMeta`（キャッシュキー `competition-public-light-meta`）に統合し、revalidate 時の `competition.findUnique` 重複を減らす。
+  - 認証レイアウト（`AuthenticatedLayoutShell`）と公開大会ヘッダーは、レイアウトユーザー/未読数・シェル/セッション文脈を **直列** に読み込む（ピーク時の並列接続を抑える）。
+  - 公開大会の匿名キャッシュ読み込みは `withPrismaPoolRetryOnce` で P2024 時に 1 回再試行する。
   - 公開大会ページは `src/lib/competitionPublicPageLoader.ts` で大会取得後にセッション文脈を読み、`prisma.$transaction` で同時接続を抑える。
   - 公開大会のエントリー件数集計（`fetchPaidEntryCountByEventId`）は **スタートリストタブ表示時のみ**（概要タブでは実行しない）。
   - 複数クエリが必要な箇所は `Promise.all` より `prisma.$transaction([...])` または直列 `await` を優先（ダッシュボード本体・スタートリスト件数集計など）。
@@ -99,6 +102,7 @@
 - ブラウザの Network で失敗した `POST /api/registration/verify` または `POST /api/registration/start` の **`x-request-id`** を控える（Vercel の Request ID と同一のことが多い）。
 - Vercel Runtime Logs で `POST api/registration/verify/route.ts` を検索し、同じ ID で **`[request_id=...]`** 付きの `console.error` 行（`Error.name` + `message`）を開く。スタックが足りないときは一時的に `LOG_FULL_ERROR_STACK=true`。
 - 所要時間が **3秒前後** で OTP 不一致（400）ではない場合、OTP 成功後の **`prisma.user.create`** または **`onAuthLoginSuccess`（`UserLoginEvent` / `AuthLoginChannel.REGISTRATION`）** で落ちている可能性が高い。後者は修正後は登録自体は成功し、ログイン履歴のみ失敗する。
+- ログに `Transaction not found` / `Transaction already closed` かつ `registrationSession.delete` や `loginThrottleBucket.upsert` がある場合、インタラクティブ TX の **既定 5 秒タイムアウト**超過を疑う（`REGISTRATION_CREATE_USER_TRANSACTION` / `LOGIN_THROTTLE_TRANSACTION` で延長済み。それでも出るときは P2024・EMAXCONN を先に確認）。
 - `GET /api/health/ready` で `required.authSecret`・DB 接続・`registrationEmailOtp` / `resendApiKeyConfigured` を確認する。
 - ログに `Unique constraint` / `P2002` がある場合はメールまたは氏名+生年月日の重複。画面には日本語の 409 が出る想定（古いクライアントのみ `internal_error` 表示の可能性あり）。
 - ログに `AUTH_SECRET must be set` がある場合は本番の `AUTH_SECRET`（32文字以上）を設定する。

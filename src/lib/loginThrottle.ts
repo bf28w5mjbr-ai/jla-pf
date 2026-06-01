@@ -1,4 +1,8 @@
 import { createHash } from "crypto";
+import {
+  LOGIN_THROTTLE_TRANSACTION,
+  withPrismaPoolRetryOnce,
+} from "@/lib/prismaPool";
 import { prisma } from "@/server/db";
 
 /** メール＋パスワードログイン: アカウントあたり */
@@ -129,37 +133,39 @@ export async function recordThrottleFailure(
 ): Promise<{ blocked: boolean; retryAfterSec: number }> {
   const now = Date.now();
 
-  return prisma.$transaction(async (tx) => {
-    const row = await tx.loginThrottleBucket.findUnique({ where: { key } });
+  return withPrismaPoolRetryOnce(() =>
+    prisma.$transaction(async (tx) => {
+      const row = await tx.loginThrottleBucket.findUnique({ where: { key } });
 
-    let failCount: number;
-    let windowStartMs: number;
+      let failCount: number;
+      let windowStartMs: number;
 
-    if (!row || now - row.windowStart.getTime() > windowMs) {
-      const win = new Date(now);
-      await tx.loginThrottleBucket.upsert({
-        where: { key },
-        create: { key, failCount: 1, windowStart: win },
-        update: { failCount: 1, windowStart: win },
-      });
-      failCount = 1;
-      windowStartMs = now;
-    } else {
-      const updated = await tx.loginThrottleBucket.update({
-        where: { key },
-        data: { failCount: { increment: 1 } },
-      });
-      failCount = updated.failCount;
-      windowStartMs = updated.windowStart.getTime();
-    }
+      if (!row || now - row.windowStart.getTime() > windowMs) {
+        const win = new Date(now);
+        await tx.loginThrottleBucket.upsert({
+          where: { key },
+          create: { key, failCount: 1, windowStart: win },
+          update: { failCount: 1, windowStart: win },
+        });
+        failCount = 1;
+        windowStartMs = now;
+      } else {
+        const updated = await tx.loginThrottleBucket.update({
+          where: { key },
+          data: { failCount: { increment: 1 } },
+        });
+        failCount = updated.failCount;
+        windowStartMs = updated.windowStart.getTime();
+      }
 
-    const windowEnd = windowStartMs + windowMs;
-    const retryAfterSec = Math.max(1, Math.ceil((windowEnd - now) / 1000));
-    return {
-      blocked: failCount >= maxFailures,
-      retryAfterSec,
-    };
-  });
+      const windowEnd = windowStartMs + windowMs;
+      const retryAfterSec = Math.max(1, Math.ceil((windowEnd - now) / 1000));
+      return {
+        blocked: failCount >= maxFailures,
+        retryAfterSec,
+      };
+    }, LOGIN_THROTTLE_TRANSACTION)
+  );
 }
 
 export async function resetThrottleKeys(keys: string[]): Promise<void> {
@@ -180,30 +186,32 @@ export async function tryConsumeRateSlot(
 ): Promise<{ allowed: boolean; retryAfterSec: number }> {
   const now = Date.now();
 
-  return prisma.$transaction(async (tx) => {
-    const row = await tx.loginThrottleBucket.findUnique({ where: { key } });
+  return withPrismaPoolRetryOnce(() =>
+    prisma.$transaction(async (tx) => {
+      const row = await tx.loginThrottleBucket.findUnique({ where: { key } });
 
-    if (!row || now - row.windowStart.getTime() > windowMs) {
-      await tx.loginThrottleBucket.upsert({
+      if (!row || now - row.windowStart.getTime() > windowMs) {
+        await tx.loginThrottleBucket.upsert({
+          where: { key },
+          create: { key, failCount: 1, windowStart: new Date(now) },
+          update: { failCount: 1, windowStart: new Date(now) },
+        });
+        return { allowed: true, retryAfterSec: 0 };
+      }
+
+      if (row.failCount >= maxAllowed) {
+        const retryAfterSec = Math.max(
+          1,
+          Math.ceil((row.windowStart.getTime() + windowMs - now) / 1000)
+        );
+        return { allowed: false, retryAfterSec };
+      }
+
+      await tx.loginThrottleBucket.update({
         where: { key },
-        create: { key, failCount: 1, windowStart: new Date(now) },
-        update: { failCount: 1, windowStart: new Date(now) },
+        data: { failCount: { increment: 1 } },
       });
       return { allowed: true, retryAfterSec: 0 };
-    }
-
-    if (row.failCount >= maxAllowed) {
-      const retryAfterSec = Math.max(
-        1,
-        Math.ceil((row.windowStart.getTime() + windowMs - now) / 1000)
-      );
-      return { allowed: false, retryAfterSec };
-    }
-
-    await tx.loginThrottleBucket.update({
-      where: { key },
-      data: { failCount: { increment: 1 } },
-    });
-    return { allowed: true, retryAfterSec: 0 };
-  });
+    }, LOGIN_THROTTLE_TRANSACTION)
+  );
 }

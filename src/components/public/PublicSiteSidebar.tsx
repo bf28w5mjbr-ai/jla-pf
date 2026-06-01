@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, Trophy, Users, X } from "lucide-react";
 import { BluviumWordmark } from "@/components/BluviumWordmark";
+import type { PublicSiteShellVariant } from "@/components/public/PublicSiteShellWrapper";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
@@ -38,17 +39,26 @@ function isNavActive(pathname: string, href: string, exact: boolean): boolean {
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  variant?: PublicSiteShellVariant;
 };
 
-export function PublicSiteSidebar({ open, onOpenChange }: Props) {
+export function PublicSiteSidebar({
+  open,
+  onOpenChange,
+  variant = "standard",
+}: Props) {
   const pathname = usePathname() || "/";
+  const isCover = variant === "cover";
 
   return (
     <>
       {open ? (
         <button
           type="button"
-          className="fixed inset-0 z-[35] bg-black/45 backdrop-blur-[3px] lg:hidden"
+          className={cn(
+            "fixed inset-0 z-[35] bg-black/45 backdrop-blur-[3px]",
+            !isCover && "lg:hidden"
+          )}
           aria-label="オーバーレイを閉じる"
           onClick={() => onOpenChange(false)}
         />
@@ -57,9 +67,12 @@ export function PublicSiteSidebar({ open, onOpenChange }: Props) {
       <aside
         id="public-site-sidebar"
         className={cn(
-          "fixed top-0 z-40 flex h-[100dvh] w-[min(19rem,calc(100vw-2.25rem))] max-w-[88vw] flex-col border-r border-border/80 bg-card/98 shadow-xl transition-transform duration-300 ease-out lg:sticky lg:top-0 lg:z-0 lg:h-auto lg:min-h-screen lg:w-[15rem] lg:max-w-none lg:shrink-0 lg:translate-x-0 lg:shadow-sm",
+          "fixed top-0 z-40 flex h-[100dvh] w-[min(19rem,calc(100vw-2.25rem))] max-w-[88vw] flex-col border-r border-border/80 bg-card/98 shadow-xl transition-transform duration-300 ease-out",
           "pt-[var(--safe-area-top,0px)]",
-          open ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+          !isCover &&
+            "lg:sticky lg:top-0 lg:z-0 lg:h-auto lg:min-h-screen lg:w-[15rem] lg:max-w-none lg:shrink-0 lg:shadow-sm",
+          open ? "translate-x-0" : "-translate-x-full",
+          !isCover && "lg:translate-x-0"
         )}
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-4 pt-3 sm:px-4">

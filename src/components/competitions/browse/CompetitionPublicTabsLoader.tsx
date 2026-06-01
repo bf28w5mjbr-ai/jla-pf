@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { verifySessionCached } from "@/lib/auth";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
-import { prisma } from "@/server/db";
+import { getCompetitionPublicLightMeta } from "@/lib/competitionPublicPageLoader";
 import CompetitionPublicPageTabs from "@/components/public/CompetitionPublicPageTabs";
 import type { CompetitionPublicTabValue } from "@/lib/competitionPublicTab";
 import { CompetitionPublicOverviewPanelLoader } from "./CompetitionPublicOverviewPanelLoader";
@@ -27,15 +27,12 @@ export async function CompetitionPublicTabsLoader({
 }: Props) {
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
-  const [session, hasDayOpsUnlock, competitionMeta] = await Promise.all([
-    verifySessionCached(token),
-    verifyDayOpsUnlockFromCookies(competitionId),
-    prisma.competition.findUnique({
-      where: { id: competitionId },
-      select: { dayOpsAccessSecretHash: true },
-    }),
-  ]);
+  const session = await verifySessionCached(token);
   const sessionUserId = session?.userId ?? null;
+  const [hasDayOpsUnlock, competitionMeta] = await Promise.all([
+    verifyDayOpsUnlockFromCookies(competitionId),
+    getCompetitionPublicLightMeta(competitionId),
+  ]);
   const dayOpsUnlockConfigured = Boolean(competitionMeta?.dayOpsAccessSecretHash);
 
   return (

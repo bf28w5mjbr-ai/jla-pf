@@ -42,6 +42,18 @@ export const DAY_OPS_HEAVY_TRANSACTION = {
   timeout: 55_000,
 } as const;
 
+/** ログイン／登録レート制限バケット（find + upsert など短い TX） */
+export const LOGIN_THROTTLE_TRANSACTION = {
+  maxWait: 20_000,
+  timeout: 15_000,
+} as const;
+
+/** 新規登録 verify: User ネスト create + RegistrationSession 削除 */
+export const REGISTRATION_CREATE_USER_TRANSACTION = {
+  maxWait: 20_000,
+  timeout: 30_000,
+} as const;
+
 export function prismaPoolBusyUserMessage(): string {
   return "データベースが混み合っています。しばらく待ってから再度お試しください。";
 }

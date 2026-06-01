@@ -14,10 +14,10 @@ export async function AuthenticatedLayoutShell({
   userId: string;
   children: ReactNode;
 }) {
-  const [user, unreadNotificationCount] = await Promise.all([
-    getAuthenticatedLayoutUser(userId),
-    getCachedUnreadNotificationCount(userId).catch(() => 0),
-  ]);
+  const user = await getAuthenticatedLayoutUser(userId);
+  const unreadNotificationCount = await getCachedUnreadNotificationCount(userId).catch(
+    () => 0
+  );
 
   if (!user) {
     redirect("/login");

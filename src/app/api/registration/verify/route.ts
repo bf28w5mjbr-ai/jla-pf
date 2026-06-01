@@ -19,6 +19,10 @@ import {
 import { AuthLoginChannel, Prisma, RegistrationSession } from "@prisma/client";
 import { onAuthLoginSuccess } from "@/lib/authLoginSuccess";
 import { jsonInternalError500, logApiError } from "@/lib/apiInternalError";
+import {
+  REGISTRATION_CREATE_USER_TRANSACTION,
+  withPrismaPoolRetryOnce,
+} from "@/lib/prismaPool";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 
 const VerifyOTPSchema = z.object({
@@ -33,17 +37,19 @@ async function createUserAndDeleteSession(
   normalizedFamilyName: string,
   normalizedGivenName: string
 ) {
-  return prisma.$transaction(async (tx) => {
-    const user = await tx.user.create({
-      data: buildRegistrationUserCreateInput(
-        session,
-        normalizedFamilyName,
-        normalizedGivenName
-      ),
-    });
-    await tx.registrationSession.delete({ where: { id: session.id } });
-    return user;
-  });
+  return withPrismaPoolRetryOnce(() =>
+    prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: buildRegistrationUserCreateInput(
+          session,
+          normalizedFamilyName,
+          normalizedGivenName
+        ),
+      });
+      await tx.registrationSession.delete({ where: { id: session.id } });
+      return user;
+    }, REGISTRATION_CREATE_USER_TRANSACTION)
+  );
 }
 
 async function issueSessionCookieWithRecovery(

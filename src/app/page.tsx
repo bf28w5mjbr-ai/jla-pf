@@ -5,6 +5,9 @@ import { HomeLanding } from "@/components/HomeLanding";
 import { PublicSiteShellWrapper } from "@/components/public/PublicSiteShellWrapper";
 import { redirectIfAuthenticated } from "@/lib/auth";
 import { hostnameFromHeaders, isCoverPageHost } from "@/lib/coverPageHost";
+import { loadHomeFeaturedCompetitions } from "@/lib/homeFeaturedContent";
+
+export const revalidate = 60;
 
 export const metadata: Metadata = {
   title: "Bluvium",
@@ -18,9 +21,10 @@ export default async function Home() {
   const headerList = await headers();
   if (isCoverPageHost(hostnameFromHeaders(headerList))) {
     await redirectIfAuthenticated(null);
+    const upcomingCompetitions = await loadHomeFeaturedCompetitions();
     return (
-      <PublicSiteShellWrapper>
-        <HomeLanding />
+      <PublicSiteShellWrapper variant="cover">
+        <HomeLanding upcomingCompetitions={upcomingCompetitions} />
       </PublicSiteShellWrapper>
     );
   }

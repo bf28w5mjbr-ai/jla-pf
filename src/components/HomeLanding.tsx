@@ -2,7 +2,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { BluviumWordmark } from "@/components/BluviumWordmark";
+import { HomeFeaturedCompetitions } from "@/components/home/HomeFeaturedCompetitions";
 import { Button } from "@/components/ui/button";
+import type { HomeFeaturedCompetition } from "@/lib/homeFeaturedContent";
+import { appRoutes } from "@/lib/appRoutes";
 
 const features = [
   {
@@ -19,7 +22,11 @@ const features = [
   },
 ] as const;
 
-export function HomeLanding() {
+type Props = {
+  upcomingCompetitions: HomeFeaturedCompetition[];
+};
+
+export function HomeLanding({ upcomingCompetitions }: Props) {
   return (
     <div className="flex flex-col">
       <section className="relative w-full overflow-hidden">
@@ -29,7 +36,7 @@ export function HomeLanding() {
             alt="波に乗るサーファーとデジタルな海のイラスト"
             fill
             priority
-            sizes="(max-width: 768px) 100vw, calc(100vw - 16rem)"
+            sizes="100vw"
             className="object-cover object-center sm:object-[60%_center]"
           />
           <div className="absolute inset-0 z-[1] flex items-center justify-center px-4">
@@ -56,20 +63,22 @@ export function HomeLanding() {
             </p>
             <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
               <Button asChild size="lg" className="w-full sm:w-auto">
-                <Link href="/browse/competitions">
+                <Link href={appRoutes.public.competitions()}>
                   大会情報を見る
                   <ArrowRight className="size-4" aria-hidden />
                 </Link>
               </Button>
               <Button asChild variant="outline" size="lg" className="w-full sm:w-auto">
-                <Link href="/clubs">クラブを探す</Link>
+                <Link href={appRoutes.public.clubs()}>クラブを探す</Link>
               </Button>
             </div>
           </header>
         </div>
       </section>
 
-      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pb-10 pt-6 sm:max-w-4xl sm:pb-14 sm:pt-8 lg:max-w-5xl">
+      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-10 px-4 pb-10 pt-6 sm:max-w-4xl sm:pb-14 sm:pt-8 lg:max-w-5xl">
+        <HomeFeaturedCompetitions competitions={upcomingCompetitions} />
+
         <ul className="grid gap-4 sm:grid-cols-3">
           {features.map((item) => (
             <li
@@ -82,7 +91,7 @@ export function HomeLanding() {
           ))}
         </ul>
 
-        <footer className="mt-auto pt-14 text-center text-xs text-muted-foreground">
+        <footer className="mt-auto pt-4 text-center text-xs text-muted-foreground">
           <p className="flex flex-wrap items-center justify-center gap-2">
             <Button
               asChild

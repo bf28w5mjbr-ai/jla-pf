@@ -3,16 +3,25 @@
 import Link from "next/link";
 import { Menu } from "lucide-react";
 import { usePathname } from "next/navigation";
+import { BluviumWordmark } from "@/components/BluviumWordmark";
+import type { PublicSiteShellVariant } from "@/components/public/PublicSiteShellWrapper";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 type Props = {
   isLoggedIn: boolean;
+  variant?: PublicSiteShellVariant;
   onOpenMenu?: () => void;
   isMenuOpen?: boolean;
 };
 
-export function PublicSiteHeader({ isLoggedIn, onOpenMenu, isMenuOpen }: Props) {
+export function PublicSiteHeader({
+  isLoggedIn,
+  variant = "standard",
+  onOpenMenu,
+  isMenuOpen,
+}: Props) {
+  const isCover = variant === "cover";
   const pathname = usePathname() || "/";
   const signInHref = `/login?redirect=${encodeURIComponent(pathname)}`;
   const registerHref = `/register?redirect=${encodeURIComponent(pathname)}`;
@@ -32,7 +41,8 @@ export function PublicSiteHeader({ isLoggedIn, onOpenMenu, isMenuOpen }: Props) 
               aria-expanded={isMenuOpen}
               aria-controls="public-site-sidebar"
               className={cn(
-                "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/30 text-foreground transition-colors hover:bg-muted/60 lg:hidden",
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/30 text-foreground transition-colors hover:bg-muted/60",
+                !isCover && "lg:hidden",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               )}
             >
@@ -40,17 +50,28 @@ export function PublicSiteHeader({ isLoggedIn, onOpenMenu, isMenuOpen }: Props) 
             </button>
           ) : null}
           <div className="min-w-0">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-auto px-0 text-sm font-semibold tracking-tight"
-              asChild
-            >
-              <Link href={isLoggedIn ? "/dashboard" : "/"}>Bluvium</Link>
-            </Button>
-            <p className="truncate text-[10px] text-muted-foreground sm:text-[11px]">
-              大会・クラブ情報
-            </p>
+            {isCover ? (
+              <Link
+                href={isLoggedIn ? "/dashboard" : "/"}
+                className="inline-flex rounded-md px-0.5 py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <BluviumWordmark variant="inline" />
+              </Link>
+            ) : (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto px-0 text-sm font-semibold tracking-tight"
+                  asChild
+                >
+                  <Link href={isLoggedIn ? "/dashboard" : "/"}>Bluvium</Link>
+                </Button>
+                <p className="truncate text-[10px] text-muted-foreground sm:text-[11px]">
+                  大会・クラブ情報
+                </p>
+              </>
+            )}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">

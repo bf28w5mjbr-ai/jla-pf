@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/server/db";
 import { competitionPublicPageTag } from "@/lib/cacheTags";
+import { withPrismaPoolRetryOnce } from "@/lib/prismaPool";
 
 const NO_SESSION_USER_ID = "clinvalidnosessionuser0000";
 
@@ -130,20 +131,30 @@ function cachedAnonymousCompetitionQuery<T>(
   competitionId: string,
   fetcher: () => Promise<T>
 ): Promise<T> {
-  return unstable_cache(fetcher, [cacheKey, competitionId], {
-    revalidate: ANON_PUBLIC_REVALIDATE_SECONDS,
-    tags: [competitionPublicPageTag(competitionId)],
-  })();
+  return unstable_cache(
+    () => withPrismaPoolRetryOnce(fetcher),
+    [cacheKey, competitionId],
+    {
+      revalidate: ANON_PUBLIC_REVALIDATE_SECONDS,
+      tags: [competitionPublicPageTag(competitionId)],
+    }
+  )();
 }
+
+/** メタデータ・タブ制御向けの軽量行（1 キャッシュキーに統合して revalidate 時の接続を抑える） */
+export const getCompetitionPublicLightMeta = cache(async (competitionId: string) => {
+  return cachedAnonymousCompetitionQuery("competition-public-light-meta", competitionId, () =>
+    prisma.competition.findUnique({
+      where: { id: competitionId },
+      select: { name: true, dayOpsAccessSecretHash: true },
+    })
+  );
+});
 
 /** generateMetadata 用（session 不要） */
 export const getCompetitionPublicName = cache(async (competitionId: string) => {
-  return cachedAnonymousCompetitionQuery("competition-public-name", competitionId, () =>
-    prisma.competition.findUnique({
-      where: { id: competitionId },
-      select: { name: true },
-    })
-  );
+  const row = await getCompetitionPublicLightMeta(competitionId);
+  return row ? { name: row.name } : null;
 });
 
 /** ログイン時のみ必要な org 管理者・オフィシャル応募（シェル/タブのキャッシュ本体とは分離） */

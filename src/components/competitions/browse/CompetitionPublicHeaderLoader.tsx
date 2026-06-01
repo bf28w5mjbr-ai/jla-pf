@@ -46,15 +46,13 @@ export async function CompetitionPublicHeaderLoader({ competitionId }: Props) {
   const session = await verifySessionCached(token);
   const sessionUserId = session?.userId ?? null;
 
-  const [competition, sessionContext] = await Promise.all([
-    loadCompetitionPublicShell(competitionId, sessionUserId),
-    sessionUserId
-      ? loadSessionContextForPublicCompetition(sessionUserId)
-      : Promise.resolve({
-          sessionApprovedMemberships: [],
-          sessionUserForInquiry: null,
-        }),
-  ]);
+  const competition = await loadCompetitionPublicShell(competitionId, sessionUserId);
+  const sessionContext = sessionUserId
+    ? await loadSessionContextForPublicCompetition(sessionUserId)
+    : {
+        sessionApprovedMemberships: [],
+        sessionUserForInquiry: null,
+      };
 
   const { sessionApprovedMemberships, sessionUserForInquiry } = sessionContext;
 

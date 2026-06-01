@@ -3,21 +3,32 @@
 import { useState, type ReactNode } from "react";
 import { PublicSiteHeader } from "@/components/public/PublicSiteHeader";
 import { PublicSiteSidebar } from "@/components/public/PublicSiteSidebar";
+import type { PublicSiteShellVariant } from "@/components/public/PublicSiteShellWrapper";
 
 type Props = {
   children: ReactNode;
   isLoggedIn: boolean;
+  variant?: PublicSiteShellVariant;
 };
 
-export function PublicSiteShell({ children, isLoggedIn }: Props) {
+export function PublicSiteShell({
+  children,
+  isLoggedIn,
+  variant = "standard",
+}: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className="flex min-h-screen bg-background">
-      <PublicSiteSidebar open={sidebarOpen} onOpenChange={setSidebarOpen} />
+      <PublicSiteSidebar
+        open={sidebarOpen}
+        onOpenChange={setSidebarOpen}
+        variant={variant}
+      />
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <PublicSiteHeader
           isLoggedIn={isLoggedIn}
+          variant={variant}
           onOpenMenu={() => setSidebarOpen(true)}
           isMenuOpen={sidebarOpen}
         />
