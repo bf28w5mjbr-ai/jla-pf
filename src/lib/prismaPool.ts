@@ -42,6 +42,12 @@ export const DAY_OPS_HEAVY_TRANSACTION = {
   timeout: 55_000,
 } as const;
 
+/** 大会エントリー保存（advisory lock・種目/チームの入れ替え） */
+export const COMPETITION_ENTRY_SAVE_TRANSACTION = {
+  maxWait: 20_000,
+  timeout: 55_000,
+} as const;
+
 /** ログイン／登録レート制限バケット（find + upsert など短い TX） */
 export const LOGIN_THROTTLE_TRANSACTION = {
   maxWait: 20_000,

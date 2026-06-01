@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { BluviumWordmark } from "@/components/BluviumWordmark";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { appRoutes } from "@/lib/appRoutes";
 import {
@@ -20,6 +20,7 @@ import {
   ChevronDown,
   Landmark,
   LayoutDashboard,
+  LogOut,
   Megaphone,
   PlusCircle,
   Shield,
@@ -104,7 +105,9 @@ export default function Sidebar({
   onOpenChange,
 }: SidebarProps = {}) {
   const pathname = usePathname();
+  const router = useRouter();
   const [internalOpen, setInternalOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const isControlled = typeof open === "boolean";
   const isOpen = isControlled ? open : internalOpen;
   const setIsOpen = (next: boolean) => {
@@ -203,6 +206,19 @@ export default function Sidebar({
       icon: <PlusCircle className="h-4 w-4 shrink-0 opacity-90" strokeWidth={1.75} aria-hidden />,
     },
   ];
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // ネットワーク障害時もログイン画面へ誘導する
+    } finally {
+      setIsOpen(false);
+      setLoggingOut(false);
+      router.replace("/login");
+    }
+  };
 
   const renderNavLink = (item: MenuItem, active: boolean) => (
     <Link
@@ -414,6 +430,21 @@ export default function Sidebar({
               </Link>
             ))}
           </nav>
+          <div className="mt-2 border-t border-border/60 pt-2">
+            <button
+              type="button"
+              onClick={() => void handleLogout()}
+              disabled={loggingOut}
+              className={cn(footerLinkClass, "group w-full disabled:opacity-50")}
+            >
+              <span className={footerIconWrap}>
+                <LogOut className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />
+              </span>
+              <span className="min-w-0 truncate">
+                {loggingOut ? "ログアウト中…" : "ログアウト"}
+              </span>
+            </button>
+          </div>
         </div>
       </aside>
     </>

@@ -54,6 +54,12 @@ import {
   personalEntryItemsHasMixedEventTypes,
   shouldBlockPersonalEntryItemsXorForGeneralUser,
 } from "@/lib/personalEntryItemsXor";
+import {
+  COMPETITION_ENTRY_SAVE_TRANSACTION,
+  isPrismaPoolRetryable,
+  prismaPoolBusyUserMessage,
+  withPrismaPoolRetryOnce,
+} from "@/lib/prismaPool";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -704,7 +710,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const previousEntryEventIds =
       previousSubmittedEntry?.items.map((item) => item.eventId) ?? [];
 
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await withPrismaPoolRetryOnce(() =>
+      prisma.$transaction(async (tx) => {
       const lockKey = `competition-entry:${competitionId}:${session.userId}`;
       // 同一大会・同一ユーザーの同時POSTで重複エントリーが作られるのを防ぐ。
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
@@ -878,7 +885,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         entry,
         wasUpdate: Boolean(existingEntry),
       };
-    });
+    }, COMPETITION_ENTRY_SAVE_TRANSACTION)
+    );
 
     const latestCompletedCheckout = await prisma.entryCheckoutSession.findFirst({
       where: {
@@ -1147,6 +1155,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       completeUrl,
     });
   } catch (error) {
+    if (isPrismaPoolRetryable(error)) {
+      return NextResponse.json({ message: prismaPoolBusyUserMessage() }, { status: 503 });
+    }
     if (error instanceof Error) {
       const safeMessages = new Set([
         "種目が不正です",

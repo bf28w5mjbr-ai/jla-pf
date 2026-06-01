@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { HeatMarshalHeatRow, HeatMarshalParticipant } from "@/components/HeatMarshalLanePanel";
 import { marshalParticipantKey } from "@/components/HeatMarshalLanePanel";
 import type { HeatResultCaptureRow } from "@/lib/heatResultCaptureApi";
-import { secondaryClubLabelForTeamRow, secondaryClubLineForIndividual } from "@/lib/startListTeamDisplay";
+import { secondaryClubLineForIndividual } from "@/lib/startListTeamDisplay";
 import {
   DAY_OPS_STATUS_MARSHAL_ABSENT,
   dayOpsParticipantStatusLabelJa,
