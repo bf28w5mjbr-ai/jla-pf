@@ -86,9 +86,11 @@
 - `GET /api/qualifications`
 - `PATCH /api/qualifications/[id]`
 
-## 6. 一般公開サイト（未ログイン）
+## 6. 一般公開サイト
 
-トップ・`/competitions`・`/clubs` は `PublicSiteShell` で表示。会員向け操作はログイン後。トップ `/` は未ログインのみ公開ランディングを表示し、ログイン済みは `/dashboard` へリダイレクトする（`/competitions`・`/clubs` はログイン済みでも公開のまま）。
+入口・ログイン・リダイレクト・公開ルート一覧は [`SITE_ENTRY_AND_ROUTING.md`](./SITE_ENTRY_AND_ROUTING.md) を正とする。以下は **公開データとして何が見えるか** の範囲定義である。
+
+`/competitions`・`/clubs` 等は `PublicSiteShell` で表示し、会員向けの操作・非公開フィールドはログイン後の会員ルートまたは API ガードで保護する。
 
 | リソース | 公開範囲 | 非公開（会員・主催向け） |
 |----------|----------|-------------------------|
@@ -102,11 +104,15 @@
 - 重要操作は `AuditLog` 記録を原則化する。
 - 新規管理APIは、ロール判定だけでなく「対象リソースのスコープ検証」を必須とする。
 - 権限仕様を更新した場合は、同時に `docs/PERMISSIONS.md` と本書を更新する。
+- 入口・リダイレクト・公開シェルを更新した場合は、`docs/SITE_ENTRY_AND_ROUTING.md` を同時更新する。
 
 ## 8. 参照
 
+- `docs/SITE_ENTRY_AND_ROUTING.md`（トップ・ログイン・公開/会員 URL）
 - `prisma/schema.prisma`
 - `src/lib/accessControl.ts`
 - `src/lib/platformTaxonomy.ts`
 - `src/lib/governancePolicy.ts`
+- `src/lib/clubPublicFields.ts`
+- `src/components/public/PublicSiteShellWrapper.tsx`
 

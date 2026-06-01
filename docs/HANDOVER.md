@@ -24,6 +24,7 @@
 - `README.md`
 - `docs/API_SPEC.md`
 - `docs/PERMISSIONS_CURRENT.md`
+- `docs/SITE_ENTRY_AND_ROUTING.md`（トップ・ログイン・公開サイト・会員エリアの URL 挙動）
 - `docs/OPERATIONS_MANUAL.md`
 - `docs/TROUBLESHOOTING.md`
 

@@ -3,7 +3,8 @@
 最終更新: 2026-03-24
 
 このドキュメントは、運用向けの権限説明です。  
-実装との厳密な一致が必要な場合は、`docs/PERMISSIONS_CURRENT.md` を正としてください。
+実装との厳密な一致が必要な場合は、`docs/PERMISSIONS_CURRENT.md` を正としてください。  
+トップ・ログイン・公開サイトと会員エリアの URL 挙動は `docs/SITE_ENTRY_AND_ROUTING.md` を参照してください。
 
 ## 1. 権限モデル（現行）
 

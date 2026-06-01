@@ -90,7 +90,14 @@ export const getOptionalAuthenticatedUserId = cache(async (): Promise<string | n
   return session?.userId ?? null;
 });
 
-/** ログイン画面用: セッション有効なら post-login 先（未指定時はダッシュボード）へ遷移 */
+/**
+ * セッション有効なら post-login 先へサーバーリダイレクト（未指定時は `/dashboard`）。
+ * `redirectParam` は {@link safePostLoginPath} で検証する。
+ *
+ * 利用箇所: `/`（カバーページホスト）, `/login`
+ *
+ * 仕様の正本: `docs/SITE_ENTRY_AND_ROUTING.md`
+ */
 export async function redirectIfAuthenticated(
   redirectParam: string | null | undefined
 ): Promise<void> {

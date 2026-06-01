@@ -8,6 +8,7 @@
 
 - API 一覧: `docs/API_SPEC.md`
 - 権限仕様: `docs/PERMISSIONS_CURRENT.md`
+- 入口・ルーティング: `docs/SITE_ENTRY_AND_ROUTING.md`
 - 障害対応詳細: `docs/TROUBLESHOOTING.md`
 - ログ方針: `docs/LOGGING_POLICY.md`
 - 当日運用: `docs/DAY_OPS_MANUAL.md`
@@ -121,6 +122,8 @@ stripe listen --forward-to localhost:3000/api/webhooks/stripe
   - `docs/API_SPEC.md` を同時更新
 - 権限仕様変更時:
   - `docs/PERMISSIONS_CURRENT.md` と `docs/PERMISSIONS.md` を同時更新
+- 入口・リダイレクト・公開シェル変更時:
+  - `docs/SITE_ENTRY_AND_ROUTING.md` を同時更新（公開データ範囲に影響する場合は `PERMISSIONS_CURRENT.md` §6 も）
 - 障害再発防止:
   - 再現条件と恒久対策を `docs/TROUBLESHOOTING.md` に追記
 # 運用マニュアル（簡易）
