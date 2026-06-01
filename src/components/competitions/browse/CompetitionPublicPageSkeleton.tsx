@@ -52,21 +52,37 @@ export function CompetitionPublicResultsTimetableSkeleton() {
   );
 }
 
-export function CompetitionPublicPageTabsSkeleton({ competitionId }: { competitionId: string }) {
+export function CompetitionPublicStartListPanelSkeleton() {
+  return (
+    <div className="space-y-4" role="status" aria-label="スタートリストを読み込み中">
+      <div className="flex justify-end">
+        <div className="h-9 w-28 animate-pulse rounded-lg border border-border/60 bg-muted/30" />
+      </div>
+      <div className="min-h-[320px] animate-pulse rounded-xl border border-border/60 bg-muted/25" />
+    </div>
+  );
+}
+
+export function CompetitionPublicPageTabsSkeleton({
+  detailBasePath,
+}: {
+  competitionId?: string;
+  detailBasePath: string;
+}) {
   return (
     <div className="w-full space-y-4" role="status" aria-label="タブを読み込み中">
       <div className="grid grid-cols-2 gap-1 rounded-xl border border-border/80 bg-muted/30 p-1 sm:inline-flex sm:w-auto">
         <Link
-          href={`/competitions/${competitionId}`}
+          href={detailBasePath}
           className="flex h-9 items-center justify-center rounded-lg bg-background px-3 text-xs font-medium text-foreground shadow-sm sm:h-8"
         >
-          大会ページ
+          大会情報
         </Link>
         <Link
-          href={`/competitions/${competitionId}?tab=results`}
+          href={`${detailBasePath}?tab=results`}
           className="flex h-9 items-center justify-center rounded-lg border border-border/70 bg-muted/40 px-3 text-xs font-medium text-foreground/70 shadow-sm sm:h-8"
         >
-          競技結果
+          レース情報
         </Link>
       </div>
       <CompetitionPublicOverviewPanelSkeleton />

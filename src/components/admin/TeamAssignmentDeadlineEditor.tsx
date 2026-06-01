@@ -78,7 +78,7 @@ export default function TeamAssignmentDeadlineEditor({
           ラウンド数・ヒート分割・開始時刻の設定は大会公開ページの「スタートリスト」タブから行います。
         </p>
         <Button variant="outline" size="sm" className="mt-3 h-8 gap-1 text-xs" asChild>
-          <Link href={`/competitions/${competitionId}?tab=start-list`}>
+          <Link href={`/competitions/${competitionId}?tab=results`}>
             スタートリスト設定へ
             <ExternalLink className="size-3.5 opacity-70" aria-hidden />
           </Link>

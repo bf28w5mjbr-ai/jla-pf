@@ -1,4 +1,3 @@
-import { Metadata } from "next";
 import Link from "next/link";
 import {
   Building2,
@@ -27,8 +26,6 @@ import {
 } from "@/components/competitions/CompetitionsListControls";
 import { formatCompactJaDateRange } from "@/lib/datetimeLocal";
 import { cn } from "@/lib/utils";
-
-export const revalidate = 60;
 
 function entryVolume<T extends { _count: { entries: number; teamEntries: number } }>(
   c: T
@@ -79,21 +76,24 @@ function sortCompetitionBucket<
   return out;
 }
 
-export const metadata: Metadata = {
-  title: "大会一覧 | Bluvium",
-  description: "ライフセービング大会一覧",
+type CompetitionsBrowseListSearchParams = {
+  category?: string;
+  view?: string;
+  q?: string;
+  sort?: string;
 };
 
-export default async function CompetitionsPage({
+type Props = {
+  listBasePath: string;
+  competitionDetailHref: (competitionId: string) => string;
+  searchParams: Promise<CompetitionsBrowseListSearchParams>;
+};
+
+export async function CompetitionsBrowseListPage({
+  listBasePath,
+  competitionDetailHref,
   searchParams,
-}: {
-  searchParams: Promise<{
-    category?: string;
-    view?: string;
-    q?: string;
-    sort?: string;
-  }>;
-}) {
+}: Props) {
   const params = await searchParams;
   const categoryFilter = params.category;
   const selectedCategory =
@@ -253,7 +253,7 @@ export default async function CompetitionsPage({
       query.set("sort", sort);
     }
     const queryString = query.toString();
-    return queryString.length > 0 ? `/competitions?${queryString}` : "/competitions";
+    return queryString.length > 0 ? `${listBasePath}?${queryString}` : listBasePath;
   };
 
   const sortHrefs: Record<CompetitionListSort, string> = {
@@ -366,7 +366,10 @@ export default async function CompetitionsPage({
                   size="sm"
                   className="h-auto min-w-0 max-w-full justify-start gap-1.5 border-border/90 px-2.5 py-2 text-left text-base font-semibold leading-snug text-foreground shadow-sm hover:bg-muted/60"
                 >
-                  <Link href={`/competitions/${competition.id}`} className="group inline-flex min-w-0 items-center gap-1">
+                  <Link
+                    href={competitionDetailHref(competition.id)}
+                    className="group inline-flex min-w-0 items-center gap-1"
+                  >
                     <span className="truncate">{competition.name}</span>
                     <ChevronRight className="h-4 w-4 shrink-0 opacity-40 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
                   </Link>

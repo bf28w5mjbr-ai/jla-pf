@@ -73,7 +73,7 @@ export default async function CompetitionEventStartListPage({
       dayOpsUnlockConfigured={loaded.dayOpsUnlockConfigured}
       hasDayOpsUnlock={loaded.hasDayOpsUnlock}
       backHref={`/competitions/${competitionId}?tab=results`}
-      backLabel="競技結果へ"
+      backLabel="レース情報へ"
     >
       <StartListEventUnifiedCard {...cardProps} />
     </StartListEventPageShell>

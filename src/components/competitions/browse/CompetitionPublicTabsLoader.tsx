@@ -6,10 +6,10 @@ import { prisma } from "@/server/db";
 import CompetitionPublicPageTabs from "@/components/public/CompetitionPublicPageTabs";
 import type { CompetitionPublicTabValue } from "@/lib/competitionPublicTab";
 import { CompetitionPublicOverviewPanelLoader } from "./CompetitionPublicOverviewPanelLoader";
-import { CompetitionPublicResultsTimetableLoader } from "./CompetitionPublicResultsTimetableLoader";
+import { CompetitionPublicStartListPanelLoader } from "./CompetitionPublicStartListPanelLoader";
 import {
   CompetitionPublicOverviewPanelSkeleton,
-  CompetitionPublicResultsTimetableSkeleton,
+  CompetitionPublicStartListPanelSkeleton,
 } from "./CompetitionPublicPageSkeleton";
 import { DayOpsUnlockBannerLazy } from "./competitionPublicDynamicClients";
 
@@ -18,9 +18,14 @@ type TabValue = CompetitionPublicTabValue;
 type Props = {
   competitionId: string;
   activeTab: TabValue;
+  detailBasePath: string;
 };
 
-export async function CompetitionPublicTabsLoader({ competitionId, activeTab }: Props) {
+export async function CompetitionPublicTabsLoader({
+  competitionId,
+  activeTab,
+  detailBasePath,
+}: Props) {
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
   const [session, hasDayOpsUnlock, competitionMeta] = await Promise.all([
@@ -43,6 +48,7 @@ export async function CompetitionPublicTabsLoader({ competitionId, activeTab }: 
       />
       <CompetitionPublicPageTabs
         competitionId={competitionId}
+        detailBasePath={detailBasePath}
         overview={
           activeTab === "overview" ? (
             <Suspense fallback={<CompetitionPublicOverviewPanelSkeleton />}>
@@ -55,8 +61,12 @@ export async function CompetitionPublicTabsLoader({ competitionId, activeTab }: 
         }
         results={
           activeTab === "results" ? (
-            <Suspense fallback={<CompetitionPublicResultsTimetableSkeleton />}>
-              <CompetitionPublicResultsTimetableLoader competitionId={competitionId} />
+            <Suspense fallback={<CompetitionPublicStartListPanelSkeleton />}>
+              <CompetitionPublicStartListPanelLoader
+                competitionId={competitionId}
+                sessionUserId={sessionUserId}
+                hasDayOpsUnlock={hasDayOpsUnlock}
+              />
             </Suspense>
           ) : null
         }

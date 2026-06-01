@@ -49,6 +49,7 @@ import {
   type CompetitionManagementPageSearchParams,
 } from "@/lib/competitionManagementTab";
 import { getCompetitionManagementAccess } from "@/lib/competitionManagementAccess";
+import { appRoutes } from "@/lib/appRoutes";
 import { toIsoStringOrNull } from "@/lib/datetimeLocal";
 import CopyAbsoluteUrlButton from "@/components/public/CopyAbsoluteUrlButton";
 import CompetitionManagementTabsClient, {
@@ -334,13 +335,17 @@ export default async function CompetitionDetailPage({
           {canEdit ? (
             <div className="flex flex-wrap gap-2" role="toolbar" aria-label="参加者向けページを別タブで開く">
               <Button variant="outline" size="sm" className="gap-1.5" asChild>
-                <Link href={`/competitions/${competitionId}`} target="_blank" rel="noopener noreferrer">
+                <Link
+                  href={appRoutes.public.competitionView(competitionId)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   <ExternalLink className="h-4 w-4 opacity-80" aria-hidden />
                   公開ページ
                 </Link>
               </Button>
               <CopyAbsoluteUrlButton
-                path={`/competitions/${competitionId}`}
+                path={appRoutes.public.competitionView(competitionId)}
                 label="公開ページのリンクをコピー"
               />
               <Button variant="outline" size="sm" className="gap-1.5" asChild>

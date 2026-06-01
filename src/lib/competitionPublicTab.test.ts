@@ -11,7 +11,7 @@ describe("parseCompetitionPublicTab", () => {
     expect(parseCompetitionPublicTab(null)).toBe("overview");
   });
 
-  it("旧 start-list は overview にフォールバック", () => {
-    expect(parseCompetitionPublicTab("start-list")).toBe("overview");
+  it("旧 start-list は競技結果タブ（スタートリスト）へ", () => {
+    expect(parseCompetitionPublicTab("start-list")).toBe("results");
   });
 });

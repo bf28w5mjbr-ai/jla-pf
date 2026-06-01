@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { label: "トップ", href: "/", icon: Home, exact: true },
-  { label: "大会", href: "/competitions", icon: Trophy, exact: false },
+  { label: "大会", href: "/browse/competitions", icon: Trophy, exact: false },
   { label: "クラブ", href: "/clubs", icon: Users, exact: false },
 ] as const;
 

@@ -7,6 +7,7 @@ import { loadCompetitionOfficialResultsPublicPayload } from "@/lib/competitionOf
 import { displayResultRoundLabel } from "@/lib/resultRoundLabels";
 import { Button } from "@/components/ui/button";
 import { prisma } from "@/server/db";
+import { appRoutes } from "@/lib/appRoutes";
 
 export async function generateMetadata({
   params,
@@ -61,9 +62,9 @@ export default async function CompetitionPublicEventResultsPage({
   return (
     <div className="app-page mx-auto w-full max-w-5xl space-y-5 px-4 py-5 sm:space-y-6 sm:px-6 sm:py-6 lg:px-8">
       <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" asChild>
-        <Link href={`/competitions/${competitionId}?tab=results`}>
+        <Link href={`${appRoutes.public.competitionView(competitionId)}?tab=results`}>
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-          競技結果（タイムテーブル）に戻る
+          レース情報に戻る
         </Link>
       </Button>
 

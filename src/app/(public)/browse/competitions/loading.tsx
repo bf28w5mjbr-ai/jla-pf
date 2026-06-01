@@ -1,6 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card";
 
-export default function CompetitionsLoading() {
+export default function PublicCompetitionsBrowseLoading() {
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-3 py-6 sm:space-y-8 sm:px-5 sm:py-8 lg:px-8 lg:py-10">
       <div className="space-y-4 border-b border-border/80 pb-8">

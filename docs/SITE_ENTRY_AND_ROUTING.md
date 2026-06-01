@@ -77,7 +77,8 @@ Next.js **proxy**（[`src/proxy.ts`](../src/proxy.ts)）は Supabase セッシ�
 |------------|-----------|-------------|-----------|
 | `/`（カバーホスト） | ランディング | → `/dashboard` | [`src/proxy.ts`](../src/proxy.ts)（Edge） / [`src/app/page.tsx`](../src/app/page.tsx)（フォールバック） |
 | `/dashboard` | → `/login` | 会員シェル（エントリー等は Suspense ストリーミング） | [`src/app/(authenticated)/layout.tsx`](../src/app/(authenticated)/layout.tsx)。ブックマーク・WebView は **直リンク推奨** |
-| `/competitions`, `/clubs`, その他 `(public)/*` | 公開シェル | 公開シェル（リダイレクトなし） | [`src/app/(public)/layout.tsx`](../src/app/(public)/layout.tsx) |
+| `/browse/competitions`, `/competitions/view/[id]`, `/clubs`, その他 `(public)/*` | 公開シェル | 公開シェル（ログイン済みは [`competitionBrowseRedirect`](../src/lib/competitionBrowseRedirect.ts) で会員 URL へ） | [`src/app/(public)/layout.tsx`](../src/app/(public)/layout.tsx) |
+| `/competitions`, `/competitions/[id]`（一覧・詳細のみ） | → `/browse/competitions` 等へリダイレクト | 会員シェル | [`src/app/(authenticated)/competitions/`](../src/app/(authenticated)/competitions/) |
 | `/login` | ログインフォーム | → `redirect` 先 or `/dashboard` | [`src/app/login/page.tsx`](../src/app/login/page.tsx) |
 | `/register` 等（認証シェル） | フォーム | リダイレクトなし（現状） | 各 page |
 | `(authenticated)/*`（`/dashboard` 以外） | → `/login` | 会員シェル | [`src/app/(authenticated)/layout.tsx`](../src/app/(authenticated)/layout.tsx) |
@@ -102,7 +103,7 @@ Next.js **proxy**（[`src/proxy.ts`](../src/proxy.ts)）は Supabase セッシ�
 ### サイドバー ([`PublicSiteSidebar.tsx`](../src/components/public/PublicSiteSidebar.tsx))
 
 - トップ `/`
-- 大会 `/competitions`
+- 大会 `/browse/competitions`
 - クラブ `/clubs`
 
 ダッシュボードへのリンクはサイドバーにはありません。
@@ -115,8 +116,8 @@ Next.js **proxy**（[`src/proxy.ts`](../src/proxy.ts)）は Supabase セッシ�
 
 | パス | 用途 |
 |------|------|
-| `/competitions` | 大会一覧 |
-| `/competitions/[id]` | 大会詳細（タブ: 大会ページ / 競技結果） |
+| `/browse/competitions` | 大会一覧（未ログイン向け） |
+| `/competitions/view/[id]` | 大会詳細（タブ: 大会情報 / レース情報・未ログイン向け） |
 | `/competitions/[id]/results/[eventId]` | 種目別公式結果（公開。氏名・クラブ名可） |
 | `/competitions/[id]/start-list` | スタートリスト（主催の公開設定時） |
 | `/competitions/[id]/start-list/[eventId]` | 種目スタートリスト |
@@ -136,13 +137,14 @@ Next.js **proxy**（[`src/proxy.ts`](../src/proxy.ts)）は Supabase セッシ�
 | 用途 | 公開（未ログイン可） | 会員 `(authenticated)` |
 |------|---------------------|------------------------|
 | クラブ詳細 | `/clubs/view/[id]` | `/clubs/[id]`（管理・メンバー等） |
-| 大会エントリー | 公開大会ページから `withLoginRedirect` → 未ログインは `/login?redirect=...` | `/competitions/[id]/entry` ほか |
+| 大会一覧・詳細 | `/browse/competitions`, `/competitions/view/[id]` | `/competitions`, `/competitions/[id]`（会員シェル） |
+| 大会エントリー | 公開詳細から `withLoginRedirect` → 未ログインは `/login?redirect=...` | `/competitions/[id]/entry` ほか |
 | チームエントリー | 同上 | `/competitions/[id]/team-entry` 等 |
 | テクニカルオフィシャル募集 | 公開ページ上はログイン導線 | `/competitions/[id]/official-entry` |
 | 公式結果（閲覧） | `/competitions/[id]/results/[eventId]`（氏名・クラブ名可） | `/competitions/[id]/results`（`viewerId` 付きペイロード。主催・PF 向け操作は別） |
 | 結果管理 | — | `/competitions/[id]/results/manage` |
 
-公開大会ヘッダーのログイン導線: [`CompetitionPublicHeaderLoader.tsx`](../src/app/(public)/competitions/[id]/_components/CompetitionPublicHeaderLoader.tsx) — `withLoginRedirect`, `signInRedirectPath`
+公開大会ヘッダーのログイン導線: [`CompetitionPublicHeaderLoader.tsx`](../src/components/competitions/browse/CompetitionPublicHeaderLoader.tsx) — `withLoginRedirect`, `signInRedirectPath`（ログイン後は会員詳細 `/competitions/[id]`）
 
 公開クラブ API: `GET /api/public/clubs`, `GET /api/public/clubs/[clubId]`（フィールド定義: [`src/lib/clubPublicFields.ts`](../src/lib/clubPublicFields.ts)）
 

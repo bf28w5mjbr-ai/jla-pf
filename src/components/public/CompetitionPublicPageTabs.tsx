@@ -17,10 +17,12 @@ function tabFromSearchParams(sp: URLSearchParams | null): CompetitionPublicTabVa
 
 function CompetitionPublicPageTabsInner({
   competitionId,
+  detailBasePath,
   overview,
   results,
 }: {
   competitionId: string;
+  detailBasePath: string;
   overview: ReactNode;
   results: ReactNode;
 }) {
@@ -30,11 +32,10 @@ function CompetitionPublicPageTabsInner({
 
   const hrefForTab = useCallback(
     (next: CompetitionPublicTabValue) => {
-      const base = `/competitions/${competitionId}`;
-      if (next === "overview") return base;
-      return `${base}?tab=${next}`;
+      if (next === "overview") return detailBasePath;
+      return `${detailBasePath}?tab=${next}`;
     },
-    [competitionId]
+    [detailBasePath]
   );
 
   const onValueChange = useCallback(
@@ -55,19 +56,19 @@ function CompetitionPublicPageTabsInner({
           className={cn(
             "grid h-auto w-full grid-cols-2 gap-1 rounded-xl border border-border/80 bg-muted/30 p-1 sm:inline-flex sm:w-auto sm:grid-cols-none sm:flex-wrap sm:justify-start"
           )}
-          aria-label="大会ページの表示切替"
+          aria-label="大会情報の表示切替"
         >
           <TabsTrigger
             value="overview"
             className="h-9 rounded-lg px-3 text-xs font-medium data-[state=active]:shadow-sm sm:h-8"
           >
-            大会ページ
+            大会情報
           </TabsTrigger>
           <TabsTrigger
             value="results"
             className="h-9 rounded-lg px-3 text-xs font-medium data-[state=active]:shadow-sm sm:h-8"
           >
-            競技結果
+            レース情報
           </TabsTrigger>
         </TabsList>
 
@@ -82,21 +83,25 @@ function CompetitionPublicPageTabsInner({
   );
 }
 
-function TabsFallback({ competitionId }: { competitionId: string }) {
+function TabsFallback({
+  detailBasePath,
+}: {
+  detailBasePath: string;
+}) {
   return (
     <div className="w-full space-y-4" role="status" aria-label="タブを読み込み中">
       <div className="grid grid-cols-2 gap-1 rounded-xl border border-border/80 bg-muted/30 p-1 sm:inline-flex sm:w-auto">
         <Link
-          href={`/competitions/${competitionId}`}
+          href={detailBasePath}
           className="flex h-9 items-center justify-center rounded-lg bg-background px-3 text-xs font-medium text-foreground shadow-sm sm:h-8"
         >
-          大会ページ
+          大会情報
         </Link>
         <Link
-          href={`/competitions/${competitionId}?tab=results`}
+          href={`${detailBasePath}?tab=results`}
           className="flex h-9 items-center justify-center rounded-lg border border-border/70 bg-muted/40 px-3 text-xs font-medium text-foreground/70 shadow-sm sm:h-8"
         >
-          競技結果
+          レース情報
         </Link>
       </div>
       <div className="h-48 animate-pulse rounded-xl border border-border/60 bg-muted/40" />
@@ -106,17 +111,21 @@ function TabsFallback({ competitionId }: { competitionId: string }) {
 
 export default function CompetitionPublicPageTabs({
   competitionId,
+  detailBasePath,
   overview,
   results,
 }: {
   competitionId: string;
+  /** タブ切替・フォールバックリンクのベース（末尾スラッシュなし） */
+  detailBasePath: string;
   overview: ReactNode;
   results: ReactNode;
 }) {
   return (
-    <Suspense fallback={<TabsFallback competitionId={competitionId} />}>
+    <Suspense fallback={<TabsFallback detailBasePath={detailBasePath} />}>
       <CompetitionPublicPageTabsInner
         competitionId={competitionId}
+        detailBasePath={detailBasePath}
         overview={overview}
         results={results}
       />

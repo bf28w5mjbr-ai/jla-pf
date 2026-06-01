@@ -41,7 +41,7 @@ export function HomeLanding() {
           </p>
           <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
             <Button asChild size="lg" className="w-full sm:w-auto">
-              <Link href="/competitions">
+              <Link href="/browse/competitions">
                 大会情報を見る
                 <ArrowRight className="size-4" aria-hidden />
               </Link>

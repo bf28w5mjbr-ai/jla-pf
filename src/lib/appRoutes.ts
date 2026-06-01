@@ -18,7 +18,8 @@ export const appRoutes = {
 
   /** 一般公開（大会・クラブディレクトリ） */
   public: {
-    competitions: () => "/competitions",
+    competitions: () => "/browse/competitions",
+    competitionView: (competitionId: string) => `/competitions/view/${competitionId}`,
     clubs: () => "/clubs",
     clubView: (clubId: string) => `/clubs/view/${clubId}`,
   },
@@ -65,6 +66,8 @@ export const appRoutes = {
   },
 
   competitions: {
+    /** 会員向け大会一覧 */
+    list: () => "/competitions",
     root: (competitionId: string) => `/competitions/${competitionId}`,
     entry: (competitionId: string) => `/competitions/${competitionId}/entry`,
     teamEntry: (competitionId: string, options?: { clubId?: string }) => {

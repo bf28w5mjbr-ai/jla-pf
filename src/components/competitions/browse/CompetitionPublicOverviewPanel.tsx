@@ -1,5 +1,6 @@
 import {
   BadgeCheck,
+  ChevronDown,
   Coins,
   FileText,
   ListOrdered,
@@ -64,65 +65,71 @@ export function CompetitionPublicOverviewPanel({
           <CardContent className="p-0 sm:p-0">
             <div className="divide-y divide-border">
               {competition.events.length > 0 ? (
-                <div className="flex gap-3 px-4 py-3 sm:px-5">
-                  <ListOrdered className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium text-muted-foreground">種目</p>
-                    <div className="mt-1.5 flex flex-col gap-4">
-                      {participationEventSections.map((section) => (
-                        <div key={section.category}>
-                          {participationEventSections.length > 1 ? (
-                            <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-foreground/85">
-                              {section.label}
-                            </p>
-                          ) : null}
-                          <div className="flex flex-col gap-3">
-                            {section.ageBlocks.map((block) => {
-                              const framed = section.ageBlocks.length > 1;
-                              const showAgeLabel =
-                                section.ageBlocks.length > 1 ||
-                                (section.ageBlocks.length === 1 &&
-                                  !isUnassignedParticipationAgeBlock(block));
-                              return (
-                                <div
-                                  key={`${section.category}-${block.key}`}
-                                  className={
-                                    framed
-                                      ? "rounded-lg border border-border/70 bg-muted/20 px-3 py-2.5 sm:px-3.5"
-                                      : undefined
-                                  }
-                                >
-                                  {showAgeLabel ? (
-                                    <p className="mb-1.5 text-[11px] font-semibold text-muted-foreground">
-                                      {block.title}
-                                    </p>
-                                  ) : null}
-                                  <ul className="flex flex-col gap-2">
-                                    {block.rows.map((row) => (
-                                      <li key={row.key} className="text-sm">
-                                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                                          <span className="font-medium text-foreground">{row.name}</span>
-                                          <span className="text-[11px] leading-snug text-muted-foreground">
-                                            {row.metaLine}
-                                          </span>
-                                        </div>
-                                        {row.scheduleLine ? (
-                                          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                                            {row.scheduleLine}
-                                          </p>
-                                        ) : null}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
+                <details className="group px-4 py-3 sm:px-5">
+                  <summary className="flex cursor-pointer list-none items-start gap-3 marker:content-none [&::-webkit-details-marker]:hidden">
+                    <ListOrdered className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" aria-hidden />
+                    <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                      <p className="text-xs font-medium text-muted-foreground">種目</p>
+                      <ChevronDown
+                        className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+                        aria-hidden
+                      />
                     </div>
+                  </summary>
+                  <div className="mt-1.5 flex flex-col gap-4 pl-7">
+                    {participationEventSections.map((section) => (
+                      <div key={section.category}>
+                        {participationEventSections.length > 1 ? (
+                          <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-foreground/85">
+                            {section.label}
+                          </p>
+                        ) : null}
+                        <div className="flex flex-col gap-3">
+                          {section.ageBlocks.map((block) => {
+                            const framed = section.ageBlocks.length > 1;
+                            const showAgeLabel =
+                              section.ageBlocks.length > 1 ||
+                              (section.ageBlocks.length === 1 &&
+                                !isUnassignedParticipationAgeBlock(block));
+                            return (
+                              <div
+                                key={`${section.category}-${block.key}`}
+                                className={
+                                  framed
+                                    ? "rounded-lg border border-border/70 bg-muted/20 px-3 py-2.5 sm:px-3.5"
+                                    : undefined
+                                }
+                              >
+                                {showAgeLabel ? (
+                                  <p className="mb-1.5 text-[11px] font-semibold text-muted-foreground">
+                                    {block.title}
+                                  </p>
+                                ) : null}
+                                <ul className="flex flex-col gap-2">
+                                  {block.rows.map((row) => (
+                                    <li key={row.key} className="text-sm">
+                                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                        <span className="font-medium text-foreground">{row.name}</span>
+                                        <span className="text-[11px] leading-snug text-muted-foreground">
+                                          {row.metaLine}
+                                        </span>
+                                      </div>
+                                      {row.scheduleLine ? (
+                                        <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                                          {row.scheduleLine}
+                                        </p>
+                                      ) : null}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
+                </details>
               ) : null}
 
               {competition.maxParticipants ? (

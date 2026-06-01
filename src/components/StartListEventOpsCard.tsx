@@ -425,7 +425,7 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
               </p>
               <div className="mt-2">
                 <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
-                  <Link href={`/competitions/${competitionId}?tab=start-list`}>
+                  <Link href={`/competitions/${competitionId}?tab=results`}>
                     スタートリスト設定へ
                   </Link>
                 </Button>
