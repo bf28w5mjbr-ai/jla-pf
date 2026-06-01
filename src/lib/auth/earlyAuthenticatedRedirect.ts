@@ -29,7 +29,10 @@ function postLoginDestination(request: NextRequest): string {
 
 /**
  * カバーページホストで、有効な session Cookie がある `/` または `/login` へのアクセスを
- * Edge で即リダイレクトする（ランディング SSR を省略）。
+ * Edge で処理する（ランディング SSR を省略）。
+ *
+ * - `/`: rewrite で `/dashboard` を 1 往復で返す（307 の二重 RTT を避ける）
+ * - `/login`: 307 で post-login 先へ
  */
 export async function tryEarlyAuthenticatedRedirect(
   request: NextRequest
@@ -48,6 +51,13 @@ export async function tryEarlyAuthenticatedRedirect(
 
   const session = await verifySessionEdge(token);
   if (!session?.userId) return null;
+
+  if (pathname === "/") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/dashboard";
+    url.search = "";
+    return NextResponse.rewrite(url);
+  }
 
   const destination = postLoginDestination(request);
   const url = request.nextUrl.clone();

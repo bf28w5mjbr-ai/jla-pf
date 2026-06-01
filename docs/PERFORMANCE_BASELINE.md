@@ -27,8 +27,46 @@ CURL_EXTRA_ARGS='["-H","Cookie: session=YOUR_JWT"]' \
 | `/` | 200 | 400.6 ms | 459.1 ms |
 | `/dashboard` | 200 | 650.9 ms | 670.5 ms |
 
-デプロイ後にログイン済み Cookie 付き `/` で 307 のみ返ること、および `/dashboard` 初回 HTML がプロフィール先行になることを再計測する。
+デプロイ後にログイン済み Cookie 付き `/` で rewrite（200・ダッシュボード HTML）となること、および `/dashboard` 初回 HTML がプロフィール先行になることを再計測する。
 
 ### Phase 2b（レイアウト DB 統合）
 
 ベースライン時点では `/dashboard` の `$transaction`（エントリー・出席集計）が支配的と判断し、**layout / dashboard の User クエリ統合は見送り**（`getAuthenticatedLayoutUser` は軽量 select のまま維持）。
+
+---
+
+## ダッシュボード高速化（2026-06 実装）
+
+### 変更概要
+
+| 施策 | 内容 |
+|------|------|
+| Edge | ログイン済み `GET /` を 307 ではなく **rewrite → `/dashboard`**（ブラウザ往復 1 回） |
+| TO バナー | クラブ ADMIN 以外は `listClubAdminTechnicalOfficialAlerts` をスキップ |
+| DB | `CompetitionEntry` に `@@index([userId, createdAt(sort: Desc)])` |
+| クエリ | ダッシュボード直近エントリー: 種目は `entry.items` の eventId のみ取得、`checkoutSessions` は `take: 3` |
+| キャッシュ | `qualificationTemplate.findMany` を `unstable_cache`（300s） |
+
+### 計測コマンド（ログイン済み）
+
+```bash
+# 本番・ステージング（session JWT を差し替え）
+CURL_EXTRA_ARGS='["-H","Cookie: session=YOUR_JWT"]' \
+  BASE_URL=https://bluvium.jp pnpm measure:ttfb -- -n 5 --warmup 1 / /dashboard
+
+# ローカル本番ビルド推奨
+pnpm build && pnpm start
+CURL_EXTRA_ARGS='["-H","Cookie: session=YOUR_JWT"]' \
+  BASE_URL=http://localhost:3000 pnpm measure:ttfb -- -n 5 --warmup 1 / /dashboard
+```
+
+### 改善後（ローカル・未ログイン参考 / デプロイ後に Cookie 付きを追記）
+
+| パス | 認証 | 備考 |
+|------|------|------|
+| `/` | ログイン済み | rewrite のため **200**・URL は `/` のままダッシュボード HTML |
+| `/dashboard` | ログイン済み | 直リンク・ヘッダー導線 |
+
+デプロイ後: 上記 Cookie 付き計測結果をこの節の表に TTFB avg を追記する。
+
+実装マージ直前の本番参考（未ログイン・`-L` 追従）: `/dashboard` TTFB avg **676.9 ms**（2026-06-01・3 回計測）。

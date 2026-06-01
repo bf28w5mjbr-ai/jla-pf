@@ -40,15 +40,15 @@ describe("tryEarlyAuthenticatedRedirect", () => {
     resetSessionEdgeSecretCacheForTests();
   });
 
-  it("カバーホストで有効 session の / は /dashboard へ 307", async () => {
+  it("カバーホストで有効 session の / は /dashboard へ rewrite", async () => {
     delete process.env.AUTH_SECRET;
     resetSessionEdgeSecretCacheForTests();
     const token = await signTestSession("u1");
     const req = request("https://bluvium.jp/", token);
     await expect(verifySessionEdge(token)).resolves.toEqual({ userId: "u1" });
     const res = await tryEarlyAuthenticatedRedirect(req);
-    expect(res?.status).toBe(307);
-    expect(res?.headers.get("location")).toBe("https://bluvium.jp/dashboard");
+    expect(res?.status).toBe(200);
+    expect(res?.headers.get("x-middleware-rewrite")).toBe("https://bluvium.jp/dashboard");
   });
 
   it("未ログインは null", async () => {

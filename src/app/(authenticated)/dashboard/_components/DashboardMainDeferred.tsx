@@ -54,18 +54,11 @@ export async function DashboardMainDeferred({ user }: Props) {
             status: true,
             startDate: true,
             startListSettings: true,
-            events: {
-              select: {
-                id: true,
-                name: true,
-                type: true,
-              },
-            },
           },
         },
         checkoutSessions: {
           orderBy: { createdAt: "desc" },
-          take: 5,
+          take: 3,
           select: { status: true },
         },
         items: {
@@ -125,6 +118,25 @@ export async function DashboardMainDeferred({ user }: Props) {
     `,
   ]);
 
+  const eventIds = [...new Set(entries.flatMap((e) => e.items.map((i) => i.eventId)))];
+  const events =
+    eventIds.length > 0
+      ? await prisma.event.findMany({
+          where: { id: { in: eventIds } },
+          select: { id: true, name: true, type: true, competitionId: true },
+        })
+      : [];
+
+  const eventsByCompetitionId = new Map<
+    string,
+    Array<{ id: string; name: string; type: (typeof events)[number]["type"]; competitionId: string }>
+  >();
+  for (const event of events) {
+    const list = eventsByCompetitionId.get(event.competitionId) ?? [];
+    list.push(event);
+    eventsByCompetitionId.set(event.competitionId, list);
+  }
+
   const agg = attendanceAggRows[0];
   const officialAttendanceTotalDays = Number(agg?.total ?? BigInt(0));
   const officialAttendanceAClassDays = Number(agg?.a_days ?? BigInt(0));
@@ -161,11 +173,12 @@ export async function DashboardMainDeferred({ user }: Props) {
               const canIssueReceipt = userStatus.businessEstablished && entry.status !== "CANCELLED";
               const isResultPublished =
                 entry.competition.status === "COMPLETED" || entry.competition.status === "ONGOING";
+              const competitionEvents = eventsByCompetitionId.get(entry.competition.id) ?? [];
               const eventTypeById = new Map(
-                entry.competition.events.map((event) => [event.id, event.type])
+                competitionEvents.map((event) => [event.id, event.type])
               );
               const eventLabelById = new Map(
-                entry.competition.events.map((event) => [event.id, event.name])
+                competitionEvents.map((event) => [event.id, event.name])
               );
               const withdrawableEvents = buildWithdrawableEventOptions({
                 individualEventIds: filterIndividualEventIdsFromEntry(entry.items, eventTypeById),

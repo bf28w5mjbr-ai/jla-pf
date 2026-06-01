@@ -3,6 +3,7 @@ import { appRoutes } from "@/lib/appRoutes";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { prisma } from "@/server/db";
+import { userHasApprovedClubAdminRole } from "@/lib/clubAdminMembership";
 import { listClubAdminTechnicalOfficialAlerts } from "@/lib/technicalOfficialQueries";
 
 export default async function ClubAdminTechnicalOfficialBanner({
@@ -10,6 +11,9 @@ export default async function ClubAdminTechnicalOfficialBanner({
 }: {
   userId: string;
 }) {
+  const isClubAdmin = await userHasApprovedClubAdminRole(userId);
+  if (!isClubAdmin) return null;
+
   const alerts = await listClubAdminTechnicalOfficialAlerts(prisma, userId);
   if (alerts.length === 0) return null;
 

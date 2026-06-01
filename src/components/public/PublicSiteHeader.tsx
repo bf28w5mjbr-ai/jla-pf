@@ -46,7 +46,7 @@ export function PublicSiteHeader({ isLoggedIn, onOpenMenu, isMenuOpen }: Props) 
               className="h-auto px-0 text-sm font-semibold tracking-tight"
               asChild
             >
-              <Link href="/">Bluvium</Link>
+              <Link href={isLoggedIn ? "/dashboard" : "/"}>Bluvium</Link>
             </Button>
             <p className="truncate text-[10px] text-muted-foreground sm:text-[11px]">
               大会・クラブ情報

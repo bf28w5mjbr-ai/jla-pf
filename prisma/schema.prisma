@@ -1188,6 +1188,7 @@ model CompetitionEntry {
   updatedAt DateTime @updatedAt
 
   @@index([competitionId, userId])
+  @@index([userId, createdAt(sort: Desc)])
 }
 
 /// 未決済エントリーへの出場意思確認メール一括送信キャンペーン

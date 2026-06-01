@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { appRoutes } from "@/lib/appRoutes";
 import { getAuthenticatedAppUser } from "@/lib/authenticatedLayoutData";
-import { prisma } from "@/server/db";
+import { getCachedQualificationTemplates } from "@/lib/qualificationTemplateCache";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -36,10 +36,7 @@ function calcAge(dateOfBirth: Date): number {
 export async function DashboardMain({ userId }: { userId: string }) {
   const [user, qualificationTemplates] = await Promise.all([
     getAuthenticatedAppUser(userId),
-    prisma.qualificationTemplate.findMany({
-      select: { kind: true, name: true },
-      orderBy: { kind: "asc" },
-    }),
+    getCachedQualificationTemplates(),
   ]);
   if (!user) redirect("/login");
 

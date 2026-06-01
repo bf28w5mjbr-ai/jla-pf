@@ -29,11 +29,16 @@
 | 状態 | 挙動 |
 |------|------|
 | 未ログイン | `HomeLanding` を表示（本文主 CTA は `/competitions`・`/clubs`。ログイン・新規登録はヘッダーのみ） |
-| ログイン済み | **`/dashboard`** へリダイレクト（Edge の [`src/proxy.ts`](../src/proxy.ts) で先行。未適用時は [`redirectIfAuthenticated`](../src/lib/auth.ts) がフォールバック） |
+| ログイン済み | **`/dashboard` の HTML を 1 往復で返す**（Edge の [`src/proxy.ts`](../src/proxy.ts) で `/` を **rewrite**）。未適用時は [`redirectIfAuthenticated`](../src/lib/auth.ts) が 307 フォールバック |
 
-### ログイン済みの早期リダイレクト（Edge）
+### ログイン済みの早期処理（Edge）
 
-[`src/lib/auth/earlyAuthenticatedRedirect.ts`](../src/lib/auth/earlyAuthenticatedRedirect.ts) が、カバーページホストの `/` および `/login` で有効な `session` Cookie を検出した場合、**ランディングの Node SSR を省略**して 307 で post-login 先へ送る。JWT 検証は [`src/lib/auth/sessionEdge.ts`](../src/lib/auth/sessionEdge.ts)（Prisma 非依存）。
+[`src/lib/auth/earlyAuthenticatedRedirect.ts`](../src/lib/auth/earlyAuthenticatedRedirect.ts) が、カバーページホストで有効な `session` Cookie を検出したとき **ランディングの Node SSR を省略**する。JWT 検証は [`src/lib/auth/sessionEdge.ts`](../src/lib/auth/sessionEdge.ts)（Prisma 非依存）。
+
+| パス | Edge の挙動 |
+|------|-------------|
+| `/` | **rewrite** → `/dashboard`（ブラウザ URL は `/` のまま。二重 RTT を避ける） |
+| `/login` | **307** → `redirect` クエリ先 or `/dashboard` |
 
 ---
 
@@ -75,7 +80,7 @@ Next.js **proxy**（[`src/proxy.ts`](../src/proxy.ts)）は Supabase セッシ�
 
 | URL / 領域 | 未ログイン | ログイン済み | ガード実装 |
 |------------|-----------|-------------|-----------|
-| `/`（カバーホスト） | ランディング | → `/dashboard` | [`src/proxy.ts`](../src/proxy.ts)（Edge） / [`src/app/page.tsx`](../src/app/page.tsx)（フォールバック） |
+| `/`（カバーホスト） | ランディング | rewrite → `/dashboard`（1 往復） | [`src/proxy.ts`](../src/proxy.ts)（Edge） / [`src/app/page.tsx`](../src/app/page.tsx)（307 フォールバック） |
 | `/dashboard` | → `/login` | 会員シェル（エントリー等は Suspense ストリーミング） | [`src/app/(authenticated)/layout.tsx`](../src/app/(authenticated)/layout.tsx)。ブックマーク・WebView は **直リンク推奨** |
 | `/browse/competitions`, `/competitions/view/[id]`, `/clubs`, その他 `(public)/*` | 公開シェル | 公開シェル（ログイン済みは [`competitionBrowseRedirect`](../src/lib/competitionBrowseRedirect.ts) で会員 URL へ） | [`src/app/(public)/layout.tsx`](../src/app/(public)/layout.tsx) |
 | `/competitions`, `/competitions/[id]`（一覧・詳細のみ） | → `/browse/competitions` 等へリダイレクト | 会員シェル | [`src/app/(authenticated)/competitions/`](../src/app/(authenticated)/competitions/) |
@@ -158,7 +163,7 @@ Next.js **proxy**（[`src/proxy.ts`](../src/proxy.ts)）は Supabase セッシ�
 **起動時の想定**
 
 - 未ログイン: トップまたはログイン導線（公開ランディング）
-- ログイン済み（`session` Cookie あり）: 起点が `/` の場合、サーバー側で **`/dashboard`** にリダイレクト
+- ログイン済み（`session` Cookie あり）: 起点が `/` の場合、Edge で **`/dashboard` を rewrite**（1 往復）。WebView のブックマークは `/dashboard` 直リンク推奨
 
 ---
 
