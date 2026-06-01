@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   StartListSchedulePublicView,
+  type PublicScheduleTabLite,
   type PublicScheduleViewSection,
 } from "@/components/StartListSchedulePublicView";
 
@@ -11,6 +12,7 @@ type Props = {
   competitionName: string;
   sections: PublicScheduleViewSection[];
   scheduleTabCount: number;
+  scheduleTabs: PublicScheduleTabLite[];
   roundCounts: Record<string, string>;
 };
 
@@ -19,6 +21,7 @@ export function CompetitionPublicResultsTimetable({
   competitionName,
   sections,
   scheduleTabCount,
+  scheduleTabs,
   roundCounts,
 }: Props) {
   return (
@@ -34,8 +37,9 @@ export function CompetitionPublicResultsTimetable({
           competitionId={competitionId}
           sections={sections}
           scheduleTabCount={scheduleTabCount}
+          scheduleTabs={scheduleTabs}
           roundCounts={roundCounts}
-          scheduleHintText="開催日ごとにタイムスケジュールを表示しています。行をタップすると種目の競技結果を表示します。"
+          scheduleHintText="開催日・エリアごとにタイムスケジュールを表示しています。行をタップすると種目の競技結果を表示します。"
           getRowHref={({ eventId, roundIndex }) => {
             const base = `/competitions/${competitionId}/results/${eventId}`;
             return `${base}?roundIndex=${roundIndex}`;

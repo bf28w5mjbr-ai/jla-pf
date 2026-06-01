@@ -955,7 +955,7 @@ export default function StartListEventIndexBars({
 
   const hintScheduleCard = (() => {
     if (publicScheduleBarsOnly) {
-      return "開催日ごとにタイムスケジュールを表示しています。行をタップでスタートリストを表示します。";
+      return "開催日・エリアごとにタイムスケジュールを表示しています。行をタップでスタートリストを表示します。";
     }
     const parts: string[] = [];
     if (canReorder) {

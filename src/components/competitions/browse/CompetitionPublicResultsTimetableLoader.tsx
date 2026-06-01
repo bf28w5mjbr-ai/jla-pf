@@ -18,6 +18,7 @@ export async function CompetitionPublicResultsTimetableLoader({ competitionId }:
       competitionName={data.competitionName}
       sections={data.sections}
       scheduleTabCount={data.scheduleTabCount}
+      scheduleTabs={data.scheduleTabs}
       roundCounts={data.roundCounts}
     />
   );

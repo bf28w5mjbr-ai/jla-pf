@@ -278,6 +278,7 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
               competitionId={competitionId}
               sections={publicScheduleSections}
               scheduleTabCount={scheduleTabs.length}
+              scheduleTabs={scheduleTabs.map((t) => ({ id: t.id, name: t.name }))}
               roundCounts={roundCounts}
             />
           ) : effectiveMode === "assign" ? (

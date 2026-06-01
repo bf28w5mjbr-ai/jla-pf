@@ -16,7 +16,10 @@ import {
   roundCountForEvent,
 } from "@/lib/scheduleRowOrder";
 import { parseStartListSettings, type HeatSetting } from "@/lib/startListSettings";
-import type { PublicScheduleViewSection } from "@/components/StartListSchedulePublicView";
+import type {
+  PublicScheduleTabLite,
+  PublicScheduleViewSection,
+} from "@/components/StartListSchedulePublicView";
 import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
 
 export type CompetitionPublicResultsTimetableData = {
@@ -24,6 +27,7 @@ export type CompetitionPublicResultsTimetableData = {
   competitionName: string;
   sections: PublicScheduleViewSection[];
   scheduleTabCount: number;
+  scheduleTabs: PublicScheduleTabLite[];
   roundCounts: Record<string, string>;
 };
 
@@ -132,6 +136,7 @@ export async function buildCompetitionPublicResultsTimetable(
     competitionName: competition.name,
     sections,
     scheduleTabCount: scheduleTabs.length,
+    scheduleTabs: scheduleTabs.map((t) => ({ id: t.id, name: t.name })),
     roundCounts,
   };
 }
