@@ -131,7 +131,11 @@ export async function POST(req: NextRequest) {
 
     await onAuthLoginSuccess(user.id, req, { channel: AuthLoginChannel.PASSWORD });
 
-    return NextResponse.json({ ok: true });
+    const passkeyCredentialCount = await prisma.passkeyCredential.count({
+      where: { userId: user.id },
+    });
+
+    return NextResponse.json({ ok: true, passkeyCredentialCount });
   } catch (error) {
     return jsonInternalError500("POST api/auth/login/route.ts", error);
   }

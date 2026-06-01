@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
 import { appendRedirectQuery, safePostLoginPath } from "@/lib/postLoginRedirect";
+import { resolvePostLoginPath } from "@/lib/postLoginPasskeyUpgrade";
 import {
   formatJaRemainingDuration,
   parseRetryAfterSeconds,
@@ -23,6 +24,11 @@ import {
   supportsPasskeyAutofill,
   type PasskeyLoginResult,
 } from "@/lib/passkeyLoginClient";
+import {
+  markPassivePasskeyLoginAttempted,
+  PASSIVE_PASSKEY_DELAY_MS,
+  shouldAttemptPassivePasskeyLogin,
+} from "@/lib/loginPasskeyEntryAttempt";
 import { WebAuthnAbortService } from "@simplewebauthn/browser";
 
 export default function LoginForm() {
@@ -39,6 +45,7 @@ export default function LoginForm() {
   const [supportsPasskey, setSupportsPasskey] = useState(true);
   const [passwordRetryRemainingSec, setPasswordRetryRemainingSec] = useState<number | null>(null);
   const [passkeyRetryRemainingSec, setPasskeyRetryRemainingSec] = useState<number | null>(null);
+  const [passkeyAutoTrying, setPasskeyAutoTrying] = useState(false);
 
   const emailInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
@@ -79,8 +86,15 @@ export default function LoginForm() {
     setPasswordRetryRemainingSec(null);
     setPasskeyRetryRemainingSec(null);
     toast.success("パスキーでログインしました");
-    router.replace(redirectAfterLogin ?? "/dashboard");
-  }, [redirectAfterLogin, router]);
+    router.replace(
+      resolvePostLoginPath({
+        redirectAfterLogin,
+        passkeyCredentialCount: 0,
+        supportsPasskey,
+        loginMethod: "passkey",
+      })
+    );
+  }, [redirectAfterLogin, router, supportsPasskey]);
 
   const handlePasskeyLoginResult = useCallback(
     (result: PasskeyLoginResult, showToastOnError: boolean): boolean => {
@@ -98,9 +112,7 @@ export default function LoginForm() {
         }
         return true;
       }
-      const shouldNotify =
-        showToastOnError || result.code === "PASSKEY_NOT_REGISTERED";
-      if (shouldNotify) {
+      if (showToastOnError) {
         setError(result.message);
         toast.error("パスキー認証失敗", { description: result.message });
       }
@@ -113,25 +125,62 @@ export default function LoginForm() {
     if (!supportsPasskey || passkeyRateLimited) return;
 
     let cancelled = false;
+    let passiveTimer: ReturnType<typeof setTimeout> | undefined;
 
-    (async () => {
-      if (!(await supportsPasskeyAutofill())) return;
-
-      try {
-        const result = await runPasskeyLoginFlow({ useBrowserAutofill: true });
-        if (cancelled || passkeyButtonActiveRef.current) return;
-        handlePasskeyLoginResult(result, false);
-      } catch (err) {
-        if (cancelled || passkeyButtonActiveRef.current) return;
-        if (!isPasskeyUserCancellation(err)) {
-          console.error("Passkey autofill login error:", err);
+    void (async () => {
+      if (await supportsPasskeyAutofill()) {
+        try {
+          const result = await runPasskeyLoginFlow({ useBrowserAutofill: true });
+          if (cancelled || passkeyButtonActiveRef.current) return;
+          if (handlePasskeyLoginResult(result, false)) return;
+        } catch (err) {
+          if (cancelled || passkeyButtonActiveRef.current) return;
+          if (!isPasskeyUserCancellation(err)) {
+            console.error("Passkey autofill login error:", err);
+          }
         }
       }
+
+      passiveTimer = setTimeout(() => {
+        void (async () => {
+          if (cancelled || passkeyButtonActiveRef.current) return;
+          if (
+            !shouldAttemptPassivePasskeyLogin({
+              supportsPasskey,
+              passkeyRateLimited,
+            })
+          ) {
+            return;
+          }
+
+          markPassivePasskeyLoginAttempted();
+          WebAuthnAbortService.cancelCeremony();
+          setPasskeyAutoTrying(true);
+
+          try {
+            const result = await runPasskeyLoginFlow({});
+            if (cancelled || passkeyButtonActiveRef.current) return;
+            if (!result.ok && result.kind === "error" && result.code !== "PASSKEY_NOT_REGISTERED") {
+              console.warn("[login] passive passkey login failed:", result.message);
+            }
+            handlePasskeyLoginResult(result, false);
+          } catch (err) {
+            if (cancelled || passkeyButtonActiveRef.current) return;
+            if (!isPasskeyUserCancellation(err)) {
+              console.warn("[login] passive passkey login error:", err);
+            }
+          } finally {
+            if (!cancelled) setPasskeyAutoTrying(false);
+          }
+        })();
+      }, PASSIVE_PASSKEY_DELAY_MS);
     })();
 
     return () => {
       cancelled = true;
+      if (passiveTimer !== undefined) clearTimeout(passiveTimer);
       WebAuthnAbortService.cancelCeremony();
+      setPasskeyAutoTrying(false);
     };
   }, [supportsPasskey, passkeyRateLimited, handlePasskeyLoginResult]);
 
@@ -147,6 +196,7 @@ export default function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ email: normalizedEmail, password: rawPassword }),
       });
 
@@ -179,8 +229,22 @@ export default function LoginForm() {
 
       setPasswordRetryRemainingSec(null);
       setPasskeyRetryRemainingSec(null);
+      const data = (await res.json().catch(() => ({}))) as {
+        passkeyCredentialCount?: unknown;
+      };
+      const passkeyCredentialCount =
+        typeof data.passkeyCredentialCount === "number" && data.passkeyCredentialCount >= 0
+          ? data.passkeyCredentialCount
+          : 0;
       toast.success("ログイン成功");
-      router.replace(redirectAfterLogin ?? "/dashboard");
+      router.replace(
+        resolvePostLoginPath({
+          redirectAfterLogin,
+          passkeyCredentialCount,
+          supportsPasskey,
+          loginMethod: "password",
+        })
+      );
     } catch {
       const msg = "ネットワークエラーが発生しました";
       setError(msg);
@@ -240,7 +304,7 @@ export default function LoginForm() {
     <AuthShell
       maxWidth="md"
       title="ログイン"
-      subtitle="メールアドレスとパスワード、または端末に保存したパスキーでログインできます。"
+      subtitle="端末にパスキーがある場合はログイン画面を開いたあと認証をお試しします。使えない・キャンセルした場合は、メールアドレスとパスワードでログインできます。"
       subtitleDensity="balanced"
     >
       <AuthPanel>
@@ -272,6 +336,15 @@ export default function LoginForm() {
                 {formatJaRemainingDuration(passkeyRetryRemainingSec)}
               </span>
             </span>
+          </p>
+        ) : null}
+        {passkeyAutoTrying ? (
+          <p
+            role="status"
+            aria-live="polite"
+            className="mb-4 text-sm text-muted-foreground"
+          >
+            端末のパスキーを確認しています…
           </p>
         ) : null}
         {error && (
@@ -306,7 +379,7 @@ export default function LoginForm() {
             />
             {supportsPasskey ? (
               <p className={fieldHintClass("guided")}>
-                端末に保存したパスキーはメール欄をタップすると提案されることがあります。うまくいかない場合はメールアドレスを入力して「パスキーでログイン」を試してください。
+                自動でうまくいかない場合は、メール欄をタップしてパスキーを選ぶか、メールアドレスを入力して「パスキーでログイン」を押してください。
               </p>
             ) : null}
           </div>

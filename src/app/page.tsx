@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { HomeLanding } from "@/components/HomeLanding";
 import { PublicSiteShellWrapper } from "@/components/public/PublicSiteShellWrapper";
+import { redirectIfAuthenticated } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "Bluvium",
@@ -33,6 +34,7 @@ function isCoverPageHost(hostname: string | null): boolean {
 export default async function Home() {
   const headerList = await headers();
   if (isCoverPageHost(hostnameFromHeaders(headerList))) {
+    await redirectIfAuthenticated(null);
     return (
       <PublicSiteShellWrapper>
         <HomeLanding />
