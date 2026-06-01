@@ -33,6 +33,7 @@ import {
   formatCompetitionEntryPeriodRangeJa,
 } from "@/lib/datetimeLocal";
 import { cn } from "@/lib/utils";
+import { resolveHeroEntryDisplay } from "@/lib/competitionEntryWindow";
 import { CompetitionHostInquiryDialogLazy } from "./competitionPublicDynamicClients";
 
 type Props = {
@@ -107,16 +108,27 @@ export async function CompetitionPublicHeaderLoader({ competitionId }: Props) {
           ? "bg-muted text-muted-foreground"
           : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
 
-  const isEntryWindowOpen =
-    entryStart !== null && entryEnd !== null && now >= entryStart && now <= entryEnd;
-  const showEntryLinks = competition.events.length > 0 && competition.status !== "CANCELLED";
+  const showEntryLinksBase =
+    competition.events.length > 0 && competition.status !== "CANCELLED";
+  const heroEntryDisplay = resolveHeroEntryDisplay({
+    now,
+    entryStart,
+    entryEnd,
+    isOrgAdmin,
+    showEntryLinksBase,
+  });
+  const { showSection: showHeroEntrySection, mode: heroEntryMode } = heroEntryDisplay;
+  const isEntryWindowOpen = heroEntryDisplay.isEntryWindowOpen;
   const isOfficialRecruitmentOn =
     (competition.officialRecruitmentEnabled ?? true) && competition.status !== "CANCELLED";
-  const showOfficialEntryButton = showEntryLinks && isOfficialRecruitmentOn;
+  const showOfficialEntryButton =
+    heroEntryMode === "full" && showEntryLinksBase && isOfficialRecruitmentOn;
   const entryButtonCount =
-    (hasIndividualEvents || hasTeamEvents ? 1 : 0) +
-    (showTeamEntryButton ? 1 : 0) +
-    (showOfficialEntryButton ? 1 : 0);
+    heroEntryMode === "full"
+      ? (hasIndividualEvents || hasTeamEvents ? 1 : 0) +
+        (showTeamEntryButton ? 1 : 0) +
+        (showOfficialEntryButton ? 1 : 0)
+      : 0;
 
   const withLoginRedirect = (path: string) =>
     sessionUserId ? path : `/login?redirect=${encodeURIComponent(path)}`;
@@ -210,7 +222,7 @@ export async function CompetitionPublicHeaderLoader({ competitionId }: Props) {
           </div>
         </div>
 
-        {showEntryLinks ? (
+        {showHeroEntrySection && heroEntryMode ? (
           <div className="border-t border-border/80 bg-muted/10 px-3 py-4 sm:px-6 sm:py-5">
             <div className="overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-br from-primary/[0.07] via-background to-muted/30 shadow-sm ring-1 ring-primary/5">
               <div className="flex gap-3 p-3 sm:gap-4 sm:p-5">
@@ -221,153 +233,188 @@ export async function CompetitionPublicHeaderLoader({ competitionId }: Props) {
                   <ClipboardList className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={1.75} />
                 </div>
                 <div className="min-w-0 flex-1 space-y-3">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <h2 className="text-base font-semibold tracking-tight text-foreground">
-                        エントリー
-                      </h2>
+                  {heroEntryMode === "preview" ? (
+                    <>
+                      <div>
+                        <h2 className="text-base font-semibold tracking-tight text-foreground">
+                          エントリー
+                        </h2>
+                        {entryStart && entryEnd ? (
+                          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                            <span className="font-medium text-foreground/80">受付期間</span>
+                            <span className="max-sm:hidden"> · </span>
+                            <span className="mt-0.5 block tabular-nums sm:mt-0 sm:inline">
+                              {formatCompetitionEntryPeriodRangeJa(entryStart, entryEnd)}
+                            </span>
+                          </p>
+                        ) : null}
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-muted-foreground sm:text-xs">
+                        受付開始後に、こちらからエントリー手続きができます。
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <h2 className="text-base font-semibold tracking-tight text-foreground">
+                            エントリー
+                          </h2>
+                          {entryStart && entryEnd ? (
+                            <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                              <span className="font-medium text-foreground/80">受付期間</span>
+                              <span className="max-sm:hidden"> · </span>
+                              <span className="mt-0.5 block tabular-nums sm:mt-0 sm:inline">
+                                {formatCompetitionEntryPeriodRangeJa(entryStart, entryEnd)}
+                              </span>
+                            </p>
+                          ) : (
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              種目のエントリー・お支払いはこちらから行えます。
+                            </p>
+                          )}
+                        </div>
+                        {entryStart && entryEnd ? (
+                          <span
+                            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                              isEntryWindowOpen
+                                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300"
+                                : "border-border bg-muted/50 text-muted-foreground"
+                            }`}
+                          >
+                            <span
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                isEntryWindowOpen
+                                  ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]"
+                                  : "bg-muted-foreground/40"
+                              }`}
+                              aria-hidden
+                            />
+                            {isEntryWindowOpen ? "受付中" : "受付期間外の可能性"}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {!sessionUserId ? (
+                        <p className="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground sm:text-xs">
+                          エントリー申込・お支払いには
+                          <Button
+                            variant="link"
+                            className="mx-0.5 inline h-auto min-h-0 p-0 text-xs font-medium"
+                            asChild
+                          >
+                            <Link href={signInRedirectPath}>ログイン</Link>
+                          </Button>
+                          が必要です。未登録の方はログイン画面からアカウント作成へ進めます。
+                        </p>
+                      ) : null}
+
+                      <div
+                        className={cn(
+                          "grid gap-2.5",
+                          entryButtonCount === 1 && "max-w-md",
+                          entryButtonCount >= 2 && "sm:grid-cols-2",
+                          entryButtonCount >= 3 && "lg:grid-cols-3"
+                        )}
+                      >
+                        {hasIndividualEvents || hasTeamEvents ? (
+                          <Button
+                            asChild
+                            size="sm"
+                            className="h-auto min-h-10 w-full whitespace-normal px-3 py-2.5 font-semibold shadow-sm"
+                          >
+                            <Link
+                              href={withLoginRedirect(
+                                appRoutes.competitions.entry(competition.id)
+                              )}
+                              className="gap-2"
+                            >
+                              <Users className="h-4 w-4 shrink-0 opacity-85" aria-hidden />
+                              <span className="min-w-0 flex-1 text-balance leading-snug">
+                                個人エントリー
+                              </span>
+                              <ChevronRight
+                                className="h-3.5 w-3.5 shrink-0 opacity-70"
+                                aria-hidden
+                              />
+                            </Link>
+                          </Button>
+                        ) : null}
+                        {showTeamEntryButton && firstAdminClubForTeamEntry ? (
+                          <Button
+                            asChild
+                            size="sm"
+                            variant="outline"
+                            className="h-auto min-h-10 w-full whitespace-normal border-primary/20 bg-background/80 px-3 py-2.5 font-medium shadow-sm hover:bg-muted/50"
+                          >
+                            <Link
+                              href={withLoginRedirect(
+                                appRoutes.competitions.teamEntry(competition.id, {
+                                  clubId: firstAdminClubForTeamEntry.id,
+                                })
+                              )}
+                              className="gap-2"
+                            >
+                              <Building2 className="h-4 w-4 shrink-0 opacity-85" aria-hidden />
+                              <span className="min-w-0 flex-1 text-balance leading-snug">
+                                クラブ管理者（チーム種目エントリー）
+                              </span>
+                              <ChevronRight
+                                className="h-3.5 w-3.5 shrink-0 opacity-60"
+                                aria-hidden
+                              />
+                            </Link>
+                          </Button>
+                        ) : null}
+                        {showOfficialEntryButton ? (
+                          <Button
+                            asChild
+                            size="sm"
+                            variant="outline"
+                            className="h-auto min-h-10 w-full whitespace-normal border-primary/25 bg-background/80 px-3 py-2.5 font-medium shadow-sm hover:bg-muted/50"
+                          >
+                            <Link
+                              href={withLoginRedirect(
+                                appRoutes.competitions.officialEntry(competition.id)
+                              )}
+                              className="gap-2"
+                            >
+                              <BadgeCheck className="h-4 w-4 shrink-0 opacity-85" aria-hidden />
+                              <span className="min-w-0 flex-1 text-balance leading-snug">
+                                オフィシャルエントリー
+                              </span>
+                              <ChevronRight
+                                className="h-3.5 w-3.5 shrink-0 opacity-60"
+                                aria-hidden
+                              />
+                            </Link>
+                          </Button>
+                        ) : null}
+                      </div>
+
                       {entryStart && entryEnd ? (
-                        <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-                          <span className="font-medium text-foreground/80">受付期間</span>
-                          <span className="max-sm:hidden"> · </span>
-                          <span className="mt-0.5 block tabular-nums sm:mt-0 sm:inline">
-                            {formatCompetitionEntryPeriodRangeJa(entryStart, entryEnd)}
-                          </span>
-                        </p>
-                      ) : (
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          種目のエントリー・お支払いはこちらから行えます。
-                        </p>
-                      )}
-                    </div>
-                    {entryStart && entryEnd ? (
-                      <span
-                        className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
-                          isEntryWindowOpen
-                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300"
-                            : "border-border bg-muted/50 text-muted-foreground"
-                        }`}
-                      >
-                        <span
-                          className={`h-1.5 w-1.5 rounded-full ${
+                        <p
+                          className={cn(
+                            "max-w-prose text-[11px] leading-relaxed sm:text-xs",
                             isEntryWindowOpen
-                              ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]"
-                              : "bg-muted-foreground/40"
-                          }`}
-                          aria-hidden
-                        />
-                        {isEntryWindowOpen ? "受付中" : "受付期間外の可能性"}
-                      </span>
-                    ) : null}
-                  </div>
-
-                  {!sessionUserId ? (
-                    <p className="rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground sm:text-xs">
-                      エントリー申込・お支払いには
-                      <Button
-                        variant="link"
-                        className="mx-0.5 inline h-auto min-h-0 p-0 text-xs font-medium"
-                        asChild
-                      >
-                        <Link href={signInRedirectPath}>ログイン</Link>
-                      </Button>
-                      が必要です。未登録の方はログイン画面からアカウント作成へ進めます。
-                    </p>
-                  ) : null}
-
-                  <div
-                    className={cn(
-                      "grid gap-2.5",
-                      entryButtonCount === 1 && "max-w-md",
-                      entryButtonCount >= 2 && "sm:grid-cols-2",
-                      entryButtonCount >= 3 && "lg:grid-cols-3"
-                    )}
-                  >
-                    {hasIndividualEvents || hasTeamEvents ? (
-                      <Button
-                        asChild
-                        size="sm"
-                        className="h-auto min-h-10 w-full whitespace-normal px-3 py-2.5 font-semibold shadow-sm"
-                      >
-                        <Link
-                          href={withLoginRedirect(appRoutes.competitions.entry(competition.id))}
-                          className="gap-2"
-                        >
-                          <Users className="h-4 w-4 shrink-0 opacity-85" aria-hidden />
-                          <span className="min-w-0 flex-1 text-balance leading-snug">
-                            個人エントリー
-                          </span>
-                          <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-                        </Link>
-                      </Button>
-                    ) : null}
-                    {showTeamEntryButton && firstAdminClubForTeamEntry ? (
-                      <Button
-                        asChild
-                        size="sm"
-                        variant="outline"
-                        className="h-auto min-h-10 w-full whitespace-normal border-primary/20 bg-background/80 px-3 py-2.5 font-medium shadow-sm hover:bg-muted/50"
-                      >
-                        <Link
-                          href={withLoginRedirect(
-                            appRoutes.competitions.teamEntry(competition.id, {
-                              clubId: firstAdminClubForTeamEntry.id,
-                            })
+                              ? "text-emerald-800 dark:text-emerald-300/90"
+                              : "text-muted-foreground"
                           )}
-                          className="gap-2"
                         >
-                          <Building2 className="h-4 w-4 shrink-0 opacity-85" aria-hidden />
-                          <span className="min-w-0 flex-1 text-balance leading-snug">
-                            クラブ管理者（チーム種目エントリー）
-                          </span>
-                          <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden />
-                        </Link>
-                      </Button>
-                    ) : null}
-                    {showOfficialEntryButton ? (
-                      <Button
-                        asChild
-                        size="sm"
-                        variant="outline"
-                        className="h-auto min-h-10 w-full whitespace-normal border-primary/25 bg-background/80 px-3 py-2.5 font-medium shadow-sm hover:bg-muted/50"
-                      >
-                        <Link
-                          href={withLoginRedirect(
-                            appRoutes.competitions.officialEntry(competition.id)
-                          )}
-                          className="gap-2"
-                        >
-                          <BadgeCheck className="h-4 w-4 shrink-0 opacity-85" aria-hidden />
-                          <span className="min-w-0 flex-1 text-balance leading-snug">
-                            オフィシャルエントリー
-                          </span>
-                          <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden />
-                        </Link>
-                      </Button>
-                    ) : null}
-                  </div>
-
-                  {entryStart && entryEnd ? (
-                    <p
-                      className={cn(
-                        "max-w-prose text-[11px] leading-relaxed sm:text-xs",
-                        isEntryWindowOpen
-                          ? "text-emerald-800 dark:text-emerald-300/90"
-                          : "text-muted-foreground"
-                      )}
-                    >
-                      {isEntryWindowOpen
-                        ? "この時間帯はエントリー手続き・決済が可能です。個人エントリーでは、個人種目に出場するか、チーム種目の割り当て候補として登録するかを選べます。"
-                        : "表示の期間外でも、主催の設定により手続きできる場合があります。詳細は手続き画面でご確認ください。"}
-                    </p>
-                  ) : null}
-                  {sessionUserId && hasTeamEvents && !showTeamEntryButton ? (
-                    <p className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-                      チーム種目のエントリーは、所属クラブの
-                      <strong className="font-medium text-foreground">管理者</strong>
-                      がクラブの「チーム管理」から登録します。
-                    </p>
-                  ) : null}
+                          {isEntryWindowOpen
+                            ? "この時間帯はエントリー手続き・決済が可能です。個人エントリーでは、個人種目に出場するか、チーム種目の割り当て候補として登録するかを選べます。"
+                            : "表示の期間外でも、主催の設定により手続きできる場合があります。詳細は手続き画面でご確認ください。"}
+                        </p>
+                      ) : null}
+                      {sessionUserId && hasTeamEvents && !showTeamEntryButton ? (
+                        <p className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+                          チーム種目のエントリーは、所属クラブの
+                          <strong className="font-medium text-foreground">管理者</strong>
+                          がクラブの「チーム管理」から登録します。
+                        </p>
+                      ) : null}
+                    </>
+                  )}
                 </div>
               </div>
             </div>
