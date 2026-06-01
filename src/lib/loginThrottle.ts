@@ -29,6 +29,14 @@ export const PASSWORD_RESET_REQUEST_IP_WINDOW_MS = 60 * 60 * 1000;
 export const PASSWORD_RESET_SEND_EMAIL_MAX = 5;
 export const PASSWORD_RESET_SEND_EMAIL_WINDOW_MS = 60 * 60 * 1000;
 
+/** ログイン画面: パスキー利用可否照会 IP あたり（1 時間） */
+export const PASSKEY_AVAILABILITY_IP_MAX = 60;
+export const PASSKEY_AVAILABILITY_IP_WINDOW_MS = 60 * 60 * 1000;
+
+/** ログイン画面: パスキー利用可否照会 メールあたり（15 分） */
+export const PASSKEY_AVAILABILITY_EMAIL_MAX = 15;
+export const PASSKEY_AVAILABILITY_EMAIL_WINDOW_MS = 15 * 60 * 1000;
+
 /** 大会主催問い合わせ: ユーザーあたり（1 時間） */
 export const COMPETITION_HOST_INQUIRY_USER_MAX = 8;
 export const COMPETITION_HOST_INQUIRY_USER_WINDOW_MS = 60 * 60 * 1000;
@@ -69,6 +77,17 @@ export function throttleKeyPasswordResetEmail(email: string): string {
     .update(email.trim().toLowerCase(), "utf8")
     .digest("hex");
   return `pwdreset:email:${h}`;
+}
+
+export function throttleKeyPasskeyAvailabilityIp(ip: string): string {
+  return `passkeyavail:ip:${ip}`;
+}
+
+export function throttleKeyPasskeyAvailabilityEmail(email: string): string {
+  const h = createHash("sha256")
+    .update(email.trim().toLowerCase(), "utf8")
+    .digest("hex");
+  return `passkeyavail:email:${h}`;
 }
 
 export function throttleKeyCompetitionHostInquiryUser(userId: string): string {

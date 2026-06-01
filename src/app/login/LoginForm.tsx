@@ -29,7 +29,13 @@ import {
   PASSIVE_PASSKEY_DELAY_MS,
   shouldAttemptPassivePasskeyLogin,
 } from "@/lib/loginPasskeyEntryAttempt";
+import {
+  fetchPasskeyLoginOffered,
+  isLoginEmailFormatValid,
+} from "@/lib/loginPasskeyAvailabilityClient";
 import { WebAuthnAbortService } from "@simplewebauthn/browser";
+
+const PASSKEY_AVAILABILITY_DEBOUNCE_MS = 300;
 
 export default function LoginForm() {
   const router = useRouter();
@@ -46,6 +52,7 @@ export default function LoginForm() {
   const [passwordRetryRemainingSec, setPasswordRetryRemainingSec] = useState<number | null>(null);
   const [passkeyRetryRemainingSec, setPasskeyRetryRemainingSec] = useState<number | null>(null);
   const [passkeyAutoTrying, setPasskeyAutoTrying] = useState(false);
+  const [passkeyLoginOffered, setPasskeyLoginOffered] = useState<boolean | null>(null);
 
   const emailInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
@@ -65,6 +72,37 @@ export default function LoginForm() {
 
   const passwordRateLimited = passwordRetryRemainingSec != null && passwordRetryRemainingSec > 0;
   const passkeyRateLimited = passkeyRetryRemainingSec != null && passkeyRetryRemainingSec > 0;
+  const showPasskeyLoginButton =
+    supportsPasskey && passkeyLoginOffered === true && !passkeyRateLimited;
+
+  useEffect(() => {
+    if (!isLoginEmailFormatValid(email)) {
+      setPasskeyLoginOffered(false);
+      return;
+    }
+
+    setPasskeyLoginOffered(null);
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const offered = await fetchPasskeyLoginOffered(email, controller.signal);
+          if (!controller.signal.aborted) {
+            setPasskeyLoginOffered(offered);
+          }
+        } catch {
+          if (!controller.signal.aborted) {
+            setPasskeyLoginOffered(null);
+          }
+        }
+      })();
+    }, PASSKEY_AVAILABILITY_DEBOUNCE_MS);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [email]);
 
   useEffect(() => {
     if (!passwordRateLimited) return;
@@ -304,7 +342,7 @@ export default function LoginForm() {
     <AuthShell
       maxWidth="md"
       title="ログイン"
-      subtitle="端末にパスキーがある場合はログイン画面を開いたあと認証をお試しします。使えない・キャンセルした場合は、メールアドレスとパスワードでログインできます。"
+      subtitle="端末にパスキーがある場合は、画面表示後に認証をお試しします。使えない場合やパスワードで入る場合は、メールアドレスとパスワードを入力してください。"
       subtitleDensity="balanced"
     >
       <AuthPanel>
@@ -379,7 +417,7 @@ export default function LoginForm() {
             />
             {supportsPasskey ? (
               <p className={fieldHintClass("guided")}>
-                自動でうまくいかない場合は、メール欄をタップしてパスキーを選ぶか、メールアドレスを入力して「パスキーでログイン」を押してください。
+                うまくいかない場合はメール欄をタップしてパスキーを選ぶか、パスワードでログインしてください。パスキー登録済みのアカウントでは、メール入力後にパスキーログインが表示されます。
               </p>
             ) : null}
           </div>
@@ -428,17 +466,19 @@ export default function LoginForm() {
             {submitting ? "ログイン中..." : "ログイン"}
           </Button>
 
-          <div className="space-y-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onPasskeyLogin}
-              disabled={passkeyLoading || !supportsPasskey || passkeyRateLimited}
-              className="w-full"
-            >
-              {passkeyLoading ? "パスキー認証中..." : "パスキーでログイン"}
-            </Button>
-          </div>
+          {showPasskeyLoginButton ? (
+            <div className="space-y-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onPasskeyLogin}
+                disabled={passkeyLoading}
+                className="w-full"
+              >
+                {passkeyLoading ? "パスキー認証中..." : "パスキーでログイン"}
+              </Button>
+            </div>
+          ) : null}
 
           {!supportsPasskey && (
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
