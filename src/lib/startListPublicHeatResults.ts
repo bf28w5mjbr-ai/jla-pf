@@ -156,6 +156,8 @@ export function publicHeatResultStatusLabelJa(status: ResultStatus): string {
       return "DNF";
     case "DSQ":
       return "DSQ";
+    case "WITHDRAWN":
+      return "棄権";
     default:
       return "OK";
   }
@@ -174,13 +176,14 @@ export function formatPublicHeatResultOverlayLabel(row: PublicHeatResultRowOverl
   return null;
 }
 
-/** 運用側 panelHelpers の確定後ソート（進出→着順→ターミナル）と同等 */
+/** 運用側 panelHelpers の確定後ソート（進出→着順→DNF→ターミナル）と同等 */
 export function publicConfirmedResultSortTier(
   row: PublicHeatResultRowOverlay | undefined
-): 0 | 1 | 2 {
+): 0 | 1 | 2 | 3 {
   if (row?.advanceWithoutRank) return 0;
   if (row?.rank != null) return 1;
-  return 2;
+  if (row?.status === "DNF") return 2;
+  return 3;
 }
 
 function overlayRowForParticipantKey(

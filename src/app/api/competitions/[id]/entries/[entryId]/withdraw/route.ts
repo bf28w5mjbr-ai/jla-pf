@@ -8,7 +8,8 @@ import {
   resolveWithdrawProcessingEventIds,
   resolveWithdrawTargetEventIds,
 } from "@/lib/entryWithdrawalRequest";
-import { syncStartListSnapshotBeforeMarshal } from "@/lib/startListSnapshotOnEntryIncrease";
+import { loadStartListSnapshotPayloadLoose } from "@/lib/heatMarshalGate";
+import { syncOfficialTerminalRowFromSnapshot } from "@/lib/officialResultTerminalSync";
 
 type RouteContext = {
   params: Promise<{ id: string; entryId: string }>;
@@ -127,7 +128,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             teamEntryId: null,
           },
           data: {
-            status: "DNS",
+            status: "WITHDRAWN",
             reason,
             calledAt: null,
             updatedByUserId: session.userId,
@@ -151,24 +152,27 @@ export async function POST(request: NextRequest, context: RouteContext) {
               participantType: "INDIVIDUAL",
               competitionEntryId: entry.id,
               marshalRound: "HEAT",
-              status: "DNS",
+              status: "WITHDRAWN",
               reason,
               calledAt: null,
               updatedByUserId: session.userId,
             },
           });
         }
+
+        const snapshot = await loadStartListSnapshotPayloadLoose(competitionId);
+        await syncOfficialTerminalRowFromSnapshot(tx, {
+          competitionId,
+          eventId,
+          round: "HEAT",
+          snapshot,
+          participant: { participantType: "INDIVIDUAL", competitionEntryId: entry.id, teamEntryId: null },
+          status: "WITHDRAWN",
+          reason,
+        });
         count += 1;
       }
       return count;
-    });
-
-    await syncStartListSnapshotBeforeMarshal({
-      competitionId,
-      candidateEventIds: eventIds,
-      createdByUserId: session.userId,
-      trigger: "ENTRY_WITHDRAW",
-      request,
     });
 
     return NextResponse.json({

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { clearIndividualWithdrawalParticipantStatusesForEvents } from "./entryWithdrawalReinstatement";
 
 describe("clearIndividualWithdrawalParticipantStatusesForEvents", () => {
-  it("棄権DNS行を PENDING に戻す updateMany を発行する", async () => {
+  it("棄権（WITHDRAWN または legacy DNS+棄権）行を PENDING に戻す updateMany を発行する", async () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 2 });
     const tx = {
       competitionParticipantStatus: { updateMany },
@@ -23,8 +23,10 @@ describe("clearIndividualWithdrawalParticipantStatusesForEvents", () => {
         participantType: "INDIVIDUAL",
         competitionEntryId: "e1",
         teamEntryId: null,
-        status: "DNS",
-        reason: { contains: "棄権" },
+        OR: [
+          { status: "WITHDRAWN" },
+          { status: "DNS", reason: { contains: "棄権" } },
+        ],
       },
       data: {
         status: "PENDING",

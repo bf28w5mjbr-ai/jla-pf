@@ -2272,6 +2272,7 @@ enum ResultStatus {
   DNS
   DNF
   DSQ
+  WITHDRAWN
 }
 
 enum ResultCaptureEventSource {
@@ -2308,6 +2309,7 @@ enum DayOpsParticipantStatus {
   DNS
   WITHDRAWN
   DSQ
+  DNF
 }
 
 enum DraftResultStatus {

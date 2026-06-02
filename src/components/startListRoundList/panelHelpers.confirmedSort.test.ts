@@ -35,6 +35,8 @@ function mockApiHeat(
             teamMemberUserId: null,
             lane: l.lane,
             status: "CALLED",
+            label: l.entryId,
+            clubName: null,
           }
         : {
             participantType: "TEAM" as const,
@@ -43,6 +45,8 @@ function mockApiHeat(
             teamMemberUserId: "u1",
             lane: l.lane,
             status: "CALLED",
+            label: l.teamEntryId!,
+            clubName: null,
           }
     ),
   };
@@ -75,7 +79,7 @@ describe("confirmedResultSortTierForIndividual", () => {
     );
     expect(confirmedResultSortTierForIndividual("run", ctx)).toBe(0);
     expect(confirmedResultSortTierForIndividual("ranked", ctx)).toBe(1);
-    expect(confirmedResultSortTierForIndividual("dsq", ctx)).toBe(2);
+    expect(confirmedResultSortTierForIndividual("dsq", ctx)).toBe(3);
   });
 });
 
@@ -227,7 +231,7 @@ describe("orderTeamItemsByConfirmedResultRank", () => {
         teamId,
         individualCtx([], statusByKey)
       )
-    ).toBe(2);
+    ).toBe(3);
 
     const rows: HeatResultCaptureRow[] = [
       {

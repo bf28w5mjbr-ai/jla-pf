@@ -45,6 +45,7 @@ export function isIndividualWithdrawalDns(row: {
   status: string;
   reason: string | null | undefined;
 }): boolean {
+  if (row.status === "WITHDRAWN") return true;
   return row.status === "DNS" && typeof row.reason === "string" && row.reason.includes("棄権");
 }
 

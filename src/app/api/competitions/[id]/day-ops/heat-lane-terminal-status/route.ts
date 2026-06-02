@@ -2,12 +2,12 @@ import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import type { ResultRound } from "@prisma/client";
+import { prisma } from "@/server/db";
 import { assertDayOpsRecorderWriteAccess } from "@/lib/dayOpsAccess";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
 import { applyHeatLaneTerminalStatus } from "@/lib/heatLaneTerminalStatusApply";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
 import { START_LIST_STEP1_REQUIRED_SHORT_MESSAGE } from "@/lib/startListStep1Messages";
-import { prisma } from "@/server/db";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -16,10 +16,10 @@ const bodySchema = z.object({
   round: z.enum(["HEAT", "SEMI", "FINAL"]),
   heatIndex: z.number().int().min(1),
   lane: z.number().int().min(1),
+  status: z.enum(["DNS", "WITHDRAWN", "DSQ", "DNF"]),
   reason: z.string().trim().min(1).max(500).optional(),
 });
 
-/** DSQ 固定の互換エンドポイント */
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const { id: competitionId } = await context.params;
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json(zodFlattenJsonBody(parsed.error), { status: 400 });
     }
 
-    const { eventId, round, heatIndex, lane } = parsed.data;
+    const { eventId, round, heatIndex, lane, status: targetStatus } = parsed.data;
     const roundDb = round as ResultRound;
 
     const eventRow = await prisma.event.findFirst({
@@ -54,13 +54,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
       round: roundDb,
       heatIndex,
       lane,
-      status: "DSQ",
+      status: targetStatus,
       reason: parsed.data.reason,
       operatorUserId,
     });
 
     await logAuditAction({
-      action: "COMPETITION_HEAT_LANE_DSQ",
+      action: "COMPETITION_HEAT_LANE_TERMINAL_STATUS",
       actorType: operatorUserId ? "USER" : "SYSTEM",
       actorKey: operatorUserId ? `user:${operatorUserId}` : "dayops:unlock",
       actorUserId: operatorUserId ?? undefined,
@@ -73,7 +73,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         round,
         heatIndex,
         lane,
-        alreadyDsq: result.alreadyApplied,
+        status: targetStatus,
+        alreadyApplied: result.alreadyApplied,
       },
       request: getRequestContext(request),
       result: "SUCCESS",
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({
       ok: true,
-      alreadyDsq: result.alreadyApplied,
+      alreadyApplied: result.alreadyApplied,
       status: result.status,
       officialSyncSkipped: result.officialSyncSkipped,
     });
@@ -103,12 +104,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
     if (error instanceof Error && error.message === "PARTICIPANT_TERMINAL_OTHER") {
       return NextResponse.json(
-        { error: "DNS・棄権済みの参加者は失格に変更できません" },
+        { error: "別の終了ステータスが付いている参加者です。先に取り消してください。" },
         { status: 409 }
       );
     }
     return jsonInternalError500(
-      "POST api/competitions/[id]/day-ops/heat-lane-dsq/route.ts",
+      "POST api/competitions/[id]/day-ops/heat-lane-terminal-status/route.ts",
       error
     );
   }

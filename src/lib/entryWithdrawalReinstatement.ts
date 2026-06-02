@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 
 /**
- * エントリー更新で種目を再度選んだとき、本人棄権（DNS + 理由に「棄権」）を出場待ちに戻す。
+ * エントリー更新で種目を再度選んだとき、本人棄権（WITHDRAWN または legacy: DNS + 理由に「棄権」）を出場待ちに戻す。
  * 主催がスタートリスト capture を実行したときに一覧へ反映される。
  */
 export async function clearIndividualWithdrawalParticipantStatusesForEvents(
@@ -24,8 +24,10 @@ export async function clearIndividualWithdrawalParticipantStatusesForEvents(
       participantType: "INDIVIDUAL",
       competitionEntryId,
       teamEntryId: null,
-      status: "DNS",
-      reason: { contains: "棄権" },
+      OR: [
+        { status: "WITHDRAWN" },
+        { status: "DNS", reason: { contains: "棄権" } },
+      ],
     },
     data: {
       status: "PENDING",

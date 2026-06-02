@@ -55,16 +55,21 @@ export function useLiveRoundHeatMarshalActions(args: {
             isClosed: true,
           }),
         });
-        const putData = (await putRes.json().catch(() => ({}))) as { error?: string };
+        const putData = (await putRes.json().catch(() => ({}))) as {
+          error?: string;
+          marshalCloseDnsCount?: number;
+        };
         if (!putRes.ok) {
           patchHeatCallReopened(displayHeatNumber);
           throw new Error(putData.error || "ヒート召集締切に失敗しました");
         }
 
+        const dnsApplied = (putData.marshalCloseDnsCount ?? 0) > 0;
         void m.onMarshalSuccess(undefined, {
           heatCallWindowOnly: true,
           heatIndex: displayHeatNumber,
           callClosed: true,
+          ...(dnsApplied ? { refreshParticipantStatuses: true } : {}),
         });
         deleteHeatOperationDraftFireAndForget(m.competitionId, {
           eventId,

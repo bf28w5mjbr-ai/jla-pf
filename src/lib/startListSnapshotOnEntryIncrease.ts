@@ -2,7 +2,6 @@ import type { NextRequest } from "next/server";
 import type { EventType } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { competitionEntryEligibleForStartListWhere } from "@/lib/entryCheckoutSessionPaid";
-import { hasIndividualWithdrawalForEvent } from "@/lib/entryWithdrawalAdminLabel";
 import {
   getRoundDataFromSnapshot,
   parseStartListSnapshotLooseForRoundRead,
@@ -100,7 +99,6 @@ export async function loadLiveEligibleParticipantIdsForEvent(params: {
   });
 
   const ids = entries
-    .filter((entry) => !hasIndividualWithdrawalForEvent(entry.participantStatuses, eventId))
     .map((entry) => entry.id);
   ids.sort();
   return ids;
@@ -154,9 +152,7 @@ async function loadLiveEligibleParticipantIdsForEvents(params: {
         (entry.items ?? []).map((item) => item.eventId).filter((id) => individualEventIdSet.has(id))
       );
       for (const eventId of eventIdsForEntry) {
-        if (!hasIndividualWithdrawalForEvent(entry.participantStatuses, eventId)) {
-          result.get(eventId)?.push(entry.id);
-        }
+        result.get(eventId)?.push(entry.id);
       }
     }
     for (const eventId of individualEventIds) {

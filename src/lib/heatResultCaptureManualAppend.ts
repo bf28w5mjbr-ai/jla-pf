@@ -7,7 +7,6 @@ import {
 } from "@/lib/heatResultCaptureNextRank";
 import { prisma } from "@/server/db";
 import {
-  DAY_OPS_STATUS_MARSHAL_ABSENT,
   effectiveDayOpsStatusForMarshalDisplay,
 } from "@/lib/dayOpsParticipantStatusDisplay";
 import { isCalledLikeStatus } from "@/lib/dayOpsTeamStatus";
@@ -350,13 +349,14 @@ export async function assertManualResultAppendAllowed(params: {
       status: 409,
     };
   }
-  if (effectiveStatus === DAY_OPS_STATUS_MARSHAL_ABSENT) {
-    return {
-      ok: false,
-      error:
-        "マーシャル締切済みで未召集のため未出場扱いです（競技中の失格 DSQ とは別）。リザルトは記録できません。",
-      status: 409,
-    };
+  if (storedStatus === "DNS" || effectiveStatus === "DNS") {
+    return { ok: false, error: "欠場（DNS）のためリザルトを記録できません。", status: 409 };
+  }
+  if (storedStatus === "WITHDRAWN" || effectiveStatus === "WITHDRAWN") {
+    return { ok: false, error: "棄権のためリザルトを記録できません。", status: 409 };
+  }
+  if (storedStatus === "DNF" || effectiveStatus === "DNF") {
+    return { ok: false, error: "DNF（途中辞退）のためリザルトを記録できません。", status: 409 };
   }
   if (storedStatus === "PENDING") {
     return {
@@ -545,13 +545,14 @@ export function assertManualResultAppendAllowedWithGate(params: {
       status: 409,
     };
   }
-  if (effectiveStatus === DAY_OPS_STATUS_MARSHAL_ABSENT) {
-    return {
-      ok: false,
-      error:
-        "マーシャル締切済みで未召集のため未出場扱いです（競技中の失格 DSQ とは別）。リザルトは記録できません。",
-      status: 409,
-    };
+  if (storedStatus === "DNS" || effectiveStatus === "DNS") {
+    return { ok: false, error: "欠場（DNS）のためリザルトを記録できません。", status: 409 };
+  }
+  if (storedStatus === "WITHDRAWN" || effectiveStatus === "WITHDRAWN") {
+    return { ok: false, error: "棄権のためリザルトを記録できません。", status: 409 };
+  }
+  if (storedStatus === "DNF" || effectiveStatus === "DNF") {
+    return { ok: false, error: "DNF（途中辞退）のためリザルトを記録できません。", status: 409 };
   }
   if (storedStatus === "PENDING") {
     return {

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  DAY_OPS_STATUS_MARSHAL_ABSENT,
   buildParticipantDayOpsStatusByKey,
   effectiveDayOpsStatusForMarshalDisplay,
   resolveHeatLaneDayOpsDisplayStatus,
@@ -11,8 +10,8 @@ describe("effectiveDayOpsStatusForMarshalDisplay", () => {
     expect(effectiveDayOpsStatusForMarshalDisplay("PENDING", false)).toBe("PENDING");
   });
 
-  it("締切後の PENDING は未出場扱い（競技中 DSQ とは別）", () => {
-    expect(effectiveDayOpsStatusForMarshalDisplay("PENDING", true)).toBe(DAY_OPS_STATUS_MARSHAL_ABSENT);
+  it("締切後も PENDING はそのまま（締切時に DNS が書き込まれる設計）", () => {
+    expect(effectiveDayOpsStatusForMarshalDisplay("PENDING", true)).toBe("PENDING");
   });
 
   it("締切後も CALLED は維持", () => {

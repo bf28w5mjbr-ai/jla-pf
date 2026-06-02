@@ -32,6 +32,7 @@ import {
   marshalTeamMemberKey,
 } from "@/lib/dayOpsParticipantKeys";
 import { fetchTeamMembersMapForTeamIds } from "@/lib/teamMarshalExpand";
+import { applyMarshalCloseDnsForHeatInTransaction } from "@/lib/marshalHeatCloseDns";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -426,25 +427,44 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     }
 
     const now = new Date();
-    await prisma.competitionHeatMarshalState.upsert({
-      where: {
-        competitionId_eventId_round_heatIndex: {
+    let marshalCloseDnsCount = 0;
+    let marshalCloseOfficialSyncSkipped = false;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.competitionHeatMarshalState.upsert({
+        where: {
+          competitionId_eventId_round_heatIndex: {
+            competitionId,
+            eventId,
+            round,
+            heatIndex,
+          },
+        },
+        create: {
           competitionId,
           eventId,
           round,
           heatIndex,
+          callClosedAt: isClosed ? now : null,
         },
-      },
-      create: {
-        competitionId,
-        eventId,
-        round,
-        heatIndex,
-        callClosedAt: isClosed ? now : null,
-      },
-      update: {
-        callClosedAt: isClosed ? now : null,
-      },
+        update: {
+          callClosedAt: isClosed ? now : null,
+        },
+      });
+
+      if (isClosed) {
+        const dnsResult = await applyMarshalCloseDnsForHeatInTransaction(tx, {
+          competitionId,
+          eventId,
+          round,
+          heatIndex,
+          snapshot,
+          operatorUserId: putOperatorUserId,
+          now,
+        });
+        marshalCloseDnsCount = dnsResult.dnsCount;
+        marshalCloseOfficialSyncSkipped = dnsResult.officialSyncSkipped;
+      }
     });
 
     await logAuditAction({
@@ -455,12 +475,28 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       targetType: "Competition",
       targetId: competitionId,
       targetKey: `competition:${competitionId}`,
-      metadata: { competitionId, eventId, round, heatIndex, isClosed },
+      metadata: {
+        competitionId,
+        eventId,
+        round,
+        heatIndex,
+        isClosed,
+        marshalCloseDnsCount,
+        marshalCloseOfficialSyncSkipped,
+      },
       request: getRequestContext(request),
       result: "SUCCESS",
     });
 
-    return NextResponse.json({ ok: true, eventId, round, heatIndex, isClosed });
+    return NextResponse.json({
+      ok: true,
+      eventId,
+      round,
+      heatIndex,
+      isClosed,
+      marshalCloseDnsCount,
+      officialSyncSkipped: marshalCloseOfficialSyncSkipped,
+    });
   } catch (error) {
     if (error instanceof Error && error.message === "COMPETITION_NOT_FOUND") {
       return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });

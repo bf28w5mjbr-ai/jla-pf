@@ -5,7 +5,6 @@ import { marshalParticipantKey } from "@/components/HeatMarshalLanePanel";
 import type { HeatResultCaptureRow } from "@/lib/heatResultCaptureApi";
 import { secondaryClubLineForIndividual } from "@/lib/startListTeamDisplay";
 import {
-  DAY_OPS_STATUS_MARSHAL_ABSENT,
   dayOpsParticipantStatusLabelJa,
   dayOpsTerminalStatusBadgeClass,
   effectiveDayOpsStatusForMarshalDisplay,
@@ -463,12 +462,7 @@ export function marshalDisplayClass(status: string | undefined): string {
   if (isCalledLikeStatus(status)) {
     return "text-emerald-700 dark:text-emerald-400";
   }
-  if (
-    status === "DNS" ||
-    status === "DSQ" ||
-    status === "WITHDRAWN" ||
-    status === DAY_OPS_STATUS_MARSHAL_ABSENT
-  ) {
+  if (status === "DNS" || status === "DSQ") {
     return "text-muted-foreground line-through decoration-muted-foreground/70";
   }
   return "";
@@ -572,7 +566,7 @@ function confirmedResultRowForTeam(
   );
 }
 
-/** 0=進出, 1=着順, 2=ターミナル/その他 */
+/** 0=進出, 1=着順, 2=DNF, 3=ターミナル/その他 */
 export function confirmedResultSortTierForIndividual(
   entryId: string,
   ctx: ConfirmedHeatSortCtx
@@ -581,11 +575,12 @@ export function confirmedResultSortTierForIndividual(
   if (row?.advanceWithoutRank) return 0;
   if (row?.rank != null) return 1;
   const st = ctx.statusByKey[marshalIndividualKey(entryId)];
-  if (st && isDayOpsTerminalParticipantStatus(st)) return 2;
-  return 2;
+  if (st === "DNF") return 2;
+  if (st && isDayOpsTerminalParticipantStatus(st)) return 3;
+  return 3;
 }
 
-/** 0=進出, 1=着順, 2=ターミナル/その他 */
+/** 0=進出, 1=着順, 2=DNF, 3=ターミナル/その他 */
 export function confirmedResultSortTierForTeam(
   teamEntryId: string,
   ctx: ConfirmedHeatSortCtx
@@ -594,8 +589,9 @@ export function confirmedResultSortTierForTeam(
   if (row?.advanceWithoutRank) return 0;
   if (row?.rank != null) return 1;
   const st = foldTeamServerStatusFromMemberKeys(teamEntryId, ctx.statusByKey);
-  if (st && isDayOpsTerminalParticipantStatus(st)) return 2;
-  return 2;
+  if (st === "DNF") return 2;
+  if (st && isDayOpsTerminalParticipantStatus(st)) return 3;
+  return 3;
 }
 
 function compareConfirmedIndividualItems(
@@ -689,7 +685,7 @@ export function marshalHeatMatchesDisplayIndex(h: HeatMarshalHeatRow, displayHea
   return Number(h.heatIndex) === Number(displayHeatNumber);
 }
 
-/** ヒート締切/再開の楽観更新（未召集→未出場表示、再開時は MARSHAL_ABSENT を PENDING に戻す） */
+/** ヒート締切/再開の楽観更新（締切時の DNS 付与はサーバー側で行う） */
 export function patchHeatMarshalCallWindowInHeats(
   heats: HeatMarshalHeatRow[],
   displayHeatNumber: number,
@@ -701,14 +697,10 @@ export function patchHeatMarshalCallWindowInHeats(
     return {
       ...h,
       callClosedAt,
-      participants: h.participants.map((p) => {
-        const base =
-          !callClosed && p.status === DAY_OPS_STATUS_MARSHAL_ABSENT ? "PENDING" : p.status;
-        return {
-          ...p,
-          status: effectiveDayOpsStatusForMarshalDisplay(base, callClosed),
-        };
-      }),
+      participants: h.participants.map((p) => ({
+        ...p,
+        status: effectiveDayOpsStatusForMarshalDisplay(p.status, callClosed),
+      })),
     };
   });
 }

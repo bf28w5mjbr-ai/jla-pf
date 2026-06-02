@@ -26,7 +26,7 @@ import { foldTeamMemberStatuses } from "@/lib/dayOpsTeamStatus";
  * {@link resolveOfficialRowHeatBucketKey} はスナップショット上のマーシャル所属を優先し、{@link groupOfficialRowsByResolvedHeatAndSnapshotOrder} で当該ラウンドのヒート数に揃える。
  */
 
-const TERMINAL_DAY_OPS_STATUSES = new Set<string>(["DSQ", "DNS", "WITHDRAWN"]);
+const TERMINAL_DAY_OPS_STATUSES = new Set<string>(["DSQ", "DNS", "WITHDRAWN", "DNF"]);
 
 export type DedupeOfficialResultRowShape = {
   entryType: string;

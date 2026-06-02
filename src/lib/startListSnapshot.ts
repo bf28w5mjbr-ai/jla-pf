@@ -1,7 +1,6 @@
 import { prisma } from "@/server/db";
 import { competitionEntryEligibleForStartListWhere } from "@/lib/entryCheckoutSessionPaid";
 import { headHeatPlanSplitFingerprint } from "@/lib/eventHeatPlanMarshal";
-import { hasIndividualWithdrawalForEvent } from "@/lib/entryWithdrawalAdminLabel";
 import {
   normalizeRoundTabs,
   parseStartListSettings,
@@ -339,9 +338,6 @@ export async function buildStartListSnapshotPayload(
   for (const entry of entries) {
     for (const item of entry.items) {
       if (only && !only.has(item.eventId)) continue;
-      if (hasIndividualWithdrawalForEvent(entry.participantStatuses, item.eventId)) {
-        continue;
-      }
       const list = individualByEvent.get(item.eventId) ?? [];
       list.push({
         kind: "INDIVIDUAL",

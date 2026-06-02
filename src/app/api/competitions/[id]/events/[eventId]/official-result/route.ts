@@ -13,7 +13,7 @@ const rowSchema = z.object({
   competitionEntryId: z.string().nullable().optional(),
   teamEntryId: z.string().nullable().optional(),
   rank: z.number().int().nullable().optional(),
-  status: z.enum(["OK", "DNS", "DNF", "DSQ"]).optional(),
+  status: z.enum(["OK", "DNS", "DNF", "DSQ", "WITHDRAWN"]).optional(),
   resultValue: z.number().int().nullable().optional(),
   unit: z.enum(["TIME_MS", "DISTANCE_CM", "POINTS", "OTHER"]).optional(),
   resultText: z.string().nullable().optional(),

@@ -274,8 +274,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const participantType = body.participantType === "TEAM" ? "TEAM" : "INDIVIDUAL";
     const requestedStatus =
       typeof body.status === "string" &&
-      ["PENDING", "CALLED", "CHECKED_IN", "DNS", "WITHDRAWN", "DSQ"].includes(body.status)
-        ? (body.status as "PENDING" | "CALLED" | "CHECKED_IN" | "DNS" | "WITHDRAWN" | "DSQ")
+      ["PENDING", "CALLED", "CHECKED_IN", "DNS", "WITHDRAWN", "DSQ", "DNF"].includes(body.status)
+        ? (body.status as
+            | "PENDING"
+            | "CALLED"
+            | "CHECKED_IN"
+            | "DNS"
+            | "WITHDRAWN"
+            | "DSQ"
+            | "DNF")
         : "PENDING";
     if (requestedStatus === "CHECKED_IN") {
       return NextResponse.json(
@@ -283,7 +290,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         { status: 400 }
       );
     }
-    const status = requestedStatus === "WITHDRAWN" ? "DNS" : requestedStatus;
+    const status = requestedStatus;
     const reason = typeof body.reason === "string" ? body.reason.trim() : "";
     const competitionEntryId =
       participantType === "INDIVIDUAL" && typeof body.competitionEntryId === "string"
@@ -335,7 +342,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       participantType === "TEAM" &&
       teamEntryId &&
       status !== "DNS" &&
-      status !== "DSQ"
+      status !== "DSQ" &&
+      status !== "WITHDRAWN" &&
+      status !== "DNF"
     ) {
       const memberCount = await prisma.teamEntryMember.count({
         where: { teamEntryId },
@@ -386,8 +395,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const upserted = await prisma.$transaction(async (tx) => {
       const reasonResolved =
-        status === "DNS" && requestedStatus === "WITHDRAWN"
-          ? reason || "棄権（DNS扱い）"
+        status === "WITHDRAWN"
+          ? reason || "棄権"
           : reason || null;
 
       /** 棄権・欠場は種目全体で同一状態にそろえる（全 marshalRound 行） */
@@ -525,6 +534,141 @@ export async function POST(request: NextRequest, context: RouteContext) {
         return row;
       }
 
+      /** 棄権も種目全体で統一 */
+      if (status === "WITHDRAWN") {
+        if (participantType === "TEAM" && teamEntryId) {
+          const members = await tx.teamEntryMember.findMany({
+            where: { teamEntryId },
+            select: { userId: true },
+          });
+          if (members.length > 0) {
+            const memberUserIds = members.map(({ userId }) => userId);
+            const allRows = allMarshalRounds.flatMap((mr) =>
+              memberUserIds.map((userId) => ({
+                competitionId,
+                eventId,
+                participantType: "TEAM" as const,
+                competitionEntryId: null,
+                teamEntryId,
+                teamMemberUserId: userId,
+                marshalRound: mr,
+                status: "WITHDRAWN" as const,
+                reason: reasonResolved,
+                calledAt: null,
+                updatedByUserId: operatorUserId,
+              }))
+            );
+            await tx.competitionParticipantStatus.createMany({
+              data: allRows,
+              skipDuplicates: true,
+            });
+            await tx.competitionParticipantStatus.updateMany({
+              where: {
+                competitionId,
+                eventId,
+                participantType: "TEAM",
+                competitionEntryId: null,
+                teamEntryId,
+                teamMemberUserId: { in: memberUserIds },
+                marshalRound: { in: allMarshalRounds },
+              },
+              data: {
+                status: "WITHDRAWN",
+                reason: reasonResolved,
+                calledAt: null,
+                updatedByUserId: operatorUserId,
+              },
+            });
+            const row = await tx.competitionParticipantStatus.findFirst({
+              where: {
+                competitionId,
+                eventId,
+                participantType: "TEAM",
+                teamEntryId,
+                teamMemberUserId: memberUserIds[0],
+              },
+              orderBy: { updatedAt: "desc" },
+            });
+            await markMarshalStartedIfUnset(tx.event, eventId, now);
+            return row!;
+          }
+          await tx.competitionParticipantStatus.updateMany({
+            where: {
+              competitionId,
+              eventId,
+              participantType: "TEAM",
+              competitionEntryId: null,
+              teamEntryId,
+              teamMemberUserId: null,
+            },
+            data: {
+              status: "WITHDRAWN",
+              reason: reasonResolved,
+              calledAt: null,
+              updatedByUserId: operatorUserId,
+            },
+          });
+          let row = await tx.competitionParticipantStatus.findFirst({
+            where: {
+              competitionId,
+              eventId,
+              participantType: "TEAM",
+              competitionEntryId: null,
+              teamEntryId,
+              teamMemberUserId: null,
+            },
+            orderBy: { updatedAt: "desc" },
+          });
+          if (!row) {
+            row = await tx.competitionParticipantStatus.create({
+              data: {
+                competitionId,
+                eventId,
+                participantType: "TEAM",
+                competitionEntryId: null,
+                teamEntryId,
+                teamMemberUserId: null,
+                marshalRound: "HEAT",
+                status: "WITHDRAWN",
+                reason: reasonResolved,
+                calledAt: null,
+                updatedByUserId: operatorUserId,
+              },
+            });
+          }
+          await markMarshalStartedIfUnset(tx.event, eventId, now);
+          return row;
+        }
+        await tx.competitionParticipantStatus.updateMany({
+          where: participantWhere,
+          data: {
+            status: "WITHDRAWN",
+            reason: reasonResolved,
+            calledAt: null,
+            updatedByUserId: operatorUserId,
+          },
+        });
+        let row = await tx.competitionParticipantStatus.findFirst({
+          where: participantWhere,
+          orderBy: { updatedAt: "desc" },
+        });
+        if (!row) {
+          row = await tx.competitionParticipantStatus.create({
+            data: {
+              ...participantWhere,
+              teamMemberUserId: null,
+              marshalRound: "HEAT",
+              status: "WITHDRAWN",
+              reason: reasonResolved,
+              calledAt: null,
+              updatedByUserId: operatorUserId,
+            },
+          });
+        }
+        await markMarshalStartedIfUnset(tx.event, eventId, now);
+        return row;
+      }
+
       /** 失格も種目全体で統一 */
       if (status === "DSQ") {
         if (participantType === "TEAM" && teamEntryId) {
@@ -651,6 +795,141 @@ export async function POST(request: NextRequest, context: RouteContext) {
               marshalRound: "HEAT",
               status: "DSQ",
               reason: reason || null,
+              calledAt: null,
+              updatedByUserId: operatorUserId,
+            },
+          });
+        }
+        await markMarshalStartedIfUnset(tx.event, eventId, now);
+        return row;
+      }
+
+      /** DNF も種目全体で統一 */
+      if (status === "DNF") {
+        if (participantType === "TEAM" && teamEntryId) {
+          const members = await tx.teamEntryMember.findMany({
+            where: { teamEntryId },
+            select: { userId: true },
+          });
+          if (members.length > 0) {
+            const memberUserIds = members.map(({ userId }) => userId);
+            const allRows = allMarshalRounds.flatMap((mr) =>
+              memberUserIds.map((userId) => ({
+                competitionId,
+                eventId,
+                participantType: "TEAM" as const,
+                competitionEntryId: null,
+                teamEntryId,
+                teamMemberUserId: userId,
+                marshalRound: mr,
+                status: "DNF" as const,
+                reason: reasonResolved,
+                calledAt: null,
+                updatedByUserId: operatorUserId,
+              }))
+            );
+            await tx.competitionParticipantStatus.createMany({
+              data: allRows,
+              skipDuplicates: true,
+            });
+            await tx.competitionParticipantStatus.updateMany({
+              where: {
+                competitionId,
+                eventId,
+                participantType: "TEAM",
+                competitionEntryId: null,
+                teamEntryId,
+                teamMemberUserId: { in: memberUserIds },
+                marshalRound: { in: allMarshalRounds },
+              },
+              data: {
+                status: "DNF",
+                reason: reasonResolved,
+                calledAt: null,
+                updatedByUserId: operatorUserId,
+              },
+            });
+            const row = await tx.competitionParticipantStatus.findFirst({
+              where: {
+                competitionId,
+                eventId,
+                participantType: "TEAM",
+                teamEntryId,
+                teamMemberUserId: memberUserIds[0],
+              },
+              orderBy: { updatedAt: "desc" },
+            });
+            await markMarshalStartedIfUnset(tx.event, eventId, now);
+            return row!;
+          }
+          await tx.competitionParticipantStatus.updateMany({
+            where: {
+              competitionId,
+              eventId,
+              participantType: "TEAM",
+              competitionEntryId: null,
+              teamEntryId,
+              teamMemberUserId: null,
+            },
+            data: {
+              status: "DNF",
+              reason: reasonResolved,
+              calledAt: null,
+              updatedByUserId: operatorUserId,
+            },
+          });
+          let row = await tx.competitionParticipantStatus.findFirst({
+            where: {
+              competitionId,
+              eventId,
+              participantType: "TEAM",
+              competitionEntryId: null,
+              teamEntryId,
+              teamMemberUserId: null,
+            },
+            orderBy: { updatedAt: "desc" },
+          });
+          if (!row) {
+            row = await tx.competitionParticipantStatus.create({
+              data: {
+                competitionId,
+                eventId,
+                participantType: "TEAM",
+                competitionEntryId: null,
+                teamEntryId,
+                teamMemberUserId: null,
+                marshalRound: "HEAT",
+                status: "DNF",
+                reason: reasonResolved,
+                calledAt: null,
+                updatedByUserId: operatorUserId,
+              },
+            });
+          }
+          await markMarshalStartedIfUnset(tx.event, eventId, now);
+          return row;
+        }
+        await tx.competitionParticipantStatus.updateMany({
+          where: participantWhere,
+          data: {
+            status: "DNF",
+            reason: reasonResolved,
+            calledAt: null,
+            updatedByUserId: operatorUserId,
+          },
+        });
+        let row = await tx.competitionParticipantStatus.findFirst({
+          where: participantWhere,
+          orderBy: { updatedAt: "desc" },
+        });
+        if (!row) {
+          row = await tx.competitionParticipantStatus.create({
+            data: {
+              ...participantWhere,
+              teamMemberUserId: null,
+              marshalRound: "HEAT",
+              status: "DNF",
+              reason: reasonResolved,
               calledAt: null,
               updatedByUserId: operatorUserId,
             },

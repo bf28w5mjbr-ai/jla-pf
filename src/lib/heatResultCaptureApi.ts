@@ -163,6 +163,43 @@ export async function postHeatLaneDsq(
   };
 }
 
+export async function postHeatLaneTerminalStatus(
+  competitionId: string,
+  body: {
+    eventId: string;
+    round: "HEAT" | "SEMI" | "FINAL";
+    heatIndex: number;
+    lane: number;
+    status: "DNS" | "WITHDRAWN" | "DSQ" | "DNF";
+    reason?: string;
+  }
+): Promise<{ alreadyApplied: boolean; officialSyncSkipped?: boolean }> {
+  const res = await fetch(
+    `/api/competitions/${competitionId}/day-ops/heat-lane-terminal-status`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    alreadyApplied?: boolean;
+    officialSyncSkipped?: boolean;
+  };
+  if (!res.ok) {
+    throw new Error(
+      typeof data.error === "string"
+        ? data.error
+        : "終了ステータスの登録に失敗しました"
+    );
+  }
+  return {
+    alreadyApplied: Boolean(data.alreadyApplied),
+    officialSyncSkipped: Boolean(data.officialSyncSkipped),
+  };
+}
+
 export async function postHeatResultCaptureAppend(
   competitionId: string,
   body: Record<string, unknown>
@@ -212,6 +249,41 @@ export async function postHeatResultCaptureAppend(
     participantType,
     competitionEntryId: typeof data.competitionEntryId === "string" ? data.competitionEntryId : null,
     teamEntryId: typeof data.teamEntryId === "string" ? data.teamEntryId : null,
+  };
+}
+
+export async function postParticipantTerminalRevert(
+  competitionId: string,
+  body: {
+    eventId: string;
+    participantType: "INDIVIDUAL" | "TEAM";
+    competitionEntryId?: string;
+    teamEntryId?: string;
+    targetStatus: "PENDING" | "CALLED";
+    reason: string;
+    marshalRound?: "HEAT" | "SEMI" | "FINAL";
+    fromStatus?: "DNS" | "WITHDRAWN" | "DSQ" | "DNF";
+  }
+): Promise<{ officialSyncSkipped?: boolean; revertedFrom?: string }> {
+  const res = await fetch(
+    `/api/competitions/${competitionId}/day-ops/participant-terminal-revert`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    officialSyncSkipped?: boolean;
+    revertedFrom?: string;
+  };
+  if (!res.ok) {
+    throw new Error(typeof data.error === "string" ? data.error : "取り消しに失敗しました");
+  }
+  return {
+    officialSyncSkipped: Boolean(data.officialSyncSkipped),
+    revertedFrom: typeof data.revertedFrom === "string" ? data.revertedFrom : undefined,
   };
 }
 

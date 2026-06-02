@@ -6,10 +6,7 @@ import type { ResultRound } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { assertDayOpsRecorderWriteAccess } from "@/lib/dayOpsAccess";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
-import {
-  DAY_OPS_STATUS_MARSHAL_ABSENT,
-  effectiveDayOpsStatusForMarshalDisplay,
-} from "@/lib/dayOpsParticipantStatusDisplay";
+import { effectiveDayOpsStatusForMarshalDisplay } from "@/lib/dayOpsParticipantStatusDisplay";
 import { isCalledLikeStatus } from "@/lib/dayOpsTeamStatus";
 import { loadStartListSnapshotPayload, loadStartListSnapshotPayloadLoose } from "@/lib/heatMarshalGate";
 import {
@@ -221,14 +218,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
         { status: 409 }
       );
     }
-    if (effectiveStatus === DAY_OPS_STATUS_MARSHAL_ABSENT) {
-      return NextResponse.json(
-        {
-          error:
-            "マーシャル締切済みで未召集のため未出場扱いです（競技中の失格 DSQ とは別）。リザルトは記録できません。",
-        },
-        { status: 409 }
-      );
+    if (storedStatus === "DNS" || effectiveStatus === "DNS") {
+      return NextResponse.json({ error: "欠場（DNS）のためリザルトを記録できません。" }, { status: 409 });
+    }
+    if (storedStatus === "WITHDRAWN" || effectiveStatus === "WITHDRAWN") {
+      return NextResponse.json({ error: "棄権のためリザルトを記録できません。" }, { status: 409 });
+    }
+    if (storedStatus === "DNF" || effectiveStatus === "DNF") {
+      return NextResponse.json({ error: "DNF（途中辞退）のためリザルトを記録できません。" }, { status: 409 });
     }
     if (storedStatus === "PENDING") {
       return NextResponse.json(

@@ -1,13 +1,14 @@
 /**
  * チーム構成員の状態を1つの表示状態へ畳み込む。
- * 優先順位: DSQ > DNS/WITHDRAWN > 全員CALLED(or CHECKED_IN) > MARSHAL_ABSENT > PENDING
+ * 優先順位: DSQ > DNF > DNS/WITHDRAWN > 全員CALLED(or CHECKED_IN) > PENDING
  */
 export function foldTeamMemberStatuses(statuses: readonly string[]): string {
   if (statuses.length === 0) return "PENDING";
   if (statuses.some((s) => s === "DSQ")) return "DSQ";
-  if (statuses.some((s) => s === "DNS" || s === "WITHDRAWN")) return "DNS";
+  if (statuses.some((s) => s === "DNF")) return "DNF";
+  if (statuses.some((s) => s === "WITHDRAWN")) return "WITHDRAWN";
+  if (statuses.some((s) => s === "DNS")) return "DNS";
   if (statuses.every((s) => s === "CALLED" || s === "CHECKED_IN")) return "CALLED";
-  if (statuses.some((s) => s === "MARSHAL_ABSENT")) return "MARSHAL_ABSENT";
   return "PENDING";
 }
 

@@ -14,7 +14,11 @@ import {
   resolveParticipantMarshalHeat,
 } from "@/lib/heatMarshalGate";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
-import { clearOfficialRowAfterTerminalRevert } from "@/lib/officialResultTerminalSync";
+import {
+  clearOfficialRowAfterTerminalRevert,
+  TERMINAL_DAY_OPS_STATUSES,
+  type TerminalDayOpsStatus,
+} from "@/lib/officialResultTerminalSync";
 import { START_LIST_STEP1_REQUIRED_SHORT_MESSAGE } from "@/lib/startListStep1Messages";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -28,6 +32,7 @@ const bodySchema = z
     targetStatus: z.enum(["PENDING", "CALLED"]),
     reason: z.string().trim().min(1).max(500),
     marshalRound: z.enum(["HEAT", "SEMI", "FINAL"]).optional(),
+    fromStatus: z.enum(["DNS", "WITHDRAWN", "DSQ", "DNF"]).optional(),
   })
   .superRefine((val, ctx) => {
     if (val.participantType === "INDIVIDUAL" && !val.competitionEntryId) {
@@ -64,6 +69,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       teamEntryId,
       targetStatus,
       reason,
+      fromStatus,
     } = parsed.data;
     const marshalRound: ResultRound = parsed.data.marshalRound ?? "HEAT";
 
@@ -116,7 +122,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const now = new Date();
-    const note = `失格取り消し: ${reason}`;
+    const note = `終了ステータス取り消し: ${reason}`;
 
     const snapshotForRevert = await loadStartListSnapshotPayload(competitionId);
     const heatIndexForRevert = resolveParticipantMarshalHeat(
@@ -130,7 +136,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
     );
 
-    const { row, officialSyncSkipped } = await prisma.$transaction(async (tx) => {
+    const terminalFilter = fromStatus
+      ? { status: fromStatus }
+      : { status: { in: [...TERMINAL_DAY_OPS_STATUSES] } };
+
+    const { row, officialSyncSkipped, revertedFrom } = await prisma.$transaction(async (tx) => {
       const existing = await tx.competitionParticipantStatus.findFirst({
         where: {
           competitionId,
@@ -139,12 +149,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
           competitionEntryId: competitionEntryId ?? null,
           teamEntryId: teamEntryId ?? null,
           marshalRound,
-          status: "DSQ",
+          ...terminalFilter,
         },
         select: { id: true, status: true },
       });
       if (!existing) {
-        throw new Error("STATUS_ROW_MISSING");
+        throw new Error("NOT_TERMINAL");
       }
 
       const updated = await tx.competitionParticipantStatus.update({
@@ -171,14 +181,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
           teamEntryId: teamEntryId ?? null,
         },
         heatIndex: heatIndexForRevert,
-        terminalStatus: "DSQ",
+        terminalStatus: existing.status as TerminalDayOpsStatus,
       });
 
-      return { row: updated, officialSyncSkipped: sync.officialSyncSkipped };
+      return {
+        row: updated,
+        officialSyncSkipped: sync.officialSyncSkipped,
+        revertedFrom: existing.status,
+      };
     });
 
     await logAuditAction({
-      action: "COMPETITION_PARTICIPANT_DSQ_REVERT",
+      action: "COMPETITION_PARTICIPANT_TERMINAL_REVERT",
       actorType: operatorUserId ? "USER" : "SYSTEM",
       actorKey: operatorUserId ? `user:${operatorUserId}` : "dayops:unlock",
       actorUserId: operatorUserId ?? undefined,
@@ -193,6 +207,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         teamEntryId: teamEntryId ?? null,
         targetStatus,
         marshalRound,
+        revertedFrom,
       },
       request: getRequestContext(request),
       result: "SUCCESS",
@@ -202,6 +217,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       ok: true,
       id: row.id,
       status: row.status,
+      revertedFrom,
       officialSyncSkipped,
     });
   } catch (error) {
@@ -214,14 +230,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
         { status: 401 }
       );
     }
-    if (error instanceof Error && error.message === "STATUS_ROW_MISSING") {
-      return NextResponse.json({ error: "参加者状態が見つかりません" }, { status: 404 });
-    }
-    if (error instanceof Error && error.message === "NOT_DSQ") {
-      return NextResponse.json({ error: "失格（DSQ）状態の参加者のみ取り消せます" }, { status: 409 });
+    if (error instanceof Error && error.message === "NOT_TERMINAL") {
+      return NextResponse.json(
+        { error: "終了ステータス（DNS・棄権・DNF・DSQ）の参加者のみ取り消せます" },
+        { status: 409 }
+      );
     }
     return jsonInternalError500(
-      "POST api/competitions/[id]/day-ops/participant-dsq-revert/route.ts",
+      "POST api/competitions/[id]/day-ops/participant-terminal-revert/route.ts",
       error
     );
   }

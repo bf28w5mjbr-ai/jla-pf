@@ -61,6 +61,32 @@ export function buildScheduleTabListItems(
   }));
 }
 
+/** 全開催日合計で行が 1 件以上あるエリアのみ（スケジュール閲覧用タブバー） */
+export function filterScheduleTabsWithRows<T extends { id: string }>(
+  tabs: readonly T[],
+  rowCountsAllDaysByTabId: Record<string, number>
+): T[] {
+  return tabs.filter((t) => (rowCountsAllDaysByTabId[t.id] ?? 0) > 0);
+}
+
+/** 空エリアは非表示のため、閲覧時は行があるタブへフォールバックする */
+export function resolveVisibleScheduleAreaTabId(
+  activeId: string,
+  tabs: readonly { id: string }[],
+  rowCountsAllDaysByTabId: Record<string, number>
+): string {
+  const withRows = filterScheduleTabsWithRows(tabs, rowCountsAllDaysByTabId);
+  const candidates = withRows.length > 0 ? withRows : [...tabs];
+  if (
+    activeId &&
+    (rowCountsAllDaysByTabId[activeId] ?? 0) > 0 &&
+    candidates.some((t) => t.id === activeId)
+  ) {
+    return activeId;
+  }
+  return candidates[0]?.id ?? activeId;
+}
+
 /** partition の行キーから表示行を構築 */
 export function buildScheduleRoundRowsFromKeys<T extends { id: string; startListRoundCount?: number }>(
   rowKeys: readonly string[],

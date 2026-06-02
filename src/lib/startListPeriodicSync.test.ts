@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_START_LIST_PERIODIC_SYNC_INTERVAL_SEC,
   DEFAULT_START_LIST_PUBLIC_REFRESH_INTERVAL_SEC,
@@ -7,7 +7,12 @@ import {
 } from "@/lib/startListPeriodicSync";
 
 describe("resolveStartListPeriodicSyncIntervalSec", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("未指定時は既定 30 秒", () => {
+    vi.stubEnv("NEXT_PUBLIC_START_LIST_SYNC_INTERVAL_SEC", "");
     expect(resolveStartListPeriodicSyncIntervalSec()).toBe(
       DEFAULT_START_LIST_PERIODIC_SYNC_INTERVAL_SEC
     );

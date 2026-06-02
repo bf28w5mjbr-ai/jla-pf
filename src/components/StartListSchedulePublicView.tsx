@@ -6,8 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatEventStartTimeColumnJa } from "@/lib/eventScheduleDisplay";
 import { effectiveRoundStartIso } from "@/lib/eventRoundScheduledStarts";
-import type { ScheduleRoundRow } from "@/lib/competitionScheduleTabDisplay";
-import { parseScheduleRoundCountDraft } from "@/lib/competitionScheduleTabDisplay";
+import {
+  filterScheduleTabsWithRows,
+  parseScheduleRoundCountDraft,
+  resolveVisibleScheduleAreaTabId,
+  type ScheduleRoundRow,
+} from "@/lib/competitionScheduleTabDisplay";
 import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
 import { sexLabelJa } from "@/lib/sexLabelJa";
 
@@ -127,7 +131,6 @@ function PublicScheduleRowList({
 export function StartListSchedulePublicView({
   competitionId,
   sections,
-  scheduleTabCount,
   scheduleTabs = [],
   roundCounts,
   getRowHref,
@@ -137,7 +140,23 @@ export function StartListSchedulePublicView({
   const [activeAreaTabId, setActiveAreaTabId] = useState("");
 
   const showDayTabs = sections.length > 1;
-  const showAreaTabs = scheduleTabCount > 1 && scheduleTabs.length > 0;
+
+  const tabRowCountsAllDays = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const section of sections) {
+      for (const area of section.areas) {
+        counts[area.tabId] = (counts[area.tabId] ?? 0) + area.rows.length;
+      }
+    }
+    return counts;
+  }, [sections]);
+
+  const areaTabsForDisplay = useMemo(
+    () => filterScheduleTabsWithRows(scheduleTabs, tabRowCountsAllDays),
+    [scheduleTabs, tabRowCountsAllDays]
+  );
+
+  const showAreaTabs = areaTabsForDisplay.length > 1;
 
   const resolvedDayKey = useMemo(() => {
     if (activeDayKey && sections.some((s) => s.dayKey === activeDayKey)) {
@@ -146,17 +165,14 @@ export function StartListSchedulePublicView({
     return sections[0]?.dayKey ?? "";
   }, [activeDayKey, sections]);
 
-  const areaTabsForDisplay = useMemo(() => {
-    if (!showAreaTabs) return [];
-    return scheduleTabs;
-  }, [showAreaTabs, scheduleTabs]);
-
   const resolvedAreaTabId = useMemo(() => {
-    if (activeAreaTabId && areaTabsForDisplay.some((t) => t.id === activeAreaTabId)) {
-      return activeAreaTabId;
-    }
-    return areaTabsForDisplay[0]?.id ?? "";
-  }, [activeAreaTabId, areaTabsForDisplay]);
+    if (!showAreaTabs) return "";
+    return resolveVisibleScheduleAreaTabId(
+      activeAreaTabId,
+      areaTabsForDisplay,
+      tabRowCountsAllDays
+    );
+  }, [activeAreaTabId, areaTabsForDisplay, showAreaTabs, tabRowCountsAllDays]);
 
   useEffect(() => {
     const first = sections[0]?.dayKey ?? "";

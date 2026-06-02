@@ -26,6 +26,14 @@ export type DsqManagementStatusRow = {
 export type DsqManagementHeatRow = {
   heatIndex: number;
   participantCount: number;
+  participants: Array<{
+    lane: number;
+    participantType: "INDIVIDUAL" | "TEAM";
+    competitionEntryId: string | null;
+    teamEntryId: string | null;
+    label: string;
+    clubName: string | null;
+  }>;
 };
 
 export type DsqManagementPageData = {
@@ -120,7 +128,7 @@ async function attachDsqStatusLabels(
   });
 }
 
-/** 失格管理画面向け: スナップショットからヒート概要と DSQ 一覧を 1 回の DB ラウンドで取得 */
+/** 失格管理画面向け: スナップショットからヒート概要と終了系一覧を 1 回の DB ラウンドで取得 */
 async function loadDsqManagementDataInner(
   competitionId: string,
   eventId: string,
@@ -133,7 +141,7 @@ async function loadDsqManagementDataInner(
     }),
     loadSnapshotLooseCached(competitionId),
     prisma.competitionParticipantStatus.findMany({
-      where: { competitionId, eventId, status: "DSQ" },
+      where: { competitionId, eventId, status: { in: ["DSQ", "DNS", "WITHDRAWN", "DNF"] } },
       orderBy: { updatedAt: "desc" },
       select: {
         id: true,
@@ -164,6 +172,27 @@ async function loadDsqManagementDataInner(
     .map((h) => ({
       heatIndex: h.heatIndex,
       participantCount: (h.participants ?? []).length,
+      participants: (h.participants ?? []).map((p, idx) => {
+        const lane = idx + 1;
+        if (p.kind === "TEAM") {
+          return {
+            lane,
+            participantType: "TEAM" as const,
+            competitionEntryId: null,
+            teamEntryId: p.teamEntryId,
+            label: p.teamName?.trim() || p.teamEntryId,
+            clubName: p.clubName ?? null,
+          };
+        }
+        return {
+          lane,
+          participantType: "INDIVIDUAL" as const,
+          competitionEntryId: p.entryId,
+          teamEntryId: null,
+          label: p.name?.trim() || p.entryId,
+          clubName: p.clubName ?? null,
+        };
+      }),
     }));
 
   const statusesWithLabels = await labelsPromise;

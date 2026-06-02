@@ -592,8 +592,11 @@ export function useStartListEventDayOps({
         });
         dispatchJlaDayOpsParticipantStatusChanged(competitionId, eventId, {
           skipMarshalHeatRefetch: true,
-          skipParticipantPoll: true,
+          skipParticipantPoll: !options.refreshParticipantStatuses,
         });
+        if (options.refreshParticipantStatuses) {
+          void refreshDayOpsParticipantPoll();
+        }
         return;
       }
 

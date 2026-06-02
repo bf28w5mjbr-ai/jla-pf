@@ -41,6 +41,8 @@ function statusLabel(status: ResultRow["status"]) {
       return "DNF";
     case "DSQ":
       return "DSQ";
+    case "WITHDRAWN":
+      return "棄権";
     default:
       return "OK";
   }

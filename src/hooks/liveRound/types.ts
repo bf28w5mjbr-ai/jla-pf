@@ -33,6 +33,8 @@ export type OnMarshalSuccessOptions = {
   callClosed?: boolean;
   /** 楽観更新のみ。参加者ポーリング・リザルト再取得を省略（締切直前の draft flush 向け） */
   localPatchOnly?: boolean;
+  /** 締切時の未召集→DNS 一括後。参加者ポーリングのみ再開 */
+  refreshParticipantStatuses?: boolean;
 };
 
 export type LiveRoundMarshalContext = {

@@ -14,6 +14,7 @@ import {
   buildScheduleRoundRowsFromKeys,
   buildScheduleTabListItems,
   parseScheduleRoundCountDraft,
+  resolveVisibleScheduleAreaTabId,
   type CompetitionScheduleTabLite,
   type ScheduleRoundRow,
 } from "@/lib/competitionScheduleTabDisplay";
@@ -320,6 +321,27 @@ export default function StartListEventIndexBars({
     [scheduleTabs, rowOrderByTabId]
   );
 
+  const tabRowCountsAllDays = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const tab of scheduleTabs) counts[tab.id] = 0;
+    for (const tabMap of Object.values(rowOrderByDayAndTab)) {
+      for (const [tabId, keys] of Object.entries(tabMap)) {
+        counts[tabId] = (counts[tabId] ?? 0) + keys.length;
+      }
+    }
+    return counts;
+  }, [rowOrderByDayAndTab, scheduleTabs]);
+
+  const resolvedScheduleAreaTabId = useMemo(
+    () =>
+      resolveVisibleScheduleAreaTabId(
+        activeAreaTabId,
+        scheduleTabs,
+        tabRowCountsAllDays
+      ),
+    [activeAreaTabId, scheduleTabs, tabRowCountsAllDays]
+  );
+
   const ageCategoryTabsForRoundSettings = useMemo(
     () => buildStartListAgeCategoryTabs(order),
     [order]
@@ -365,7 +387,7 @@ export default function StartListEventIndexBars({
   );
 
   const visibleRoundRows = useMemo(() => {
-    const keys = rowOrderByTabId[resolvedActiveAreaTabId] ?? [];
+    const keys = rowOrderByTabId[resolvedScheduleAreaTabId] ?? [];
     return buildScheduleRoundRowsFromKeys(
       keys,
       order,
@@ -375,7 +397,7 @@ export default function StartListEventIndexBars({
     );
   }, [
     rowOrderByTabId,
-    resolvedActiveAreaTabId,
+    resolvedScheduleAreaTabId,
     order,
     roundCounts,
     heatSettingForExpandedRow,
@@ -731,7 +753,7 @@ export default function StartListEventIndexBars({
       }
 
       if (canReorder && apiEvents?.length) {
-        const areaId = resolvedActiveAreaTabId;
+        const areaId = resolvedScheduleAreaTabId;
         const dayKey = resolvedActiveScheduleDayKey;
         if (areaId && dayKey) {
           const currentKeys = rowOrderByTabId[areaId] ?? [];
@@ -806,7 +828,7 @@ export default function StartListEventIndexBars({
       return;
     }
 
-    const areaId = resolvedActiveAreaTabId;
+    const areaId = resolvedScheduleAreaTabId;
     if (!areaId) {
       toast.error("表示中のエリアが未設定です");
       return;
@@ -910,7 +932,7 @@ export default function StartListEventIndexBars({
       setDragId(null);
       return;
     }
-    const areaId = resolvedActiveAreaTabId;
+    const areaId = resolvedScheduleAreaTabId;
     if (!areaId) {
       setDragId(null);
       return;
@@ -1000,17 +1022,6 @@ export default function StartListEventIndexBars({
     heatSettingForExpandedRow,
     parseRoundCountDraft,
   ]);
-
-  const tabRowCountsAllDays = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const tab of scheduleTabs) counts[tab.id] = 0;
-    for (const tabMap of Object.values(rowOrderByDayAndTab)) {
-      for (const [tabId, keys] of Object.entries(tabMap)) {
-        counts[tabId] = (counts[tabId] ?? 0) + keys.length;
-      }
-    }
-    return counts;
-  }, [rowOrderByDayAndTab, scheduleTabs]);
 
   if (order.length === 0) {
     return (

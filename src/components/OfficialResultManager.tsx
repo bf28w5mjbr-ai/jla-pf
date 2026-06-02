@@ -39,7 +39,7 @@ type RowState = {
   competitionEntryId: string;
   teamEntryId: string;
   rank: string;
-  status: "OK" | "DNS" | "DNF" | "DSQ";
+  status: "OK" | "DNS" | "DNF" | "DSQ" | "WITHDRAWN";
   resultText: string;
   lane: string;
   heat: string;
@@ -52,7 +52,7 @@ type ApiRow = {
   competitionEntryId?: string | null;
   teamEntryId?: string | null;
   rank?: number | null;
-  status?: "OK" | "DNS" | "DNF" | "DSQ";
+  status?: "OK" | "DNS" | "DNF" | "DSQ" | "WITHDRAWN";
   resultText?: string | null;
   lane?: number | null;
   heat?: number | null;
@@ -512,7 +512,7 @@ export function OfficialResultManager({
                           value={row.status}
                           onValueChange={(value) =>
                             updateRow(row.localId, {
-                              status: value as "OK" | "DNS" | "DNF" | "DSQ",
+                              status: value as "OK" | "DNS" | "DNF" | "DSQ" | "WITHDRAWN",
                             })
                           }
                         >
@@ -523,6 +523,7 @@ export function OfficialResultManager({
                             <SelectItem value="OK">OK</SelectItem>
                             <SelectItem value="DNS">DNS</SelectItem>
                             <SelectItem value="DNF">DNF</SelectItem>
+                            <SelectItem value="WITHDRAWN">棄権</SelectItem>
                           </SelectContent>
                         </Select>
                       )}

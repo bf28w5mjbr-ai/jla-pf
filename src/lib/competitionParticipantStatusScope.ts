@@ -2,7 +2,7 @@ import type { ResultRound } from "@prisma/client";
 import { marshalStatusKeyFromParts } from "@/lib/dayOpsParticipantKeys";
 
 /** ラウンド横断で効く終了系（マーシャルラウンド別行より優先） */
-const TERMINAL_DAY_OPS = new Set<string>(["DNS", "WITHDRAWN", "DSQ"]);
+const TERMINAL_DAY_OPS = new Set<string>(["DNS", "WITHDRAWN", "DSQ", "DNF"]);
 
 export type ParticipantStatusRowForScope = {
   participantType: string;

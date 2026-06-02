@@ -10,8 +10,17 @@ describe("dayOpsTeamStatus", () => {
     expect(foldTeamMemberStatuses(["CALLED", "DSQ", "PENDING"])).toBe("DSQ");
   });
 
-  it("foldTeamMemberStatuses は DNS/WITHDRAWN を DNS に畳む", () => {
-    expect(foldTeamMemberStatuses(["WITHDRAWN", "PENDING"])).toBe("DNS");
+  it("foldTeamMemberStatuses は WITHDRAWN を維持する", () => {
+    expect(foldTeamMemberStatuses(["WITHDRAWN", "PENDING"])).toBe("WITHDRAWN");
+  });
+
+  it("foldTeamMemberStatuses は DNS を返す", () => {
+    expect(foldTeamMemberStatuses(["DNS", "PENDING"])).toBe("DNS");
+  });
+
+  it("foldTeamMemberStatuses は DNF を DSQ より下位で返す", () => {
+    expect(foldTeamMemberStatuses(["DNF", "DSQ"])).toBe("DSQ");
+    expect(foldTeamMemberStatuses(["DNF", "PENDING"])).toBe("DNF");
   });
 
   it("foldTeamMemberStatuses は CALLED/CHECKED_IN のみなら CALLED", () => {

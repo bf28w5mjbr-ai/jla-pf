@@ -26,7 +26,9 @@ export async function generateMetadata({
     select: { name: true },
   });
   return {
-    title: event?.name ? `失格管理 | ${event.name} | Bluvium` : "失格管理 | Bluvium",
+    title: event?.name
+      ? `終了ステータス管理 | ${event.name} | Bluvium`
+      : "終了ステータス管理 | Bluvium",
   };
 }
 

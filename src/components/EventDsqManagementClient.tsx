@@ -24,7 +24,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { postHeatLaneDsq, postParticipantDsqRevert } from "@/lib/heatResultCaptureApi";
+import {
+  postHeatLaneTerminalStatus,
+  postParticipantTerminalRevert,
+} from "@/lib/heatResultCaptureApi";
 import {
   dayOpsParticipantStatusLabelJa,
   dispatchJlaDayOpsParticipantStatusChanged,
@@ -78,7 +81,8 @@ export function EventDsqManagementClient({
   const [statuses, setStatuses] = useState<StatusRow[]>(initialData?.statuses ?? []);
 
   const [applyHeatIndex, setApplyHeatIndex] = useState<string>("");
-  const [applyLane, setApplyLane] = useState("");
+  const [applyLane, setApplyLane] = useState<string>("");
+  const [applyStatus, setApplyStatus] = useState<"DSQ" | "DNS" | "WITHDRAWN" | "DNF">("DSQ");
   const [applyReason, setApplyReason] = useState("");
   const [applyBusy, setApplyBusy] = useState(false);
 
@@ -129,7 +133,16 @@ export function EventDsqManagementClient({
     void refreshData(initialRound, { fullPage: true });
   }, [initialData, initialRound, refreshData]);
 
-  const dsqRows = useMemo(() => statuses.filter((s) => s.status === "DSQ"), [statuses]);
+  const terminalRows = useMemo(
+    () => statuses.filter((s) => ["DSQ", "DNS", "WITHDRAWN", "DNF"].includes(s.status)),
+    [statuses]
+  );
+
+  const selectedHeat = useMemo(() => {
+    const idx = parseInt(applyHeatIndex, 10);
+    if (!Number.isFinite(idx) || idx < 1) return null;
+    return heats.find((h) => h.heatIndex === idx) ?? null;
+  }, [applyHeatIndex, heats]);
 
   const openRevert = (row: StatusRow) => {
     setRevertRow(row);
@@ -151,17 +164,20 @@ export function EventDsqManagementClient({
     }
     setApplyBusy(true);
     try {
-      const res = await postHeatLaneDsq(competitionId, {
+      const res = await postHeatLaneTerminalStatus(competitionId, {
         eventId,
         round: marshalRound,
         heatIndex,
         lane,
+        status: applyStatus,
         reason: applyReason.trim() || undefined,
       });
-      if (res.alreadyDsq) {
-        toast.info("すでに失格登録済みです");
+      if (res.alreadyApplied) {
+        toast.info("すでに登録済みです");
       } else {
-        toast.success(`ヒート ${heatIndex} レーン ${lane} を失格（DSQ）にしました`);
+        toast.success(
+          `ヒート ${heatIndex} レーン ${lane} を ${dayOpsParticipantStatusLabelJa(applyStatus)} にしました`
+        );
       }
       if (res.officialSyncSkipped) {
         toast.warning(
@@ -173,7 +189,7 @@ export function EventDsqManagementClient({
       await refreshData(marshalRound);
       dispatchJlaDayOpsParticipantStatusChanged(competitionId, eventId);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "失格の登録に失敗しました");
+      toast.error(e instanceof Error ? e.message : "終了ステータスの登録に失敗しました");
     } finally {
       setApplyBusy(false);
     }
@@ -189,7 +205,7 @@ export function EventDsqManagementClient({
     const participantType = revertRow.participantType === "TEAM" ? "TEAM" : "INDIVIDUAL";
     setRevertBusy(true);
     try {
-      const revertRes = await postParticipantDsqRevert(competitionId, {
+      const revertRes = await postParticipantTerminalRevert(competitionId, {
         eventId,
         participantType,
         competitionEntryId: revertRow.competitionEntryId ?? undefined,
@@ -197,8 +213,15 @@ export function EventDsqManagementClient({
         targetStatus: revertTarget,
         reason: r,
         marshalRound,
+        fromStatus:
+          revertRow.status === "DNS" ||
+          revertRow.status === "WITHDRAWN" ||
+          revertRow.status === "DNF" ||
+          revertRow.status === "DSQ"
+            ? revertRow.status
+            : undefined,
       });
-      toast.success("失格を取り消しました");
+      toast.success("終了ステータスを取り消しました");
       if (revertRes.officialSyncSkipped) {
         toast.warning(
           "種目全体の公式結果が確定済みのため、公開用の公式結果行は更新されませんでした"
@@ -226,7 +249,7 @@ export function EventDsqManagementClient({
         </Button>
       </div>
       <div>
-        <h1 className="text-lg font-semibold leading-tight">失格管理</h1>
+        <h1 className="text-lg font-semibold leading-tight">終了ステータス管理</h1>
         <p className="mt-1 text-sm text-muted-foreground">{eventName}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
           対象ラウンド: {displayResultRoundLabel(marshalRound, roundLabels)}
@@ -235,9 +258,9 @@ export function EventDsqManagementClient({
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">失格申請</CardTitle>
+          <CardTitle className="text-base">終了ステータス登録</CardTitle>
           <CardDescription>
-            スタートリストで開いているラウンドのスナップショットに対し、ヒートと左端のレーン番号を指定して失格（DSQ）にします。
+            対象ラウンドのスナップショットに対し、ヒートとレーンを選択して終了ステータス（DNS/棄権/DNF/DSQ）を付与します。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -263,16 +286,46 @@ export function EventDsqManagementClient({
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label htmlFor="dsq-lane">レーン番号</Label>
-                <Input
-                  id="dsq-lane"
-                  numericInput="integer"
-                  className="max-w-xs"
-                  placeholder="例: 3"
+                <Label>対象レーン</Label>
+                <Select
                   value={applyLane}
-                  onChange={(e) => setApplyLane(e.target.value)}
+                  onValueChange={(v) => setApplyLane(v)}
+                  disabled={applyBusy || !selectedHeat}
+                >
+                  <SelectTrigger className="max-w-xs">
+                    <SelectValue placeholder={selectedHeat ? "選択" : "先にヒートを選択"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(selectedHeat?.participants ?? []).map((p) => (
+                      <SelectItem key={`${p.lane}`} value={String(p.lane)}>
+                        レーン {p.lane}: {p.label}
+                        {p.clubName ? `（${p.clubName}）` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>ステータス</Label>
+                <Select
+                  value={applyStatus}
+                  onValueChange={(v) => {
+                    if (v === "DSQ" || v === "DNS" || v === "WITHDRAWN" || v === "DNF") {
+                      setApplyStatus(v);
+                    }
+                  }}
                   disabled={applyBusy}
-                />
+                >
+                  <SelectTrigger className="max-w-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DNS">欠場（DNS）</SelectItem>
+                    <SelectItem value="WITHDRAWN">棄権</SelectItem>
+                    <SelectItem value="DNF">DNF（途中辞退）</SelectItem>
+                    <SelectItem value="DSQ">失格（DSQ）</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="dsq-reason-apply">理由（任意・監査用）</Label>
@@ -285,8 +338,8 @@ export function EventDsqManagementClient({
                   maxLength={500}
                 />
               </div>
-              <Button type="button" disabled={applyBusy} variant="destructive" onClick={() => void submitApply()}>
-                {applyBusy ? "処理中…" : "失格を確定"}
+              <Button type="button" disabled={applyBusy} onClick={() => void submitApply()}>
+                {applyBusy ? "処理中…" : "確定"}
               </Button>
             </>
           )}
@@ -295,23 +348,23 @@ export function EventDsqManagementClient({
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">失格の取り消し</CardTitle>
+          <CardTitle className="text-base">終了ステータスの取り消し</CardTitle>
           <CardDescription>
-            現在失格（DSQ）の参加者を、未召集（PENDING）または召集済み（CALLED）に戻します。召集締切や種目召集締切の制約に従います。
+            現在終了ステータス（DNS/棄権/DNF/DSQ）の参加者を、未召集（PENDING）または召集済み（CALLED）に戻します。召集締切や種目召集締切の制約に従います。
           </CardDescription>
         </CardHeader>
         <CardContent>
           {pageLoading ? (
             <p className="text-sm text-muted-foreground">読み込み中…</p>
-          ) : dsqRows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">失格中の参加者はいません。</p>
+          ) : terminalRows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">終了ステータス中の参加者はいません。</p>
           ) : (
             <div className="space-y-2">
               {listRefreshing ? (
                 <p className="text-xs text-muted-foreground">一覧を更新中…</p>
               ) : null}
               <ul className="space-y-2">
-                {dsqRows.map((row) => (
+                {terminalRows.map((row) => (
                   <li
                     key={row.id}
                     className="flex flex-col gap-2 rounded-md border border-border/80 bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between"
@@ -337,14 +390,14 @@ export function EventDsqManagementClient({
       <AlertDialog open={revertOpen} onOpenChange={(o) => !revertBusy && setRevertOpen(o)}>
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle>失格の取り消し</AlertDialogTitle>
+            <AlertDialogTitle>終了ステータスの取り消し</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-left text-sm text-foreground">
                 <p>
                   {revertRow ? (
                     <>
                       <span className="font-medium">{revertRow.label}</span>
-                      を失格から戻します。
+                      を終了ステータスから戻します。
                     </>
                   ) : null}
                 </p>

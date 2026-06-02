@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type Dispatch, DragEvent, SetStateAction } from "react";
+import { useMemo, useState, type Dispatch, DragEvent, SetStateAction } from "react";
 import Link from "next/link";
 import { GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,8 @@ import {
 import { effectiveRoundStartIso, roundStartKey } from "@/lib/eventRoundScheduledStarts";
 import { formatScheduleRowKey } from "@/lib/scheduleRowOrder";
 import {
+  filterScheduleTabsWithRows,
+  resolveVisibleScheduleAreaTabId,
   type CompetitionScheduleTabLite,
   type ScheduleRoundRow,
 } from "@/lib/competitionScheduleTabDisplay";
@@ -175,8 +177,25 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
     effectiveMode === "schedule" &&
     scheduleDayTabs.length > 0 &&
     (canReorder || canEditSchedule);
+  const scheduleAreaTabsForDisplay = useMemo(
+    () => filterScheduleTabsWithRows(scheduleTabs, tabRowCountsAllDays),
+    [scheduleTabs, tabRowCountsAllDays]
+  );
+
+  const scheduleAreaTabId = useMemo(
+    () =>
+      resolveVisibleScheduleAreaTabId(
+        resolvedActiveAreaTabId,
+        scheduleTabs,
+        tabRowCountsAllDays
+      ),
+    [resolvedActiveAreaTabId, scheduleTabs, tabRowCountsAllDays]
+  );
+
   const showScheduleAreaTabs =
-    !publicScheduleBarsOnly && effectiveMode === "schedule" && scheduleTabs.length > 1;
+    !publicScheduleBarsOnly &&
+    effectiveMode === "schedule" &&
+    scheduleAreaTabsForDisplay.length > 1;
 
   const switchMode = async (mode: ScheduleCardMode) => {
     if (modeSwitchDisabled) return;
@@ -249,9 +268,9 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
           ) : null}
           {showScheduleAreaTabs ? (
             <div className="mt-2 border-t border-border/40 pt-2">
-              <Tabs value={resolvedActiveAreaTabId} onValueChange={setActiveAreaTabId}>
+              <Tabs value={scheduleAreaTabId} onValueChange={setActiveAreaTabId}>
                 <TabsList className="h-auto min-h-9 min-w-0 flex-wrap justify-start gap-1 bg-muted/50 p-1">
-                  {scheduleTabs.map((t) => {
+                  {scheduleAreaTabsForDisplay.map((t) => {
                     const rowCount =
                       scheduleTabBarItems.find((x) => x.id === t.id)?.rowCount ?? 0;
                     return (
@@ -365,7 +384,7 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
                   <li className="px-2.5 py-6 text-center text-xs text-muted-foreground">
                     {canReorder
                       ? "この日・エリアに表示する種目がありません。「振分」モードで行を配置してください。"
-                      : scheduleTabs.length > 1
+                      : scheduleAreaTabsForDisplay.length > 1
                         ? "この日・エリアに表示する種目がありません。別の日またはエリアを選んでください。"
                         : "この日に表示する種目がありません。"}
                   </li>

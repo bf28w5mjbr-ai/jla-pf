@@ -206,11 +206,18 @@ describe("publicConfirmedResultSortTier", () => {
         advanceWithoutRank: false,
       })
     ).toBe(1);
-    expect(publicConfirmedResultSortTier(undefined)).toBe(2);
+    expect(publicConfirmedResultSortTier(undefined)).toBe(3);
     expect(
       publicConfirmedResultSortTier({
         rank: null,
         status: "DSQ",
+        advanceWithoutRank: false,
+      })
+    ).toBe(3);
+    expect(
+      publicConfirmedResultSortTier({
+        rank: null,
+        status: "DNF",
         advanceWithoutRank: false,
       })
     ).toBe(2);
@@ -261,9 +268,12 @@ describe("sortSnapshotParticipantsForConfirmedOverlay", () => {
       entries,
       heat,
       overlay,
-      (p) => (p.entryId ? marshalIndividualKey(p.entryId) : null)
+      (p) =>
+        p.kind === "INDIVIDUAL" && p.entryId ? marshalIndividualKey(p.entryId) : null
     );
-    expect(sorted.map((p) => p.entryId)).toEqual(["ru1", "ru2"]);
+    expect(
+      sorted.map((p) => (p.kind === "INDIVIDUAL" ? p.entryId : null))
+    ).toEqual(["ru1", "ru2"]);
   });
 });
 
