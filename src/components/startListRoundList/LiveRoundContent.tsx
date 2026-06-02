@@ -52,7 +52,7 @@ export function LiveRoundContent({
     mRef.current = marshalCtx;
   }, [marshalCtx]);
 
-  const uiMode = m?.marshalUiMode ?? "dialog";
+  const uiMode = m?.marshalUiMode ?? "inline";
   const resultMode = uiMode === "result";
   const marshalInline = Boolean(m && uiMode === "inline");
   const showMarshalAdminUi = Boolean(m && !resultMode);

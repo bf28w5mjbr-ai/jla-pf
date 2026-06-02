@@ -20,7 +20,7 @@ export type StartListEventPageTeam = {
 };
 
 /** スタートリスト表示モード（タブごと・localStorage） */
-export type StartListMarshalViewMode = "normal" | "marshal" | "result";
+export type StartListMarshalViewMode = "marshal" | "result";
 
 export type StartListEventCardEvent = {
   id: string;

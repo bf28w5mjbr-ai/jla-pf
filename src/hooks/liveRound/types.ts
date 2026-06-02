@@ -44,7 +44,7 @@ export type LiveRoundMarshalContext = {
   marshalOpsBlocked: boolean;
   marshalRoundMismatch?: boolean;
   isCallClosed: boolean;
-  marshalUiMode?: "dialog" | "inline" | "result";
+  marshalUiMode?: "inline" | "result";
   onMarshalSuccess: (
     appliedOps?: ReadonlyArray<MarshalDraftOp>,
     options?: OnMarshalSuccessOptions

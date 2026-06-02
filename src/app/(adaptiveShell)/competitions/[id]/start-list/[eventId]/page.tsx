@@ -3,6 +3,11 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import StartListEventPageShell from "@/components/StartListEventPageShell";
 import StartListEventUnifiedCard from "@/components/StartListEventUnifiedCard";
+import { verifySessionCached } from "@/lib/auth";
+import {
+  competitionOverviewHref,
+  competitionResultsTabHref,
+} from "@/lib/competitionShellNavigation";
 import {
   getStartListEventDetail,
   loadStartListEventPage,
@@ -35,6 +40,8 @@ export default async function CompetitionEventStartListPage({
   const initialRoundIndex = parseRoundIndexSearchParam(sp.roundIndex);
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
+  const session = await verifySessionCached(token);
+  const isLoggedIn = Boolean(session?.userId);
 
   const loaded = await loadStartListEventPage({
     competitionId,
@@ -52,7 +59,7 @@ export default async function CompetitionEventStartListPage({
         competitionId={loaded.competitionId}
         dayOpsUnlockConfigured={loaded.dayOpsUnlockConfigured}
         hasDayOpsUnlock={loaded.hasDayOpsUnlock}
-        backHref={`/competitions/${loaded.competitionId}`}
+        backHref={competitionOverviewHref(loaded.competitionId, isLoggedIn)}
         backLabel="大会ページへ"
       >
         <p className="text-sm text-muted-foreground">
@@ -72,7 +79,7 @@ export default async function CompetitionEventStartListPage({
       competitionId={loaded.competitionId}
       dayOpsUnlockConfigured={loaded.dayOpsUnlockConfigured}
       hasDayOpsUnlock={loaded.hasDayOpsUnlock}
-      backHref={`/competitions/${competitionId}?tab=results`}
+      backHref={competitionResultsTabHref(competitionId, isLoggedIn)}
       backLabel="レース情報へ"
     >
       <StartListEventUnifiedCard {...cardProps} />

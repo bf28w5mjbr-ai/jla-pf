@@ -20,7 +20,10 @@ import {
   patchHeatOperationDraftResultPayloadFireAndForget,
   type HeatResultDraftServerEntry,
 } from "@/lib/dayOpsHeatOperationDraftSync";
-import { dispatchJlaDayOpsParticipantStatusChanged } from "@/lib/dayOpsParticipantStatusDisplay";
+import {
+  dispatchJlaDayOpsParticipantStatusChanged,
+  JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED,
+} from "@/lib/dayOpsParticipantStatusDisplay";
 import { resultCaptureRowsEqual, mergeConfirmedHeats, confirmedHeatsEqual } from "@/lib/dayOpsPollCompare";
 import { participantKeyFromResultRow } from "@/components/startListRoundList/panelHelpers";
 import {
@@ -29,6 +32,7 @@ import {
   rankOrderKeysForHeat,
   rankedParticipantKeysForHeatFromRows,
   resultDraftOpsForHeatFromServerRow,
+  terminalParticipantKeysForHeat,
 } from "@/hooks/liveRound/resultCaptureDraftHelpers";
 import type { ResultRound } from "@prisma/client";
 import type { LiveRoundMarshalContext, ResultDraftOp } from "@/hooks/liveRound/types";
@@ -348,6 +352,56 @@ export function useResultCaptureDraft(args: {
     return () => window.removeEventListener(JLA_DAY_OPS_DRAFT_CHANGED, handler);
   }, [resultDraftSyncActive, resultDraftSyncContext, eventId, pullResultDraftsFromServer]);
 
+  const pruneTerminalResultDrafts = useCallback(() => {
+    const heats = heatsRef.current;
+    const heatsToPatch = new Set<number>();
+    setResultDraftOps((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [key, op] of Object.entries(prev)) {
+        const apiHeat = heats.find((h) => Number(h.heatIndex) === op.heatIndex);
+        if (terminalParticipantKeysForHeat(apiHeat).has(key)) {
+          delete next[key];
+          heatsToPatch.add(op.heatIndex);
+          changed = true;
+        }
+      }
+      if (!changed) return prev;
+      resultDraftOpsRef.current = next;
+      return next;
+    });
+    setResultDraftErrors((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const key of Object.keys(prev)) {
+        const op = resultDraftOpsRef.current[key];
+        if (!op) {
+          delete next[key];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    for (const hi of heatsToPatch) {
+      flushResultDraftServerPatch(hi);
+    }
+  }, [flushResultDraftServerPatch]);
+
+  useEffect(() => {
+    if (!resultDraftSyncActive || !resultDraftSyncContext) return;
+    const handler = (ev: Event) => {
+      const d = (ev as CustomEvent<{ competitionId?: string; eventId?: string }>).detail;
+      if (
+        d?.competitionId === resultDraftSyncContext.competitionId &&
+        d?.eventId === eventId
+      ) {
+        pruneTerminalResultDrafts();
+      }
+    };
+    window.addEventListener(JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED, handler);
+    return () => window.removeEventListener(JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED, handler);
+  }, [resultDraftSyncActive, resultDraftSyncContext, eventId, pruneTerminalResultDrafts]);
+
   const handleRankRecorded = useCallback(
     (payload: {
       heatIndex: number;
@@ -553,9 +607,11 @@ export function useResultCaptureDraft(args: {
   );
 
   const rankOrderKeysForHeatIndex = useCallback(
-    (heatIndex: number) =>
-      rankOrderKeysForHeat(localResultRows, heatIndex, resultDraftOps),
-    [localResultRows, resultDraftOps]
+    (heatIndex: number) => {
+      const apiHeat = heatsRef.current.find((h) => Number(h.heatIndex) === heatIndex);
+      return rankOrderKeysForHeat(localResultRows, heatIndex, resultDraftOps, apiHeat);
+    },
+    [localResultRows, resultDraftOps, heatsRef]
   );
 
   const clearResultDraftsForHeat = useCallback((heatIndex: number) => {
@@ -584,10 +640,12 @@ export function useResultCaptureDraft(args: {
       if (!m || !resultCapture) return;
       setRunUpBusyHeat(displayHeatNumber);
       try {
+        const apiHeat = heatsRef.current.find((h) => Number(h.heatIndex) === displayHeatNumber);
         const draftsToFlush = draftsPendingAppendForHeat(
           resultDraftOpsRef.current,
           displayHeatNumber,
-          localResultRowsRef.current
+          localResultRowsRef.current,
+          apiHeat
         );
         const manualEntries = draftsToFlush.map((op) => ({
           participantType: op.participantType,
@@ -702,10 +760,12 @@ export function useResultCaptureDraft(args: {
       clearTimeout(timers[displayHeatNumber]);
       delete timers[displayHeatNumber];
 
+      const apiHeat = heatsRef.current.find((h) => Number(h.heatIndex) === displayHeatNumber);
       const draftsToFlush = draftsPendingAppendForHeat(
         resultDraftOpsRef.current,
         displayHeatNumber,
-        localResultRowsRef.current
+        localResultRowsRef.current,
+        apiHeat
       );
       const manualEntries = draftsToFlush.map((op) => ({
         participantType: op.participantType,

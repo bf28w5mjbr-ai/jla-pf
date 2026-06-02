@@ -1,7 +1,7 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import type { ResultRound } from "@prisma/client";
+import type { Prisma, ResultRound } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { assertDayOpsRecorderWriteAccess } from "@/lib/dayOpsAccess";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
@@ -11,9 +11,14 @@ import {
   getHeatFromRoundData,
   getRoundDataFromSnapshot,
   marshalParticipantRefAtLane,
+  type MarshalParticipantRef,
 } from "@/lib/heatMarshalFromSnapshot";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
-import { applyOfficialRowForParticipantDsq } from "@/lib/officialResultDsqSync";
+import { compactOkRanksForHeatInTransaction } from "@/lib/heatResultRankCompact";
+import {
+  applyOfficialRowForParticipantDsq,
+  ensureOfficialResultForRound,
+} from "@/lib/officialResultDsqSync";
 import { START_LIST_STEP1_REQUIRED_SHORT_MESSAGE } from "@/lib/startListStep1Messages";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -27,6 +32,57 @@ const bodySchema = z.object({
 });
 
 const DEFAULT_REASON = "失格管理からの失格申請";
+
+async function syncDsqAndCompactRanksInTransaction(
+  tx: Prisma.TransactionClient,
+  opts: {
+    competitionId: string;
+    eventId: string;
+    round: ResultRound;
+    heatIndex: number;
+    lane: number;
+    participant: MarshalParticipantRef;
+    reason: string;
+  }
+): Promise<boolean> {
+  const sync = await applyOfficialRowForParticipantDsq(tx, {
+    competitionId: opts.competitionId,
+    eventId: opts.eventId,
+    round: opts.round,
+    heatIndex: opts.heatIndex,
+    lane: opts.lane,
+    participant: opts.participant,
+    reason: opts.reason,
+  });
+  if (!sync.officialSyncSkipped) {
+    const heatConfirmed = await tx.officialResultHeatConfirmed.findFirst({
+      where: {
+        heat: opts.heatIndex,
+        officialResult: {
+          competitionId: opts.competitionId,
+          eventId: opts.eventId,
+          round: opts.round,
+        },
+      },
+      select: { id: true },
+    });
+    if (!heatConfirmed) {
+      const ensured = await ensureOfficialResultForRound(
+        tx,
+        opts.competitionId,
+        opts.eventId,
+        opts.round
+      );
+      if (!ensured.locked) {
+        await compactOkRanksForHeatInTransaction(tx, {
+          officialResultId: ensured.officialResultId,
+          heatIndex: opts.heatIndex,
+        });
+      }
+    }
+  }
+  return sync.officialSyncSkipped;
+}
 
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
@@ -106,7 +162,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       teamEntryId: target.teamEntryId ?? null,
     } as const;
 
-    const upserted = await prisma.$transaction(async (tx) => {
+    const { upserted, officialSyncSkipped } = await prisma.$transaction(async (tx) => {
       const terminalAny = await tx.competitionParticipantStatus.findFirst({
         where: {
           ...participantBase,
@@ -115,10 +171,22 @@ export async function POST(request: NextRequest, context: RouteContext) {
         select: { id: true, status: true },
       });
       if (terminalAny?.status === "DSQ") {
+        const skipped = await syncDsqAndCompactRanksInTransaction(tx, {
+          competitionId,
+          eventId,
+          round: roundDb,
+          heatIndex,
+          lane,
+          participant: target,
+          reason,
+        });
         return {
-          id: terminalAny.id,
-          status: "DSQ" as const,
-          alreadyDsq: true as const,
+          upserted: {
+            id: terminalAny.id,
+            status: "DSQ" as const,
+            alreadyDsq: true as const,
+          },
+          officialSyncSkipped: skipped,
         };
       }
       if (terminalAny) {
@@ -133,10 +201,22 @@ export async function POST(request: NextRequest, context: RouteContext) {
         select: { id: true, status: true },
       });
       if (existingRound?.status === "DSQ") {
+        const skipped = await syncDsqAndCompactRanksInTransaction(tx, {
+          competitionId,
+          eventId,
+          round: roundDb,
+          heatIndex,
+          lane,
+          participant: target,
+          reason,
+        });
         return {
-          id: existingRound.id,
-          status: "DSQ" as const,
-          alreadyDsq: true as const,
+          upserted: {
+            id: existingRound.id,
+            status: "DSQ" as const,
+            alreadyDsq: true as const,
+          },
+          officialSyncSkipped: skipped,
         };
       }
 
@@ -162,15 +242,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
           });
 
       await markMarshalStartedIfUnset(tx.event, eventId, now);
-      return {
-        id: row.id,
-        status: row.status as "DSQ",
-        alreadyDsq: false as const,
-      };
-    });
 
-    const sync = await prisma.$transaction(async (tx) =>
-      applyOfficialRowForParticipantDsq(tx, {
+      const skipped = await syncDsqAndCompactRanksInTransaction(tx, {
         competitionId,
         eventId,
         round: roundDb,
@@ -178,8 +251,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
         lane,
         participant: target,
         reason,
-      })
-    );
+      });
+
+      return {
+        upserted: {
+          id: row.id,
+          status: row.status as "DSQ",
+          alreadyDsq: false as const,
+        },
+        officialSyncSkipped: skipped,
+      };
+    });
 
     await logAuditAction({
       action: "COMPETITION_HEAT_LANE_DSQ",
@@ -206,7 +288,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       ok: true,
       alreadyDsq: upserted.alreadyDsq,
       status: upserted.status,
-      officialSyncSkipped: sync.officialSyncSkipped,
+      officialSyncSkipped,
     });
   } catch (error) {
     if (error instanceof Error && error.message === "DAY_OPS_FORBIDDEN") {

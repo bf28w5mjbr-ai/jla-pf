@@ -80,6 +80,8 @@ export const appRoutes = {
     results: (competitionId: string) => `/competitions/${competitionId}/results`,
     resultsManage: (competitionId: string) => `/competitions/${competitionId}/results/manage`,
     startList: (competitionId: string) => `/competitions/${competitionId}/start-list`,
+    startListEvent: (competitionId: string, eventId: string) =>
+      `/competitions/${competitionId}/start-list/${eventId}`,
     /** 旧パス（リダイレクト先の club 配下へ誘導する前段） */
     legacyTeamAssignment: (competitionId: string) =>
       `/competitions/${competitionId}/team-assignment`,

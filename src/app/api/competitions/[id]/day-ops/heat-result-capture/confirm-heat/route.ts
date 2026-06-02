@@ -21,9 +21,11 @@ import {
 import {
   appendManualHeatResultsInTransaction,
   assertManualResultAppendAllowedWithGate,
+  isManualResultAppendTargetDsq,
   loadManualResultAppendGateForConfirm,
   type ManualResultAppendEntry,
 } from "@/lib/heatResultCaptureManualAppend";
+import { compactOkRanksForHeatInTransaction } from "@/lib/heatResultRankCompact";
 import type { StartListSnapshotPayload } from "@/lib/startListSnapshot";
 import { reconcileOfficialDsqRowsForHeat } from "@/lib/officialResultDsqSync";
 import { tryAutoAppendNextStartListRound } from "@/lib/startListNextRoundFromOfficial";
@@ -196,16 +198,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
       if (!gateLoad.ok) {
         return NextResponse.json({ error: gateLoad.error }, { status: gateLoad.status });
       }
+      const gate = gateLoad.gate;
+      const filteredFlush: typeof resolvedFlush = [];
       for (const item of resolvedFlush) {
+        if (isManualResultAppendTargetDsq({ round: roundDb, resolved: item.resolved, gate })) {
+          continue;
+        }
         const allowed = assertManualResultAppendAllowedWithGate({
           round: roundDb,
           resolved: item.resolved,
-          gate: gateLoad.gate,
+          gate,
         });
         if (!allowed.ok) {
           return NextResponse.json({ error: allowed.error }, { status: allowed.status });
         }
+        filteredFlush.push(item);
       }
+      resolvedFlush.length = 0;
+      resolvedFlush.push(...filteredFlush);
     }
 
     let appendedRows: Awaited<ReturnType<typeof appendManualHeatResultsInTransaction>> = [];
@@ -258,6 +268,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
         heatIndex,
         snapshot,
         statusRows: eventStatusRows,
+      });
+
+      await compactOkRanksForHeatInTransaction(tx, {
+        officialResultId: officialResult.id,
+        heatIndex,
       });
 
       const calledInHeat = await countCalledMarshalSlotsForHeatConfirmInTransaction({

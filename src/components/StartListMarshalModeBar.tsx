@@ -1,7 +1,7 @@
 "use client";
 
 import { flushSync } from "react-dom";
-import { LayoutList, ListChecks, Trophy } from "lucide-react";
+import { ListChecks, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { StartListMarshalViewMode } from "@/lib/startListEventTypes";
@@ -34,9 +34,7 @@ export function StartListMarshalModeBar({
         "rounded-xl border p-3 shadow-sm transition-colors sm:p-3.5",
         highlightMarshal
           ? "border-emerald-200/90 bg-emerald-50/40 dark:border-emerald-800/80 dark:bg-emerald-950/30"
-          : highlightResult
-            ? "border-violet-200/90 bg-violet-50/40 dark:border-violet-800/80 dark:bg-violet-950/25"
-            : "border-border/70 bg-muted/15"
+          : "border-violet-200/90 bg-violet-50/40 dark:border-violet-800/80 dark:bg-violet-950/25"
       )}
       role="region"
       aria-label={`${roundName}のスタートリスト表示`}
@@ -50,25 +48,11 @@ export function StartListMarshalModeBar({
             ) : null}
           </p>
           <p className="mt-0.5 text-[10px] text-muted-foreground">
-            現在: {mode === "normal" ? "通常" : mode === "marshal" ? "マーシャル" : "リザルト"}
+            現在: {mode === "marshal" ? "マーシャル" : "リザルト"}
           </p>
         </div>
         <div className="flex shrink-0 flex-col gap-1.5 sm:w-[min(100%,22rem)]">
           <div className="flex flex-wrap gap-0 rounded-lg border border-border/80 bg-background p-0.5 shadow-inner">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className={cn(
-                "h-8 min-w-0 flex-1 gap-0.5 rounded-md px-1.5 text-[11px] font-medium sm:px-2",
-                mode === "normal" && "bg-muted text-foreground shadow-sm"
-              )}
-              aria-pressed={mode === "normal"}
-              onClick={() => onModeChange(tabId, "normal")}
-            >
-              <LayoutList className="size-3.5 shrink-0 opacity-80" aria-hidden />
-              通常
-            </Button>
             {showMarshalOps ? (
               <Button
                 type="button"

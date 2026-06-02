@@ -8,6 +8,7 @@ import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
 import { EventDsqManagementClient } from "@/components/EventDsqManagementClient";
 import { loadDsqManagementData } from "@/lib/dsqManagementLoad";
 import { buildResultRoundLabelMap } from "@/lib/resultRoundLabels";
+import { appRoutes } from "@/lib/appRoutes";
 
 export const dynamic = "force-dynamic";
 
@@ -74,8 +75,10 @@ export default async function EventDsqManagementPage({
     notFound();
   }
 
+  const startListEventHref = appRoutes.competitions.startListEvent(competitionId, eventId);
+
   if (!access.isOrgAdmin && !hasDayOpsUnlock) {
-    redirect(`/competitions/${competitionId}/start-list/${eventId}`);
+    redirect(startListEventHref);
   }
 
   const roundLabels = buildResultRoundLabelMap(
@@ -93,6 +96,7 @@ export default async function EventDsqManagementPage({
       initialRound={initialRound}
       roundLabels={roundLabels}
       initialData={initialData}
+      backHref={startListEventHref}
     />
   );
 }

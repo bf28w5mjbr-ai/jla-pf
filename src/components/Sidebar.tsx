@@ -116,8 +116,8 @@ export default function Sidebar({
     }
     onOpenChange?.(next);
   };
-  const [isClubListOpen, setIsClubListOpen] = useState(true);
-  const [isOrgListOpen, setIsOrgListOpen] = useState(true);
+  const [isClubListOpen, setIsClubListOpen] = useState(false);
+  const [isOrgListOpen, setIsOrgListOpen] = useState(false);
 
   const roleSegments = derivePlatformRoleSegments({
     userRole,

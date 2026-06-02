@@ -58,6 +58,7 @@ export function EventDsqManagementClient({
   initialRound,
   roundLabels,
   initialData,
+  backHref,
 }: {
   competitionId: string;
   eventId: string;
@@ -65,6 +66,7 @@ export function EventDsqManagementClient({
   initialRound: ResultRoundKey;
   roundLabels: Partial<Record<ResultRoundUiKey, string>>;
   initialData: DsqManagementPageData | null;
+  backHref?: string;
 }) {
   const [adjustedRound, setAdjustedRound] = useState<ResultRoundKey | null>(
     initialData?.roundWasAdjusted ? initialData.round : null
@@ -213,13 +215,14 @@ export function EventDsqManagementClient({
     }
   };
 
-  const backHref = `/competitions/${competitionId}/start-list/${eventId}`;
+  const resolvedBackHref =
+    backHref ?? `/competitions/${competitionId}/start-list/${eventId}`;
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 px-3 py-4 sm:px-4">
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" asChild>
-          <Link href={backHref}>← スタートリストへ</Link>
+          <Link href={resolvedBackHref}>← スタートリストへ</Link>
         </Button>
       </div>
       <div>

@@ -11,6 +11,10 @@ import type {
   StartListEventParticipantStatusRow,
 } from "@/lib/startListEventTypes";
 import {
+  coerceStoredMarshalViewMode,
+  resolveMarshalViewMode,
+} from "@/lib/startListMarshalViewMode";
+import {
   applyMarshalDraftOpsToHeats,
   mergeListMarshalHeatsOnRefetch,
   mergeMarshalHeatSummaryLayer,
@@ -104,13 +108,27 @@ export function useStartListEventDayOps({
   );
   const listMarshalRoundForMutations = listMarshalApiRound ?? listMarshalRound;
 
-  const anyTabNeedsMarshalHeat = useMemo(
-    () => Object.values(marshalViewModeByTab).some((m) => m === "marshal" || m === "result"),
-    [marshalViewModeByTab]
+  const resolveViewModeOpts = useMemo(
+    () => ({ showMarshalOps, showResultOps }),
+    [showMarshalOps, showResultOps]
   );
+
+  const anyTabNeedsMarshalHeat = useMemo(() => {
+    if (!showDayOpsShell) return false;
+    const values = Object.values(marshalViewModeByTab);
+    if (values.length === 0) return true;
+    return values.some((m) => {
+      const r = resolveMarshalViewMode(m, resolveViewModeOpts);
+      return r === "marshal" || r === "result";
+    });
+  }, [showDayOpsShell, marshalViewModeByTab, resolveViewModeOpts]);
+
   const anyTabInResultMode = useMemo(
-    () => Object.values(marshalViewModeByTab).some((m) => m === "result"),
-    [marshalViewModeByTab]
+    () =>
+      Object.values(marshalViewModeByTab).some(
+        (m) => resolveMarshalViewMode(m, resolveViewModeOpts) === "result"
+      ),
+    [marshalViewModeByTab, resolveViewModeOpts]
   );
 
   const participantPollPrimedRef = useRef(false);
@@ -192,8 +210,7 @@ export function useStartListEventDayOps({
   const marshalInlineStorageKeyV1 = `jla:startList:marshalInline:v1:${competitionId}:${eventId}`;
 
   useEffect(() => {
-    const coerceMode = (v: unknown): StartListMarshalViewMode | null =>
-      v === "normal" || v === "marshal" || v === "result" ? v : null;
+    const opts = { showMarshalOps, showResultOps };
     try {
       const raw2 = localStorage.getItem(marshalViewStorageKeyV2);
       if (raw2) {
@@ -201,8 +218,8 @@ export function useStartListEventDayOps({
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
           const next: Record<string, StartListMarshalViewMode> = {};
           for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-            const m = coerceMode(v);
-            if (m) next[k] = m;
+            const stored = coerceStoredMarshalViewMode(v);
+            if (stored) next[k] = resolveMarshalViewMode(stored, opts);
           }
           if (Object.keys(next).length > 0) {
             setMarshalViewModeByTab(next);
@@ -216,7 +233,7 @@ export function useStartListEventDayOps({
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
       const migrated: Record<string, StartListMarshalViewMode> = {};
       for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-        migrated[k] = v === true ? "marshal" : "normal";
+        migrated[k] = resolveMarshalViewMode(v === true ? "marshal" : "normal", opts);
       }
       setMarshalViewModeByTab(migrated);
       try {
@@ -227,7 +244,7 @@ export function useStartListEventDayOps({
     } catch {
       /* ignore */
     }
-  }, [marshalViewStorageKeyV2, marshalInlineStorageKeyV1]);
+  }, [marshalViewStorageKeyV2, marshalInlineStorageKeyV1, showMarshalOps, showResultOps]);
 
   const persistMarshalViewMode = useCallback(
     (tabId: string, mode: StartListMarshalViewMode) => {
@@ -243,28 +260,6 @@ export function useStartListEventDayOps({
     },
     [marshalViewStorageKeyV2]
   );
-
-  useEffect(() => {
-    if (showMarshalOps || !showResultOps) return;
-    setMarshalViewModeByTab((prev) => {
-      let changed = false;
-      const next: Record<string, StartListMarshalViewMode> = { ...prev };
-      for (const k of Object.keys(next)) {
-        if (next[k] === "marshal") {
-          next[k] = "normal";
-          changed = true;
-        }
-      }
-      if (changed) {
-        try {
-          localStorage.setItem(marshalViewStorageKeyV2, JSON.stringify(next));
-        } catch {
-          /* ignore */
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [showMarshalOps, showResultOps, marshalViewStorageKeyV2]);
 
   const refetchResultCapture = useCallback(async () => {
     if (!showResultOps || !listMarshalRound) return;
@@ -642,8 +637,9 @@ export function useStartListEventDayOps({
   );
 
   const getViewModeForTab = useCallback(
-    (tabId: string): StartListMarshalViewMode => marshalViewModeByTab[tabId] ?? "normal",
-    [marshalViewModeByTab]
+    (tabId: string): StartListMarshalViewMode =>
+      resolveMarshalViewMode(marshalViewModeByTab[tabId], resolveViewModeOpts),
+    [marshalViewModeByTab, resolveViewModeOpts]
   );
 
   /* eslint-enable react-hooks/set-state-in-effect */

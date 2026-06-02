@@ -241,11 +241,7 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
       }
     }
     const marshalUiModeForRow =
-      viewModeForRow === "marshal"
-        ? ("inline" as const)
-        : viewModeForRow === "result"
-          ? ("result" as const)
-          : ("dialog" as const);
+      viewModeForRow === "result" ? ("result" as const) : ("inline" as const);
     const startListMarshal =
       dayOps.showDayOpsShell && activeTabIndex === index && dayOps.listMarshalRound !== null
         ? {
@@ -521,18 +517,15 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
             ) : null}
             {dayOps.showDayOpsShell ? (
               <p>
+                <span className="font-medium text-foreground">表示モード</span>
                 {showMarshalOps ? (
                   <>
-                    <span className="font-medium text-foreground">表示モード</span>
-                    ：通常＝一覧のみ。マーシャル＝召集チェック（下書き共有）・NFC・ヒート締切。リザルト＝召集済みのみ着順入力・NFC。
+                    ：マーシャル＝召集チェック（下書き共有）・NFC・ヒート締切。リザルト＝召集済みのみ着順入力・NFC。
                     チェックの下書きは端末間で同期されます（確定／締切／リザルト確定で本番データへ反映）。
                     他端末の変更は SSE（有効時）または操作反映で更新。タブごとにモードは独立です。
                   </>
                 ) : (
-                  <>
-                    <span className="font-medium text-foreground">表示モード</span>
-                    ：通常＝一覧。リザルト＝着順入力（本画面のインライン）。
-                  </>
+                  <>：リザルト＝着順入力（本画面のインライン）。</>
                 )}
               </p>
             ) : null}

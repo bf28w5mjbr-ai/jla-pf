@@ -85,6 +85,7 @@ Next.js **proxy**（[`src/proxy.ts`](../src/proxy.ts)）は Supabase セッシ�
 | `/dashboard` | → `/login` | 会員シェル（エントリー等は Suspense ストリーミング） | [`src/app/(authenticated)/layout.tsx`](../src/app/(authenticated)/layout.tsx)。ブックマーク・WebView は **直リンク推奨** |
 | `/browse/competitions`, `/competitions/view/[id]`, `/clubs`, その他 `(public)/*` | 公開シェル | 公開シェル（ログイン済みは [`competitionBrowseRedirect`](../src/lib/competitionBrowseRedirect.ts) で会員 URL へ） | [`src/app/(public)/layout.tsx`](../src/app/(public)/layout.tsx) |
 | `/competitions`, `/competitions/[id]`（一覧・詳細のみ） | → `/browse/competitions` 等へリダイレクト | 会員シェル | [`src/app/(authenticated)/competitions/`](../src/app/(authenticated)/competitions/) |
+| `/competitions/[id]/start-list/[eventId]` および `/dsq` | 公開シェル | 会員シェル | [`src/app/(adaptiveShell)/layout.tsx`](../src/app/(adaptiveShell)/layout.tsx) |
 | `/login` | ログインフォーム | → `redirect` 先 or `/dashboard` | [`src/app/login/page.tsx`](../src/app/login/page.tsx) |
 | `/register` 等（認証シェル） | フォーム | リダイレクトなし（現状） | 各 page |
 | `(authenticated)/*`（`/dashboard` 以外） | → `/login` | 会員シェル | [`src/app/(authenticated)/layout.tsx`](../src/app/(authenticated)/layout.tsx) |
@@ -116,6 +117,28 @@ Next.js **proxy**（[`src/proxy.ts`](../src/proxy.ts)）は Supabase セッシ�
 
 ---
 
+## 4.5 認証適応シェル `(adaptiveShell)`
+
+レイアウト: [`src/app/(adaptiveShell)/layout.tsx`](../src/app/(adaptiveShell)/layout.tsx)
+
+未ログインでも閲覧可能だが、ログイン済みは会員シェルに寄せたいルート用。セッション Cookie の有無で次を切り替える。
+
+| 状態 | シェル |
+|------|--------|
+| 未ログイン | [`PublicSiteShellWrapper`](../src/components/public/PublicSiteShellWrapper.tsx)（公開 Sidebar） |
+| ログイン済み | [`AuthenticatedLayoutShell`](../src/app/(authenticated)/_components/AuthenticatedLayoutShell.tsx)（会員 Sidebar） |
+
+`(adaptiveShell)` 配下のページ（2026-06 時点）:
+
+| パス | 用途 |
+|------|------|
+| `/competitions/[id]/start-list/[eventId]` | 種目スタートリスト |
+| `/competitions/[id]/start-list/[eventId]/dsq` | DSQ 表示（主催 or 当日運用アンロック） |
+
+戻るリンクの大会詳細 URL は [`competitionShellNavigation.ts`](../src/lib/competitionShellNavigation.ts) で会員 `/competitions/[id]` と公開 `/competitions/view/[id]` を切り替える。
+
+---
+
 ## 5. 公開ルート一覧（`(public)`）
 
 `src/app/(public)/` 配下のページ（2026-06 時点）:
@@ -125,9 +148,7 @@ Next.js **proxy**（[`src/proxy.ts`](../src/proxy.ts)）は Supabase セッシ�
 | `/browse/competitions` | 大会一覧（未ログイン向け） |
 | `/competitions/view/[id]` | 大会詳細（タブ: 大会情報 / レース情報・未ログイン向け） |
 | `/competitions/[id]/results/[eventId]` | 種目別公式結果（公開。氏名・クラブ名可） |
-| `/competitions/[id]/start-list` | スタートリスト（主催の公開設定時） |
-| `/competitions/[id]/start-list/[eventId]` | 種目スタートリスト |
-| `/competitions/[id]/start-list/[eventId]/dsq` | DSQ 表示 |
+| `/competitions/[id]/start-list` | スタートリスト索引（`?tab=results` へリダイレクト） |
 | `/competitions/[id]/entry/payment-intent` | 決済インテント（フロー用） |
 | `/clubs` | クラブ一覧 |
 | `/clubs/view/[id]` | クラブ詳細（公開フィールドのみ） |
@@ -148,6 +169,7 @@ Next.js **proxy**（[`src/proxy.ts`](../src/proxy.ts)）は Supabase セッシ�
 | チームエントリー | 同上 | `/competitions/[id]/team-entry` 等 |
 | テクニカルオフィシャル募集 | 公開ページ上はログイン導線 | `/competitions/[id]/official-entry` |
 | 公式結果（閲覧） | `/competitions/[id]/results/[eventId]`（氏名・クラブ名可） | `/competitions/[id]/results`（`viewerId` 付きペイロード。主催・PF 向け操作は別） |
+| 種目スタートリスト | `/competitions/[id]/start-list/[eventId]`（公開シェル） | 同一 URL（会員シェル・[`(adaptiveShell)`](../src/app/(adaptiveShell)/layout.tsx)） |
 | 結果管理 | — | `/competitions/[id]/results/manage` |
 
 公開大会ヘッダーのログイン導線: [`CompetitionPublicHeaderLoader.tsx`](../src/components/competitions/browse/CompetitionPublicHeaderLoader.tsx) — `withLoginRedirect`, `signInRedirectPath`（ログイン後は会員詳細 `/competitions/[id]`）

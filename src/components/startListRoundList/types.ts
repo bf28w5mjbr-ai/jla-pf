@@ -101,8 +101,8 @@ export type LiveRoundContentProps = {
     ) => void | Promise<void>;
     /** マーシャル draft 編集中にポーリング再取得を抑止 */
     setMarshalSyncDeferred?: (deferred: boolean) => void;
-    /** dialog: 一覧のみ。inline: マーシャル。result: リザルト（チェック・NFCで着順） */
-    marshalUiMode?: "dialog" | "inline" | "result";
+    /** inline: マーシャル。result: リザルト（チェック・NFCで着順） */
+    marshalUiMode?: "inline" | "result";
     /** marshalUiMode が result のときのみ使用 */
     resultCapture?: {
       rows: HeatResultCaptureRow[];

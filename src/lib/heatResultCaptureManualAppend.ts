@@ -570,3 +570,18 @@ export function assertManualResultAppendAllowedWithGate(params: {
 
   return { ok: true };
 }
+
+/** confirm-heat: DSQ 参加者は manualEntries から除外する（他の拒否理由は呼び出し側でエラー） */
+export function isManualResultAppendTargetDsq(params: {
+  round: ResultRound;
+  resolved: HeatDayOpsResolvedSlot;
+  gate: ManualResultAppendGateContext;
+}): boolean {
+  const { round, resolved, gate } = params;
+  const storedStatus = storedStatusForManualAppendTarget(gate.dayOpsRows, round, resolved.target);
+  const effectiveStatus = effectiveDayOpsStatusForMarshalDisplay(
+    storedStatus,
+    gate.heatMarshalCallClosed
+  );
+  return storedStatus === "DSQ" || effectiveStatus === "DSQ";
+}

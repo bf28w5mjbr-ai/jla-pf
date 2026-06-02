@@ -22,6 +22,7 @@ import {
   isTeamFullyCalled,
 } from "@/lib/dayOpsTeamStatus";
 import { computeProvisionalDraftRanks } from "@/lib/heatResultCaptureNextRank";
+import { terminalParticipantKeysForHeat } from "@/hooks/liveRound/resultCaptureDraftHelpers";
 import { cn } from "@/lib/utils";
 import { sexLabelJa } from "@/lib/sexLabelJa";
 import type { IndividualItem, SnapshotParticipant, TeamItem } from "./types";
@@ -277,8 +278,9 @@ export function provisionalResultRankForParticipant(
     .filter((r) => r.heat === heatIndex && r.rank != null)
     .map((r) => r.rank as number);
 
+  const exclude = terminalParticipantKeysForHeat(apiHeat);
   const draftInputs = Object.entries(drafts)
-    .filter(([, op]) => op.heatIndex === heatIndex)
+    .filter(([key, op]) => op.heatIndex === heatIndex && !exclude.has(key))
     .map(([key, op]) => ({
       key,
       seq: op.draftSequence ?? 0,

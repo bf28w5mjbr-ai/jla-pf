@@ -73,7 +73,7 @@ export function LiveRoundModeBanners({
             <p className="text-muted-foreground dark:text-violet-200/85">
               レーン単位の失格は、直上の
               <span className="font-medium text-foreground"> 失格管理 </span>
-              から登録・取り消しできます（公開用の公式結果に自動反映されます）。
+              から登録・取り消しできます（公開用の公式結果に自動反映されます）。失格後は残りの着順が自動で詰まり、未確定チェックは対象外になります。
             </p>
             <p className="text-muted-foreground dark:text-violet-200/85">
               <span className="font-semibold text-violet-950 dark:text-violet-100">公開</span>

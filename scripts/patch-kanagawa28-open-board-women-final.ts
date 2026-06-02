@@ -22,7 +22,7 @@ const FINAL_LINEUP: ReadonlyArray<{
   clubContains: string;
   altFamilyName?: string;
 }> = [
-  { familyName: "高橋", givenName: "陽", clubContains: "湯河原", altFamilyName: "髙橋" },
+  { familyName: "髙橋", givenName: "若菜", clubContains: "南伊豆", altFamilyName: "高橋" },
   { familyName: "浜地", givenName: "沙羅", clubContains: "西浜" },
   { familyName: "久保田", givenName: "純令", clubContains: "湯河原" },
   { familyName: "片平", givenName: "悠理亜メリッサ", clubContains: "西浜" },

@@ -5,6 +5,7 @@ import {
   rankedParticipantKeysForHeatFromRows,
   resultDraftHeatsSyncKeyFromHeats,
   resultDraftOpsForHeatFromServerRow,
+  terminalParticipantKeysForHeat,
 } from "@/hooks/liveRound/resultCaptureDraftHelpers";
 import type { HeatMarshalHeatRow } from "@/components/HeatMarshalLanePanel";
 import type { ResultDraftOp } from "@/hooks/liveRound/types";
@@ -230,5 +231,49 @@ describe("draftsPendingAppendForHeat", () => {
 
   it("returns empty for heat with no pending drafts", () => {
     expect(draftsPendingAppendForHeat(eliminationDrafts, 3, [])).toEqual([]);
+  });
+
+  it("excludes DSQ participants from pending append", () => {
+    const apiHeat: HeatMarshalHeatRow = {
+      heatIndex: 1,
+      callClosedAt: "2026-05-30T10:00:00.000Z",
+      participants: [
+        {
+          lane: 2,
+          participantType: "INDIVIDUAL",
+          competitionEntryId: "e2",
+          teamEntryId: null,
+          teamMemberUserId: null,
+          label: "B",
+          clubName: null,
+          status: "DSQ",
+        },
+      ],
+    };
+    const pending = draftsPendingAppendForHeat(eliminationDrafts, 1, [], apiHeat);
+    expect(pending.map((op) => op.opKey)).not.toContain("I:e2");
+    expect(pending.map((op) => op.opKey)).toEqual(["I:e1", "I:e3", "I:e4"]);
+  });
+});
+
+describe("terminalParticipantKeysForHeat", () => {
+  it("includes DSQ lane participant key", () => {
+    const keys = terminalParticipantKeysForHeat({
+      heatIndex: 1,
+      callClosedAt: "2026-05-30T10:00:00.000Z",
+      participants: [
+        {
+          lane: 1,
+          participantType: "INDIVIDUAL",
+          competitionEntryId: "e1",
+          teamEntryId: null,
+          teamMemberUserId: null,
+          label: "A",
+          clubName: null,
+          status: "DSQ",
+        },
+      ],
+    });
+    expect(keys.has("I:e1")).toBe(true);
   });
 });

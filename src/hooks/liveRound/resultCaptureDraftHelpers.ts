@@ -1,8 +1,14 @@
 import type { HeatMarshalHeatRow } from "@/components/HeatMarshalLanePanel";
+import { marshalParticipantKey } from "@/components/HeatMarshalLanePanel";
 import type { HeatResultCaptureRow } from "@/lib/heatResultCaptureApi";
 import { participantKeyFromResultRow } from "@/components/startListRoundList/panelHelpers";
 import type { ResultDraftOp } from "@/hooks/liveRound/types";
 import { parseServerResultDraftPayload } from "@/lib/dayOpsHeatOperationDraftSync";
+import {
+  effectiveDayOpsStatusForMarshalDisplay,
+  isDayOpsTerminalParticipantStatus,
+  resolveHeatLaneDayOpsDisplayStatus,
+} from "@/lib/dayOpsParticipantStatusDisplay";
 
 /** マーシャル締切済みヒートの安定キー（pull 再実行トリガー用） */
 export function resultDraftHeatsSyncKeyFromHeats(heats: HeatMarshalHeatRow[] | null | undefined): string {
@@ -43,15 +49,43 @@ export function countResultDraftsForHeatFromOps(
   return Object.values(ops).filter((op) => op.heatIndex === heatIndex).length;
 }
 
+/** リザルト対象外（DSQ / DNS / 棄権 / 未出場）の参加者 opKey */
+export function terminalParticipantKeysForHeat(
+  apiHeat: HeatMarshalHeatRow | undefined,
+  serverStatusByKey?: Readonly<Record<string, string | undefined>>
+): Set<string> {
+  const keys = new Set<string>();
+  if (!apiHeat?.participants?.length) return keys;
+  const callClosed = Boolean(apiHeat.callClosedAt);
+  for (const p of apiHeat.participants) {
+    const pKey = marshalParticipantKey(p);
+    const serverSt = serverStatusByKey?.[pKey];
+    const display = resolveHeatLaneDayOpsDisplayStatus(p, serverSt);
+    const eff = effectiveDayOpsStatusForMarshalDisplay(
+      display,
+      callClosed
+    );
+    if (isDayOpsTerminalParticipantStatus(eff)) {
+      keys.add(pKey);
+    }
+  }
+  return keys;
+}
+
 /** 公式行未反映の未確定チェック（append / confirm manualEntries 対象）を draftSequence 昇順で返す */
 export function draftsPendingAppendForHeat(
   ops: Record<string, ResultDraftOp>,
   heatIndex: number,
-  localRows: HeatResultCaptureRow[]
+  localRows: HeatResultCaptureRow[],
+  apiHeat?: HeatMarshalHeatRow,
+  serverStatusByKey?: Readonly<Record<string, string | undefined>>
 ): ResultDraftOp[] {
+  const exclude = terminalParticipantKeysForHeat(apiHeat, serverStatusByKey);
   const rankedKeys = new Set(rankedParticipantKeysForHeatFromRows(localRows, heatIndex));
   return Object.values(ops)
-    .filter((op) => op.heatIndex === heatIndex && !rankedKeys.has(op.opKey))
+    .filter(
+      (op) => op.heatIndex === heatIndex && !rankedKeys.has(op.opKey) && !exclude.has(op.opKey)
+    )
     .sort(
       (a, b) =>
         (a.draftSequence ?? 0) - (b.draftSequence ?? 0) || a.opKey.localeCompare(b.opKey)
@@ -77,12 +111,15 @@ export function rankedParticipantKeysForHeatFromRows(
 export function rankOrderKeysForHeat(
   rows: HeatResultCaptureRow[],
   heatIndex: number,
-  draftOps: Record<string, ResultDraftOp>
+  draftOps: Record<string, ResultDraftOp>,
+  apiHeat?: HeatMarshalHeatRow,
+  serverStatusByKey?: Readonly<Record<string, string | undefined>>
 ): string[] {
   const server = rankedParticipantKeysForHeatFromRows(rows, heatIndex);
   if (server.length > 0) return server;
+  const exclude = terminalParticipantKeysForHeat(apiHeat, serverStatusByKey);
   return Object.entries(draftOps)
-    .filter(([, op]) => op.heatIndex === heatIndex)
+    .filter(([key, op]) => op.heatIndex === heatIndex && !exclude.has(key))
     .sort(
       (a, b) =>
         (a[1].draftSequence ?? 0) - (b[1].draftSequence ?? 0) ||
