@@ -31,6 +31,17 @@ function request(body: unknown): NextRequest {
   });
 }
 
+const futureCompetitionEnd = new Date("2030-06-01T00:00:00.000Z");
+
+function txWithCompetition(extra: Record<string, unknown>) {
+  return {
+    competition: {
+      findUnique: vi.fn().mockResolvedValue({ endDate: futureCompetitionEnd }),
+    },
+    ...extra,
+  };
+}
+
 describe("POST unconfirm-heat", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -39,11 +50,11 @@ describe("POST unconfirm-heat", () => {
 
   it("公式結果ロック済みは 409", async () => {
     mockTransaction.mockImplementation(async (fn) => {
-      const tx = {
+      const tx = txWithCompetition({
         officialResult: {
           findUnique: vi.fn().mockResolvedValue({ id: "or1", lockedAt: new Date() }),
         },
-      };
+      });
       return fn(tx);
     });
     const res = await POST(
@@ -55,14 +66,14 @@ describe("POST unconfirm-heat", () => {
 
   it("未確定ヒートは 409", async () => {
     mockTransaction.mockImplementation(async (fn) => {
-      const tx = {
+      const tx = txWithCompetition({
         officialResult: {
           findUnique: vi.fn().mockResolvedValue({ id: "or1", lockedAt: null }),
         },
         officialResultHeatConfirmed: {
           findUnique: vi.fn().mockResolvedValue(null),
         },
-      };
+      });
       return fn(tx);
     });
     const res = await POST(
@@ -74,7 +85,7 @@ describe("POST unconfirm-heat", () => {
 
   it("確定済みヒートは解除して 200", async () => {
     mockTransaction.mockImplementation(async (fn) => {
-      const tx = {
+      const tx = txWithCompetition({
         officialResult: {
           findUnique: vi.fn().mockResolvedValue({ id: "or1", lockedAt: null }),
         },
@@ -82,7 +93,7 @@ describe("POST unconfirm-heat", () => {
           findUnique: vi.fn().mockResolvedValue({ id: "hc1" }),
           delete: vi.fn().mockResolvedValue({}),
         },
-      };
+      });
       return fn(tx);
     });
     const res = await POST(

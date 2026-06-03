@@ -8,9 +8,12 @@ import {
   publicHeatResultOverlayKey,
   sortSnapshotParticipantEntriesForConfirmedOverlay,
 } from "@/lib/startListPublicHeatResults";
-import { secondaryClubLabelForTeamRow, secondaryClubLineForIndividual } from "@/lib/startListTeamDisplay";
+import { secondaryClubLabelForTeamRow } from "@/lib/startListTeamDisplay";
 import type { SnapshotParticipant, SnapshotRoundBlock } from "./types";
-import { LaneRow } from "./panelHelpers";
+import { individualLiveRowLabel, LaneRow } from "./panelHelpers";
+
+const resultRowWrapClass =
+  "flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5";
 
 function snapshotParticipantKey(participant: SnapshotParticipant): string | null {
   if (participant.kind === "INDIVIDUAL") {
@@ -112,7 +115,6 @@ export function SnapshotRoundContent({
                 const resultLabel = resultRow
                   ? formatPublicHeatResultOverlayLabel(resultRow)
                   : null;
-                const laneContentClassName = resultLabel ? "flex items-baseline gap-2" : undefined;
                 if (participant.kind === "TEAM") {
                   const clubSecondary = secondaryClubLabelForTeamRow(
                     participant.teamName,
@@ -121,11 +123,7 @@ export function SnapshotRoundContent({
                   return (
                     <LaneRow key={`team-${heat.heatIndex}-${index}`} laneNumber={lane}>
                       <div className="min-w-0 flex-1">
-                        <div
-                          className={
-                            resultLabel ? "flex items-baseline gap-2" : undefined
-                          }
-                        >
+                        <div className={resultLabel ? resultRowWrapClass : undefined}>
                           <p className="min-w-0 flex-1 font-medium">
                             {participant.teamName}
                             {clubSecondary ? (
@@ -143,18 +141,14 @@ export function SnapshotRoundContent({
                     </LaneRow>
                   );
                 }
-                const indClub = secondaryClubLineForIndividual(participant.clubName);
                 return (
-                  <LaneRow
-                    key={`ind-${heat.heatIndex}-${index}`}
-                    laneNumber={lane}
-                    contentClassName={laneContentClassName}
-                  >
-                    <span className="min-w-0 flex-1 font-medium">{participant.name}</span>
-                    {indClub ? (
-                      <span className="text-xs text-muted-foreground">（{indClub}）</span>
-                    ) : null}
-                    {resultLabel ? <PublicHeatResultBadge label={resultLabel} /> : null}
+                  <LaneRow key={`ind-${heat.heatIndex}-${index}`} laneNumber={lane}>
+                    <div className={resultLabel ? resultRowWrapClass : undefined}>
+                      <div className="min-w-0 flex-1">
+                        {individualLiveRowLabel(participant.name, participant.clubName)}
+                      </div>
+                      {resultLabel ? <PublicHeatResultBadge label={resultLabel} /> : null}
+                    </div>
                   </LaneRow>
                 );
               })}

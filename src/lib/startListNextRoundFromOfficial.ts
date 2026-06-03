@@ -24,6 +24,7 @@ import {
   isNextRoundMarshalStarted,
   storedFingerprintForNextRoundBlock,
 } from "@/lib/startListNextRoundFingerprint";
+import { isOfficialResultEffectivelyLockedForCompetition } from "@/lib/officialResultAutoLock";
 import {
   maxPriorHeatCloseAtForRound,
   reconcileNextRoundMarshalAfterRescueRegenerate,
@@ -185,7 +186,11 @@ export async function teamEntryIdsSelectedForNextRoundAdvanceFromOfficial(params
   });
   if (!official?.rows.length) return new Set();
 
-  const roundLocked = Boolean(official.lockedAt);
+  const roundLocked = await isOfficialResultEffectivelyLockedForCompetition(
+    prisma,
+    competitionId,
+    official.lockedAt
+  );
   if (!roundLocked) {
     const allHeatsConfirmed = await areAllSnapshotHeatsResultConfirmed({
       competitionId,
@@ -301,7 +306,15 @@ export async function hasToRoundBlockingOfficialResults(params: {
     },
   });
   if (!official) return false;
-  if (official.lockedAt) return true;
+  if (
+    await isOfficialResultEffectivelyLockedForCompetition(
+      prisma,
+      params.competitionId,
+      official.lockedAt
+    )
+  ) {
+    return true;
+  }
   if (official.heatConfirmations.length > 0) return true;
   if (official.rows.length > 0) return true;
   return false;

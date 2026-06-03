@@ -14,6 +14,7 @@ import {
   marshalTeamLegacyKey,
 } from "@/lib/dayOpsParticipantKeys";
 import { foldTeamMemberStatuses } from "@/lib/dayOpsTeamStatus";
+import { isOfficialResultEffectivelyLockedForCompetition } from "@/lib/officialResultAutoLock";
 
 export type OfficialResultTerminalSyncResult = {
   officialSyncSkipped: boolean;
@@ -134,7 +135,13 @@ export async function ensureOfficialResultForRound(
     },
     select: { id: true, lockedAt: true },
   });
-  if (existing?.lockedAt) {
+  if (
+    await isOfficialResultEffectivelyLockedForCompetition(
+      tx,
+      competitionId,
+      existing?.lockedAt
+    )
+  ) {
     return { locked: true };
   }
   const officialResult = await tx.officialResult.upsert({
@@ -266,7 +273,13 @@ export async function clearOfficialRowAfterTerminalRevert(
   if (!existing) {
     return { officialSyncSkipped: false };
   }
-  if (existing.lockedAt) {
+  if (
+    await isOfficialResultEffectivelyLockedForCompetition(
+      tx,
+      opts.competitionId,
+      existing.lockedAt
+    )
+  ) {
     return { officialSyncSkipped: true };
   }
 

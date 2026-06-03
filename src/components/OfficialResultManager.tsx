@@ -67,25 +67,6 @@ type ApiResult = {
   rows: ApiRow[];
 };
 
-function toLocalDateTimeValue(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  const hh = String(date.getHours()).padStart(2, "0");
-  const mm = String(date.getMinutes()).padStart(2, "0");
-  return `${y}-${m}-${d}T${hh}:${mm}`;
-}
-
-function fromLocalDateTimeValue(value: string): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
-}
-
 function makeEmptyRow(entryType: "INDIVIDUAL" | "TEAM"): RowState {
   return {
     localId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -114,7 +95,7 @@ export function OfficialResultManager({
   const [eventId, setEventId] = useState<string>("");
   const [round, setRound] = useState<"FINAL" | "HEAT" | "SEMI">("FINAL");
   const [startListSettings, setStartListSettings] = useState<unknown>(null);
-  const [lockedAt, setLockedAt] = useState<string>("");
+  const [lockedAtIso, setLockedAtIso] = useState<string | null>(null);
   const [note, setNote] = useState<string>("");
   const [rows, setRows] = useState<RowState[]>([]);
   const [individualCandidates, setIndividualCandidates] = useState<Candidate[]>([]);
@@ -213,7 +194,7 @@ export function OfficialResultManager({
         const resultJson = (await resultRes.json()) as { results?: ApiResult[] };
         const matched = (resultJson.results ?? []).find((result) => result.round === round);
         if (matched) {
-          setLockedAt(toLocalDateTimeValue(matched.lockedAt));
+          setLockedAtIso(matched.lockedAt ?? null);
           setNote(matched.note ?? "");
           setRows(
             matched.rows.map((row) => ({
@@ -230,7 +211,7 @@ export function OfficialResultManager({
             }))
           );
         } else {
-          setLockedAt("");
+          setLockedAtIso(null);
           setNote("");
           setRows([]);
         }
@@ -302,7 +283,6 @@ export function OfficialResultManager({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             round,
-            lockedAt: fromLocalDateTimeValue(lockedAt),
             note: note.trim() || null,
             rows: payloadRows,
           }),
@@ -336,7 +316,9 @@ export function OfficialResultManager({
       <CardHeader>
         <CardTitle>公式結果管理</CardTitle>
         <CardDescription>
-          種目ごとに結果を登録し、確定日時で編集ロックと公開スタートリスト上の「確定結果」表示を行えます。観客向けの暫定順位は当日運用のヒート確定で公開スタートリストに表示されます。競技中の失格（DSQ）はスタートリストの失格管理から登録すると公式結果に自動反映されます（この画面では DSQ を手入力しません）。
+          種目ごとに結果を登録します。観客向けの暫定順位は当日運用のヒート確定で公開スタートリストに表示されます。大会最終日
+          23:59（日本時間）を過ぎると自動で確定結果となり編集できなくなります。競技中の失格（DSQ）はスタートリストの失格管理から登録すると公式結果に自動反映されます（この画面では
+          DSQ を手入力しません）。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -382,18 +364,15 @@ export function OfficialResultManager({
           </div>
         </div>
 
-        <div className="max-w-md space-y-2">
-          <Label htmlFor="lockedAt">確定日時（任意）</Label>
-          <Input
-            id="lockedAt"
-            type="datetime-local"
-            value={lockedAt}
-            onChange={(e) => setLockedAt(e.target.value)}
-          />
+        {lockedAtIso ? (
           <p className="text-xs text-muted-foreground">
-            設定後は編集不可になり、公開スタートリストのバッジが「確定結果」になります。
+            このラウンドは公式確定済みです（{new Date(lockedAtIso).toLocaleString("ja-JP")}）。
           </p>
-        </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            大会最終日 23:59（日本時間）以降に自動で確定結果になります。それまでは編集できます。
+          </p>
+        )}
 
         <div className="space-y-2">
           <Label htmlFor="resultNote">備考</Label>

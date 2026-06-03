@@ -37,6 +37,7 @@ import { fetchTeamMembersMapForTeamIds } from "@/lib/teamMarshalExpand";
 import type { StartListSnapshotPayload } from "@/lib/startListSnapshot";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
 import { START_LIST_STEP1_REQUIRED_SHORT_MESSAGE } from "@/lib/startListStep1Messages";
+import { assertOfficialResultWritableForCompetition } from "@/lib/officialResultAutoLock";
 import {
   DAY_OPS_HEAVY_TRANSACTION,
   isPrismaTransactionUnavailable,
@@ -280,9 +281,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         },
         select: { id: true, lockedAt: true },
       });
-      if (existing?.lockedAt) {
-        throw new Error("OFFICIAL_RESULT_LOCKED");
-      }
+      await assertOfficialResultWritableForCompetition(tx, competitionId, existing?.lockedAt);
 
       const officialResult = await tx.officialResult.upsert({
         where: {

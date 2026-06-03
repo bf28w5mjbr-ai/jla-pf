@@ -6,6 +6,7 @@ import { prisma } from "@/server/db";
 import { requireOrgAdmin } from "@/lib/accessControl";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
 import { mergeOfficialResultVisibilityFilter } from "@/lib/officialResultPublicVisibility";
+import { assertOfficialResultWritable } from "@/lib/officialResultAutoLock";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 
 const rowSchema = z.object({
@@ -25,7 +26,6 @@ const rowSchema = z.object({
 
 const resultSchema = z.object({
   round: z.enum(["FINAL", "HEAT", "SEMI"]).optional(),
-  lockedAt: z.string().datetime().nullable().optional(),
   note: z.string().nullable().optional(),
   rows: z.array(rowSchema),
 });
@@ -123,7 +123,7 @@ export async function PUT(
 
     const competition = await prisma.competition.findUnique({
       where: { id: competitionId },
-      select: { organizationId: true },
+      select: { organizationId: true, endDate: true },
     });
 
     if (!competition) {
@@ -209,8 +209,13 @@ export async function PUT(
       select: { id: true, lockedAt: true },
     });
 
-    if (existing?.lockedAt) {
-      return NextResponse.json({ error: "結果が確定済みのため更新できません" }, { status: 409 });
+    try {
+      assertOfficialResultWritable(existing?.lockedAt, competition.endDate);
+    } catch (e) {
+      if (e instanceof Error && e.message === "OFFICIAL_RESULT_LOCKED") {
+        return NextResponse.json({ error: "結果が確定済みのため更新できません" }, { status: 409 });
+      }
+      throw e;
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -227,11 +232,10 @@ export async function PUT(
           eventId,
           round,
           publishedAt: null,
-          lockedAt: payload.lockedAt ? new Date(payload.lockedAt) : null,
+          lockedAt: null,
           note: payload.note ?? null,
         },
         update: {
-          lockedAt: payload.lockedAt ? new Date(payload.lockedAt) : null,
           note: payload.note ?? null,
         },
       });
@@ -283,7 +287,7 @@ export async function PUT(
         eventId,
         round,
         rowCount: payload.rows.length,
-        lockedAt: payload.lockedAt ?? null,
+        lockedAt: null,
       },
       request: getRequestContext(req),
       result: "SUCCESS",

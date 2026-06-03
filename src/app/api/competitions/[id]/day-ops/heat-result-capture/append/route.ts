@@ -18,6 +18,7 @@ import { resolveParticipantInHeatForDayOps } from "@/lib/heatDayOpsResolvePartic
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
 import { START_LIST_STEP1_REQUIRED_SHORT_MESSAGE } from "@/lib/startListStep1Messages";
 import { resultParticipantKeyFromParts } from "@/lib/dayOpsParticipantKeys";
+import { assertOfficialResultWritableForCompetition } from "@/lib/officialResultAutoLock";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -256,9 +257,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         },
         select: { id: true, lockedAt: true },
       });
-      if (existing?.lockedAt) {
-        throw new Error("OFFICIAL_RESULT_LOCKED");
-      }
+      await assertOfficialResultWritableForCompetition(tx, competitionId, existing?.lockedAt);
 
       const officialResult = await tx.officialResult.upsert({
         where: {
@@ -505,7 +504,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         select: { id: true, lockedAt: true },
       });
       if (!existing) throw new Error("RESULT_NOT_FOUND");
-      if (existing.lockedAt) throw new Error("OFFICIAL_RESULT_LOCKED");
+      await assertOfficialResultWritableForCompetition(tx, competitionId, existing.lockedAt);
 
       const heatConfirmedRow = await tx.officialResultHeatConfirmed.findUnique({
         where: {

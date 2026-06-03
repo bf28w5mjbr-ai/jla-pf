@@ -7,6 +7,7 @@ import { assertDayOpsRecorderWriteAccess } from "@/lib/dayOpsAccess";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
 import { START_LIST_STEP1_REQUIRED_SHORT_MESSAGE } from "@/lib/startListStep1Messages";
+import { assertOfficialResultWritableForCompetition } from "@/lib/officialResultAutoLock";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -51,9 +52,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         },
         select: { id: true, lockedAt: true },
       });
-      if (existing?.lockedAt) {
-        throw new Error("OFFICIAL_RESULT_LOCKED");
-      }
+      await assertOfficialResultWritableForCompetition(tx, competitionId, existing?.lockedAt);
       if (!existing) {
         return 0;
       }

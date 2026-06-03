@@ -18,6 +18,7 @@ import {
   pickParticipantStatusForRound,
   type ParticipantStatusRowForScope,
 } from "@/lib/competitionParticipantStatusScope";
+import { assertOfficialResultWritableForCompetition } from "@/lib/officialResultAutoLock";
 
 export type ManualResultAppendEntry = {
   participantType: "INDIVIDUAL" | "TEAM";
@@ -70,9 +71,7 @@ export async function appendManualHeatResultsInTransaction(
     },
     select: { id: true, lockedAt: true },
   });
-  if (existing?.lockedAt) {
-    throw new Error("OFFICIAL_RESULT_LOCKED");
-  }
+  await assertOfficialResultWritableForCompetition(tx, competitionId, existing?.lockedAt);
 
   const officialResult = await tx.officialResult.upsert({
     where: {

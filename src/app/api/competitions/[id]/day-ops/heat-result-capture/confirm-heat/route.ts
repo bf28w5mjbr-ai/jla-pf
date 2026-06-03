@@ -36,6 +36,7 @@ import {
   prismaPoolBusyUserMessage,
   withPrismaPoolRetryOnce,
 } from "@/lib/prismaPool";
+import { assertOfficialResultWritable } from "@/lib/officialResultAutoLock";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -107,11 +108,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
       loadStartListSnapshotPayload(competitionId),
       prisma.competition.findUnique({
         where: { id: competitionId },
-        select: { startListSettings: true },
+        select: { startListSettings: true, endDate: true },
       }),
     ]);
     if (!eventRow) {
       return NextResponse.json({ error: "種目が見つかりません" }, { status: 404 });
+    }
+    if (!competition) {
+      return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });
     }
     if (!eventRow.startListHeatPlanConfirmedAt) {
       return NextResponse.json(
@@ -241,9 +245,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         },
         select: { id: true, lockedAt: true },
       });
-      if (existing?.lockedAt) {
-        throw new Error("OFFICIAL_RESULT_LOCKED");
-      }
+      assertOfficialResultWritable(existing?.lockedAt, competition.endDate);
 
       const officialResult = await tx.officialResult.upsert({
         where: {

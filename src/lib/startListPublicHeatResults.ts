@@ -1,6 +1,12 @@
 import type { Prisma, ResultRound, ResultStatus } from "@prisma/client";
 import { resultParticipantKeyFromParts } from "@/lib/dayOpsParticipantKeys";
+import { isOfficialResultEffectivelyLocked } from "@/lib/officialResultAutoLock";
 import { prisma } from "@/server/db";
+
+export type BuildPublicHeatResultRoundOverlaysOptions = {
+  competitionEndDate: Date;
+  now?: Date;
+};
 
 export type PublicHeatResultRowOverlay = {
   rank: number | null;
@@ -46,8 +52,10 @@ export function publicHeatResultOverlayKey(heatIndex: number, participantKey: st
 
 /** 確定ヒートのみを overlay に含める（単体テスト用の純関数） */
 export function buildPublicHeatResultRoundOverlays(
-  officialResults: OfficialResultForOverlay[]
+  officialResults: OfficialResultForOverlay[],
+  options: BuildPublicHeatResultRoundOverlaysOptions
 ): PublicHeatResultRoundOverlay[] {
+  const { competitionEndDate, now = new Date() } = options;
   const overlays: PublicHeatResultRoundOverlay[] = [];
 
   for (const official of officialResults) {
@@ -77,7 +85,11 @@ export function buildPublicHeatResultRoundOverlays(
 
     overlays.push({
       round: official.round,
-      isFinalized: Boolean(official.lockedAt),
+      isFinalized: isOfficialResultEffectivelyLocked(
+        official.lockedAt,
+        competitionEndDate,
+        now
+      ),
       confirmedHeatIndices,
       rowsByKey,
     });
@@ -108,13 +120,23 @@ export async function loadPublicHeatResultOverlaysForEvent(
   competitionId: string,
   eventId: string
 ): Promise<PublicHeatResultRoundOverlay[]> {
-  const officialResults = await prisma.officialResult.findMany({
-    where: { competitionId, eventId },
-    select: officialResultOverlaySelect,
-    orderBy: { round: "asc" },
-  });
+  const [competition, officialResults] = await Promise.all([
+    prisma.competition.findUnique({
+      where: { id: competitionId },
+      select: { endDate: true },
+    }),
+    prisma.officialResult.findMany({
+      where: { competitionId, eventId },
+      select: officialResultOverlaySelect,
+      orderBy: { round: "asc" },
+    }),
+  ]);
 
-  return buildPublicHeatResultRoundOverlays(officialResults);
+  if (!competition) return [];
+
+  return buildPublicHeatResultRoundOverlays(officialResults, {
+    competitionEndDate: competition.endDate,
+  });
 }
 
 /** スタートリスト refresh 判定用: 大会内の公式結果・ヒート確定の最新更新時刻 */

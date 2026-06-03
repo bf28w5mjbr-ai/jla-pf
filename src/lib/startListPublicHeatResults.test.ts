@@ -56,6 +56,9 @@ function sortIndIds(
     .map((p) => p.entryId);
 }
 
+const competitionEndDate = new Date("2026-06-02T00:00:00.000Z");
+const overlayOpts = { competitionEndDate };
+
 describe("buildPublicHeatResultRoundOverlays", () => {
   it("確定ヒートのみ行が含まれる", () => {
     const overlays = buildPublicHeatResultRoundOverlays([
@@ -85,7 +88,7 @@ describe("buildPublicHeatResultRoundOverlays", () => {
           },
         ],
       },
-    ]);
+    ], overlayOpts);
 
     expect(overlays).toHaveLength(1);
     expect(overlays[0]?.confirmedHeatIndices).toEqual([1]);
@@ -125,12 +128,12 @@ describe("buildPublicHeatResultRoundOverlays", () => {
           },
         ],
       },
-    ]);
+    ], overlayOpts);
 
     expect(Object.keys(overlays[0]?.rowsByKey ?? {})).not.toContain("2:I:e2");
   });
 
-  it("isFinalized は lockedAt のみで true", () => {
+  it("isFinalized は lockedAt または大会終了日 23:59 JST 超過で true", () => {
     const provisional = buildPublicHeatResultRoundOverlays([
       {
         round: "HEAT",
@@ -139,8 +142,19 @@ describe("buildPublicHeatResultRoundOverlays", () => {
         heatConfirmations: [{ heat: 1 }],
         rows: [],
       },
-    ]);
+    ], { competitionEndDate, now: new Date("2026-06-01T12:00:00.000Z") });
     expect(provisional[0]?.isFinalized).toBe(false);
+
+    const afterDeadline = buildPublicHeatResultRoundOverlays([
+      {
+        round: "FINAL",
+        publishedAt: null,
+        lockedAt: null,
+        heatConfirmations: [{ heat: 1 }],
+        rows: [],
+      },
+    ], { competitionEndDate, now: new Date("2026-06-03T00:00:00.000Z") });
+    expect(afterDeadline[0]?.isFinalized).toBe(true);
 
     const publishedAtOnly = buildPublicHeatResultRoundOverlays([
       {
@@ -150,7 +164,7 @@ describe("buildPublicHeatResultRoundOverlays", () => {
         heatConfirmations: [{ heat: 1 }],
         rows: [],
       },
-    ]);
+    ], { competitionEndDate, now: new Date("2026-06-01T12:00:00.000Z") });
     expect(publishedAtOnly[0]?.isFinalized).toBe(false);
 
     const locked = buildPublicHeatResultRoundOverlays([
@@ -161,7 +175,7 @@ describe("buildPublicHeatResultRoundOverlays", () => {
         heatConfirmations: [{ heat: 1 }],
         rows: [],
       },
-    ]);
+    ], { competitionEndDate, now: new Date("2026-06-01T12:00:00.000Z") });
     expect(locked[0]?.isFinalized).toBe(true);
   });
 
@@ -185,7 +199,7 @@ describe("buildPublicHeatResultRoundOverlays", () => {
             },
           ],
         },
-      ])
+      ], overlayOpts)
     ).toEqual([]);
   });
 });

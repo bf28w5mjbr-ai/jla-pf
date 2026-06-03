@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/unpaid-entry-intent-deadline",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/auto-lock-official-results",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

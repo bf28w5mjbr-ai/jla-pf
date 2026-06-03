@@ -11,7 +11,11 @@ const COMPETITION_ID = "cmnugqbxx000gjs04y449vpnv";
 const EVENT_ID = "cmnwtnhxi0009jr044y4c7616";
 
 async function main() {
-  const [officialResults, snapshot] = await Promise.all([
+  const [competition, officialResults, snapshot] = await Promise.all([
+    prisma.competition.findUnique({
+      where: { id: COMPETITION_ID },
+      select: { endDate: true },
+    }),
     prisma.officialResult.findMany({
       where: { competitionId: COMPETITION_ID, eventId: EVENT_ID, round: "HEAT" },
       select: {
@@ -36,7 +40,13 @@ async function main() {
     loadStartListSnapshotPayload(COMPETITION_ID),
   ]);
 
-  const overlay = buildPublicHeatResultRoundOverlays(officialResults)[0];
+  if (!competition) {
+    console.log("competition not found");
+    return;
+  }
+  const overlay = buildPublicHeatResultRoundOverlays(officialResults, {
+    competitionEndDate: competition.endDate,
+  })[0];
   const snapHeat = getRoundDataFromSnapshot(snapshot, EVENT_ID, "HEAT");
   if (!overlay || !snapHeat) {
     console.log("missing overlay or snapshot");

@@ -5,6 +5,7 @@ import { prisma } from "@/server/db";
 import { assertDayOpsRecorderWriteAccess } from "@/lib/dayOpsAccess";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
+import { assertOfficialResultWritableForCompetition } from "@/lib/officialResultAutoLock";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -36,9 +37,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       if (!official) {
         throw new Error("OFFICIAL_RESULT_NOT_FOUND");
       }
-      if (official.lockedAt) {
-        throw new Error("OFFICIAL_RESULT_LOCKED");
-      }
+      await assertOfficialResultWritableForCompetition(tx, competitionId, official.lockedAt);
 
       const heatConfirmed = await tx.officialResultHeatConfirmed.findUnique({
         where: {
