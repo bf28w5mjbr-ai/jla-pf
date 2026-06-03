@@ -64,6 +64,19 @@ export function prismaPoolBusyUserMessage(): string {
   return "データベースが混み合っています。しばらく待ってから再度お試しください。";
 }
 
+/**
+ * 通知の Push 送信など、1 ユーザーあたり複数 DB クエリを伴う後処理の同時実行上限。
+ * 本番の connection_limit（pgbouncer 時は 8）のうち、同一 HTTP リクエスト内の他処理用に余裕を残す。
+ */
+export function notificationDispatchConcurrency(): number {
+  const fromEnv = process.env.PRISMA_NOTIFICATION_DISPATCH_CONCURRENCY;
+  if (fromEnv != null && fromEnv !== "") {
+    const n = Number(fromEnv);
+    if (Number.isFinite(n) && n >= 1) return Math.floor(n);
+  }
+  return process.env.NODE_ENV === "production" ? 3 : 2;
+}
+
 function retryDelayMs(error: unknown): number {
   return isPrismaMaxClientConnections(error) ? 750 : 150;
 }
