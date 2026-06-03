@@ -6,7 +6,16 @@ const FEATURED_LIMIT = 4;
 const CATEGORY_LIMIT = 8;
 const FEATURED_CLUBS_LIMIT = 6;
 
-const featuredInclude = {
+/** トップ表示に必要な列のみ（全列 SELECT だとスキーマ/DB 差分で P2022 になりうる） */
+const featuredCompetitionSelect = {
+  id: true,
+  name: true,
+  category: true,
+  startDate: true,
+  endDate: true,
+  venue: true,
+  hostOrganizationName: true,
+  hostOrganizationAbbreviation: true,
   organization: {
     select: {
       name: true,
@@ -31,7 +40,7 @@ export const loadHomeFeaturedCompetitions = cache(async (limit = FEATURED_LIMIT)
       status: "PUBLISHED",
       startDate: { gte: now },
     },
-    include: featuredInclude,
+    select: featuredCompetitionSelect,
     orderBy: { startDate: "asc" },
     take: limit,
   });
