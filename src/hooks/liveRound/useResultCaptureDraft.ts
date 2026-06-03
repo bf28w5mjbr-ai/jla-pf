@@ -36,7 +36,9 @@ import {
 } from "@/hooks/liveRound/resultCaptureDraftHelpers";
 import type { ResultRound } from "@prisma/client";
 import type { LiveRoundMarshalContext, ResultDraftOp } from "@/hooks/liveRound/types";
+import { resolveTieWithPreviousForDraft } from "@/hooks/liveRound/resultCaptureTieSession";
 import type { RefObject } from "react";
+import type { SetStateAction } from "react";
 import type { HeatMarshalHeatRow } from "@/components/HeatMarshalLanePanel";
 
 type ResultCaptureSlice = NonNullable<LiveRoundMarshalContext>["resultCapture"];
@@ -77,7 +79,7 @@ export function useResultCaptureDraft(args: {
   const [resultCapturePendingKey, setResultCapturePendingKey] = useState<string | null>(null);
   const [resultDraftOps, setResultDraftOps] = useState<Record<string, ResultDraftOp>>({});
   const [resultDraftErrors, setResultDraftErrors] = useState<Record<string, string>>({});
-  const [tieNextHeatIndex, setTieNextHeatIndex] = useState<number | null>(null);
+  const [tieModeHeatIndex, setTieModeHeatIndexState] = useState<number | null>(null);
   const [localConfirmedHeats, setLocalConfirmedHeats] = useState<number[]>([]);
   const [resultInputOrder, setResultInputOrder] = useState<"asc" | "desc">("asc");
   const [dragSourceParticipantKey, setDragSourceParticipantKey] = useState<string | null>(null);
@@ -89,10 +91,26 @@ export function useResultCaptureDraft(args: {
   const [clearRunUpTarget, setClearRunUpTarget] = useState<number | null>(null);
   const [runUpBusyHeat, setRunUpBusyHeat] = useState<number | null>(null);
 
-  const tieNextHeatIndexRef = useRef<number | null>(null);
+  const tieModeHeatIndexRef = useRef<number | null>(null);
+  const tieSessionEpochRef = useRef(0);
+  const nfcTieSessionStartedByHeatRef = useRef<Record<number, boolean>>({});
   useEffect(() => {
-    tieNextHeatIndexRef.current = tieNextHeatIndex;
-  }, [tieNextHeatIndex]);
+    tieModeHeatIndexRef.current = tieModeHeatIndex;
+  }, [tieModeHeatIndex]);
+
+  const setTieModeHeatIndex = useCallback((action: SetStateAction<number | null>) => {
+    setTieModeHeatIndexState((prev) => {
+      const next = typeof action === "function" ? action(prev) : action;
+      if (next != null && next !== prev) {
+        tieSessionEpochRef.current += 1;
+        delete nfcTieSessionStartedByHeatRef.current[next];
+      }
+      if (next == null && prev != null) {
+        delete nfcTieSessionStartedByHeatRef.current[prev];
+      }
+      return next;
+    });
+  }, []);
   const confirmedHeatsRef = useRef<number[]>([]);
   confirmedHeatsRef.current = localConfirmedHeats;
   const resultDraftOpsRef = useRef(resultDraftOps);
@@ -200,7 +218,7 @@ export function useResultCaptureDraft(args: {
 
   useEffect(() => {
     if (!resultCaptureVisible) {
-      setTieNextHeatIndex(null);
+      setTieModeHeatIndex(null);
     }
   }, [resultCaptureVisible]);
 
@@ -422,7 +440,6 @@ export function useResultCaptureDraft(args: {
           teamEntryId: payload.teamEntryId,
         },
       ]);
-      setTieNextHeatIndex((prev) => (prev === payload.heatIndex ? null : prev));
     },
     []
   );
@@ -470,11 +487,10 @@ export function useResultCaptureDraft(args: {
       opKey: string;
       heatIndex: number;
       participant: HeatMarshalParticipant;
-      tieWithPrevious: boolean;
       inputOrder: "asc" | "desc";
       checked: boolean;
     }) => {
-      const { opKey, heatIndex, participant, tieWithPrevious, inputOrder, checked } = payload;
+      const { opKey, heatIndex, participant, inputOrder, checked } = payload;
       setResultDraftErrors((prev) => {
         if (!prev[opKey]) return prev;
         const next = { ...prev };
@@ -488,6 +504,14 @@ export function useResultCaptureDraft(args: {
           next = { ...prev };
           delete next[opKey];
         } else {
+          const tieModeOn = tieModeHeatIndexRef.current === heatIndex;
+          const { tieWithPrevious, createdInTieSessionEpoch } = resolveTieWithPreviousForDraft({
+            tieModeOn,
+            checked: true,
+            heatIndex,
+            drafts: prev,
+            tieSessionEpoch: tieSessionEpochRef.current,
+          });
           next = {
             ...prev,
             [opKey]: {
@@ -497,6 +521,9 @@ export function useResultCaptureDraft(args: {
               inputOrder,
               draftSequence: ++resultDraftSequenceRef.current,
               participantType: participant.participantType,
+              ...(createdInTieSessionEpoch != null
+                ? { createdInTieSessionEpoch }
+                : {}),
               ...(participant.participantType === "INDIVIDUAL"
                 ? { competitionEntryId: participant.competitionEntryId ?? undefined }
                 : {
@@ -900,9 +927,11 @@ export function useResultCaptureDraft(args: {
     setResultDraftOps,
     resultDraftErrors,
     setResultDraftErrors,
-    tieNextHeatIndex,
-    setTieNextHeatIndex,
-    tieNextHeatIndexRef,
+    tieModeHeatIndex,
+    setTieModeHeatIndex,
+    tieModeHeatIndexRef,
+    tieSessionEpochRef,
+    nfcTieSessionStartedByHeatRef,
     localConfirmedHeats,
     confirmedHeatsRef,
     resultInputOrder,

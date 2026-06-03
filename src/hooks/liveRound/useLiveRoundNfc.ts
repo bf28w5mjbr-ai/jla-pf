@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { isNfcScanSupportedSync, startNfcScanSession } from "@/lib/nfc/nfcScanSession";
 import { dispatchJlaDayOpsParticipantStatusChanged } from "@/lib/dayOpsParticipantStatusDisplay";
 import type { LiveRoundMarshalContext } from "@/hooks/liveRound/types";
+import { resolveTieWithPreviousForNfcAppend } from "@/hooks/liveRound/resultCaptureTieSession";
 
 type ResultCaptureSlice = NonNullable<LiveRoundMarshalContext>["resultCapture"];
 
@@ -39,7 +40,8 @@ export function useLiveRoundNfc(args: {
   }) => void;
   setMarshalPendingKey: (key: string | null) => void;
   setResultCapturePendingKey: (key: string | null) => void;
-  tieNextHeatIndexRef: RefObject<number | null>;
+  tieModeHeatIndexRef: RefObject<number | null>;
+  nfcTieSessionStartedByHeatRef: RefObject<Record<number, boolean>>;
 }) {
   const {
     eventId,
@@ -57,7 +59,8 @@ export function useLiveRoundNfc(args: {
     handleRankRecorded,
     setMarshalPendingKey,
     setResultCapturePendingKey,
-    tieNextHeatIndexRef,
+    tieModeHeatIndexRef,
+    nfcTieSessionStartedByHeatRef,
   } = args;
 
   const [nfcMarshalInline, setNfcMarshalInline] = useState<
@@ -197,7 +200,15 @@ export function useLiveRoundNfc(args: {
       try {
         for (const h of candidateHeats) {
           try {
-            const tieWithPrevious = tieNextHeatIndexRef.current === h.heatIndex;
+            const tieModeOn = tieModeHeatIndexRef.current === h.heatIndex;
+            const nfcTieSessionStarted = Boolean(
+              nfcTieSessionStartedByHeatRef.current[h.heatIndex]
+            );
+            const tieWithPrevious = resolveTieWithPreviousForNfcAppend({
+              tieModeOn,
+              heatIndex: h.heatIndex,
+              nfcTieSessionStarted,
+            });
             const data = await postHeatResultCaptureAppend(mm.competitionId, {
               mode: "nfc",
               eventId,
@@ -207,6 +218,9 @@ export function useLiveRoundNfc(args: {
               tieWithPrevious,
               inputOrder: resultInputOrder,
             });
+            if (tieModeOn) {
+              nfcTieSessionStartedByHeatRef.current[h.heatIndex] = true;
+            }
             handleRankRecorded({
               heatIndex: h.heatIndex,
               lane: data.lane,
@@ -262,6 +276,8 @@ export function useLiveRoundNfc(args: {
       heatsRef,
       confirmedHeatsRef,
       setResultCapturePendingKey,
+      tieModeHeatIndexRef,
+      nfcTieSessionStartedByHeatRef,
     ]
   );
 

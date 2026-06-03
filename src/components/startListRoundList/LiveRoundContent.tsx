@@ -106,9 +106,11 @@ export function LiveRoundContent({
     setResultDraftOps,
     resultDraftErrors,
     setResultDraftErrors,
-    tieNextHeatIndex,
-    setTieNextHeatIndex,
-    tieNextHeatIndexRef,
+    tieModeHeatIndex,
+    setTieModeHeatIndex,
+    tieModeHeatIndexRef,
+    tieSessionEpochRef,
+    nfcTieSessionStartedByHeatRef,
     localConfirmedHeats,
     confirmedHeatsRef,
     resultInputOrder,
@@ -201,7 +203,8 @@ export function LiveRoundContent({
     handleRankRecorded,
     setMarshalPendingKey,
     setResultCapturePendingKey,
-    tieNextHeatIndexRef,
+    tieModeHeatIndexRef,
+    nfcTieSessionStartedByHeatRef,
   });
 
   const heats = isTeam ? teamHeats : individualHeats;
@@ -269,8 +272,8 @@ export function LiveRoundContent({
           resultDraftOps={resultDraftOps}
           resultDraftErrors={resultDraftErrors}
           resultInputOrder={resultInputOrder}
-          tieNextHeatIndex={tieNextHeatIndex}
-          setTieNextHeatIndex={setTieNextHeatIndex}
+          tieModeHeatIndex={tieModeHeatIndex}
+          setTieModeHeatIndex={setTieModeHeatIndex}
           resultCapturePendingKey={resultCapturePendingKey}
           dragSourceParticipantKey={dragSourceParticipantKey}
           dragOverParticipantKey={dragOverParticipantKey}

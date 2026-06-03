@@ -118,3 +118,23 @@ body {
   background: color-mix(in oklab, var(--ring) 28%, transparent);
   color: var(--foreground);
 }
+
+/* トップランディング: 横スクロール CTA（Axis 風マーキー） */
+@keyframes home-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.home-marquee-track {
+  animation: home-marquee 28s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-marquee-track {
+    animation: none;
+  }
+}

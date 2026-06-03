@@ -28,7 +28,7 @@
 
 | 状態 | 挙動 |
 |------|------|
-| 未ログイン | **Cover シェル**で `HomeLanding` を表示（デスクトップでもサイドバー常時非表示・MENU で [`PublicSiteSidebar`](../src/components/public/PublicSiteSidebar.tsx) と同ナビ）。本文主 CTA は `/browse/competitions`・`/clubs`。開催予定大会を最大 4 件表示。ログイン・新規登録はヘッダーのみ |
+| 未ログイン | **Cover シェル**で `HomeLanding` を表示（デスクトップでもサイドバー常時非表示・MENU で [`PublicSiteSidebar`](../src/components/public/PublicSiteSidebar.tsx) と同ナビ）。章立てランディング（ヒーロー・開催予定大会の横スクロール・理念・機能・クラブ抜粋・ログイン CTA）。主 CTA は `/browse/competitions`・`/clubs`。ログイン・新規登録はヘッダーとページ下部 |
 | 未ログイン（他公開ルート） | **Standard シェル**（`lg` で常時サイドバー）— [`(public)/layout.tsx`](../src/app/(public)/layout.tsx) |
 | ログイン済み | **`/dashboard` の HTML を 1 往復で返す**（Edge の [`src/proxy.ts`](../src/proxy.ts) で `/` を **rewrite**）。未適用時は [`redirectIfAuthenticated`](../src/lib/auth.ts) が 307 フォールバック |
 

@@ -44,7 +44,6 @@ export function ResultStartListLaneCheckbox({
   onToggleDraft,
   draftChecked = false,
   draftError,
-  tieWithPrevious = false,
   inputOrder = "asc",
   serverDayOpsStatus,
 }: {
@@ -66,13 +65,11 @@ export function ResultStartListLaneCheckbox({
     opKey: string;
     heatIndex: number;
     participant: HeatMarshalParticipant;
-    tieWithPrevious: boolean;
     inputOrder: "asc" | "desc";
     checked: boolean;
   }) => void;
   draftChecked?: boolean;
   draftError?: string;
-  tieWithPrevious?: boolean;
   inputOrder?: "asc" | "desc";
 }) {
   if (!participant) {
@@ -143,7 +140,6 @@ export function ResultStartListLaneCheckbox({
             opKey: pKey,
             heatIndex,
             participant: p,
-            tieWithPrevious,
             inputOrder,
             checked: checked === true,
           });

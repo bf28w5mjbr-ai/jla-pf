@@ -24,6 +24,8 @@ export type ResultDraftOp = {
   teamEntryId?: string;
   teamMemberUserId?: string;
   draftSequence?: number;
+  /** 同着トグル ON 中に追加された draft（クライアントのみ・サーバー同期しない） */
+  createdInTieSessionEpoch?: number;
 };
 
 export type OnMarshalSuccessOptions = {

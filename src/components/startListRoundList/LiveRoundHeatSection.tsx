@@ -67,8 +67,8 @@ export type LiveRoundHeatSectionProps = {
   resultDraftOps: Record<string, ResultDraftOp>;
   resultDraftErrors: Record<string, string>;
   resultInputOrder: "asc" | "desc";
-  tieNextHeatIndex: number | null;
-  setTieNextHeatIndex: Dispatch<SetStateAction<number | null>>;
+  tieModeHeatIndex: number | null;
+  setTieModeHeatIndex: Dispatch<SetStateAction<number | null>>;
   resultCapturePendingKey: string | null;
   dragSourceParticipantKey: string | null;
   dragOverParticipantKey: string | null;
@@ -114,8 +114,8 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
     resultDraftOps,
     resultDraftErrors,
     resultInputOrder,
-    tieNextHeatIndex,
-    setTieNextHeatIndex,
+    tieModeHeatIndex,
+    setTieModeHeatIndex,
     resultCapturePendingKey,
     dragSourceParticipantKey,
     dragOverParticipantKey,
@@ -176,7 +176,6 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
     const elimSlots = eliminationStyle
       ? eliminationSlots({ called: calledForResultConfirm, quota: heatAdvanceQuota ?? null })
       : null;
-    const canTieInHeat = rankOkCount > 0 || resultDraftCount > 0;
     const heatResultRanksComplete = isHeatResultReadyForConfirm({
       called: calledForResultConfirm,
       quota: heatAdvanceQuota ?? null,
@@ -352,7 +351,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                   <Button
                     type="button"
                     variant={
-                      tieNextHeatIndex === displayHeatNumber ? "default" : "outline"
+                      tieModeHeatIndex === displayHeatNumber ? "default" : "outline"
                     }
                     size="sm"
                     className="h-6 px-2 text-[10px]"
@@ -364,16 +363,15 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                       marshalRoundMismatch ||
                       !apiHeat ||
                       !heatCallClosed ||
-                      localConfirmedHeats.includes(displayHeatNumber) ||
-                      !canTieInHeat
+                      localConfirmedHeats.includes(displayHeatNumber)
                     }
                     onClick={() =>
-                      setTieNextHeatIndex((prev) =>
+                      setTieModeHeatIndex((prev) =>
                         prev === displayHeatNumber ? null : displayHeatNumber
                       )
                     }
                   >
-                    次を同着
+                    同着
                   </Button>
                 </>
               ) : null}
@@ -511,7 +509,6 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                     resultDraftOps={resultDraftOps}
                     resultDraftErrors={resultDraftErrors}
                     resultInputOrder={resultInputOrder}
-                    tieNextHeatIndex={tieNextHeatIndex}
                     resultCapturePendingKey={resultCapturePendingKey}
                     dragSourceParticipantKey={dragSourceParticipantKey}
                     dragOverParticipantKey={dragOverParticipantKey}
@@ -677,7 +674,6 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
     const elimSlots = eliminationStyle
       ? eliminationSlots({ called: calledForResultConfirm, quota: heatAdvanceQuota ?? null })
       : null;
-    const canTieInHeat = rankOkCount > 0 || resultDraftCount > 0;
     const heatResultRanksComplete = isHeatResultReadyForConfirm({
       called: calledForResultConfirm,
       quota: heatAdvanceQuota ?? null,
@@ -852,7 +848,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                   <Button
                     type="button"
                     variant={
-                      tieNextHeatIndex === displayHeatNumber ? "default" : "outline"
+                      tieModeHeatIndex === displayHeatNumber ? "default" : "outline"
                     }
                     size="sm"
                     className="h-6 px-2 text-[10px]"
@@ -864,16 +860,15 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                       marshalRoundMismatch ||
                       !apiHeat ||
                       !heatCallClosed ||
-                      localConfirmedHeats.includes(displayHeatNumber) ||
-                      !canTieInHeat
+                      localConfirmedHeats.includes(displayHeatNumber)
                     }
                     onClick={() =>
-                      setTieNextHeatIndex((prev) =>
+                      setTieModeHeatIndex((prev) =>
                         prev === displayHeatNumber ? null : displayHeatNumber
                       )
                     }
                   >
-                    次を同着
+                    同着
                   </Button>
                 </>
               ) : null}
@@ -991,7 +986,6 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
                     resultDraftOps={resultDraftOps}
                     resultDraftErrors={resultDraftErrors}
                     resultInputOrder={resultInputOrder}
-                    tieNextHeatIndex={tieNextHeatIndex}
                     resultCapturePendingKey={resultCapturePendingKey}
                     dragSourceParticipantKey={dragSourceParticipantKey}
                     dragOverParticipantKey={dragOverParticipantKey}

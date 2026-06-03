@@ -46,7 +46,6 @@ export type LiveRoundResultLaneRowProps = {
   resultDraftOps: Record<string, ResultDraftOp>;
   resultDraftErrors: Record<string, string>;
   resultInputOrder: "asc" | "desc";
-  tieNextHeatIndex: number | null;
   resultCapturePendingKey: string | null;
   dragSourceParticipantKey: string | null;
   dragOverParticipantKey: string | null;
@@ -73,7 +72,6 @@ export function LiveRoundResultLaneRow({
   resultDraftOps,
   resultDraftErrors,
   resultInputOrder,
-  tieNextHeatIndex,
   resultCapturePendingKey,
   dragSourceParticipantKey,
   dragOverParticipantKey,
@@ -238,7 +236,6 @@ export function LiveRoundResultLaneRow({
           onToggleDraft={onToggleDraft}
           draftChecked={draftChecked}
           draftError={participant ? resultDraftErrors[marshalParticipantKey(participant)] : undefined}
-          tieWithPrevious={tieNextHeatIndex === displayHeatNumber}
           inputOrder={resultInputOrder}
         />
       )}
