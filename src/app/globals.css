@@ -138,3 +138,35 @@ body {
     animation: none;
   }
 }
+
+/* トップランディング: ヒーロー入場 */
+@keyframes home-hero-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.home-hero-enter {
+  animation: home-hero-fade-up 0.6s ease-out both;
+}
+
+.home-hero-enter-delay-1 {
+  animation-delay: 0.08s;
+}
+
+.home-hero-enter-delay-2 {
+  animation-delay: 0.16s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-hero-enter,
+  .home-hero-enter-delay-1,
+  .home-hero-enter-delay-2 {
+    animation: none;
+  }
+}
