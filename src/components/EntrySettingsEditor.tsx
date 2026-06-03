@@ -32,6 +32,7 @@ import {
   PUBLISHED_ENTRY_PERIOD_SHORTEN_FORBIDDEN_MESSAGE,
 } from "@/lib/autoEntryChangeAnnouncement";
 import {
+  type AgeFeeTier,
   parseAgeCategoryFeeTiers,
   parseAgeFeeTiers,
 } from "@/lib/competitionEntryAgeTiered";
