@@ -51,6 +51,8 @@ export type StartListRoundData = {
   generatedAt: string;
   generatedBy: "ENTRY_CLOSE" | "RESULT_BASED" | "RECORD_CAPTURE" | "BASELINE";
   sourceRound?: StartListRound;
+  /** 生成時点の前ラ公式結果 fingerprint（手動 SL 再生成判定用） */
+  sourceOfficialFingerprint?: string;
   heats: StartListHeat[];
   /**
    * 次ラウンド生成後に付与。各前ラヒートの進出**上限**（quota）と、着順確定後に実際に拾った人数（actual、任意）。

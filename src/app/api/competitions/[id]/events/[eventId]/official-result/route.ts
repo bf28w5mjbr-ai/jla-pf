@@ -5,7 +5,6 @@ import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { requireOrgAdmin } from "@/lib/accessControl";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
-import { tryAutoAppendNextStartListRound } from "@/lib/startListNextRoundFromOfficial";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 
 const rowSchema = z.object({
@@ -270,8 +269,6 @@ export async function PUT(
       });
     });
 
-    const lockedNow = Boolean(result?.lockedAt);
-
     await logAuditAction({
       action: "COMPETITION_OFFICIAL_RESULT_UPSERT",
       actorType: "USER",
@@ -291,21 +288,6 @@ export async function PUT(
       request: getRequestContext(req),
       result: "SUCCESS",
     });
-
-    if (lockedNow && (round === "HEAT" || round === "SEMI")) {
-      try {
-        const append = await tryAutoAppendNextStartListRound({
-          competitionId,
-          eventId,
-          finishedRound: round,
-        });
-        if (!append.ok) {
-          console.warn("start-list auto-append after official-result PUT:", append.error);
-        }
-      } catch (e) {
-        console.error("start-list auto-append after official-result PUT failed:", e);
-      }
-    }
 
     return NextResponse.json({ result });
   } catch (error) {

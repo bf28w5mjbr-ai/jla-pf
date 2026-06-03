@@ -16,8 +16,6 @@ import {
   renderParticipantEligibilitySummary,
   renderRequiredQualificationsSummary,
 } from "@/lib/competitionParticipationSummaries";
-import { CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP } from "@/lib/competitionEntryAgeTiered";
-
 type EntrySettingsEditorProps = ComponentProps<typeof EntrySettingsEditor>;
 
 type Props = {
@@ -197,9 +195,7 @@ function CompetitionParticipationConditionsEditorInner({
       <Card className="overflow-hidden border-border shadow-sm">
         <CardHeader className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
           <CardTitle className="text-base font-semibold">大会出場条件</CardTitle>
-          <CardDescription className="text-sm">
-            誰がエントリーできるか（参加対象者・必要な資格・年齢）の現在の設定です。所属クラブの要否は、このページ上部の大会情報で確認できます。
-          </CardDescription>
+          <CardDescription className="text-sm">参加対象者・資格・年齢の現在の設定です。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 px-4 py-4 sm:px-5">
           <div className="space-y-2 rounded-lg border border-border bg-card px-3 py-3 sm:px-4">
@@ -236,9 +232,6 @@ function CompetitionParticipationConditionsEditorInner({
     <Card className="overflow-hidden border-border shadow-sm">
       <CardHeader className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
         <CardTitle className="text-base font-semibold">大会出場条件</CardTitle>
-        <CardDescription className="text-sm">
-          下の欄にそのまま入力できます。参加対象者（自由記述と大会全体の年齢）は、枠の外をクリックすると保存されます。所属クラブの要否は、このページ上部の大会情報の最下部で設定します。参加資格は変更後、枠の外をクリックすると保存されます。
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 px-4 py-4 sm:px-5">
         <p
@@ -250,7 +243,7 @@ function CompetitionParticipationConditionsEditorInner({
                 : "text-muted-foreground"
           }`}
         >
-          {statusText || "変更後にフォーカスを外すと保存されます。"}
+          {statusText || "枠の外をクリックすると保存されます。"}
         </p>
 
         <div
@@ -262,7 +255,6 @@ function CompetitionParticipationConditionsEditorInner({
           }}
         >
           <p className="text-xs font-medium text-muted-foreground">参加対象者（自由記述）</p>
-          <p className="text-[11px] text-muted-foreground">公開ページに表示する補足文です。</p>
           <div className="space-y-2">
             <Label htmlFor="participation-eligibility">内容</Label>
             <Textarea
@@ -277,9 +269,6 @@ function CompetitionParticipationConditionsEditorInner({
             <p className="text-xs text-muted-foreground">{participantEligibilityText.length} 文字</p>
           </div>
           <p className="text-xs font-medium text-muted-foreground">大会全体の年齢</p>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            エントリーできる年齢の下限・上限です。数値は「その歳以上」「その歳以下」で境界の年齢を含みます。
-          </p>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
               <Label htmlFor="participation-min-age" className="text-xs">
@@ -326,7 +315,6 @@ function CompetitionParticipationConditionsEditorInner({
 
         <div className="space-y-2 rounded-lg border border-border bg-card px-3 py-3 sm:px-4">
           <p className="text-xs font-medium text-muted-foreground">参加資格</p>
-          <p className="text-[11px] text-muted-foreground">{CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP}</p>
           <CompetitionEntryQualificationsEditor
             key={`${settingsVersion}-qual`}
             competitionId={competitionId}

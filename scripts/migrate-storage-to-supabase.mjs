@@ -105,28 +105,25 @@ async function updateDbUrls(mapping) {
   }
 
   const competitions = await prisma.competition.findMany({
-    select: { id: true, cooperatorsLogos: true, grantsLogos: true },
+    select: { id: true, relatedOrganizations: true },
   });
   for (const row of competitions) {
-    const convLogos = (logos) =>
-      Array.isArray(logos)
-        ? logos.map((x) =>
+    const convOrgs = (orgs) =>
+      Array.isArray(orgs)
+        ? orgs.map((x) =>
             x && typeof x === "object" && typeof x.logoUrl === "string" && mapping.has(x.logoUrl)
               ? { ...x, logoUrl: mapping.get(x.logoUrl) }
-              : x
+              : x,
           )
-        : logos;
+        : orgs;
 
-    const newCoop = convLogos(row.cooperatorsLogos);
-    const newGrant = convLogos(row.grantsLogos);
-    const changed =
-      JSON.stringify(newCoop) !== JSON.stringify(row.cooperatorsLogos) ||
-      JSON.stringify(newGrant) !== JSON.stringify(row.grantsLogos);
+    const newOrgs = convOrgs(row.relatedOrganizations);
+    const changed = JSON.stringify(newOrgs) !== JSON.stringify(row.relatedOrganizations);
 
     if (changed && !dryRun) {
       await prisma.competition.update({
         where: { id: row.id },
-        data: { cooperatorsLogos: newCoop, grantsLogos: newGrant },
+        data: { relatedOrganizations: newOrgs },
       });
     }
   }

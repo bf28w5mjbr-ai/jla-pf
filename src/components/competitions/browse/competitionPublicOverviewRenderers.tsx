@@ -43,7 +43,7 @@ export function renderEntryFeeForCategories(
     return (
       <div className="space-y-1">
         <p className="text-[11px] font-medium text-muted-foreground">
-          年齢カテゴリ別（生年月日の区分）
+          AGEカテゴリ別（生年月日の区分）
         </p>
         {feeCatTiers.map((t, i) => (
           <p key={i} className="text-sm font-medium leading-snug">
@@ -61,7 +61,7 @@ export function renderEntryFeeForCategories(
     return (
       <div className="space-y-1">
         <p className="text-[11px] font-medium text-muted-foreground">
-          年齢帯別（開催日時点の満年齢）
+          年齢帯別（移行待ち・開催日時点の満年齢）
         </p>
         {feeTiers.map((t, i) => (
           <p key={i} className="text-sm font-medium leading-snug">

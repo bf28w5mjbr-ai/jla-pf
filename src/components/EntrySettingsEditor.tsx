@@ -34,7 +34,6 @@ import {
 import {
   parseAgeCategoryFeeTiers,
   parseAgeFeeTiers,
-  type AgeFeeTier,
 } from "@/lib/competitionEntryAgeTiered";
 import { toEligibleBirthDateInput } from "@/lib/eligibleBirthDateInput";
 import {
@@ -434,44 +433,16 @@ export default function EntrySettingsEditor({
   );
   const [isUpdatingFee, setIsUpdatingFee] = useState(false);
 
-  const tierIdRef = useRef(1);
-  const mkTierRowId = () => `age-tier-${tierIdRef.current++}`;
-
-  const initialParsedFeeTiers = parseAgeFeeTiers(initialData.entryFee as unknown);
   const initialParsedCategoryFeeTiers = parseAgeCategoryFeeTiers(initialData.entryFee as unknown);
-  const [feePricingMode, setFeePricingMode] = useState<
-    "flat" | "byAge" | "byAgeCategory"
-  >(() => {
-    if (initialParsedCategoryFeeTiers?.length) return "byAgeCategory";
-    if (initialParsedFeeTiers) return "byAge";
-    return "flat";
-  });
-  const [ageFeeFormRows, setAgeFeeFormRows] = useState<
-    { id: string; minAge: string; maxAge: string; individual: string; team: string }[]
-  >(() => {
-    if (initialParsedFeeTiers?.length) {
-      return initialParsedFeeTiers.map((t) => ({
-        id: mkTierRowId(),
-        minAge: String(t.minAge),
-        maxAge: t.maxAge === null ? "" : String(t.maxAge),
-        individual: String(t.individualEntryFee),
-        team: String(t.teamEntryFeePerTeam),
-      }));
-    }
-    return [
-      {
-        id: mkTierRowId(),
-        minAge: "0",
-        maxAge: "",
-        individual: String(
-          initialData.entryFee?.individualEntryFee ??
-            initialData.entryFee?.baseFee ??
-            0
-        ),
-        team: String(initialData.entryFee?.teamEntryFeePerTeam ?? 0),
-      },
-    ];
-  });
+  const legacyFeeTiers = useMemo(
+    () => parseAgeFeeTiers(initialData.entryFee as unknown),
+    [initialData.entryFee]
+  );
+  const hasLegacyFeeBands = legacyFeeTiers != null && legacyFeeTiers.length > 0;
+
+  const [feeTierMode, setFeeTierMode] = useState<"flat" | "byAgeCategory">(() =>
+    initialParsedCategoryFeeTiers?.length ? "byAgeCategory" : "flat"
+  );
 
   const [categoryFeeDraft, setCategoryFeeDraft] = useState<
     Record<string, { individual: string; team: string }>
@@ -1366,9 +1337,9 @@ export default function EntrySettingsEditor({
 
     let payload: Record<string, unknown>;
 
-    if (feePricingMode === "byAgeCategory") {
+    if (feeTierMode === "byAgeCategory") {
       if (ageCategories.length === 0) {
-        toast.error("年齢カテゴリを大会出場条件の「AGEカテゴリ」で作成してから、カテゴリ別の参加費を設定してください");
+        toast.error("AGEカテゴリを大会出場条件で作成してから、AGEカテゴリ別の参加費を設定してください");
         return;
       }
       const tiers: {
@@ -1398,45 +1369,6 @@ export default function EntrySettingsEditor({
         });
       }
       payload = { pricingMode: "byAgeCategory", ageCategoryFeeTiers: tiers };
-    } else if (feePricingMode === "byAge") {
-      const tiers: AgeFeeTier[] = [];
-      for (const row of ageFeeFormRows) {
-        const minAge = parseInt(row.minAge, 10);
-        const maxRaw = row.maxAge.trim();
-        const maxAge = maxRaw === "" ? null : parseInt(maxRaw, 10);
-        const individualEntryFee = parseFloat(row.individual);
-        const teamEntryFeePerTeam = parseFloat(row.team);
-        if (!Number.isFinite(minAge) || minAge < 0) {
-          toast.error("各年齢帯の下限年齢を正しく入力してください");
-          return;
-        }
-        if (maxAge !== null && (!Number.isFinite(maxAge) || maxAge < minAge)) {
-          toast.error("上限年齢は下限以上にするか、上限なしの場合は空欄にしてください");
-          return;
-        }
-        if (
-          hasIndividualEvents &&
-          (!Number.isFinite(individualEntryFee) || individualEntryFee < 0)
-        ) {
-          toast.error("個人エントリー料金を正しく入力してください");
-          return;
-        }
-        if (hasTeamEvents && (!Number.isFinite(teamEntryFeePerTeam) || teamEntryFeePerTeam < 0)) {
-          toast.error("チーム種目の1チームあたり料金を正しく入力してください");
-          return;
-        }
-        tiers.push({
-          minAge,
-          maxAge,
-          individualEntryFee: hasIndividualEvents ? individualEntryFee : 0,
-          teamEntryFeePerTeam: hasTeamEvents ? teamEntryFeePerTeam : 0,
-        });
-      }
-      if (tiers.length === 0) {
-        toast.error("年齢帯を1件以上追加してください");
-        return;
-      }
-      payload = { pricingMode: "byAge", ageFeeTiers: tiers };
     } else {
       const individualEntryFeeNum = hasIndividualEvents
         ? parseFloat(individualEntryFee)
@@ -1478,7 +1410,7 @@ export default function EntrySettingsEditor({
         throw new Error(feeBody.message || "エントリー費用設定の更新に失敗しました");
       }
 
-      if (feeBody.entryFee != null && feePricingMode === "byAgeCategory") {
+      if (feeBody.entryFee != null && feeTierMode === "byAgeCategory") {
         setCategoryFeeDraft(
           buildCategoryFeeDraft(ageCategories, parseAgeCategoryFeeTiers(feeBody.entryFee))
         );
@@ -2358,9 +2290,7 @@ export default function EntrySettingsEditor({
       <Card className="overflow-hidden">
         <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
           <CardTitle className="text-base font-semibold">エントリー期間</CardTitle>
-          <CardDescription className="text-xs">
-            受付の開始・終了日時です。日時は日本時間（Asia/Tokyo）の壁時計で入力・保存され、設定一覧の表示とも同じ基準です。
-          </CardDescription>
+          <CardDescription className="text-xs">日時は日本時間です。</CardDescription>
         </CardHeader>
         <CardContent className="px-4 py-3">
           <AutofillSyncForm
@@ -2409,28 +2339,11 @@ export default function EntrySettingsEditor({
       )}
 
       {isSection("ageClub") && (
-      <>
-      <Card className="overflow-hidden">
-        <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
-          <CardTitle className="text-base font-semibold">アンダー制について</CardTitle>
-          <CardDescription className="text-xs leading-relaxed">
-            アンダー制（U-○・OPEN）は{" "}
-            <span className="font-medium text-foreground">AGEカテゴリを一括生成するためのテンプレート</span>
-            です。「種目・参加費」タブの先頭にある
-            <span className="font-medium text-foreground">AGEカテゴリ・テンプレート</span>
-            で U のしきい値と OPEN を保存し、「AGEカテゴリへ反映」を押すと、
-            「大会出場条件」カードの
-            <span className="font-medium text-foreground">AGEカテゴリ</span>
-            に同名のカテゴリが自動で追加・更新されます（生年月日レンジに換算）。実際の年齢判定・参加費・出場資格はすべて AGEカテゴリ側で行われます。
-          </CardDescription>
-        </CardHeader>
-      </Card>
-
       <Card className="overflow-hidden">
         <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
           <CardTitle className="text-base font-semibold">年齢・所属クラブ</CardTitle>
           <CardDescription className="text-xs">
-            大会全体の年齢範囲と、エントリー時のクラブ所属の要否です。年齢条件は4月2日始まりの年度に属する開催開始日について、その年度の末日（翌年4月1日・日本時間）時点の満年齢で判定します。入力する数値は下限・上限とも「以上」「以下」で境界の歳を含み、「○歳未満」のような表記ではありません。
+            満年齢は開催年度末（翌年4/1・日本時間）基準。所属クラブの要否は「大会基本情報」でも設定できます。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 px-4 py-3">
@@ -2453,11 +2366,6 @@ export default function EntrySettingsEditor({
             </div>
           </div>
 
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            入力する数値は「その歳以上」「その歳以下」で、<span className="font-medium text-foreground">境界の年齢は含みます</span>
-            （「○歳未満」のような上限表現ではありません）。
-          </p>
-
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
               <Label htmlFor="competitionMinAge" className="text-xs">
@@ -2471,11 +2379,7 @@ export default function EntrySettingsEditor({
                 onChange={(e) => setCompetitionMinAge(e.target.value)}
                 placeholder="例: 18"
                 disabled={!canEdit}
-                aria-describedby="competitionMinAge-hint"
               />
-              <p id="competitionMinAge-hint" className="mt-1 text-xs text-gray-500">
-                満年齢が入力値<span className="font-medium text-foreground">以上</span>なら参加可（その歳を含む）。空欄は下限なし。
-              </p>
             </div>
             <div>
               <Label htmlFor="competitionMaxAge" className="text-xs">
@@ -2489,11 +2393,7 @@ export default function EntrySettingsEditor({
                 onChange={(e) => setCompetitionMaxAge(e.target.value)}
                 placeholder="例: 35"
                 disabled={!canEdit}
-                aria-describedby="competitionMaxAge-hint"
               />
-              <p id="competitionMaxAge-hint" className="mt-1 text-xs text-gray-500">
-                満年齢が入力値<span className="font-medium text-foreground">以下</span>なら参加可（その歳を含む）。空欄は上限なし。
-              </p>
             </div>
           </div>
 
@@ -2522,9 +2422,6 @@ export default function EntrySettingsEditor({
                   <span>所属クラブ不要</span>
                 </label>
               </div>
-              <p className="text-xs text-gray-500">
-                「所属クラブ必須」を選ぶと、所属クラブのないユーザーはエントリーできません。
-              </p>
             </div>
           </div>
 
@@ -2543,14 +2440,13 @@ export default function EntrySettingsEditor({
           )}
         </CardContent>
       </Card>
-      </>
       )}
 
       {isSection("eligibility") && (
       <Card className="overflow-hidden">
         <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
           <CardTitle className="text-base font-semibold">参加対象者（自由記述）</CardTitle>
-          <CardDescription className="text-xs">公開ページに表示する補足文です。</CardDescription>
+          <CardDescription className="text-xs">未入力時は公開ページで「制限なし」と表示されます。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 px-4 py-3">
           <div className="space-y-2">
@@ -2563,9 +2459,6 @@ export default function EntrySettingsEditor({
               rows={4}
               disabled={!canEdit}
             />
-            <p className="text-sm text-gray-500">
-              未入力の場合は「制限なし」として表示されます。
-            </p>
             <p className="text-xs text-gray-500">{participantEligibilityText.length} 文字</p>
           </div>
           {canEdit && (
@@ -2666,10 +2559,8 @@ export default function EntrySettingsEditor({
       <Card className="mb-4 overflow-hidden border-border/80">
         <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-3 py-3 sm:px-4">
           <CardTitle className="text-base font-semibold">AGEカテゴリ・テンプレート（アンダー制）</CardTitle>
-          <CardDescription className="text-xs leading-relaxed">
-            U-○（age ≤ N）と OPEN（最大Uより上）を入力し、「AGEカテゴリへ反映」を押すと、
-            <span className="font-medium text-foreground">「大会出場条件」の AGEカテゴリ</span>
-            に同名の行を一括生成／同期できます。生年月日レンジは大会開始日が属する年度の翌年4月1日時点の満年齢で換算します。テンプレ反映後は AGEカテゴリ側で自由に名前・範囲を編集できます。
+          <CardDescription className="text-xs">
+            U/OPEN を「AGEカテゴリへ反映」すると、大会出場条件の AGEカテゴリに同期されます。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 px-3 py-3 sm:px-4">
@@ -2845,60 +2736,21 @@ export default function EntrySettingsEditor({
         <CardHeader className="space-y-1.5 border-b border-border/60 bg-background/40 px-3 py-3 sm:px-4">
           <CardTitle className="text-base font-semibold">{categoryMeta.title}</CardTitle>
           <CardDescription className="text-xs leading-snug">{categoryMeta.shortHint}</CardDescription>
-          <p className="text-[11px] text-muted-foreground">
-            種目のカテゴリ（プール／オーシャン）は大会の基本情報で
-            {competitionEventCategoryScopeLabel(categoryScope)}に固定されています。
-          </p>
           <details className="rounded-md border border-border/50 bg-muted/15 px-2.5 py-2 text-[11px] text-muted-foreground">
-            <summary className="cursor-pointer font-medium text-foreground outline-none">
-              もう少し詳しく
-            </summary>
+            <summary className="cursor-pointer font-medium text-foreground outline-none">ヘルプ</summary>
             <ul className="mt-2 list-inside list-disc space-y-1 pl-0.5 pt-1 leading-relaxed">
               <li>
-                最大レーン数・ラウンド数・ラウンドごとのヒート数は、公開ページの大会「スタートリスト」タブのラウンド設定、または種目ごとのスタートリスト画面のラウンド設定から変更します（種目設定のこの画面では編集しません）。
+                プール／オーシャンは大会基本情報で
+                {competitionEventCategoryScopeLabel(categoryScope)}に固定されています。
               </li>
-              <li>
-                種目ごとの参加可能な生年月日: 大会全体の年齢に加え、種目ごとに「この日〜この日に生まれた人」（両端含む）を指定できます。空欄は大会の年齢設定に従います。
-              </li>
-              <li>
-                上の年齢カテゴリを切り替えると、そのカテゴリに属する種目だけが表示されます。同名種目もカテゴリが違えば別種目です。
-              </li>
+              <li>種目の追加・変更は「このタブを保存」で確定します（下書きのままでは反映されません）。</li>
+              <li>AGEカテゴリは大会出場条件で設定し、タブ切替で種目を分けます。</li>
+              <li>参加費は下の「エントリー費用」で設定します。</li>
+              <li>レーン数・ヒート数はスタートリストのラウンド設定で変更します（この画面では編集しません）。</li>
             </ul>
           </details>
         </CardHeader>
         <CardContent className="space-y-4 px-3 py-3 sm:px-4">
-          <div
-            className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground"
-            role="note"
-          >
-            <p className="mb-1.5 font-semibold text-foreground">操作の流れ</p>
-            <ol className="list-decimal space-y-1 pl-4 marker:text-muted-foreground">
-              <li>
-                <span className="text-foreground">種目を追加</span>
-                … 下の入力＋「＋」、または「＋デフォルト」
-              </li>
-              <li>
-                <span className="text-foreground">種目名変更・削除</span>
-                … カード上の入力／ゴミ箱で下書きし、「<span className="text-foreground">このタブを保存</span>」で確定します
-              </li>
-              <li>
-                <span className="text-foreground">性別区分</span>（男女／男のみ／女のみ／混合）
-                … 変更は下の「<span className="text-foreground">このタブを保存</span>」まで保留されます
-              </li>
-              <li>
-                <span className="text-foreground">年齢カテゴリ</span>
-                … 大会出場条件の「AGEカテゴリ」で名前と生年月日範囲を追加し、各カテゴリのタブで種目を追加します
-              </li>
-              <li>
-                <span className="text-foreground">年齢・生年月日範囲・チームポジション</span>
-                … 一番下の「<span className="text-foreground">このタブを保存</span>」でまとめてサーバーに反映します（未保存のままでは反映されません）
-              </li>
-              <li>
-                <span className="text-foreground">参加費</span>
-                … 下の「エントリー費用」で、登録した種目の区分に応じて個人・チームの料金を設定します
-              </li>
-            </ol>
-          </div>
           {selectedCategory === "POOL" && (
             <div className="space-y-8">
               <section className="space-y-3 rounded-lg border border-border/90 bg-muted/20 p-3 sm:p-4 dark:border-border dark:bg-muted/10">
@@ -3346,9 +3198,7 @@ export default function EntrySettingsEditor({
             </div>
             <div className="min-w-0 space-y-1">
               <CardTitle className="text-base font-semibold">エントリー費用</CardTitle>
-              <CardDescription className="text-xs leading-relaxed">
-                個人種目・チーム種目を登録・保存したあと、該当する区分の料金を入力します。未登録の区分は入力できません。
-              </CardDescription>
+              <CardDescription className="text-xs">種目を保存したあと、区分ごとに料金を設定します。</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -3365,34 +3215,47 @@ export default function EntrySettingsEditor({
             </div>
           ) : null}
 
+          {hasLegacyFeeBands && legacyFeeTiers ? (
+            <div
+              role="status"
+              className="space-y-2 rounded-lg border border-amber-200/80 bg-amber-50/90 px-3 py-2.5 text-xs leading-relaxed text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/35 dark:text-amber-50"
+            >
+              <p className="font-medium">年齢帯別で保存済みです（読取専用）</p>
+              <p className="text-amber-900/85 dark:text-amber-100/85">
+                「全員同一」または「AGEカテゴリ別」で保存すると移行できます。移行スクリプトの利用も可能です。
+              </p>
+              <ul className="space-y-1">
+                {legacyFeeTiers.map((t, i) => (
+                  <li key={i}>
+                    <span className="font-medium">
+                      {t.minAge}〜{t.maxAge == null ? "上限なし" : `${t.maxAge}歳`}
+                    </span>
+                    {hasIndividualEvents ? <> · 個人 ¥{t.individualEntryFee}</> : null}
+                    {hasTeamEvents ? <> · チーム ¥{t.teamEntryFeePerTeam}</> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           <div className="flex flex-wrap gap-3 text-xs">
             <label className="flex cursor-pointer items-center gap-2">
               <input
                 type="radio"
                 className="h-3.5 w-3.5"
-                checked={feePricingMode === "flat"}
-                onChange={() => setFeePricingMode("flat")}
+                checked={feeTierMode === "flat"}
+                onChange={() => setFeeTierMode("flat")}
                 disabled={!canEdit}
               />
-              全員同一料金
+              全員同一
             </label>
             <label className="flex cursor-pointer items-center gap-2">
               <input
                 type="radio"
                 className="h-3.5 w-3.5"
-                checked={feePricingMode === "byAge"}
-                onChange={() => setFeePricingMode("byAge")}
-                disabled={!canEdit}
-              />
-              年齢帯別（満年齢）
-            </label>
-            <label className="flex cursor-pointer items-center gap-2">
-              <input
-                type="radio"
-                className="h-3.5 w-3.5"
-                checked={feePricingMode === "byAgeCategory"}
+                checked={feeTierMode === "byAgeCategory"}
                 onChange={() => {
-                  setFeePricingMode("byAgeCategory");
+                  setFeeTierMode("byAgeCategory");
                   setCategoryFeeDraft(
                     buildCategoryFeeDraft(
                       ageCategories,
@@ -3402,16 +3265,12 @@ export default function EntrySettingsEditor({
                 }}
                 disabled={!canEdit || ageCategories.length === 0}
               />
-              年齢カテゴリ別
+              AGEカテゴリ別
             </label>
           </div>
-          {feePricingMode === "byAge" ? (
+          {feeTierMode === "byAgeCategory" ? (
             <p className="text-xs text-muted-foreground">
-              年齢は大会開催日基準の満年齢です。大会に参加年齢の上下限がある場合、その範囲をすべての帯で覆う必要があります。
-            </p>
-          ) : feePricingMode === "byAgeCategory" ? (
-            <p className="text-xs text-muted-foreground">
-              大会出場条件の「AGEカテゴリ」で定義した区分ごとに料金を設定します。各カテゴリに生年月日の範囲が必要です。エントリー時は登録者の生年月日が属する区分の単価が使われます（複数に該当する場合は表示順が先の区分）。
+              AGEカテゴリごとに料金を設定します。エントリー時は生年月日が属する区分の単価が使われます。
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">
@@ -3420,126 +3279,11 @@ export default function EntrySettingsEditor({
           )}
           {ageCategories.length === 0 ? (
             <p className="text-xs text-amber-800 dark:text-amber-200/90">
-              年齢カテゴリ別の参加費を使うには、先に大会出場条件の「AGEカテゴリ」で年齢カテゴリを作成してください。
+              AGEカテゴリ別を使うには、先に大会出場条件の「AGEカテゴリ」でカテゴリを作成してください。
             </p>
           ) : null}
 
-          {feePricingMode === "byAge" ? (
-            <div className="space-y-3">
-              {ageFeeFormRows.map((row) => (
-                <div
-                  key={row.id}
-                  className="grid gap-2 rounded-lg border border-border/80 bg-muted/15 p-3 sm:grid-cols-2 lg:grid-cols-4"
-                >
-                  <div className="space-y-1">
-                    <Label className="text-[10px]">下限（歳）</Label>
-                    <Input
-                      numericInput="integer"
-                      min={0}
-                      className="h-8 text-xs"
-                      value={row.minAge}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setAgeFeeFormRows((prev) =>
-                          prev.map((r) => (r.id === row.id ? { ...r, minAge: v } : r))
-                        );
-                      }}
-                      disabled={!canEdit}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[10px]">上限（空=なし）</Label>
-                    <Input
-                      numericInput="integer"
-                      min={0}
-                      className="h-8 text-xs"
-                      value={row.maxAge}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setAgeFeeFormRows((prev) =>
-                          prev.map((r) => (r.id === row.id ? { ...r, maxAge: v } : r))
-                        );
-                      }}
-                      disabled={!canEdit}
-                    />
-                  </div>
-                  {hasIndividualEvents ? (
-                    <div className="space-y-1">
-                      <Label className="text-[10px]">個人（円）</Label>
-                      <Input
-                        numericInput="integer"
-                        min={0}
-                        className="h-8 text-xs"
-                        value={row.individual}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setAgeFeeFormRows((prev) =>
-                            prev.map((r) => (r.id === row.id ? { ...r, individual: v } : r))
-                          );
-                        }}
-                        disabled={!canEdit}
-                      />
-                    </div>
-                  ) : null}
-                  {hasTeamEvents ? (
-                    <div className="space-y-1">
-                      <Label className="text-[10px]">チーム1組（円）</Label>
-                      <Input
-                        numericInput="integer"
-                        min={0}
-                        className="h-8 text-xs"
-                        value={row.team}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setAgeFeeFormRows((prev) =>
-                            prev.map((r) => (r.id === row.id ? { ...r, team: v } : r))
-                          );
-                        }}
-                        disabled={!canEdit}
-                      />
-                    </div>
-                  ) : null}
-                  {canEdit && ageFeeFormRows.length > 1 ? (
-                    <div className="flex items-end sm:col-span-2 lg:col-span-4">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 text-xs text-destructive"
-                        onClick={() =>
-                          setAgeFeeFormRows((prev) => prev.filter((r) => r.id !== row.id))
-                        }
-                      >
-                        この帯を削除
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-              {canEdit ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={() =>
-                    setAgeFeeFormRows((prev) => [
-                      ...prev,
-                      {
-                        id: mkTierRowId(),
-                        minAge: "0",
-                        maxAge: "",
-                        individual: hasIndividualEvents ? "0" : "0",
-                        team: hasTeamEvents ? "0" : "0",
-                      },
-                    ])
-                  }
-                >
-                  年齢帯を追加
-                </Button>
-              ) : null}
-            </div>
-          ) : feePricingMode === "byAgeCategory" ? (
+          {feeTierMode === "byAgeCategory" ? (
             <div className="space-y-3">
               {ageCategories.map((cat) => {
                 const row = categoryFeeDraft[cat.id] ?? { individual: "0", team: "0" };
@@ -3646,7 +3390,7 @@ export default function EntrySettingsEditor({
           <div className="rounded-md border border-border/80 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
             <p>個人種目: 種目数に関係なく選手ごとに一律課金</p>
             <p>
-              チーム種目: 1種目1チームごとにクラブへ課金（年齢帯別は登録者の満年齢、年齢カテゴリ別は生年月日が属する区分の単価）
+              チーム種目: 1種目1チームごとにクラブへ課金（AGEカテゴリ別は登録者の生年月日が属する区分の単価）
             </p>
             <p>複数種目割増とチーム種目のみ特別料金は使用しません。</p>
           </div>

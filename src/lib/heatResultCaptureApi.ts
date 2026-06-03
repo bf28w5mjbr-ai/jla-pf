@@ -61,11 +61,6 @@ export type HeatResultConfirmAppendedRow = {
   teamEntryId: string | null;
 };
 
-export type HeatResultStartListAppendResult =
-  | { ok: true; skipped: false; toRound: "SEMI" | "FINAL"; participantCount: number; heatCount: number }
-  | { ok: true; skipped: true; reason: string }
-  | { ok: false; error: string };
-
 export async function postHeatResultConfirmHeat(
   competitionId: string,
   body: {
@@ -76,7 +71,6 @@ export async function postHeatResultConfirmHeat(
   }
 ): Promise<{
   appended: HeatResultConfirmAppendedRow[];
-  startListAppend?: HeatResultStartListAppendResult | null;
 }> {
   const res = await fetch(
     `/api/competitions/${competitionId}/day-ops/heat-result-capture/confirm-heat`,
@@ -90,7 +84,6 @@ export async function postHeatResultConfirmHeat(
     error?: string;
     message?: string;
     appended?: HeatResultConfirmAppendedRow[];
-    startListAppend?: HeatResultStartListAppendResult | null;
   };
   if (!res.ok) {
     const msg =
@@ -103,8 +96,41 @@ export async function postHeatResultConfirmHeat(
   }
   return {
     appended: Array.isArray(data.appended) ? data.appended : [],
-    startListAppend: data.startListAppend ?? null,
   };
+}
+
+export async function postHeatResultUnconfirmHeat(
+  competitionId: string,
+  body: {
+    eventId: string;
+    round: "HEAT" | "SEMI" | "FINAL";
+    heatIndex: number;
+  }
+): Promise<{ ok: true; heatIndex: number }> {
+  const res = await fetch(
+    `/api/competitions/${competitionId}/day-ops/heat-result-capture/unconfirm-heat`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    message?: string;
+    ok?: boolean;
+    heatIndex?: number;
+  };
+  if (!res.ok) {
+    const msg =
+      typeof data.error === "string" && data.error !== "internal_error"
+        ? data.error
+        : typeof data.message === "string"
+          ? data.message
+          : "リザルト確定の解除に失敗しました";
+    throw new Error(msg);
+  }
+  return { ok: true, heatIndex: body.heatIndex };
 }
 
 export async function postParticipantDsqRevert(
@@ -381,4 +407,71 @@ export async function postHeatResultClearRunUp(
     throw new Error(typeof data.error === "string" ? data.error : "ランアップの解除に失敗しました");
   }
   return { deletedCount: Number(data.deletedCount ?? 0) };
+}
+
+export type NextRoundSlStatusResponse = {
+  fromRound: "HEAT" | "SEMI";
+  toRound: "SEMI" | "FINAL";
+  allHeatsConfirmed: boolean;
+  nextRoundExists: boolean;
+  marshalStarted: boolean;
+  toRoundHasBlockingOfficialResults: boolean;
+  currentFingerprint: string | null;
+  storedFingerprint: string | null;
+  fingerprintMatches: boolean;
+  canGenerate: boolean;
+  canRegenerate: boolean;
+  canRescueRegenerate: boolean;
+  blockedReason: string | null;
+};
+
+export async function getNextRoundSlStatus(
+  competitionId: string,
+  eventId: string,
+  fromRound: "HEAT" | "SEMI"
+): Promise<NextRoundSlStatusResponse> {
+  const res = await fetch(
+    `/api/competitions/${competitionId}/day-ops/next-round-sl-status?eventId=${encodeURIComponent(eventId)}&fromRound=${encodeURIComponent(fromRound)}`
+  );
+  const data = (await res.json().catch(() => ({}))) as NextRoundSlStatusResponse & { error?: string };
+  if (!res.ok) {
+    throw new Error(typeof data.error === "string" ? data.error : "SL 生成状態の取得に失敗しました");
+  }
+  return data;
+}
+
+export async function postNextRoundSlGenerate(
+  competitionId: string,
+  body: {
+    eventId: string;
+    fromRound: "HEAT" | "SEMI";
+    mode: "create" | "regenerate" | "rescue";
+  }
+): Promise<{
+  toRound: "SEMI" | "FINAL";
+  participantCount: number;
+  heatCount: number;
+}> {
+  const res = await fetch(
+    `/api/competitions/${competitionId}/day-ops/next-round-sl-generate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    toRound?: "SEMI" | "FINAL";
+    participantCount?: number;
+    heatCount?: number;
+  };
+  if (!res.ok) {
+    throw new Error(typeof data.error === "string" ? data.error : "SL 生成に失敗しました");
+  }
+  return {
+    toRound: data.toRound === "FINAL" || data.toRound === "SEMI" ? data.toRound : "FINAL",
+    participantCount: Number(data.participantCount ?? 0),
+    heatCount: Number(data.heatCount ?? 0),
+  };
 }

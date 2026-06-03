@@ -297,6 +297,22 @@ export function isTieredEntryFee(entryFee: unknown): boolean {
   return parseAgeFeeTiers(entryFee) !== null || parseAgeCategoryFeeTiers(entryFee) !== null;
 }
 
+/** 廃止した「年齢帯別」参加費（min/max 満年齢帯）が保存されているか */
+export function hasLegacyAgeBandEntryFee(entryFee: unknown): boolean {
+  return parseAgeFeeTiers(entryFee) !== null;
+}
+
+/** 廃止した「年齢帯別」必須資格が保存されているか */
+export function hasLegacyAgeBandQualifications(raw: unknown): boolean {
+  return parseAgeQualificationTiers(raw) !== null;
+}
+
+export const LEGACY_AGE_BAND_ENTRY_FEE_MESSAGE =
+  "年齢帯別の参加費は廃止しました。全員同一または AGEカテゴリ別を指定してください。";
+
+export const LEGACY_AGE_BAND_QUALIFICATIONS_MESSAGE =
+  "年齢帯別の参加資格は廃止しました。全員同一または AGEカテゴリ別を指定してください。";
+
 /**
  * 年齢カテゴリ別／年齢帯別の各ティアに載っている teamEntryFeePerTeam の最大値。
  * クラブ管理者の生年月日がどのティアにも入らないときのチーム請求単価のフォールバックに使う。

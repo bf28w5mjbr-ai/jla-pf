@@ -32,7 +32,7 @@ export function renderRequiredQualificationsSummary(
   if (tiered?.length) {
     return (
       <div className="space-y-1.5 text-sm">
-        <p className="text-[10px] font-medium text-muted-foreground">年齢帯別</p>
+        <p className="text-[10px] font-medium text-muted-foreground">年齢帯別（移行待ち）</p>
         {tiered.map((t, i) => (
           <p key={i} className="text-xs leading-snug">
             <span className="font-medium">

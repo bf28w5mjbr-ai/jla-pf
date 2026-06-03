@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { LiveRoundContentProps } from "./types";
@@ -27,6 +28,43 @@ export type LiveRoundModeBannersProps = {
   hasResultDraftOps?: boolean;
 };
 
+function NfcStatusLine({
+  state,
+  listeningText,
+  unsupportedText,
+  errorText,
+  classListening,
+  classUnsupported,
+  classError,
+}: {
+  state: "idle" | "listening" | "unsupported" | "error";
+  listeningText: string;
+  unsupportedText: string;
+  errorText: string;
+  classListening: string;
+  classUnsupported: string;
+  classError: string;
+}) {
+  if (state === "idle") return null;
+  return (
+    <p
+      className={cn(
+        "rounded-md border px-2 py-1 text-[10px] leading-snug",
+        state === "listening" && classListening,
+        state === "unsupported" && classUnsupported,
+        state === "error" && classError
+      )}
+      role="status"
+    >
+      {state === "listening"
+        ? listeningText
+        : state === "unsupported"
+          ? unsupportedText
+          : errorText}
+    </p>
+  );
+}
+
 export function LiveRoundModeBanners({
   resultCaptureVisible,
   resultMode,
@@ -48,78 +86,79 @@ export function LiveRoundModeBanners({
   const marshalParticipantsPending = Boolean(
     m?.loading && !m.heats?.some((h) => h.participants.length > 0)
   );
+  const callWindowLoading = Boolean(m?.callWindowLoading);
   const resultCaptureInitialLoading = Boolean(
     resultCapture?.loading && (resultCapture.rows.length ?? 0) === 0 && !hasResultDraftOps
+  );
+  const showDayOpsLoadingStatus =
+    Boolean(m) &&
+    (callWindowLoading || (resultCaptureVisible && resultCaptureInitialLoading));
+  const showResultNfc =
+    !marshalParticipantsPending &&
+    !resultCaptureInitialLoading &&
+    m &&
+    resultCapture &&
+    !m.marshalOpsBlocked &&
+    !resultCapture.locked;
+  const showMarshalNfc = Boolean(
+    m && !m.loading && !m.marshalOpsBlocked && !m.isCallClosed
   );
 
   return (
     <>
+      {showDayOpsLoadingStatus ? (
+        <p className="text-[10px] text-muted-foreground" role="status">
+          {resultCaptureVisible && resultCaptureInitialLoading && !callWindowLoading
+            ? "リザルト記録状況を読み込み中…"
+            : "マーシャル締切状態を読み込み中…"}
+        </p>
+      ) : null}
       {resultCaptureVisible && m && resultCapture ? (
         <>
-          <div className="space-y-1.5 rounded-md border border-violet-200/90 bg-violet-50/60 px-2 py-1.5 text-[10px] leading-snug text-violet-950 dark:border-violet-900/70 dark:bg-violet-950/35 dark:text-violet-100">
+          <div className="rounded-md border border-violet-200/90 bg-violet-50/60 px-2 py-1.5 text-[10px] leading-snug text-violet-950 dark:border-violet-900/70 dark:bg-violet-950/35 dark:text-violet-100">
             <p>
-              <span className="font-semibold">リザルトモード</span>
+              <span className="font-semibold">リザルト</span>
               {" — "}
-              各ヒートでマーシャル締切後にのみ記録できます。召集済みのみ対象で、ヒート単位です。チェックまたは NFC
-              で記録し、召集済み全員分そろってから「リザルト確定」してください。記録済みの行は PC ではドラッグ、スマホでは行右の矢印で並べ替えられます（未確定チェックのみのときも同様）。
-            </p>
-            <p className="text-muted-foreground dark:text-violet-200/85">
-              <span className="font-semibold text-violet-950 dark:text-violet-100">脱落式</span>
-              {" — "}
-              「下位から」で脱落着順を入れたあと、ヒート見出しの
-              <span className="font-medium text-foreground"> 残りをランアップ </span>
-              で生存者を着順なし進出として登録できます（アップ枠表示があるとき）。
-            </p>
-            <p className="text-muted-foreground dark:text-violet-200/85">
-              レーン単位の終了ステータス（欠場・棄権・DNF・失格）は、直上の
-              <span className="font-medium text-foreground"> 終了ステータス管理 </span>
-              から登録・取り消しできます（公開用の公式結果に自動反映されます）。終了ステータス後は残りの着順が自動で詰まり、未確定チェックは対象外になります。
-            </p>
-            <p className="text-muted-foreground dark:text-violet-200/85">
-              <span className="font-semibold text-violet-950 dark:text-violet-100">公開</span>
-              {" — "}
-              Web の一般掲載は主催の「公式結果」で
-              <span className="font-medium text-foreground"> 公開日時 </span>
-              が設定されたときです（当日の確定だけでは結果一覧に載りません）。
+              マーシャル締切後のヒートで、召集済みのみ着順を記録し、全員分そろったら「リザルト確定」。
             </p>
             {resultCapture.locked ? (
-              <p className="font-semibold text-amber-800 dark:text-amber-200">
+              <p className="mt-1 font-semibold text-amber-800 dark:text-amber-200">
                 公式結果が確定済みのため記録できません。
               </p>
             ) : null}
             {localConfirmedHeats.length > 0 && !resultCapture.locked ? (
-              <p className="border-t border-violet-200/80 pt-1.5 text-muted-foreground dark:border-violet-800/60">
-                <span className="font-semibold text-violet-950 dark:text-violet-100">確定済みヒート</span>
-                {" — "}
-                左は着順、記録がない行は L＋レーン番号です。
+              <p className="mt-1 text-muted-foreground dark:text-violet-200/85">
+                確定済みヒートの左は着順（未記録は L＋レーン）。
               </p>
             ) : null}
+            <details className="group mt-1.5 [&_summary::-webkit-details-marker]:hidden">
+              <summary className="flex cursor-pointer list-none items-center gap-1 text-muted-foreground hover:text-foreground dark:text-violet-200/85">
+                <ChevronDown
+                  className="size-3 shrink-0 transition-transform group-open:rotate-180"
+                  aria-hidden
+                />
+                <span className="font-medium">もう少し詳しく</span>
+              </summary>
+              <ul className="mt-1.5 list-inside list-disc space-y-1 pl-0.5 text-muted-foreground dark:text-violet-200/85">
+                <li>チェックまたは NFC で記録。PC はドラッグ、スマホは行右の矢印で並べ替え可。</li>
+                <li>
+                  脱落式:「下位から」後、ヒート見出しの「残りをランアップ」で生存者を進出登録（枠があるとき）。
+                </li>
+                <li>終了ステータス（DNS 等）は直上の「終了ステータス管理」から（公式結果に反映）。</li>
+                <li>Web 公開は主催の「公式結果」で公開日時を設定したとき（当日確定のみでは掲載されない）。</li>
+              </ul>
+            </details>
           </div>
-          {!marshalParticipantsPending &&
-          !resultCaptureInitialLoading &&
-          !m.marshalOpsBlocked &&
-          !resultCapture.locked ? (
-            <p
-              className={cn(
-                "rounded-md border px-2 py-1 text-[10px] leading-snug",
-                nfcResultInline === "listening" &&
-                  "border-violet-200/80 bg-violet-50/90 text-violet-950 dark:border-violet-900 dark:bg-violet-950/35 dark:text-violet-100",
-                nfcResultInline === "unsupported" &&
-                  "border-border/80 bg-muted/30 text-muted-foreground",
-                nfcResultInline === "error" &&
-                  "border-amber-200/90 bg-amber-50/80 text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100",
-                nfcResultInline === "idle" && "border-transparent bg-transparent text-muted-foreground"
-              )}
-              role="status"
-            >
-              {nfcResultInline === "listening"
-                ? "NFC 待機中（ヒートを順に試し、タグの選手がいるヒートで次の着順に記録されます）"
-                : nfcResultInline === "unsupported"
-                  ? "この環境では NFC を利用できません。レーン左のチェックで記録してください。"
-                  : nfcResultInline === "error"
-                    ? "NFC を開始できませんでした。「リザルト」をもう一度タップするか、チェックで記録してください。"
-                    : "NFC を準備しています…"}
-            </p>
+          {showResultNfc ? (
+            <NfcStatusLine
+              state={nfcResultInline}
+              listeningText="NFC 待機中 — タグで次の着順に記録"
+              unsupportedText="NFC 不可 — レーン左のチェックで記録"
+              errorText="NFC 開始失敗 — 「リザルト」を再タップするかチェックで記録"
+              classListening="border-violet-200/80 bg-violet-50/90 text-violet-950 dark:border-violet-900 dark:bg-violet-950/35 dark:text-violet-100"
+              classUnsupported="border-border/80 bg-muted/30 text-muted-foreground"
+              classError="border-amber-200/90 bg-amber-50/80 text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100"
+            />
           ) : null}
           <div className="sticky top-2 z-20 mt-1 rounded-md border border-violet-200/90 bg-violet-50/95 px-2 py-1.5 shadow-sm backdrop-blur-[1px] dark:border-violet-900/70 dark:bg-violet-950/70 sm:static sm:bg-violet-50/70 sm:shadow-none dark:sm:bg-violet-950/35">
             <div
@@ -151,37 +190,27 @@ export function LiveRoundModeBanners({
                   role="radio"
                   aria-checked={resultInputOrder === "desc"}
                   onClick={() => setResultInputOrder("desc")}
-                  title="最下位から埋めます。基準人数は当ヒートの召集済人数です（団体は構成員全員が召集済のとき1枠）。失格・未記録は末尾です。"
+                  title="最下位から埋めます。基準は当ヒートの召集済人数（団体は全員召集済で1枠）。失格・未記録は末尾。"
                 >
                   下位から<span className="ml-0.5 font-normal opacity-90">（最下位〜）</span>
                 </Button>
               </div>
             </div>
-            <p
-              className="mt-1 text-left text-[10px] text-muted-foreground sm:text-right"
-              title="降順ではマーシャル一覧の召集済人数が上限です。団体は構成員全員が召集済のとき1枠として数えます。"
-            >
-              失格・未記録は一覧では末尾に並びます。
-            </p>
           </div>
         </>
       ) : resultMode && m && !resultCapture ? (
         <p className="rounded-md border border-violet-200/90 bg-violet-50/60 px-2 py-1.5 text-[10px] leading-snug text-violet-950 dark:border-violet-900/70 dark:bg-violet-950/35 dark:text-violet-100">
-          <span className="font-semibold">リザルトモード</span>
-          — 状態を読み込めませんでした。ページを更新するか、しばらく待ってから再度お試しください。
+          <span className="font-semibold">リザルト</span>
+          — 読み込みに失敗しました。ページを更新してください。
         </p>
       ) : null}
       {marshalInline && m ? (
         <div className="space-y-1.5">
           <div className="rounded-md border border-emerald-200/90 bg-emerald-50/60 px-2 py-1.5 text-[10px] leading-snug text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/35 dark:text-emerald-100">
             <p>
-              <span className="font-semibold">マーシャルモード</span>
+              <span className="font-semibold">マーシャル</span>
               {" — "}
-              チェックは端末間で下書き共有されます。データベースへの召集反映は、上部の
-              <span className="font-medium text-foreground"> 確定 </span>
-              または各ヒートの
-              <span className="font-medium text-foreground"> マーシャル締切 </span>
-              のときです。
+              チェックは端末間で下書き共有。DB 反映は「確定」またはヒートの「マーシャル締切」時。
             </p>
           </div>
           {Object.keys(marshalDraftOps).length > 0 ? (
@@ -213,51 +242,24 @@ export function LiveRoundModeBanners({
                 </div>
               </div>
               {Object.keys(marshalDraftErrors).length > 0 ? (
-                <p className="mt-1 text-[10px] text-destructive">
-                  {Object.keys(marshalDraftErrors).length}件でエラーがあります。再確認して再度確定してください。
+                <p className="mt-1 text-destructive">
+                  {Object.keys(marshalDraftErrors).length}件のエラー — 再確認して確定してください。
                 </p>
               ) : null}
             </div>
           ) : null}
-          {!m.loading && !m.marshalOpsBlocked && !m.isCallClosed ? (
-            <p
-              className={cn(
-                "rounded-md border px-2 py-1 text-[10px] leading-snug",
-                nfcMarshalInline === "listening" &&
-                  "border-orange-200/80 bg-orange-50/90 text-orange-950 dark:border-orange-900 dark:bg-orange-950/35 dark:text-orange-100",
-                nfcMarshalInline === "unsupported" &&
-                  "border-border/80 bg-muted/30 text-muted-foreground",
-                nfcMarshalInline === "error" &&
-                  "border-amber-200/90 bg-amber-50/80 text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100",
-                nfcMarshalInline === "idle" && "border-transparent bg-transparent text-muted-foreground"
-              )}
-              role="status"
-            >
-              {nfcMarshalInline === "listening"
-                ? "NFC 待機中（タグをかざすと、該当する未締切ヒートに記録されます）"
-                : nfcMarshalInline === "unsupported"
-                  ? "この環境では NFC を利用できません。レーン左のチェックで記録してください。"
-                  : nfcMarshalInline === "error"
-                    ? "NFC を開始できませんでした。「マーシャル」をもう一度タップするか、チェックで記録してください。"
-                    : "NFC を準備しています…"}
-            </p>
+          {showMarshalNfc ? (
+            <NfcStatusLine
+              state={nfcMarshalInline}
+              listeningText="NFC 待機中 — タグで未締切ヒートに記録"
+              unsupportedText="NFC 不可 — レーン左のチェックで記録"
+              errorText="NFC 開始失敗 — 「マーシャル」を再タップするかチェックで記録"
+              classListening="border-orange-200/80 bg-orange-50/90 text-orange-950 dark:border-orange-900 dark:bg-orange-950/35 dark:text-orange-100"
+              classUnsupported="border-border/80 bg-muted/30 text-muted-foreground"
+              classError="border-amber-200/90 bg-amber-50/80 text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100"
+            />
           ) : null}
-          <p className="rounded-md border border-dashed border-border/80 bg-muted/20 px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
-            レーン単位の失格は、直上の
-            <span className="font-medium text-foreground"> 失格管理 </span>
-            から登録・取り消しできます。
-          </p>
         </div>
-      ) : m && !marshalInline && !resultMode && !m.loading ? (
-        <p className="rounded-md border border-dashed border-border/80 bg-muted/20 px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
-          通常モードです。マーシャル操作は
-          <span className="font-medium text-foreground"> 「マーシャル」モード </span>
-          、着順の記録・失格管理は
-          <span className="font-medium text-foreground"> 「リザルト」モード </span>
-          に切り替えてください。マーシャルモードでは、各ヒートの
-          <span className="font-medium text-foreground"> マーシャル締切まで </span>
-          召集チェックの付け外しが可能です（確定または締切で反映。締切の解除は公式リザルト記録前に限ります）。
-        </p>
       ) : null}
     </>
   );

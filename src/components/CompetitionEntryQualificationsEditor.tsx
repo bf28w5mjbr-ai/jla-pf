@@ -5,8 +5,6 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
@@ -15,12 +13,11 @@ import {
   CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP,
   deriveEntryQualificationOptionsFromTemplates,
   ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
-  getCertifiedLifesaverUpperQualifications,
   normalizeEntryRequiredQualifications,
+  hasLegacyAgeBandQualifications,
   parseAgeCategoryQualificationTiers,
   parseAgeQualificationTiers,
   type AgeCategoryQualificationTier,
-  type AgeQualificationTier,
 } from "@/lib/competitionEntryAgeTiered";
 import { splitQualificationOptionsForAdminUi } from "@/lib/competitionEntryQualificationUiGroups";
 
@@ -37,14 +34,12 @@ function QualificationOptionGroups({
   primaryOptions,
   foundationOptions,
   otherOptions,
-  showCertifiedBulkHelp,
   isOptionSelected,
   renderOption,
 }: {
   primaryOptions: readonly string[];
   foundationOptions: readonly string[];
   otherOptions: readonly string[];
-  showCertifiedBulkHelp: boolean;
   isOptionSelected?: (option: string) => boolean;
   renderOption: (option: string) => ReactNode;
 }) {
@@ -62,11 +57,6 @@ function QualificationOptionGroups({
           {primaryOptions.length > 0 ? (
             <div className="space-y-2">
               <p className="text-[11px] font-semibold text-foreground">選手登録・認定ライフセーバー</p>
-              {showCertifiedBulkHelp ? (
-                <p className="text-[11px] text-muted-foreground">
-                  「{ENTRY_REQUIRED_CERTIFIED_LIFESAVER}」を選択すると、選手登録・BLS・WaterSafety・審判（RefereeC〜S）を除くすべての資格が一括で選択されます。
-                </p>
-              ) : null}
               <div className="grid gap-2 sm:grid-cols-2">
                 {primaryOptions.map((option) => (
                   <Fragment key={option}>{renderOption(option)}</Fragment>
@@ -157,8 +147,6 @@ export default function CompetitionEntryQualificationsEditor({
   const router = useRouter();
   const sectionRef = useRef<HTMLDivElement | null>(null);
   const dirtyRef = useRef(false);
-  const tierIdRef = useRef(1);
-  const mkTierRowId = () => `age-tier-${tierIdRef.current++}`;
 
   const markDirty = () => {
     dirtyRef.current = true;
@@ -172,11 +160,6 @@ export default function CompetitionEntryQualificationsEditor({
     () => new Set(allowedQualificationOptions),
     [allowedQualificationOptions]
   );
-  const certifiedLifesaverUpperQualifications = useMemo(
-    () => getCertifiedLifesaverUpperQualifications(allowedQualificationOptions),
-    [allowedQualificationOptions]
-  );
-
   const {
     primary: primaryQualOptions,
     foundation: foundationQualOptions,
@@ -185,10 +168,6 @@ export default function CompetitionEntryQualificationsEditor({
     () => splitQualificationOptionsForAdminUi(allowedQualificationOptions),
     [allowedQualificationOptions]
   );
-
-  const showCertifiedBulkHelp =
-    primaryQualOptions.includes(ENTRY_REQUIRED_CERTIFIED_LIFESAVER) &&
-    certifiedLifesaverUpperQualifications.length > 0;
 
   const [requiredQualifications, setRequiredQualifications] = useState<string[]>(() =>
     normalizeEntryRequiredQualifications(
@@ -218,50 +197,20 @@ export default function CompetitionEntryQualificationsEditor({
     [ageCategories]
   );
 
-  const initialParsedQualTiers = parseAgeQualificationTiers(
-    initialRequiredQualifications,
-    allowedQualificationSet
-  );
   const initialParsedCategoryQualTiers = parseAgeCategoryQualificationTiers(
     initialRequiredQualifications,
     allowedQualificationSet
   );
 
-  const [qualPricingMode, setQualPricingMode] = useState<"flat" | "byAge" | "byAgeCategory">(
-    () => {
-      if (initialParsedCategoryQualTiers?.length) return "byAgeCategory";
-      if (initialParsedQualTiers?.length) return "byAge";
-      return "flat";
-    }
+  const legacyQualTiers = useMemo(
+    () => parseAgeQualificationTiers(initialRequiredQualifications, allowedQualificationSet),
+    [initialRequiredQualifications, allowedQualificationSet]
   );
-  const [ageQualFormRows, setAgeQualFormRows] = useState<
-    { id: string; minAge: string; maxAge: string; qualifications: string[] }[]
-  >(() => {
-    if (initialParsedQualTiers?.length) {
-      return initialParsedQualTiers.map((t) => ({
-        id: mkTierRowId(),
-        minAge: String(t.minAge),
-        maxAge: t.maxAge === null ? "" : String(t.maxAge),
-        qualifications: [...t.requiredQualifications],
-      }));
-    }
-    return [
-      {
-        id: mkTierRowId(),
-        minAge: "0",
-        maxAge: "",
-        qualifications: normalizeEntryRequiredQualifications(
-          Array.isArray(initialRequiredQualifications)
-            ? (initialRequiredQualifications as unknown[])
-            : [],
-          {
-            allowedQualifications: allowedQualificationSet,
-            expandCertifiedLifesaverMacro: true,
-          }
-        ),
-      },
-    ];
-  });
+  const hasLegacyQualBands = legacyQualTiers != null && legacyQualTiers.length > 0;
+
+  const [qualTierMode, setQualTierMode] = useState<"flat" | "byAgeCategory">(() =>
+    initialParsedCategoryQualTiers?.length ? "byAgeCategory" : "flat"
+  );
 
   const [categoryQualDraft, setCategoryQualDraft] = useState<Record<string, string[]>>(() => {
     const parsed = initialParsedCategoryQualTiers;
@@ -281,54 +230,23 @@ export default function CompetitionEntryQualificationsEditor({
   );
 
   useEffect(() => {
-    const parsedFlat = parseAgeQualificationTiers(initialRequiredQualifications, allowedQualificationSet);
     const parsedCategory = parseAgeCategoryQualificationTiers(
       initialRequiredQualifications,
       allowedQualificationSet
     );
-    const mode: "flat" | "byAge" | "byAgeCategory" = parsedCategory?.length
-      ? "byAgeCategory"
-      : parsedFlat?.length
-        ? "byAge"
-        : "flat";
-    setQualPricingMode(mode);
-    setRequiredQualifications(
-      normalizeEntryRequiredQualifications(
-        Array.isArray(initialRequiredQualifications)
-          ? (initialRequiredQualifications as unknown[])
-          : [],
-        {
-          allowedQualifications: allowedQualificationSet,
-          expandCertifiedLifesaverMacro: true,
-        }
-      )
-    );
-    if (parsedFlat?.length) {
-      setAgeQualFormRows(
-        parsedFlat.map((t) => ({
-          id: mkTierRowId(),
-          minAge: String(t.minAge),
-          maxAge: t.maxAge === null ? "" : String(t.maxAge),
-          qualifications: [...t.requiredQualifications],
-        }))
+    setQualTierMode(parsedCategory?.length ? "byAgeCategory" : "flat");
+    if (!hasLegacyAgeBandQualifications(initialRequiredQualifications)) {
+      setRequiredQualifications(
+        normalizeEntryRequiredQualifications(
+          Array.isArray(initialRequiredQualifications)
+            ? (initialRequiredQualifications as unknown[])
+            : [],
+          {
+            allowedQualifications: allowedQualificationSet,
+            expandCertifiedLifesaverMacro: true,
+          }
+        )
       );
-    } else {
-      setAgeQualFormRows([
-        {
-          id: mkTierRowId(),
-          minAge: "0",
-          maxAge: "",
-          qualifications: normalizeEntryRequiredQualifications(
-            Array.isArray(initialRequiredQualifications)
-              ? (initialRequiredQualifications as unknown[])
-              : [],
-            {
-              allowedQualifications: allowedQualificationSet,
-              expandCertifiedLifesaverMacro: true,
-            }
-          ),
-        },
-      ]);
     }
     const nextCatDraft: Record<string, string[]> = {};
     for (const cat of sortedAgeCategories) {
@@ -338,29 +256,12 @@ export default function CompetitionEntryQualificationsEditor({
     }
     setCategoryQualDraft(nextCatDraft);
     dirtyRef.current = false;
-  }, [rqFingerprint, ageCategoriesFingerprint, allowedQualificationSet]);
+  }, [rqFingerprint, ageCategoriesFingerprint, allowedQualificationSet, initialRequiredQualifications]);
 
   const toggleQualification = (value: string) => {
     markDirty();
     setRequiredQualifications((current) =>
       applyEntryQualificationToggleWithCertifiedMacro(current, value, allowedQualificationOptions)
-    );
-  };
-
-  const toggleQualInTier = (rowId: string, option: string) => {
-    markDirty();
-    setAgeQualFormRows((rows) =>
-      rows.map((r) => {
-        if (r.id !== rowId) return r;
-        return {
-          ...r,
-          qualifications: applyEntryQualificationToggleWithCertifiedMacro(
-            r.qualifications,
-            option,
-            allowedQualificationOptions
-          ),
-        };
-      })
     );
   };
 
@@ -380,23 +281,7 @@ export default function CompetitionEntryQualificationsEditor({
   };
 
   const handleUpdateQualifications = useCallback(async () => {
-    if (qualPricingMode === "byAge") {
-      for (const row of ageQualFormRows) {
-        const minAge = parseInt(row.minAge, 10);
-        const maxRaw = row.maxAge.trim();
-        const maxAge = maxRaw === "" ? null : parseInt(maxRaw, 10);
-        if (!Number.isFinite(minAge) || minAge < 0) {
-          toast.error("各年齢帯の下限年齢を正しく入力してください");
-          return;
-        }
-        if (maxAge !== null && (!Number.isFinite(maxAge) || maxAge < minAge)) {
-          toast.error("上限年齢は下限以上にするか、上限なしの場合は空欄にしてください");
-          return;
-        }
-      }
-    }
-
-    if (qualPricingMode === "byAgeCategory") {
+    if (qualTierMode === "byAgeCategory") {
       if (sortedAgeCategories.length === 0) {
         toast.error(
           "先に大会出場条件の「AGEカテゴリ」でカテゴリを作成してから、AGEカテゴリ別の資格を設定してください"
@@ -406,39 +291,23 @@ export default function CompetitionEntryQualificationsEditor({
     }
 
     const nextStored: unknown =
-      qualPricingMode === "byAge"
+      qualTierMode === "byAgeCategory"
         ? {
-            ageQualificationTiers: ageQualFormRows.map((row) => {
-              const minAge = parseInt(row.minAge, 10);
-              const maxRaw = row.maxAge.trim();
-              const maxAge = maxRaw === "" ? null : parseInt(maxRaw, 10);
-              return {
-                minAge,
-                maxAge,
-                requiredQualifications: normalizeEntryRequiredQualifications(row.qualifications, {
+            ageCategoryQualificationTiers: sortedAgeCategories.map((cat) => ({
+              ageCategoryId: cat.id,
+              requiredQualifications: normalizeEntryRequiredQualifications(
+                categoryQualDraft[cat.id] ?? [],
+                {
                   allowedQualifications: allowedQualificationSet,
                   expandCertifiedLifesaverMacro: true,
-                }),
-              };
-            }),
+                }
+              ),
+            })),
           }
-        : qualPricingMode === "byAgeCategory"
-          ? {
-              ageCategoryQualificationTiers: sortedAgeCategories.map((cat) => ({
-                ageCategoryId: cat.id,
-                requiredQualifications: normalizeEntryRequiredQualifications(
-                  categoryQualDraft[cat.id] ?? [],
-                  {
-                    allowedQualifications: allowedQualificationSet,
-                    expandCertifiedLifesaverMacro: true,
-                  }
-                ),
-              })),
-            }
-          : normalizeEntryRequiredQualifications(requiredQualifications, {
-              allowedQualifications: allowedQualificationSet,
-              expandCertifiedLifesaverMacro: true,
-            });
+        : normalizeEntryRequiredQualifications(requiredQualifications, {
+            allowedQualifications: allowedQualificationSet,
+            expandCertifiedLifesaverMacro: true,
+          });
 
     setIsUpdatingQualifications(true);
 
@@ -449,25 +318,20 @@ export default function CompetitionEntryQualificationsEditor({
         requiresParticipantNotice
       );
       const basePayload =
-        qualPricingMode === "byAge"
+        qualTierMode === "byAgeCategory"
           ? {
-              ageQualificationTiers: (nextStored as { ageQualificationTiers: AgeQualificationTier[] })
-                .ageQualificationTiers,
+              ageCategoryQualificationTiers: (
+                nextStored as {
+                  ageCategoryQualificationTiers: AgeCategoryQualificationTier[];
+                }
+              ).ageCategoryQualificationTiers,
             }
-          : qualPricingMode === "byAgeCategory"
-            ? {
-                ageCategoryQualificationTiers: (
-                  nextStored as {
-                    ageCategoryQualificationTiers: AgeCategoryQualificationTier[];
-                  }
-                ).ageCategoryQualificationTiers,
-              }
-            : {
-                requiredQualifications: normalizeEntryRequiredQualifications(requiredQualifications, {
-                  allowedQualifications: allowedQualificationSet,
-                  expandCertifiedLifesaverMacro: true,
-                }),
-              };
+          : {
+              requiredQualifications: normalizeEntryRequiredQualifications(requiredQualifications, {
+                allowedQualifications: allowedQualificationSet,
+                expandCertifiedLifesaverMacro: true,
+              }),
+            };
       const response = await fetch(`/api/competitions/${competitionId}/entry-qualifications`, {
         method: "PUT",
         headers: {
@@ -502,13 +366,12 @@ export default function CompetitionEntryQualificationsEditor({
       setIsUpdatingQualifications(false);
     }
   }, [
-    ageQualFormRows,
     allowedQualificationSet,
     categoryQualDraft,
     competitionId,
     initialRequiredQualifications,
     onSuccessfulSave,
-    qualPricingMode,
+    qualTierMode,
     requiredQualifications,
     requiresParticipantNotice,
     router,
@@ -538,16 +401,39 @@ export default function CompetitionEntryQualificationsEditor({
           資格テンプレートが未登録のため、参加資格を設定できません。
         </div>
       ) : null}
+      {hasLegacyQualBands && legacyQualTiers ? (
+        <div
+          role="status"
+          className="space-y-2 rounded-lg border border-amber-200/80 bg-amber-50/90 px-3 py-2.5 text-xs leading-relaxed text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/35 dark:text-amber-50"
+        >
+          <p className="font-medium">年齢帯別で保存済みです（読取専用）</p>
+          <p className="text-amber-900/85 dark:text-amber-100/85">
+            「全員同一」または「AGEカテゴリ別」で保存すると移行できます。移行スクリプトの利用も可能です。
+          </p>
+          <ul className="space-y-1">
+            {legacyQualTiers.map((t, i) => (
+              <li key={i}>
+                <span className="font-medium">
+                  {t.minAge}〜{t.maxAge == null ? "上限なし" : `${t.maxAge}歳`}
+                </span>
+                {t.requiredQualifications.length > 0
+                  ? ` · ${t.requiredQualifications.join("、")}`
+                  : " · 資格不要"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <div className="space-y-3">
         <div className="flex flex-wrap gap-3 text-xs">
           <label className="flex cursor-pointer items-center gap-2">
             <input
               type="radio"
               className="h-3.5 w-3.5"
-              checked={qualPricingMode === "flat"}
+              checked={qualTierMode === "flat"}
               onChange={() => {
                 markDirty();
-                setQualPricingMode("flat");
+                setQualTierMode("flat");
               }}
               disabled={!canEdit || isUpdatingQualifications}
             />
@@ -557,39 +443,24 @@ export default function CompetitionEntryQualificationsEditor({
             <input
               type="radio"
               className="h-3.5 w-3.5"
-              checked={qualPricingMode === "byAge"}
+              checked={qualTierMode === "byAgeCategory"}
               onChange={() => {
                 markDirty();
-                setQualPricingMode("byAge");
-              }}
-              disabled={!canEdit || isUpdatingQualifications}
-            />
-            年齢帯別
-          </label>
-          <label className="flex cursor-pointer items-center gap-2">
-            <input
-              type="radio"
-              className="h-3.5 w-3.5"
-              checked={qualPricingMode === "byAgeCategory"}
-              onChange={() => {
-                markDirty();
-                setQualPricingMode("byAgeCategory");
+                setQualTierMode("byAgeCategory");
               }}
               disabled={!canEdit || sortedAgeCategories.length === 0}
             />
-            年齢カテゴリ別
+            AGEカテゴリ別
           </label>
         </div>
         <p className="text-xs text-muted-foreground">
-          {qualPricingMode === "byAgeCategory"
-            ? "大会出場条件の「AGEカテゴリ」で定義した区分ごとに資格を設定します。各カテゴリに生年月日の範囲が必要です。エントリー時は登録者の生年月日が属する区分の資格が使われます（複数に該当する場合は表示順が先の区分）。"
-            : qualPricingMode === "byAge"
-              ? "年齢は大会の「年齢・所属クラブ」で設定した範囲（開催日時点の満年齢）に合わせて帯を分けてください。帯が重なると保存できません。"
-              : "すべての参加者に同じ資格を要求します。"}
+          {qualTierMode === "byAgeCategory"
+            ? "AGEカテゴリごとに資格を設定します。エントリー時は生年月日が属する区分の資格が使われます。"
+            : "すべての参加者に同じ資格を要求します。"}
         </p>
         {sortedAgeCategories.length === 0 ? (
           <p className="text-[11px] text-amber-800 dark:text-amber-200/90">
-            年齢カテゴリ別を使うには、先に大会出場条件の「AGEカテゴリ」でカテゴリを作成してください。
+            AGEカテゴリ別を使うには、先に大会出場条件の「AGEカテゴリ」でカテゴリを作成してください。
           </p>
         ) : null}
         {autoSaveOnBlur ? (
@@ -598,7 +469,7 @@ export default function CompetitionEntryQualificationsEditor({
           </p>
         ) : null}
 
-        {qualPricingMode === "flat" ? (
+        {qualTierMode === "flat" ? (
           <div className="space-y-2">
             {orderedFlatBadges.length > 0 && (
               <div className="flex flex-wrap gap-2">
@@ -616,7 +487,6 @@ export default function CompetitionEntryQualificationsEditor({
               primaryOptions={primaryQualOptions}
               foundationOptions={foundationQualOptions}
               otherOptions={otherQualOptions}
-              showCertifiedBulkHelp={showCertifiedBulkHelp}
               isOptionSelected={(option) => requiredQualifications.includes(option)}
               renderOption={(option) => (
                 <label
@@ -633,7 +503,7 @@ export default function CompetitionEntryQualificationsEditor({
               )}
             />
           </div>
-        ) : qualPricingMode === "byAgeCategory" && sortedAgeCategories.length > 0 ? (
+        ) : qualTierMode === "byAgeCategory" && sortedAgeCategories.length > 0 ? (
           <div className="space-y-3">
             {sortedAgeCategories.map((cat) => (
               <div
@@ -645,7 +515,6 @@ export default function CompetitionEntryQualificationsEditor({
                   primaryOptions={primaryQualOptions}
                   foundationOptions={foundationQualOptions}
                   otherOptions={otherQualOptions}
-                  showCertifiedBulkHelp={showCertifiedBulkHelp}
                   isOptionSelected={(option) =>
                     (categoryQualDraft[cat.id] ?? []).includes(option)
                   }
@@ -666,106 +535,7 @@ export default function CompetitionEntryQualificationsEditor({
               </div>
             ))}
           </div>
-        ) : (
-          <div className="space-y-3">
-            {ageQualFormRows.map((row) => (
-              <div key={row.id} className="space-y-2 rounded-lg border border-border/80 bg-muted/15 p-3">
-                <div className="flex flex-wrap items-end gap-2">
-                  <div className="space-y-1">
-                    <Label className="text-[10px]">下限（歳）</Label>
-                    <Input
-                      numericInput="integer"
-                      min={0}
-                      className="h-8 w-20 text-xs"
-                      value={row.minAge}
-                      onChange={(e) => {
-                        markDirty();
-                        const v = e.target.value;
-                        setAgeQualFormRows((prev) =>
-                          prev.map((r) => (r.id === row.id ? { ...r, minAge: v } : r))
-                        );
-                      }}
-                      disabled={!canEdit || isUpdatingQualifications}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[10px]">上限（空=なし）</Label>
-                    <Input
-                      numericInput="integer"
-                      min={0}
-                      className="h-8 w-20 text-xs"
-                      value={row.maxAge}
-                      onChange={(e) => {
-                        markDirty();
-                        const v = e.target.value;
-                        setAgeQualFormRows((prev) =>
-                          prev.map((r) => (r.id === row.id ? { ...r, maxAge: v } : r))
-                        );
-                      }}
-                      disabled={!canEdit || isUpdatingQualifications}
-                    />
-                  </div>
-                  {canEdit && ageQualFormRows.length > 1 ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 text-xs text-destructive"
-                      onClick={() => {
-                        markDirty();
-                        setAgeQualFormRows((prev) => prev.filter((r) => r.id !== row.id));
-                      }}
-                    >
-                      削除
-                    </Button>
-                  ) : null}
-                </div>
-                <QualificationOptionGroups
-                  primaryOptions={primaryQualOptions}
-                  foundationOptions={foundationQualOptions}
-                  otherOptions={otherQualOptions}
-                  showCertifiedBulkHelp={showCertifiedBulkHelp}
-                  isOptionSelected={(option) => row.qualifications.includes(option)}
-                  renderOption={(option) => (
-                    <label
-                      className="flex items-center gap-2 rounded-md border border-gray-200 bg-background px-2 py-1.5 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={row.qualifications.includes(option)}
-                        onChange={() => toggleQualInTier(row.id, option)}
-                        disabled={!canEdit || isUpdatingQualifications}
-                      />
-                      <span>{option}</span>
-                    </label>
-                  )}
-                />
-              </div>
-            ))}
-            {canEdit ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs"
-                onClick={() => {
-                  markDirty();
-                  setAgeQualFormRows((prev) => [
-                    ...prev,
-                    {
-                      id: mkTierRowId(),
-                      minAge: "0",
-                      maxAge: "",
-                      qualifications: [],
-                    },
-                  ]);
-                }}
-              >
-                年齢帯を追加
-              </Button>
-            ) : null}
-          </div>
-        )}
+        ) : null}
       </div>
 
       {canEdit && !autoSaveOnBlur ? (
@@ -791,10 +561,8 @@ export default function CompetitionEntryQualificationsEditor({
     <Card className="overflow-hidden">
       <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
         <CardTitle className="text-base font-semibold">出場に必要な資格</CardTitle>
-        <CardDescription className="space-y-1 text-xs">
-          <span className="block">未選択の場合は資格不要です。</span>
-          <span className="block text-muted-foreground">資格候補は資格テンプレートから自動反映されます。</span>
-          <span className="block text-muted-foreground">{CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP}</span>
+        <CardDescription className="text-xs text-muted-foreground">
+          未選択の場合は資格不要です。{CERTIFIED_LIFESAVER_ENTRY_REQUIREMENT_HELP}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 px-4 py-3">{inner}</CardContent>

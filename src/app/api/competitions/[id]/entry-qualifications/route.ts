@@ -11,45 +11,15 @@ import {
 } from "@/lib/competitionPublishedEditRules";
 import {
   deriveEntryQualificationOptionsFromTemplates,
+  LEGACY_AGE_BAND_QUALIFICATIONS_MESSAGE,
   normalizeAgeCategoryQualificationTiersInput,
   normalizeEntryRequiredQualifications,
   validateAgeCategoryQualificationTiersAgainstCategories,
-  validateAgeQualificationTiersCoverCompetitionRange,
-  validateAgeTiersNoOverlap,
   type AgeCategoryQualificationTier,
-  type AgeQualificationTier,
 } from "@/lib/competitionEntryAgeTiered";
 import { isOrgAdminRole } from "@/lib/roleScopes";
 
 type RouteContext = { params: Promise<{ id: string }> };
-
-function normalizeTierList(
-  items: unknown[],
-  allowedQualifications: ReadonlySet<string>
-): AgeQualificationTier[] {
-  const out: AgeQualificationTier[] = [];
-  for (const item of items) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    const t = item as Record<string, unknown>;
-    const minAge = typeof t.minAge === "number" ? Math.floor(t.minAge) : NaN;
-    const maxAge =
-      t.maxAge === null || t.maxAge === undefined
-        ? null
-        : typeof t.maxAge === "number"
-          ? Math.floor(t.maxAge)
-          : NaN;
-    if (!Number.isFinite(minAge) || minAge < 0) continue;
-    if (maxAge !== null && (!Number.isFinite(maxAge) || maxAge < minAge)) continue;
-    const qualsRaw = t.requiredQualifications;
-    if (!Array.isArray(qualsRaw)) continue;
-    const requiredQualifications = normalizeEntryRequiredQualifications(qualsRaw, {
-      allowedQualifications,
-      expandCertifiedLifesaverMacro: true,
-    });
-    out.push({ minAge, maxAge, requiredQualifications });
-  }
-  return out;
-}
 
 export async function PUT(request: NextRequest, context: RouteContext) {
   try {
@@ -166,32 +136,10 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       }));
       stored = { ageCategoryQualificationTiers: normalized };
     } else if (ageQualificationTiers !== undefined) {
-      if (!Array.isArray(ageQualificationTiers)) {
-        return NextResponse.json(
-          { message: "年齢帯別の資格の形式が正しくありません" },
-          { status: 400 }
-        );
-      }
-      const tiers = normalizeTierList(ageQualificationTiers, allowedQualificationSet);
-      if (tiers.length === 0) {
-        return NextResponse.json(
-          { message: "年齢帯を1件以上指定してください" },
-          { status: 400 }
-        );
-      }
-      const overlap = validateAgeTiersNoOverlap(tiers);
-      if (overlap) {
-        return NextResponse.json({ message: overlap }, { status: 400 });
-      }
-      const coverErr = validateAgeQualificationTiersCoverCompetitionRange(
-        tiers,
-        competition.minAge,
-        competition.maxAge
+      return NextResponse.json(
+        { message: LEGACY_AGE_BAND_QUALIFICATIONS_MESSAGE },
+        { status: 400 }
       );
-      if (coverErr) {
-        return NextResponse.json({ message: coverErr }, { status: 400 });
-      }
-      stored = { ageQualificationTiers: tiers };
     } else {
       if (!Array.isArray(requiredQualifications)) {
         return NextResponse.json(

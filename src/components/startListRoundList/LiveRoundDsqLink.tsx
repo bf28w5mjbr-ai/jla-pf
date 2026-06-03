@@ -27,7 +27,7 @@ export function LiveRoundDsqLink({
       {showDsqManagementLink && m ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/20 bg-destructive/5 px-2.5 py-2 dark:border-destructive/30 dark:bg-destructive/10">
           <p className="min-w-0 text-[10px] leading-snug text-muted-foreground">
-            レーン単位の終了ステータス（欠場・棄権・DNF・失格）の登録・取り消しはこちらから行えます。
+            DNS・棄権・DNF・失格の登録・取り消し
           </p>
           <Button
             variant="outline"

@@ -1,9 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { fetchWithConnectionRetry } from "@/lib/browserUploadHelpers";
 import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/env";
+import type { CompetitionRelationRole } from "@/lib/competitionRelatedOrganizations";
 
 export type CompetitionRelationLogoUploadResponse = {
-  logos?: unknown;
+  relatedOrganizations?: unknown;
+  organizationId?: string;
   logoUrl?: string;
   name?: string;
 };
@@ -30,7 +32,8 @@ const resilientFetch: typeof fetch = (input, init) =>
 
 export async function tryDirectCompetitionRelationLogoUpload(
   competitionId: string,
-  type: "cooperator" | "grant",
+  organizationId: string,
+  role: CompetitionRelationRole,
   file: File,
   name: string,
 ): Promise<DirectCompetitionRelationLogoUploadResult> {
@@ -43,7 +46,7 @@ export async function tryDirectCompetitionRelationLogoUpload(
     sessionRes = await resilientFetch(`/api/competitions/${competitionId}/relations/logo/upload-session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, name, fileName: file.name }),
+      body: JSON.stringify({ organizationId, role, name, fileName: file.name }),
     });
   } catch {
     return { kind: "multipart" };
@@ -97,7 +100,7 @@ export async function tryDirectCompetitionRelationLogoUpload(
     completeRes = await resilientFetch(`/api/competitions/${competitionId}/relations/logo/upload-complete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, name, path: session.path }),
+      body: JSON.stringify({ organizationId, role, name, path: session.path }),
     });
   } catch {
     return { kind: "multipart" };
@@ -119,7 +122,8 @@ export async function tryDirectCompetitionRelationLogoUpload(
 
 export async function tryJsonCompetitionRelationLogoUpload(
   competitionId: string,
-  type: "cooperator" | "grant",
+  organizationId: string,
+  role: CompetitionRelationRole,
   file: File,
   name: string,
 ): Promise<JsonCompetitionRelationLogoUploadResult> {
@@ -147,7 +151,7 @@ export async function tryJsonCompetitionRelationLogoUpload(
     res = await resilientFetch(`/api/competitions/${competitionId}/relations/logo/upload-json`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, name, fileBase64 }),
+      body: JSON.stringify({ organizationId, role, name, fileBase64 }),
     });
   } catch {
     return { kind: "skip" };

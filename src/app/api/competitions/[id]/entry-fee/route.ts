@@ -9,10 +9,8 @@ import {
   loadCompetitionMutationState,
 } from "@/lib/competitionPublishedEditRules";
 import {
+  LEGACY_AGE_BAND_ENTRY_FEE_MESSAGE,
   normalizeAgeCategoryFeeTiersInput,
-  validateAgeFeeTiersCoverCompetitionRange,
-  validateAgeTiersNoOverlap,
-  type AgeFeeTier,
 } from "@/lib/competitionEntryAgeTiered";
 import { eventUsesBirthDateRange } from "@/lib/eventBirthDateEligibility";
 import { isOrgAdminRole } from "@/lib/roleScopes";
@@ -20,31 +18,6 @@ import { isOrgAdminRole } from "@/lib/roleScopes";
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
-
-function parseAgeFeeTiersFromBody(items: unknown[]): AgeFeeTier[] | null {
-  const out: AgeFeeTier[] = [];
-  for (const item of items) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    const t = item as Record<string, unknown>;
-    const minAge = typeof t.minAge === "number" ? Math.floor(t.minAge) : NaN;
-    const maxAge =
-      t.maxAge === null || t.maxAge === undefined
-        ? null
-        : typeof t.maxAge === "number"
-          ? Math.floor(t.maxAge)
-          : NaN;
-    const individualEntryFee =
-      typeof t.individualEntryFee === "number" ? t.individualEntryFee : NaN;
-    const teamEntryFeePerTeam =
-      typeof t.teamEntryFeePerTeam === "number" ? t.teamEntryFeePerTeam : NaN;
-    if (!Number.isFinite(minAge) || minAge < 0) continue;
-    if (maxAge !== null && (!Number.isFinite(maxAge) || maxAge < minAge)) continue;
-    if (!Number.isFinite(individualEntryFee) || individualEntryFee < 0) continue;
-    if (!Number.isFinite(teamEntryFeePerTeam) || teamEntryFeePerTeam < 0) continue;
-    out.push({ minAge, maxAge, individualEntryFee, teamEntryFeePerTeam });
-  }
-  return out.length > 0 ? out : null;
-}
 
 // エントリー費用設定を更新
 export async function PUT(
@@ -182,32 +155,7 @@ export async function PUT(
 
       entryFeeData = { ageCategoryFeeTiers: tiers };
     } else if (body.pricingMode === "byAge") {
-      if (!Array.isArray(body.ageFeeTiers)) {
-        return NextResponse.json(
-          { message: "年齢帯別参加費の形式が正しくありません" },
-          { status: 400 }
-        );
-      }
-      const tiers = parseAgeFeeTiersFromBody(body.ageFeeTiers);
-      if (!tiers) {
-        return NextResponse.json(
-          { message: "年齢帯を1件以上、正しい形式で指定してください" },
-          { status: 400 }
-        );
-      }
-      const overlap = validateAgeTiersNoOverlap(tiers);
-      if (overlap) {
-        return NextResponse.json({ message: overlap }, { status: 400 });
-      }
-      const coverErr = validateAgeFeeTiersCoverCompetitionRange(
-        tiers,
-        competition.minAge,
-        competition.maxAge
-      );
-      if (coverErr) {
-        return NextResponse.json({ message: coverErr }, { status: 400 });
-      }
-      entryFeeData = { ageFeeTiers: tiers };
+      return NextResponse.json({ message: LEGACY_AGE_BAND_ENTRY_FEE_MESSAGE }, { status: 400 });
     } else {
       const { individualEntryFee, teamEntryFeePerTeam } = body;
 

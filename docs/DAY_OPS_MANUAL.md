@@ -67,7 +67,11 @@
   - `GET /api/competitions/{id}/day-ops/heat-result-capture`
   - `POST/PATCH /api/competitions/{id}/day-ops/heat-result-capture/append`
   - `POST /api/competitions/{id}/day-ops/heat-result-capture/confirm-heat`
+  - `POST /api/competitions/{id}/day-ops/heat-result-capture/unconfirm-heat`（ヒート単位の確定解除。種目全体の公式結果ロック済み時は 409）
   - `POST /api/competitions/{id}/day-ops/heat-result-capture/run-up`
+- 次ラウンド SL（手動生成）:
+  - `GET /api/competitions/{id}/day-ops/next-round-sl-status?eventId=&fromRound=`（生成/再生成/救済の可否）
+  - `POST /api/competitions/{id}/day-ops/next-round-sl-generate`（body: `{ eventId, fromRound, mode: create | regenerate | rescue }`）
 - 終了ステータス（レーン単位）:
   - `POST /api/competitions/{id}/day-ops/heat-lane-terminal-status`（`status`: DNS | WITHDRAWN | DNF | DSQ）
   - `POST /api/competitions/{id}/day-ops/participant-terminal-revert`
@@ -78,4 +82,8 @@
 - `CHECKED_IN` は新規付与しないが、既存値は召集済み相当として扱う。
 - `DNS` / `WITHDRAWN` / `DNF` / `DSQ` は終了系ステータスとして扱い、通常のマーシャル更新対象外。
 - 公式結果が付いたヒートは、マーシャル締切の再オープンを禁止する。
+- ヒート単位のリザルト確定は `confirm-heat` で行い、誤りがあれば `unconfirm-heat` で解除してから修正・再確定する（種目全体ロック後は解除不可）。
+- **次ラウンド SL は自動生成しない。** 前ラウンドの全ヒートがリザルト確定したあと、次ラタブのモードバー（運用側）から「SL生成」で手動作成する。
+- 前ラ結果を修正すると fingerprint が変わる。次ラマーシャル開始前なら「SL再生成」、開始後は通常再生成不可（「SL再生成（救済）」のみ。CALLED/終了系を維持し配置を再シャッフル）。
+- 次ラウンドでリザルト入力・ヒート確定・ラウンドロックのいずれかが始まったら、SL 生成/再生成/救済再生成はすべて不可（前ラ修正が必要な場合は次ラリザルトを先に解除する）。
 - チームメンバー未割当の行はリザルト入力をブロックする。

@@ -168,9 +168,12 @@ curl -sS -H "Authorization: Bearer $CRON_SECRET" "$E2E_BASE_URL/api/cron/unpaid-
 - `DELETE /api/competitions/[id]/attachments/[attachmentId]`
 
 ### 大会：関係情報
-- `PUT /api/competitions/[id]/relations`
-- `POST /api/competitions/[id]/relations/logo`
-- `DELETE /api/competitions/[id]/relations/logo`
+- `PUT /api/competitions/[id]/relations` — body: `{ relatedOrganizations: [{ id, name, role, logoUrl?, sortOrder }] }`
+- `POST /api/competitions/[id]/relations/logo` — multipart: `organizationId`, `role`, `name`, `file`
+- `DELETE /api/competitions/[id]/relations/logo?organizationId=...`
+- `POST /api/competitions/[id]/relations/logo/upload-session` — JSON: `{ organizationId, role, name, fileName }`
+- `POST /api/competitions/[id]/relations/logo/upload-complete` — JSON: `{ organizationId, role, name, path }`
+- `POST /api/competitions/[id]/relations/logo/upload-json` — JSON: `{ organizationId, role, name, fileBase64 }`
 
 ## イベント（結果API）
 - `GET /api/events/[eventId]/results`

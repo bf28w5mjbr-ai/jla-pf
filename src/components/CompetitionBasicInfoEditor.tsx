@@ -398,9 +398,6 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
     <Card padding="none" className="overflow-hidden border-border shadow-sm">
       <CardHeader className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
         <CardTitle className="text-base font-semibold">大会基本情報</CardTitle>
-        <CardDescription className="text-sm">
-          各欄を編集し、フォーカスを外すと自動で保存されます。
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 px-4 py-4 sm:px-5">
         <p
@@ -413,7 +410,7 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
                 : "text-muted-foreground"
           )}
         >
-          {statusText || "変更後にフォーカスを外すと自動で更新されます。"}
+          {statusText || "フォーカスを外すと自動保存されます。"}
         </p>
 
         <div className={sectionClass}>
@@ -550,9 +547,6 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
             <Users className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
             所属クラブ
           </div>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            エントリー時に登録クラブの選択を必須にするかどうかです。
-          </p>
           <div className="grid gap-2 sm:grid-cols-2">
             <label className="flex cursor-pointer items-center gap-2.5 rounded-md border border-border bg-background px-3 py-2.5 text-sm shadow-sm transition-colors hover:bg-muted/40 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/60">
               <input

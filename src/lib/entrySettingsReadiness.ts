@@ -55,7 +55,7 @@ export function buildEntrySettingsReadinessItems(
     label: "参加費",
     ok: feesOk,
     hint: !feesOk
-      ? "一律・年齢帯別・年齢カテゴリ別のいずれかで、個人・チームの参加費を設定してください"
+      ? "全員同一または AGEカテゴリ別で、個人・チームの参加費を設定してください"
       : undefined,
   };
 

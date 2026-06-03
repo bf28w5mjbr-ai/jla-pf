@@ -44,7 +44,7 @@ function tryParseJsonArray(value: unknown): unknown[] | null {
 }
 
 /**
- * Competition.cooperatorsLogos / grantsLogos（JSON）を表示用に正規化する。
+ * Competition 関係組織ロゴ（relatedOrganizations[].logoUrl）を表示用に正規化する。
  * キー揺れ（logo_url 等）、JSON 文字列、前後空白を吸収する。
  */
 export function normalizeRelationLogos(value: unknown): RelationLogo[] {

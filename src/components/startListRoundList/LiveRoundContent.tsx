@@ -119,6 +119,8 @@ export function LiveRoundContent({
     setDragOverParticipantKey,
     heatResultConfirmTarget,
     setHeatResultConfirmTarget,
+    heatResultUnconfirmTarget,
+    setHeatResultUnconfirmTarget,
     heatResultConfirmBusyHeat,
     runUpTarget,
     setRunUpTarget,
@@ -135,6 +137,7 @@ export function LiveRoundContent({
     reorderResultRanks,
     reorderResultOrder,
     runHeatResultConfirm,
+    runHeatResultUnconfirm,
   } = useResultCaptureDraft({
     eventId,
     m: marshalCtx,
@@ -278,6 +281,7 @@ export function LiveRoundContent({
           rankOrderKeysForHeat={rankOrderKeysForHeatIndex}
           reorderResultOrder={reorderResultOrder}
           setHeatResultConfirmTarget={setHeatResultConfirmTarget}
+          setHeatResultUnconfirmTarget={setHeatResultUnconfirmTarget}
           heatResultConfirmBusyHeat={heatResultConfirmBusyHeat}
           setRunUpTarget={setRunUpTarget}
           setClearRunUpTarget={setClearRunUpTarget}
@@ -302,8 +306,11 @@ export function LiveRoundContent({
         runHeatMarshalReopen={runHeatMarshalReopen}
         heatResultConfirmTarget={heatResultConfirmTarget}
         setHeatResultConfirmTarget={setHeatResultConfirmTarget}
+        heatResultUnconfirmTarget={heatResultUnconfirmTarget}
+        setHeatResultUnconfirmTarget={setHeatResultUnconfirmTarget}
         heatResultConfirmBusyHeat={heatResultConfirmBusyHeat}
         runHeatResultConfirm={runHeatResultConfirm}
+        runHeatResultUnconfirm={runHeatResultUnconfirm}
         runUpTarget={runUpTarget}
         setRunUpTarget={setRunUpTarget}
         runUpBusyHeat={runUpBusyHeat}

@@ -178,6 +178,10 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
     const roundName =
       roundTabDisplayLabels[tabIndex]?.trim() || `ラウンド ${tabIndex + 1}`;
     const mode: StartListMarshalViewMode = dayOps.getViewModeForTab(tabId);
+    const showNextRoundSl =
+      tabIndex > 0 &&
+      dayOps.prevRoundForSl != null &&
+      activeTabIndex === tabIndex;
     return (
       <StartListMarshalModeBar
         tabId={tabId}
@@ -187,6 +191,16 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
         showMarshalOps={showMarshalOps}
         showResultOps={showResultOps}
         onModeChange={dayOps.persistMarshalViewMode}
+        nextRoundSl={
+          showNextRoundSl
+            ? {
+                loading: dayOps.nextRoundSlLoading,
+                busy: dayOps.nextRoundSlBusy,
+                status: dayOps.nextRoundSlStatus,
+                onGenerate: dayOps.runNextRoundSlGenerate,
+              }
+            : undefined
+        }
       />
     );
   };
@@ -520,12 +534,10 @@ export default function StartListEventOpsCard(props: StartListEventCardProps) {
                 <span className="font-medium text-foreground">表示モード</span>
                 {showMarshalOps ? (
                   <>
-                    ：マーシャル＝召集チェック（下書き共有）・NFC・ヒート締切。リザルト＝召集済みのみ着順入力・NFC。
-                    チェックの下書きは端末間で同期されます（確定／締切／リザルト確定で本番データへ反映）。
-                    他端末の変更は SSE（有効時）または操作反映で更新。タブごとにモードは独立です。
+                    ：上部の「マーシャル」「リザルト」で切替（タブごとに独立）。確定／締切／リザルト確定で本番データへ反映。
                   </>
                 ) : (
-                  <>：リザルト＝着順入力（本画面のインライン）。</>
+                  <>：リザルト＝着順入力。</>
                 )}
               </p>
             ) : null}

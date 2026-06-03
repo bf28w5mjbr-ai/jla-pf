@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import type { HeatMarshalParticipant } from "@/components/HeatMarshalLanePanel";
 import type { HeatResultCaptureRow } from "@/lib/heatResultCaptureApi";
 import {
@@ -9,6 +8,7 @@ import {
   postHeatResultConfirmHeat,
   postHeatResultReorder,
   postHeatResultRunUp,
+  postHeatResultUnconfirmHeat,
 } from "@/lib/heatResultCaptureApi";
 import { toast } from "sonner";
 import {
@@ -83,6 +83,7 @@ export function useResultCaptureDraft(args: {
   const [dragSourceParticipantKey, setDragSourceParticipantKey] = useState<string | null>(null);
   const [dragOverParticipantKey, setDragOverParticipantKey] = useState<string | null>(null);
   const [heatResultConfirmTarget, setHeatResultConfirmTarget] = useState<number | null>(null);
+  const [heatResultUnconfirmTarget, setHeatResultUnconfirmTarget] = useState<number | null>(null);
   const [heatResultConfirmBusyHeat, setHeatResultConfirmBusyHeat] = useState<number | null>(null);
   const [runUpTarget, setRunUpTarget] = useState<number | null>(null);
   const [clearRunUpTarget, setClearRunUpTarget] = useState<number | null>(null);
@@ -100,7 +101,6 @@ export function useResultCaptureDraft(args: {
   const lastLocalResultDraftTouchRef = useRef(0);
   const heatResultConfirmBusyHeatRef = useRef<number | null>(null);
   const resultDraftSequenceRef = useRef(0);
-  const router = useRouter();
   const resultDraftSyncContextRef = useRef(resultDraftSyncContext);
   const mRef = useRef(m);
   const resultCaptureRef = useRef(resultCapture);
@@ -796,7 +796,7 @@ export function useResultCaptureDraft(args: {
           await new Promise((resolve) => setTimeout(resolve, 1500));
         }
         try {
-          const { appended, startListAppend } = await postHeatResultConfirmHeat(marshal.competitionId, {
+          const { appended } = await postHeatResultConfirmHeat(marshal.competitionId, {
             eventId,
             round: marshal.round,
             heatIndex: displayHeatNumber,
@@ -813,14 +813,8 @@ export function useResultCaptureDraft(args: {
             });
           }
           clearResultDraftsForHeat(displayHeatNumber);
+          patchResultHeatConfirmed(displayHeatNumber);
           toast.success(`ヒート ${displayHeatNumber} のリザルトを確定しました`);
-          if (startListAppend?.ok && !startListAppend.skipped) {
-            const roundLabel = startListAppend.toRound === "FINAL" ? "決勝" : "準決勝";
-            toast.success(
-              `${roundLabel}のスタートリストを自動生成しました（${startListAppend.participantCount}名・${startListAppend.heatCount}ヒート）`
-            );
-            router.refresh();
-          }
           dispatchJlaDayOpsParticipantStatusChanged(marshal.competitionId, eventId, {
             skipResultCaptureRefetch: true,
             skipParticipantPoll: true,
@@ -863,8 +857,39 @@ export function useResultCaptureDraft(args: {
       patchResultHeatConfirmed,
       patchResultHeatUnconfirmed,
       clearResultDraftsForHeat,
-      router,
     ]
+  );
+
+  const runHeatResultUnconfirm = useCallback(
+    async (displayHeatNumber: number) => {
+      const marshal = mRef.current;
+      const capture = resultCaptureRef.current;
+      if (!marshal || !capture) {
+        toast.error("リザルト状態を読み込めません。ページを更新してください。");
+        return;
+      }
+      setHeatResultConfirmBusyHeat(displayHeatNumber);
+      setHeatResultUnconfirmTarget(null);
+      try {
+        await postHeatResultUnconfirmHeat(marshal.competitionId, {
+          eventId,
+          round: marshal.round,
+          heatIndex: displayHeatNumber,
+        });
+        patchResultHeatUnconfirmed(displayHeatNumber);
+        toast.success(`ヒート ${displayHeatNumber} のリザルト確定を解除しました`);
+        dispatchJlaDayOpsParticipantStatusChanged(marshal.competitionId, eventId, {
+          skipResultCaptureRefetch: false,
+          skipParticipantPoll: true,
+        });
+        void capture.onRefetch();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "確定解除に失敗しました");
+      } finally {
+        setHeatResultConfirmBusyHeat((prev) => (prev === displayHeatNumber ? null : prev));
+      }
+    },
+    [eventId, patchResultHeatUnconfirmed]
   );
 
   return {
@@ -888,6 +913,8 @@ export function useResultCaptureDraft(args: {
     setDragOverParticipantKey,
     heatResultConfirmTarget,
     setHeatResultConfirmTarget,
+    heatResultUnconfirmTarget,
+    setHeatResultUnconfirmTarget,
     heatResultConfirmBusyHeat,
     runUpTarget,
     setRunUpTarget,
@@ -905,5 +932,6 @@ export function useResultCaptureDraft(args: {
     reorderResultRanks,
     reorderResultOrder,
     runHeatResultConfirm,
+    runHeatResultUnconfirm,
   };
 }

@@ -24,8 +24,11 @@ export type LiveRoundHeatMarshalDialogsProps = {
   runHeatMarshalReopen: (heatIndex: number) => void | Promise<void>;
   heatResultConfirmTarget: number | null;
   setHeatResultConfirmTarget: (n: number | null) => void;
+  heatResultUnconfirmTarget: number | null;
+  setHeatResultUnconfirmTarget: (n: number | null) => void;
   heatResultConfirmBusyHeat: number | null;
   runHeatResultConfirm: (heatIndex: number) => void | Promise<void>;
+  runHeatResultUnconfirm: (heatIndex: number) => void | Promise<void>;
   runUpTarget: number | null;
   setRunUpTarget: (n: number | null) => void;
   runUpBusyHeat: number | null;
@@ -48,8 +51,11 @@ export function LiveRoundHeatMarshalDialogs({
   runHeatMarshalReopen,
   heatResultConfirmTarget,
   setHeatResultConfirmTarget,
+  heatResultUnconfirmTarget,
+  setHeatResultUnconfirmTarget,
   heatResultConfirmBusyHeat,
   runHeatResultConfirm,
+  runHeatResultUnconfirm,
   runUpTarget,
   setRunUpTarget,
   runUpBusyHeat,
@@ -63,6 +69,9 @@ export function LiveRoundHeatMarshalDialogs({
   const heatResultConfirmBusy =
     heatResultConfirmTarget !== null &&
     heatResultConfirmBusyHeat === heatResultConfirmTarget;
+  const heatResultUnconfirmBusy =
+    heatResultUnconfirmTarget !== null &&
+    heatResultConfirmBusyHeat === heatResultUnconfirmTarget;
   const runUpBusy =
     runUpTarget !== null && runUpBusyHeat === runUpTarget;
   const clearRunUpBusy =
@@ -173,7 +182,7 @@ export function LiveRoundHeatMarshalDialogs({
                   タイムトライアル型は全員着順、脱落式は脱落着順とランアップが揃っていることが前提です。
                 </p>
                 <p className="text-muted-foreground">
-                  種目全体の公式結果ロックとは別です。誤りがある場合は管理者向けの修正フローを利用してください。
+                  確定後に修正する場合は「確定を解除」からチェック操作に戻せます（種目全体の公式結果ロック中は不可）。
                 </p>
               </div>
             </AlertDialogDescription>
@@ -193,6 +202,50 @@ export function LiveRoundHeatMarshalDialogs({
               }
             >
               {heatResultConfirmBusy ? "処理中…" : "確定する"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={heatResultUnconfirmTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !heatResultUnconfirmBusy) setHeatResultUnconfirmTarget(null);
+        }}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              ヒート {heatResultUnconfirmTarget ?? "—"} のリザルト確定解除
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-left text-sm text-foreground">
+                <p>
+                  このヒートのリザルト確定を
+                  <span className="font-semibold"> 解除 </span>
+                  し、チェック・並べ替え・ランアップによる修正を再び可能にします。記録済みの着順データは残ります。
+                </p>
+                <p className="text-muted-foreground">
+                  前ラ結果を直したあとは、次ラウンドタブで SL 再生成が必要になる場合があります。
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-0">
+            <AlertDialogCancel type="button" disabled={heatResultUnconfirmBusy}>
+              キャンセル
+            </AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={heatResultUnconfirmBusy || heatResultUnconfirmTarget === null}
+              onClick={() =>
+                heatResultUnconfirmTarget !== null
+                  ? void runHeatResultUnconfirm(heatResultUnconfirmTarget)
+                  : undefined
+              }
+            >
+              {heatResultUnconfirmBusy ? "処理中…" : "解除する"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

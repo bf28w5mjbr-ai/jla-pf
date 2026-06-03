@@ -6,10 +6,13 @@ import {
   OrganizerLifecycleError,
   requireHostOrgAdminForCompetition,
 } from "@/lib/organizerAccess";
+import {
+  normalizeRelatedOrganizations,
+  parseCompetitionRelationRole,
+  relatedOrganizationsWithDisplaySrc,
+  type CompetitionRelationRole,
+} from "@/lib/competitionRelatedOrganizations";
 import { prisma } from "@/server/db";
-import { normalizeRelationLogos, relationLogosWithDisplaySrc } from "@/lib/relationLogos";
-
-export type CompetitionRelationLogoType = "cooperator" | "grant";
 
 const LOGO_FILENAME_EXT = new Set([
   "png",
@@ -25,9 +28,10 @@ const LOGO_FILENAME_EXT = new Set([
   "tiff",
 ]);
 
-export function parseCompetitionRelationLogoType(value: unknown): CompetitionRelationLogoType | null {
-  if (value === "cooperator" || value === "grant") return value;
-  return null;
+export function parseRelatedOrganizationId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const t = value.trim();
+  return t.length > 0 ? t : null;
 }
 
 export function relationLogoDisplayName(nameRaw: unknown, fileName: string): string {
@@ -45,23 +49,26 @@ export function relationLogoExtensionFromFileName(fileName: string): string {
 
 export function buildPendingCompetitionRelationLogoPath(
   competitionId: string,
-  type: CompetitionRelationLogoType,
+  organizationId: string,
   fileName: string,
 ): string {
   const stamp = Date.now();
   const nonce = randomBytes(4).toString("hex");
   const ext = relationLogoExtensionFromFileName(fileName);
-  return `competitions/${competitionId}-${type}-${stamp}-${nonce}.${ext}`;
+  const safeOrgId = organizationId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
+  return `competitions/${competitionId}-relation-${safeOrgId}-${stamp}-${nonce}.${ext}`;
 }
 
 export function isPendingCompetitionRelationLogoPath(
   path: string,
   competitionId: string,
-  type: CompetitionRelationLogoType,
+  organizationId: string,
 ): boolean {
-  const escaped = competitionId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedComp = competitionId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const safeOrgId = organizationId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
+  const escapedOrg = safeOrgId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const re = new RegExp(
-    `^competitions/${escaped}-${type}-\\d+-[a-f0-9]{8}\\.(png|jpg|jpeg|gif|webp|avif|bmp|svg|heic|heif|tiff)$`,
+    `^competitions/${escapedComp}-relation-${escapedOrg}-\\d+-[a-f0-9]{8}\\.(png|jpg|jpeg|gif|webp|avif|bmp|svg|heic|heif|tiff)$`,
   );
   return re.test(path);
 }
@@ -74,8 +81,7 @@ export async function requireCompetitionLogoAdmin(
       ok: true;
       competition: {
         id: string;
-        cooperatorsLogos: unknown;
-        grantsLogos: unknown;
+        relatedOrganizations: unknown;
       };
     }
   | { ok: false; response: NextResponse }
@@ -97,7 +103,7 @@ export async function requireCompetitionLogoAdmin(
         ok: false,
         response: NextResponse.json(
           { error: e.message },
-          { status: competitionNotFoundStatus(e.code) }
+          { status: competitionNotFoundStatus(e.code) },
         ),
       };
     }
@@ -108,8 +114,7 @@ export async function requireCompetitionLogoAdmin(
     where: { id: competitionId },
     select: {
       id: true,
-      cooperatorsLogos: true,
-      grantsLogos: true,
+      relatedOrganizations: true,
     },
   });
 
@@ -124,46 +129,115 @@ export async function requireCompetitionLogoAdmin(
     ok: true,
     competition: {
       id: competition.id,
-      cooperatorsLogos: competition.cooperatorsLogos,
-      grantsLogos: competition.grantsLogos,
+      relatedOrganizations: competition.relatedOrganizations,
     },
   };
 }
 
-export async function appendCompetitionRelationLogo(params: {
+export async function setRelatedOrganizationLogo(params: {
   competitionId: string;
-  type: CompetitionRelationLogoType;
-  displayName: string;
+  organizationId: string;
   logoUrl: string;
-}): Promise<{ logoUrl: string; name: string; logos: ReturnType<typeof relationLogosWithDisplaySrc> }> {
+  name?: string;
+  role?: CompetitionRelationRole;
+}): Promise<{
+  organizationId: string;
+  logoUrl: string;
+  name: string;
+  relatedOrganizations: ReturnType<typeof relatedOrganizationsWithDisplaySrc>;
+}> {
   const competition = await prisma.competition.findUnique({
     where: { id: params.competitionId },
-    select: {
-      cooperatorsLogos: true,
-      grantsLogos: true,
-    },
+    select: { relatedOrganizations: true },
   });
 
   if (!competition) {
     throw new Error("大会が見つかりません");
   }
 
-  const field = params.type === "cooperator" ? "cooperatorsLogos" : "grantsLogos";
-  const currentLogos = normalizeRelationLogos(
-    params.type === "cooperator" ? competition.cooperatorsLogos : competition.grantsLogos,
-  );
-  const updatedLogos = [...currentLogos, { name: params.displayName, logoUrl: params.logoUrl }];
+  const current = normalizeRelatedOrganizations(competition.relatedOrganizations);
+  const idx = current.findIndex((o) => o.id === params.organizationId);
+
+  let updated;
+  if (idx >= 0) {
+    updated = current.map((o, i) =>
+      i === idx
+        ? {
+            ...o,
+            logoUrl: params.logoUrl,
+            name: params.name?.trim() ? params.name.trim() : o.name,
+          }
+        : o,
+    );
+  } else {
+    const name = params.name?.trim();
+    const role = params.role;
+    if (!name || !role) {
+      throw new Error("組織が見つかりません。先に行を保存してください");
+    }
+    updated = [
+      ...current,
+      {
+        id: params.organizationId,
+        name,
+        role,
+        logoUrl: params.logoUrl,
+        sortOrder: current.length,
+      },
+    ];
+  }
+
+  const savedRow = updated.find((o) => o.id === params.organizationId);
+  if (!savedRow) {
+    throw new Error("組織の更新に失敗しました");
+  }
 
   await prisma.competition.update({
     where: { id: params.competitionId },
-    data: {
-      [field]: updatedLogos,
-    },
+    data: { relatedOrganizations: updated },
   });
 
   return {
+    organizationId: params.organizationId,
     logoUrl: params.logoUrl,
-    name: params.displayName,
-    logos: relationLogosWithDisplaySrc(updatedLogos),
+    name: savedRow.name,
+    relatedOrganizations: relatedOrganizationsWithDisplaySrc(updated),
   };
 }
+
+export async function clearRelatedOrganizationLogo(params: {
+  competitionId: string;
+  organizationId: string;
+}): Promise<{
+  relatedOrganizations: ReturnType<typeof relatedOrganizationsWithDisplaySrc>;
+  logoUrl: string;
+}> {
+  const competition = await prisma.competition.findUnique({
+    where: { id: params.competitionId },
+    select: { relatedOrganizations: true },
+  });
+
+  if (!competition) {
+    throw new Error("大会が見つかりません");
+  }
+
+  const current = normalizeRelatedOrganizations(competition.relatedOrganizations);
+  const target = current.find((o) => o.id === params.organizationId);
+  if (!target?.logoUrl) {
+    throw new Error("ロゴが見つかりません");
+  }
+
+  const logoUrl = target.logoUrl;
+  const updated = current.map((o) =>
+    o.id === params.organizationId ? { ...o, logoUrl: null } : o,
+  );
+
+  await prisma.competition.update({
+    where: { id: params.competitionId },
+    data: { relatedOrganizations: updated },
+  });
+
+  return { relatedOrganizations: relatedOrganizationsWithDisplaySrc(updated), logoUrl };
+}
+
+export { parseCompetitionRelationRole };

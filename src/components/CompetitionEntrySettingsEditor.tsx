@@ -121,7 +121,7 @@ function CompetitionEntrySettingsEditorInner({
       const nameById = new Map(initialAgeCategories.map((c) => [c.id, c.name]));
       return (
         <div className="space-y-1 text-sm">
-          <p className="text-[10px] font-medium text-muted-foreground">年齢カテゴリ別</p>
+          <p className="text-[10px] font-medium text-muted-foreground">AGEカテゴリ別</p>
           {catTiers.map((t, i) => (
             <p key={i} className="font-medium leading-snug">
               {nameById.get(t.ageCategoryId) ?? "区分"}
@@ -137,7 +137,7 @@ function CompetitionEntrySettingsEditorInner({
     if (tiers?.length) {
       return (
         <div className="space-y-1 text-sm">
-          <p className="text-[10px] font-medium text-muted-foreground">年齢帯別</p>
+          <p className="text-[10px] font-medium text-muted-foreground">年齢帯別（移行待ち）</p>
           {tiers.map((t, i) => (
             <p key={i} className="font-medium leading-snug">
               {t.minAge}〜{t.maxAge == null ? "上限なし" : `${t.maxAge}歳`}
@@ -281,9 +281,7 @@ function CompetitionEntrySettingsEditorInner({
     <Card className="overflow-hidden border-border shadow-sm">
       <CardHeader className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
         <CardTitle className="text-base font-semibold">エントリー設定</CardTitle>
-        <CardDescription className="text-sm">
-          エントリー期間・種目・参加費を整えたあと、種目数や誓約を設定するのがおすすめです。出場条件は「大会出場条件」で設定します。
-        </CardDescription>
+        <CardDescription className="text-sm">エントリー期間・種目・参加費などを設定します。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5 px-4 py-4 sm:px-5">
         <section aria-labelledby="entry-settings-readiness-heading" className="rounded-lg border border-border bg-muted/20 px-3 py-3 sm:px-4">

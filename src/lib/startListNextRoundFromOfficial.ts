@@ -19,6 +19,16 @@ import {
   groupOfficialRowsByResolvedHeatAndSnapshotOrder,
   resolveOfficialRowHeatBucketKey,
 } from "@/lib/startListAdvanceEligibility";
+import {
+  computePrevRoundOfficialFingerprint,
+  isNextRoundMarshalStarted,
+  storedFingerprintForNextRoundBlock,
+} from "@/lib/startListNextRoundFingerprint";
+import {
+  maxPriorHeatCloseAtForRound,
+  reconcileNextRoundMarshalAfterRescueRegenerate,
+  snapshotNextRoundMarshalStatuses,
+} from "@/lib/startListNextRoundRescue";
 import { computePlacementSeed } from "@/lib/startListHeatPlacement";
 import { createStartListSnapshotIfNeeded } from "@/lib/startListSnapshot";
 import {
@@ -239,14 +249,6 @@ export async function teamEntryIdsSelectedForNextRoundAdvanceFromOfficial(params
   return out;
 }
 
-function logAutoAppendSkip(reason: string, detail?: Record<string, unknown>): void {
-  if (detail && Object.keys(detail).length > 0) {
-    console.info("[tryAutoAppendNextStartListRound] skipped:", reason, detail);
-  } else {
-    console.info("[tryAutoAppendNextStartListRound] skipped:", reason);
-  }
-}
-
 /**
  * 次ラウンド生成の前提: 種目の公式結果がラウンド単位でロック済み、または
  * スナップショット上の当該ラウンドの全ヒートがリザルト確定（OfficialResultHeatConfirmed）済み。
@@ -278,19 +280,204 @@ export async function areAllSnapshotHeatsResultConfirmed(params: {
   return needed.every((h) => confirmedHeats.some((c) => heatIndexMatchesSnapshot(h, c)));
 }
 
-/**
- * 前ラウンドの公式結果が確定したあと、スナップショットに次ラウンドを自動追記する。
- * 進出はラウンド設定・最大レーンから算出した定員で按分（手動次ラ API と同じ）。
- *
- * 実行条件: （1）当該ラウンドの OfficialResult が lockedAt 付きで確定している、または
- * （2）スタートリストスナップショット上のそのラウンドの全ヒートがヒート単位リザルト確定済み。
- */
-export async function tryAutoAppendNextStartListRound(params: {
+/** 次ラ SL 生成・再生成をブロックする toRound 側の公式結果状態 */
+export async function hasToRoundBlockingOfficialResults(params: {
   competitionId: string;
   eventId: string;
-  finishedRound: "HEAT" | "SEMI";
-}): Promise<AutoAppendNextStartListRoundResult> {
-  const { competitionId, eventId, finishedRound } = params;
+  toRound: ResultRound;
+}): Promise<boolean> {
+  const official = await prisma.officialResult.findUnique({
+    where: {
+      competitionId_eventId_round: {
+        competitionId: params.competitionId,
+        eventId: params.eventId,
+        round: params.toRound,
+      },
+    },
+    select: {
+      lockedAt: true,
+      heatConfirmations: { select: { id: true }, take: 1 },
+      rows: { where: { heat: { not: null } }, select: { id: true }, take: 1 },
+    },
+  });
+  if (!official) return false;
+  if (official.lockedAt) return true;
+  if (official.heatConfirmations.length > 0) return true;
+  if (official.rows.length > 0) return true;
+  return false;
+}
+
+export type GenerateNextRoundSlMode = "create" | "regenerate" | "rescue";
+
+export type GenerateNextRoundStartListResult =
+  | {
+      ok: true;
+      toRound: StartListRound;
+      participantCount: number;
+      heatCount: number;
+      fingerprint: string;
+    }
+  | { ok: false; error: string; code?: string };
+
+export type NextRoundSlStatus = {
+  fromRound: "HEAT" | "SEMI";
+  toRound: "SEMI" | "FINAL";
+  allHeatsConfirmed: boolean;
+  nextRoundExists: boolean;
+  marshalStarted: boolean;
+  toRoundHasBlockingOfficialResults: boolean;
+  currentFingerprint: string | null;
+  storedFingerprint: string | null;
+  fingerprintMatches: boolean;
+  canGenerate: boolean;
+  canRegenerate: boolean;
+  canRescueRegenerate: boolean;
+  blockedReason: string | null;
+};
+
+export async function evaluateNextRoundSlStatus(params: {
+  competitionId: string;
+  eventId: string;
+  fromRound: "HEAT" | "SEMI";
+}): Promise<NextRoundSlStatus | { error: string }> {
+  const { competitionId, eventId, fromRound } = params;
+
+  const competition = await prisma.competition.findUnique({
+    where: { id: competitionId },
+    select: {
+      startListSettings: true,
+      events: {
+        where: { id: eventId },
+        select: { startListRoundCount: true },
+      },
+    },
+  });
+  const event = competition?.events[0];
+  if (!event) return { error: "EVENT_NOT_FOUND" };
+
+  const eventSettings = parseStartListSettings(competition!.startListSettings).eventSettings;
+  const tabCount = resolveStartListTabCountForProgression(event.startListRoundCount, eventSettings[eventId]);
+  const transition = inferAutoNextRoundTransition({ finishedRound: fromRound, tabCount });
+  if (!transition || transition.fromRound !== fromRound) {
+    return { error: "NO_NEXT_ROUND_FOR_TAB_COUNT" };
+  }
+  const { toRound } = transition;
+
+  const toRoundHasBlockingOfficialResults = await hasToRoundBlockingOfficialResults({
+    competitionId,
+    eventId,
+    toRound,
+  });
+
+  const official = await prisma.officialResult.findUnique({
+    where: {
+      competitionId_eventId_round: { competitionId, eventId, round: fromRound },
+    },
+    select: { id: true },
+  });
+
+  const allHeatsConfirmed = official
+    ? await areAllSnapshotHeatsResultConfirmed({
+        competitionId,
+        eventId,
+        round: fromRound,
+        officialResultId: official.id,
+      })
+    : false;
+
+  const snapshot = await loadStartListSnapshotPayloadLoose(competitionId);
+  const nextBlock = getRoundDataFromSnapshot(snapshot, eventId, toRound);
+  const nextRoundExists = Boolean(nextBlock?.heats?.length && nextBlock.generatedBy === "RESULT_BASED");
+
+  const currentFingerprint = await computePrevRoundOfficialFingerprint({
+    competitionId,
+    eventId,
+    fromRound,
+  });
+  const storedFingerprint = storedFingerprintForNextRoundBlock(nextBlock);
+  const fingerprintMatches =
+    currentFingerprint != null &&
+    storedFingerprint != null &&
+    currentFingerprint === storedFingerprint;
+
+  const marshalStarted = nextRoundExists
+    ? await isNextRoundMarshalStarted({ competitionId, eventId, toRound })
+    : false;
+
+  let blockedReason: string | null = null;
+  let canGenerate = false;
+  let canRegenerate = false;
+  let canRescueRegenerate = false;
+
+  if (toRoundHasBlockingOfficialResults) {
+    blockedReason =
+      "次ラウンドでリザルト入力または確定済みのヒートがあるため、SL を生成・再生成できません";
+  } else if (!allHeatsConfirmed) {
+    blockedReason = "前ラウンドの全ヒートがリザルト確定するまで SL を生成できません";
+  } else if (!currentFingerprint) {
+    blockedReason = "前ラウンドの公式結果がありません";
+  } else if (!nextRoundExists) {
+    canGenerate = true;
+  } else if (fingerprintMatches) {
+    blockedReason = "前ラ結果に変更がないため、SL は最新です";
+  } else if (!marshalStarted) {
+    canRegenerate = true;
+  } else {
+    canRescueRegenerate = true;
+  }
+
+  return {
+    fromRound,
+    toRound,
+    allHeatsConfirmed,
+    nextRoundExists,
+    marshalStarted,
+    toRoundHasBlockingOfficialResults,
+    currentFingerprint,
+    storedFingerprint,
+    fingerprintMatches,
+    canGenerate,
+    canRegenerate,
+    canRescueRegenerate,
+    blockedReason,
+  };
+}
+
+export async function generateNextRoundStartListFromOfficial(params: {
+  competitionId: string;
+  eventId: string;
+  fromRound: "HEAT" | "SEMI";
+  mode: GenerateNextRoundSlMode;
+  operatorUserId?: string | null;
+}): Promise<GenerateNextRoundStartListResult> {
+  const { competitionId, eventId, fromRound, mode, operatorUserId = null } = params;
+
+  const status = await evaluateNextRoundSlStatus({ competitionId, eventId, fromRound });
+  if ("error" in status) {
+    return { ok: false, error: status.error, code: status.error };
+  }
+
+  if (mode === "create" && !status.canGenerate) {
+    return { ok: false, error: status.blockedReason ?? "SL を生成できません", code: "CANNOT_CREATE" };
+  }
+  if (mode === "regenerate" && !status.canRegenerate) {
+    return { ok: false, error: status.blockedReason ?? "SL を再生成できません", code: "CANNOT_REGENERATE" };
+  }
+  if (mode === "rescue" && !status.canRescueRegenerate) {
+    return {
+      ok: false,
+      error: status.blockedReason ?? "救済再生成できません",
+      code: "CANNOT_RESCUE",
+    };
+  }
+
+  const { toRound } = status;
+  const fingerprint =
+    status.currentFingerprint ??
+    (await computePrevRoundOfficialFingerprint({ competitionId, eventId, fromRound }));
+  if (!fingerprint) {
+    return { ok: false, error: "前ラウンドの公式結果がありません", code: "NO_OFFICIAL" };
+  }
 
   const competition = await prisma.competition.findUnique({
     where: { id: competitionId },
@@ -311,23 +498,11 @@ export async function tryAutoAppendNextStartListRound(params: {
     },
   });
   if (!competition?.events[0]) {
-    return { ok: false, error: "EVENT_NOT_FOUND" };
+    return { ok: false, error: "EVENT_NOT_FOUND", code: "EVENT_NOT_FOUND" };
   }
   const event = competition.events[0];
   const eventSettings = parseStartListSettings(competition.startListSettings).eventSettings;
   const eventSetting = eventSettings[eventId];
-  const tabCount = resolveStartListTabCountForProgression(event.startListRoundCount, eventSetting);
-
-  const transition = inferAutoNextRoundTransition({ finishedRound, tabCount });
-  if (!transition) {
-    logAutoAppendSkip("NO_NEXT_ROUND_FOR_TAB_COUNT", { eventId, finishedRound, tabCount });
-    return { ok: true, skipped: true, reason: "NO_NEXT_ROUND_FOR_TAB_COUNT" };
-  }
-  const { fromRound, toRound } = transition;
-
-  if (fromRound === "SEMI" && toRound !== "FINAL") {
-    return { ok: false, error: "INVALID_TRANSITION" };
-  }
 
   await createStartListSnapshotIfNeeded({
     competitionId,
@@ -336,60 +511,25 @@ export async function tryAutoAppendNextStartListRound(params: {
     firstRoundGeneratedBy: "BASELINE",
   });
 
-  const snapshot = await prisma.competitionStartListSnapshot.findUnique({
-    where: { competitionId },
-    select: { id: true, data: true },
-  });
-  if (!snapshot) {
-    logAutoAppendSkip("NO_SNAPSHOT", { competitionId, eventId });
-    return { ok: true, skipped: true, reason: "NO_SNAPSHOT" };
-  }
-
-  const raw = (snapshot.data && typeof snapshot.data === "object"
-    ? (snapshot.data as SnapshotData)
-    : {}) as SnapshotData;
-  const events = Array.isArray(raw.events) ? raw.events : [];
-  const snapEvent = events.find((e) => e.eventId === eventId);
-  const rounds = Array.isArray(snapEvent?.rounds) ? snapEvent!.rounds! : [];
-  if (rounds.some((r) => r.round === toRound)) {
-    logAutoAppendSkip("ALREADY_HAS_TARGET_ROUND", { eventId, toRound });
-    return { ok: true, skipped: true, reason: "ALREADY_HAS_TARGET_ROUND" };
-  }
-
   const official = await prisma.officialResult.findUnique({
     where: {
-      competitionId_eventId_round: {
-        competitionId,
-        eventId,
-        round: fromRound,
-      },
+      competitionId_eventId_round: { competitionId, eventId, round: fromRound },
     },
     include: officialInclude,
   });
-  if (!official || official.rows.length === 0) {
-    logAutoAppendSkip("NO_OFFICIAL_ROWS", { eventId, fromRound, hasOfficial: Boolean(official) });
-    return { ok: true, skipped: true, reason: "NO_OFFICIAL_ROWS" };
+  if (!official?.rows.length) {
+    return { ok: false, error: "前ラウンドの公式結果がありません", code: "NO_OFFICIAL_ROWS" };
   }
 
-  const roundLocked = Boolean(official.lockedAt);
-  if (!roundLocked) {
-    const allHeatsConfirmed = await areAllSnapshotHeatsResultConfirmed({
-      competitionId,
-      eventId,
-      round: fromRound,
-      officialResultId: official.id,
-    });
-    if (!allHeatsConfirmed) {
-      logAutoAppendSkip("WAITING_ALL_HEAT_RESULT_CONFIRMS_OR_ROUND_LOCK", {
-        eventId,
-        fromRound,
-        officialResultId: official.id,
-      });
-      return { ok: true, skipped: true, reason: "WAITING_ALL_HEAT_RESULT_CONFIRMS_OR_ROUND_LOCK" };
-    }
+  const snapshotRow = await prisma.competitionStartListSnapshot.findUnique({
+    where: { competitionId },
+    select: { id: true, data: true },
+  });
+  if (!snapshotRow) {
+    return { ok: false, error: "スタートリスト固定データがありません", code: "NO_SNAPSHOT" };
   }
 
-  const snapshotPayload = parseStartListSnapshotLooseForRoundRead(snapshot.data);
+  const snapshotPayload = parseStartListSnapshotLooseForRoundRead(snapshotRow.data);
   const rowsForAdvance = dedupeOfficialResultRowsForAdvance(official.rows);
   const heatEntriesRaw = groupOfficialRowsByResolvedHeatAndSnapshotOrder(
     rowsForAdvance,
@@ -418,8 +558,7 @@ export async function tryAutoAppendNextStartListRound(params: {
     toRound,
   });
   if (typeof maxLanes !== "number" || !Number.isFinite(maxLanes) || maxLanes < 1) {
-    logAutoAppendSkip("NEEDS_PRELIMINARY_MAX_LANES", { eventId, fromRound, toRound, maxLanes });
-    return { ok: true, skipped: true, reason: "NEEDS_PRELIMINARY_MAX_LANES" };
+    return { ok: false, error: "進出枠の設定が不足しています", code: "NEEDS_PRELIMINARY_MAX_LANES" };
   }
 
   const capacity = totalAdvanceCapacityFromNextRoundLayout(
@@ -464,23 +603,9 @@ export async function tryAutoAppendNextStartListRound(params: {
   }
 
   if (participants.length === 0) {
-    logAutoAppendSkip("NO_ADVANCING_PARTICIPANTS", {
-      eventId,
-      fromRound,
-      toRound,
-      officialRowCount: rowsForAdvance.length,
-      heatEntryCount: heatEntries.length,
-    });
-    return { ok: true, skipped: true, reason: "NO_ADVANCING_PARTICIPANTS" };
+    return { ok: false, error: "次ラウンド生成対象の参加者がいません", code: "NO_ADVANCING_PARTICIPANTS" };
   }
 
-  if (participants.length !== selectedRows.length) {
-    console.warn(
-      `[tryAutoAppendNextStartListRound] selected ${selectedRows.length} official rows but built ${participants.length} participants (check Prisma include)`
-    );
-  }
-
-  /** 按分アップは {@link nextHeatCountForCapacity}×レーン で決めた総枠に基づく。次ラのヒート数も同じ前提に揃えないとアップ数と実レイアウトが食い違う */
   const heatCountForLayout = enforceMinHeatCountForMaxLanes(
     participants.length,
     nextHeatCountForCapacity,
@@ -491,10 +616,11 @@ export async function tryAutoAppendNextStartListRound(params: {
     .map((p) => (p.kind === "INDIVIDUAL" ? p.entryId : p.teamEntryId))
     .sort()
     .join(",");
+  const shuffleSalt = mode === "create" ? "initial" : String(Date.now());
   const shuffleSeed = computePlacementSeed(
     competitionId,
     eventId,
-    `nextRound:${fromRound}>${toRound}:${shuffleFingerprint}`
+    `nextRound:${fromRound}>${toRound}:${shuffleFingerprint}:${shuffleSalt}`
   );
 
   const heats = buildNextRoundHeatsFromPreviousResults({
@@ -502,11 +628,13 @@ export async function tryAutoAppendNextStartListRound(params: {
     heatCount: heatCountForLayout,
     shuffleSeed,
   });
+
   const nextRoundData: StartListRoundData = {
     round: toRound,
     generatedAt: new Date().toISOString(),
     generatedBy: "RESULT_BASED",
     sourceRound: fromRound,
+    sourceOfficialFingerprint: fingerprint,
     heats,
   };
 
@@ -516,6 +644,11 @@ export async function tryAutoAppendNextStartListRound(params: {
     quota: advancePerHeat[i] ?? 0,
     actual: actualBySourceHeat.get(heatKey) ?? 0,
   }));
+
+  const raw = (snapshotRow.data && typeof snapshotRow.data === "object"
+    ? (snapshotRow.data as SnapshotData)
+    : {}) as SnapshotData;
+  const events = Array.isArray(raw.events) ? raw.events : [];
 
   let touched = false;
   const nextEvents = events.map((item) => {
@@ -542,22 +675,83 @@ export async function tryAutoAppendNextStartListRound(params: {
     });
   }
 
-  await prisma.competitionStartListSnapshot.update({
-    where: { id: snapshot.id },
-    data: {
-      data: {
-        ...(raw ?? {}),
-        version: typeof raw.version === "number" ? raw.version : 2,
-        events: nextEvents,
-      },
-    },
+  const nextSnapshotData = {
+    ...(raw ?? {}),
+    version: typeof raw.version === "number" ? raw.version : 2,
+    events: nextEvents,
+  };
+
+  await prisma.$transaction(async (tx) => {
+    if (mode === "rescue") {
+      const statusBefore = await snapshotNextRoundMarshalStatuses(tx, {
+        competitionId,
+        eventId,
+        toRound,
+      });
+      const maxPriorHeatCloseAt = await maxPriorHeatCloseAtForRound(tx, {
+        competitionId,
+        eventId,
+        toRound,
+      });
+
+      await tx.competitionStartListSnapshot.update({
+        where: { id: snapshotRow.id },
+        data: { data: nextSnapshotData },
+      });
+
+      const updatedPayload = parseStartListSnapshotLooseForRoundRead(nextSnapshotData);
+      await reconcileNextRoundMarshalAfterRescueRegenerate(tx, {
+        competitionId,
+        eventId,
+        toRound,
+        snapshot: updatedPayload,
+        statusBefore,
+        maxPriorHeatCloseAt,
+        operatorUserId,
+        now: new Date(),
+      });
+    } else {
+      await tx.competitionStartListSnapshot.update({
+        where: { id: snapshotRow.id },
+        data: { data: nextSnapshotData },
+      });
+    }
   });
 
   return {
     ok: true,
-    skipped: false,
     toRound,
     participantCount: participants.length,
     heatCount: heats.length,
+    fingerprint,
+  };
+}
+
+/**
+ * @deprecated 自動生成廃止。スクリプト互換のため create モードで委譲。
+ */
+export async function tryAutoAppendNextStartListRound(params: {
+  competitionId: string;
+  eventId: string;
+  finishedRound: "HEAT" | "SEMI";
+}): Promise<AutoAppendNextStartListRoundResult> {
+  const result = await generateNextRoundStartListFromOfficial({
+    competitionId: params.competitionId,
+    eventId: params.eventId,
+    fromRound: params.finishedRound,
+    mode: "create",
+  });
+  if (!result.ok) {
+    if (result.code === "CANNOT_CREATE") {
+      return { ok: true, skipped: true, reason: result.error };
+    }
+    return { ok: false, error: result.error };
+  }
+  return {
+    ok: true,
+    skipped: false,
+    toRound: result.toRound,
+    participantCount: result.participantCount,
+    heatCount: result.heatCount,
   };
 }

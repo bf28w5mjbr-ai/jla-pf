@@ -57,8 +57,7 @@ pnpm run migrate:storage:supabase
 - `Club.logoUrl`
 - `User.profilePhotoUrl`
 - `CompetitionAttachment.fileUrl`
-- `Competition.cooperatorsLogos[].logoUrl`
-- `Competition.grantsLogos[].logoUrl`
+- `Competition.relatedOrganizations[].logoUrl`
 
 ## 5) 旧 `public/uploads` のクリーンアップ
 

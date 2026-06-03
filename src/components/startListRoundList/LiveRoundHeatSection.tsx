@@ -79,6 +79,7 @@ export type LiveRoundHeatSectionProps = {
   rankOrderKeysForHeat: (heatIndex: number) => string[];
   reorderResultOrder: LiveRoundResultLaneRowProps["onReorderOrder"];
   setHeatResultConfirmTarget: (n: number | null) => void;
+  setHeatResultUnconfirmTarget: (n: number | null) => void;
   heatResultConfirmBusyHeat: number | null;
   setRunUpTarget: (n: number | null) => void;
   setClearRunUpTarget: (n: number | null) => void;
@@ -125,6 +126,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
     rankOrderKeysForHeat,
     reorderResultOrder,
     setHeatResultConfirmTarget,
+    setHeatResultUnconfirmTarget,
     heatResultConfirmBusyHeat,
     setRunUpTarget,
     setClearRunUpTarget,
@@ -232,11 +234,32 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
               {resultCaptureVisible && m && resultCapture ? (
                 <>
                   {localConfirmedHeats.includes(displayHeatNumber) ? (
-                    <span className="rounded bg-violet-200/90 px-1.5 py-0.5 text-[10px] font-medium text-violet-950 dark:bg-violet-900/70 dark:text-violet-100">
-                      {heatResultConfirmBusyHeat === displayHeatNumber
-                        ? "確定中…"
-                        : "リザルト確定済み"}
-                    </span>
+                    <>
+                      <span className="rounded bg-violet-200/90 px-1.5 py-0.5 text-[10px] font-medium text-violet-950 dark:bg-violet-900/70 dark:text-violet-100">
+                        {heatResultConfirmBusyHeat === displayHeatNumber
+                          ? "処理中…"
+                          : "リザルト確定済み"}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-[10px]"
+                        disabled={
+                          marshalParticipantsPending ||
+                          resultCaptureInitialLoading ||
+                          resultCapture.locked ||
+                          m.marshalOpsBlocked ||
+                          marshalRoundMismatch ||
+                          !apiHeat ||
+                          heatResultConfirmBusyHeat === displayHeatNumber ||
+                          runUpBusyHeat === displayHeatNumber
+                        }
+                        onClick={() => setHeatResultUnconfirmTarget(displayHeatNumber)}
+                      >
+                        確定を解除
+                      </Button>
+                    </>
                   ) : null}
                   {!localConfirmedHeats.includes(displayHeatNumber) &&
                   resultDraftCount > 0 ? (
@@ -395,13 +418,6 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
             </div>
           ) : null}
         </div>
-        {(callWindowLoading || (resultCaptureVisible && resultCaptureInitialLoading)) ? (
-          <p className="mt-1 text-[10px] text-muted-foreground">
-            {resultCaptureVisible && resultCaptureInitialLoading && !callWindowLoading
-              ? "リザルト記録状況を読み込み中…"
-              : "マーシャル締切状態を読み込み中…"}
-          </p>
-        ) : null}
         {resultCaptureVisible &&
         m &&
         resultCapture &&
@@ -714,11 +730,32 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
               {resultCaptureVisible && m && resultCapture ? (
                 <>
                   {localConfirmedHeats.includes(displayHeatNumber) ? (
-                    <span className="rounded bg-violet-200/90 px-1.5 py-0.5 text-[10px] font-medium text-violet-950 dark:bg-violet-900/70 dark:text-violet-100">
-                      {heatResultConfirmBusyHeat === displayHeatNumber
-                        ? "確定中…"
-                        : "リザルト確定済み"}
-                    </span>
+                    <>
+                      <span className="rounded bg-violet-200/90 px-1.5 py-0.5 text-[10px] font-medium text-violet-950 dark:bg-violet-900/70 dark:text-violet-100">
+                        {heatResultConfirmBusyHeat === displayHeatNumber
+                          ? "処理中…"
+                          : "リザルト確定済み"}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-[10px]"
+                        disabled={
+                          marshalParticipantsPending ||
+                          resultCaptureInitialLoading ||
+                          resultCapture.locked ||
+                          m.marshalOpsBlocked ||
+                          marshalRoundMismatch ||
+                          !apiHeat ||
+                          heatResultConfirmBusyHeat === displayHeatNumber ||
+                          runUpBusyHeat === displayHeatNumber
+                        }
+                        onClick={() => setHeatResultUnconfirmTarget(displayHeatNumber)}
+                      >
+                        確定を解除
+                      </Button>
+                    </>
                   ) : null}
                   {!localConfirmedHeats.includes(displayHeatNumber) && resultDraftCount > 0 ? (
                     <span className="rounded bg-violet-100/90 px-1.5 py-0.5 text-[10px] font-medium text-violet-950 dark:bg-violet-900/70 dark:text-violet-100">
@@ -876,13 +913,6 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
             </div>
           ) : null}
         </div>
-        {(callWindowLoading || (resultCaptureVisible && resultCaptureInitialLoading)) ? (
-          <p className="mt-1 text-[10px] text-muted-foreground">
-            {resultCaptureVisible && resultCaptureInitialLoading && !callWindowLoading
-              ? "リザルト記録状況を読み込み中…"
-              : "マーシャル締切状態を読み込み中…"}
-          </p>
-        ) : null}
         {resultCaptureVisible &&
         m &&
         resultCapture &&

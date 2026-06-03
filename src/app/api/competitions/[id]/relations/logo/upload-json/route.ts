@@ -9,10 +9,11 @@ import {
 } from "@/lib/uploadValidation";
 import { canUseSupabaseStorage, uploadPublicAsset } from "@/lib/supabase/storage";
 import {
-  appendCompetitionRelationLogo,
-  parseCompetitionRelationLogoType,
+  parseCompetitionRelationRole,
+  parseRelatedOrganizationId,
   relationLogoDisplayName,
   requireCompetitionLogoAdmin,
+  setRelatedOrganizationLogo,
 } from "@/lib/competitionRelationLogoUploadServer";
 
 const MAX_JSON_BODY_DECODED_BYTES = 3 * 1024 * 1024;
@@ -29,24 +30,29 @@ export async function POST(
     if (!auth.ok) return auth.response;
 
     const body = (await request.json().catch(() => ({}))) as {
-      type?: unknown;
+      organizationId?: unknown;
       name?: unknown;
+      role?: unknown;
       fileBase64?: unknown;
       fileName?: unknown;
     };
-    const type = parseCompetitionRelationLogoType(body.type);
+    const organizationId = parseRelatedOrganizationId(body.organizationId);
+    const role = parseCompetitionRelationRole(body.role);
     const fileBase64Raw = typeof body.fileBase64 === "string" ? body.fileBase64.trim() : "";
     const fileName = typeof body.fileName === "string" ? body.fileName : "";
     const displayName = relationLogoDisplayName(body.name, fileName || "logo.png");
 
-    if (!type) {
-      return NextResponse.json({ error: "無効なタイプです" }, { status: 400 });
+    if (!organizationId) {
+      return NextResponse.json({ error: "organizationId が必要です" }, { status: 400 });
     }
     if (!displayName) {
       return NextResponse.json(
         { error: "名前が必要です（表示名を入力するか、拡張子付きのファイル名にしてください）" },
         { status: 400 },
       );
+    }
+    if (!role) {
+      return NextResponse.json({ error: "属性が必要です" }, { status: 400 });
     }
     if (!fileBase64Raw) {
       return NextResponse.json({ error: "fileBase64 が空です" }, { status: 400 });
@@ -88,7 +94,7 @@ export async function POST(
       return NextResponse.json({ error: validated.message }, { status: 400 });
     }
 
-    const fileNameForStore = `${id}-${type}-${Date.now()}.${validated.value.ext}`;
+    const fileNameForStore = `${id}-relation-${organizationId.slice(0, 32)}-${Date.now()}.${validated.value.ext}`;
     const uploadDir = join(process.cwd(), "public", "uploads", "competitions");
     const filePath = join(uploadDir, fileNameForStore);
     const relativeLogoUrl = `/uploads/competitions/${fileNameForStore}`;
@@ -108,11 +114,12 @@ export async function POST(
       logoUrl = relativeLogoUrl;
     }
 
-    const saved = await appendCompetitionRelationLogo({
+    const saved = await setRelatedOrganizationLogo({
       competitionId: id,
-      type,
-      displayName,
+      organizationId,
       logoUrl,
+      name: displayName,
+      role,
     });
 
     return NextResponse.json({
@@ -120,6 +127,10 @@ export async function POST(
       ...saved,
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "アップロードに失敗しました";
+    if (message.includes("組織が見つかりません")) {
+      return NextResponse.json({ error: message }, { status: 404 });
+    }
     return jsonInternalError500(
       "POST api/competitions/[id]/relations/logo/upload-json/route.ts",
       error,

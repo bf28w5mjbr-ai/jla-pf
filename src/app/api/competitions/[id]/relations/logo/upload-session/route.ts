@@ -5,7 +5,8 @@ import { canUseSupabaseStorage } from "@/lib/supabase/storage";
 import { sanitizeSupabaseObjectKey } from "@/lib/supabase/storageKey";
 import {
   buildPendingCompetitionRelationLogoPath,
-  parseCompetitionRelationLogoType,
+  parseCompetitionRelationRole,
+  parseRelatedOrganizationId,
   relationLogoDisplayName,
   requireCompetitionLogoAdmin,
 } from "@/lib/competitionRelationLogoUploadServer";
@@ -37,16 +38,18 @@ export async function POST(
     }
 
     const body = (await request.json().catch(() => ({}))) as {
-      type?: unknown;
+      organizationId?: unknown;
       name?: unknown;
+      role?: unknown;
       fileName?: unknown;
     };
-    const type = parseCompetitionRelationLogoType(body.type);
+    const organizationId = parseRelatedOrganizationId(body.organizationId);
+    const role = parseCompetitionRelationRole(body.role);
     const fileName = typeof body.fileName === "string" ? body.fileName : "";
     const displayName = relationLogoDisplayName(body.name, fileName);
 
-    if (!type) {
-      return NextResponse.json({ error: "無効なタイプです" }, { status: 400 });
+    if (!organizationId) {
+      return NextResponse.json({ error: "organizationId が必要です" }, { status: 400 });
     }
     if (!displayName) {
       return NextResponse.json(
@@ -54,9 +57,12 @@ export async function POST(
         { status: 400 },
       );
     }
+    if (!role) {
+      return NextResponse.json({ error: "属性が必要です" }, { status: 400 });
+    }
 
     const objectPath = sanitizeSupabaseObjectKey(
-      buildPendingCompetitionRelationLogoPath(id, type, fileName),
+      buildPendingCompetitionRelationLogoPath(id, organizationId, fileName),
     );
 
     const supabase = createAdminClient();

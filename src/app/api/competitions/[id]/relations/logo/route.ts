@@ -1,7 +1,6 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth";
-import { prisma } from "@/server/db";
 import { writeFile, unlink } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
@@ -18,12 +17,13 @@ import {
   COMPETITION_RELATION_LOGO_MAX_BYTES,
   validateAndNormalizeCompetitionRelationLogoBuffer,
 } from "@/lib/uploadValidation";
-import { normalizeRelationLogos } from "@/lib/relationLogos";
 import {
-  appendCompetitionRelationLogo,
-  parseCompetitionRelationLogoType,
+  clearRelatedOrganizationLogo,
+  parseCompetitionRelationRole,
+  parseRelatedOrganizationId,
   relationLogoDisplayName,
   requireCompetitionLogoAdmin,
+  setRelatedOrganizationLogo,
 } from "@/lib/competitionRelationLogoUploadServer";
 
 /** file-type / fs 利用のため Node ランタイムを明示 */
@@ -33,7 +33,7 @@ export const maxDuration = 60;
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
@@ -42,22 +42,28 @@ export async function POST(
 
     const formData = await request.formData();
     const fileEntry = formData.get("file");
-    const typeRaw = parseCompetitionRelationLogoType(formData.get("type"));
+    const organizationId = parseRelatedOrganizationId(formData.get("organizationId"));
     const nameRaw = formData.get("name");
+    const role = parseCompetitionRelationRole(formData.get("role"));
 
     if (!(fileEntry instanceof File)) {
       return NextResponse.json({ error: "ファイルが必要です" }, { status: 400 });
     }
     const file = fileEntry;
 
-    if (!typeRaw) {
-      return NextResponse.json({ error: "無効なタイプです" }, { status: 400 });
+    if (!organizationId) {
+      return NextResponse.json({ error: "organizationId が必要です" }, { status: 400 });
     }
-    const type = typeRaw;
 
     const displayName = relationLogoDisplayName(nameRaw, file.name);
     if (!displayName) {
-      return NextResponse.json({ error: "名前が必要です（表示名を入力するか、拡張子付きのファイル名にしてください）" }, { status: 400 });
+      return NextResponse.json(
+        {
+          error:
+            "名前が必要です（表示名を入力するか、拡張子付きのファイル名にしてください）",
+        },
+        { status: 400 },
+      );
     }
 
     if (file.size > COMPETITION_RELATION_LOGO_MAX_BYTES) {
@@ -65,7 +71,7 @@ export async function POST(
         {
           error: `ファイルサイズは ${Math.floor(COMPETITION_RELATION_LOGO_MAX_BYTES / (1024 * 1024))}MB 以下にしてください`,
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -76,7 +82,7 @@ export async function POST(
     }
 
     const outBuffer = validated.value.buffer;
-    const fileName = `${id}-${type}-${Date.now()}.${validated.value.ext}`;
+    const fileName = `${id}-relation-${organizationId.slice(0, 32)}-${Date.now()}.${validated.value.ext}`;
     const uploadDir = join(process.cwd(), "public", "uploads", "competitions");
     const filePath = join(uploadDir, fileName);
     const relativeLogoUrl = `/uploads/competitions/${fileName}`;
@@ -107,17 +113,18 @@ export async function POST(
             error:
               "ファイルの保存に失敗しました。本番・サーバレス環境では Supabase Storage（SUPABASE_SERVICE_ROLE_KEY と SUPABASE_STORAGE_BUCKET）の設定が必要です。",
           },
-          { status: 503 }
+          { status: 503 },
         );
       }
       logoUrl = relativeLogoUrl;
     }
 
-    const saved = await appendCompetitionRelationLogo({
+    const saved = await setRelatedOrganizationLogo({
       competitionId: id,
-      type,
-      displayName,
+      organizationId,
       logoUrl,
+      name: displayName,
+      role: role ?? undefined,
     });
 
     return NextResponse.json({
@@ -125,13 +132,17 @@ export async function POST(
       ...saved,
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "アップロードに失敗しました";
+    if (message.includes("組織が見つかりません")) {
+      return NextResponse.json({ error: message }, { status: 404 });
+    }
     return jsonInternalError500("POST api/competitions/[id]/relations/logo/route.ts", error);
   }
 }
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
@@ -152,54 +163,23 @@ export async function DELETE(
       throw e;
     }
 
-    const competition = await prisma.competition.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        cooperatorsLogos: true,
-        grantsLogos: true,
-      },
-    });
-
-    if (!competition) {
-      return NextResponse.json({ error: "大会が見つかりません" }, { status: 404 });
-    }
-
     const { searchParams } = new URL(request.url);
-    const type = searchParams.get("type"); // "cooperator" or "grant"
-    const logoUrl = searchParams.get("logoUrl");
+    const organizationId = parseRelatedOrganizationId(searchParams.get("organizationId"));
 
-    if (!type || (type !== "cooperator" && type !== "grant")) {
-      return NextResponse.json({ error: "無効なタイプです" }, { status: 400 });
+    if (!organizationId) {
+      return NextResponse.json({ error: "organizationId が必要です" }, { status: 400 });
     }
 
-    if (!logoUrl) {
-      return NextResponse.json({ error: "ロゴURLが必要です" }, { status: 400 });
-    }
-
-    // 既存のロゴデータを取得
-    const field = type === "cooperator" ? "cooperatorsLogos" : "grantsLogos";
-    const currentLogos = normalizeRelationLogos(
-      type === "cooperator" ? competition.cooperatorsLogos : competition.grantsLogos,
-    );
-
-    // ロゴを削除
-    const updatedLogos = currentLogos.filter((logo) => logo.logoUrl !== logoUrl);
-
-    // データベースを更新
-    await prisma.competition.update({
-      where: { id },
-      data: {
-        [field]: updatedLogos,
-      },
+    const cleared = await clearRelatedOrganizationLogo({
+      competitionId: id,
+      organizationId,
     });
 
-    // ファイルを削除
     try {
-      if (logoUrl.startsWith("http")) {
-        await deletePublicAssetByUrl(logoUrl);
+      if (cleared.logoUrl.startsWith("http")) {
+        await deletePublicAssetByUrl(cleared.logoUrl);
       } else {
-        const filePath = join(process.cwd(), "public", logoUrl);
+        const filePath = join(process.cwd(), "public", cleared.logoUrl);
         if (existsSync(filePath)) {
           await unlink(filePath);
         }
@@ -210,8 +190,13 @@ export async function DELETE(
 
     return NextResponse.json({
       message: "ロゴを削除しました",
+      relatedOrganizations: cleared.relatedOrganizations,
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "削除に失敗しました";
+    if (message.includes("見つかりません")) {
+      return NextResponse.json({ error: message }, { status: 404 });
+    }
     return jsonInternalError500("DELETE api/competitions/[id]/relations/logo/route.ts", error);
   }
 }

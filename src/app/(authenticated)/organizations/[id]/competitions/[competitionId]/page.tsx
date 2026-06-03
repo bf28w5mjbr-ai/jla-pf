@@ -42,7 +42,7 @@ import {
   formatCompactJaDateRange,
   formatDateForDatetimeLocalInput,
 } from "@/lib/datetimeLocal";
-import { relationLogosWithDisplaySrc } from "@/lib/relationLogos";
+import { resolveRelatedOrganizationsForDisplay } from "@/lib/competitionRelatedOrganizations";
 import {
   parseOfficialSubTab,
   resolveCompetitionManagementActiveTab,
@@ -567,12 +567,9 @@ export default async function CompetitionDetailPage({
           {/* 関係組織情報 */}
           <CompetitionRelationsEditor
             competitionId={competition.id}
-            sponsors={competition.sponsors}
-            cooperators={competition.cooperators}
-            cooperatorsLogos={relationLogosWithDisplaySrc(competition.cooperatorsLogos)}
-            supporters={competition.supporters}
-            grants={competition.grants}
-            grantsLogos={relationLogosWithDisplaySrc(competition.grantsLogos)}
+            relatedOrganizations={resolveRelatedOrganizationsForDisplay({
+              relatedOrganizations: competition.relatedOrganizations,
+            })}
             canEdit={canEdit}
           />
 

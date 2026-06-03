@@ -38,19 +38,18 @@ async function collectReferencedLocalPaths() {
   atts.forEach((r) => keep(r.fileUrl));
 
   const comps = await prisma.competition.findMany({
-    select: { cooperatorsLogos: true, grantsLogos: true },
+    select: { relatedOrganizations: true },
   });
   for (const c of comps) {
-    const scan = (logos) => {
-      if (!Array.isArray(logos)) return;
-      for (const row of logos) {
+    const scan = (orgs) => {
+      if (!Array.isArray(orgs)) return;
+      for (const row of orgs) {
         if (row && typeof row === "object" && typeof row.logoUrl === "string") {
           keep(row.logoUrl);
         }
       }
     };
-    scan(c.cooperatorsLogos);
-    scan(c.grantsLogos);
+    scan(c.relatedOrganizations);
   }
 
   return refs;

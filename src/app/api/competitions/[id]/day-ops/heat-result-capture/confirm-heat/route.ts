@@ -28,7 +28,6 @@ import {
 import { compactOkRanksForHeatInTransaction } from "@/lib/heatResultRankCompact";
 import type { StartListSnapshotPayload } from "@/lib/startListSnapshot";
 import { reconcileOfficialDsqRowsForHeat } from "@/lib/officialResultDsqSync";
-import { tryAutoAppendNextStartListRound } from "@/lib/startListNextRoundFromOfficial";
 import { zodFlattenJsonBody } from "@/lib/zodApiResponse";
 import { START_LIST_STEP1_REQUIRED_SHORT_MESSAGE } from "@/lib/startListStep1Messages";
 import {
@@ -341,36 +340,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
       result: "SUCCESS",
     });
 
-    let startListAppend: Awaited<ReturnType<typeof tryAutoAppendNextStartListRound>> | null = null;
-    if (round === "HEAT" || round === "SEMI") {
-      try {
-        startListAppend = await tryAutoAppendNextStartListRound({
-          competitionId,
-          eventId,
-          finishedRound: round,
-        });
-        if (!startListAppend.ok) {
-          console.warn("start-list auto-append after heat confirm:", startListAppend.error);
-        } else if (startListAppend.skipped) {
-          console.info("start-list auto-append after heat confirm skipped:", startListAppend.reason);
-        } else {
-          console.info(
-            "start-list auto-append after heat confirm ok:",
-            startListAppend.toRound,
-            `${startListAppend.participantCount} participants`,
-            `${startListAppend.heatCount} heats`
-          );
-        }
-      } catch (e) {
-        console.error("start-list auto-append after heat confirm failed:", e);
-      }
-    }
-
     return NextResponse.json({
       ok: true,
       heatIndex,
       appended: appendedRows,
-      ...(startListAppend ? { startListAppend } : {}),
     });
   } catch (error) {
     if (error instanceof Error && error.message === "DAY_OPS_FORBIDDEN") {

@@ -69,28 +69,41 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const TERMINAL_DAY_OPS_STATUSES = ["DNS", "WITHDRAWN", "DSQ"] as const;
 
     const wall0 = Date.now();
-    const [eventRow, snapshot, competition] = await Promise.all([
-      prisma.event.findFirst({
-        where: { id: eventId, competitionId },
-        select: { id: true, startListHeatPlanConfirmedAt: true, startListRoundCount: true },
-      }),
-      loadStartListSnapshotPayloadWithFallback(competitionId),
-      prisma.competition.findUnique({
-        where: { id: competitionId },
-        select: { startListSettings: true },
-      }),
-    ]);
+    const [eventRow, snapshot, competition] = summaryOnly
+      ? await Promise.all([
+          prisma.event.findFirst({
+            where: { id: eventId, competitionId },
+            select: { id: true, startListHeatPlanConfirmedAt: true, startListRoundCount: true },
+          }),
+          loadStartListSnapshotPayloadWithFallback(competitionId),
+          Promise.resolve(null),
+        ] as const)
+      : await Promise.all([
+          prisma.event.findFirst({
+            where: { id: eventId, competitionId },
+            select: { id: true, startListHeatPlanConfirmedAt: true, startListRoundCount: true },
+          }),
+          loadStartListSnapshotPayloadWithFallback(competitionId),
+          prisma.competition.findUnique({
+            where: { id: competitionId },
+            select: { startListSettings: true },
+          }),
+        ] as const);
     const wall1 = Date.now();
 
     if (!eventRow) {
       return NextResponse.json({ error: "種目が見つかりません" }, { status: 404 });
     }
 
-    const { eventSettings } = parseStartListSettings(competition?.startListSettings);
-    const heatSetting = eventSettings[eventId] ?? {};
-    const liveTabs = getLiveTabsAligned(heatSetting, eventRow.startListRoundCount);
-    const tabCount = Math.max(1, liveTabs.length);
-    const roundLabels = buildMarshalRoundLabelBySnapshotKey(liveTabs, tabCount);
+    const roundLabels = summaryOnly
+      ? ({} as Partial<Record<(typeof RESULT_ROUNDS)[number], string>>)
+      : (() => {
+          const { eventSettings } = parseStartListSettings(competition?.startListSettings);
+          const heatSetting = eventSettings[eventId] ?? {};
+          const liveTabs = getLiveTabsAligned(heatSetting, eventRow.startListRoundCount);
+          const tabCount = Math.max(1, liveTabs.length);
+          return buildMarshalRoundLabelBySnapshotKey(liveTabs, tabCount);
+        })();
 
     const availableRounds = listMarshalRoundsInSnapshotForEvent(snapshot, eventId);
     let effectiveRound = round;

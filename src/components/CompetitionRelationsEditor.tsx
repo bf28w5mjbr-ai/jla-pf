@@ -1,29 +1,45 @@
 "use client";
 
-import { useState, useRef, useMemo, useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import { Edit, Save, X, Trash2, Plus, ImageIcon } from "lucide-react";
-import { relationLogosWithDisplaySrc, type RelationLogoView } from "@/lib/relationLogos";
 import { downscaleRasterLogoFileIfLarge, fetchWithConnectionRetry } from "@/lib/browserUploadHelpers";
 import {
   tryDirectCompetitionRelationLogoUpload,
   tryJsonCompetitionRelationLogoUpload,
   type CompetitionRelationLogoUploadResponse,
 } from "@/lib/competitionRelationLogoDirectUpload";
+import {
+  COMPETITION_RELATION_ROLES,
+  ROLE_LABELS,
+  createEmptyRelatedOrganization,
+  groupRelatedOrganizationsByRole,
+  relatedOrganizationToLogoView,
+  relatedOrganizationsWithDisplaySrc,
+  type CompetitionRelatedOrganization,
+  type CompetitionRelatedOrganizationView,
+  type CompetitionRelationRole,
+} from "@/lib/competitionRelatedOrganizations";
 
 function RelationLogoCard({
   logo,
   canDelete,
   onDelete,
 }: {
-  logo: RelationLogoView;
+  logo: { name: string; displaySrc: string };
   canDelete: boolean;
   onDelete?: () => void;
 }) {
@@ -70,83 +86,52 @@ function RelationLogoCard({
 
 interface CompetitionRelationsEditorProps {
   competitionId: string;
-  sponsors?: string | null;
-  cooperators?: string | null;
-  /** Prisma Json または { name, logoUrl }[]（`relationLogosWithDisplaySrc` 済みでも可） */
-  cooperatorsLogos?: unknown;
-  supporters?: string | null;
-  grants?: string | null;
-  grantsLogos?: unknown;
+  relatedOrganizations?: unknown;
   canEdit: boolean;
+}
+
+function buildOrganizationsFingerprint(orgs: CompetitionRelatedOrganization[]): string {
+  return JSON.stringify(orgs);
 }
 
 export default function CompetitionRelationsEditor({
   competitionId,
-  sponsors,
-  cooperators,
-  cooperatorsLogos,
-  supporters,
-  grants,
-  grantsLogos,
+  relatedOrganizations,
   canEdit,
 }: CompetitionRelationsEditorProps) {
   const router = useRouter();
-  const normalizedCooperatorLogos = useMemo(
-    () => relationLogosWithDisplaySrc(cooperatorsLogos ?? null),
-    [cooperatorsLogos],
+  const normalized = useMemo(
+    () => relatedOrganizationsWithDisplaySrc(relatedOrganizations ?? null),
+    [relatedOrganizations],
   );
-  const normalizedGrantLogos = useMemo(
-    () => relationLogosWithDisplaySrc(grantsLogos ?? null),
-    [grantsLogos],
+  const fingerprint = useMemo(
+    () => buildOrganizationsFingerprint(normalized),
+    [normalized],
   );
 
-  const cooperatorsLogosKey = useMemo(
-    () => JSON.stringify(cooperatorsLogos ?? null),
-    [cooperatorsLogos],
-  );
-  const grantsLogosKey = useMemo(() => JSON.stringify(grantsLogos ?? null), [grantsLogos]);
-
-  const [cooperatorLogosOverride, setCooperatorLogosOverride] = useState<RelationLogoView[] | null>(
-    null,
-  );
-  const [grantLogosOverride, setGrantLogosOverride] = useState<RelationLogoView[] | null>(null);
-
-  useEffect(() => {
-    setCooperatorLogosOverride(null);
-  }, [cooperatorsLogosKey]);
-
-  useEffect(() => {
-    setGrantLogosOverride(null);
-  }, [grantsLogosKey]);
-
-  const cooperatorLogos = cooperatorLogosOverride ?? normalizedCooperatorLogos;
-  const grantLogos = grantLogosOverride ?? normalizedGrantLogos;
+  const [rowsOverride, setRowsOverride] = useState<CompetitionRelatedOrganizationView[] | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [uploadingCooperator, setUploadingCooperator] = useState(false);
-  const [uploadingGrant, setUploadingGrant] = useState(false);
-  
-  const cooperatorFileRef = useRef<HTMLInputElement>(null);
-  const grantFileRef = useRef<HTMLInputElement>(null);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  const [cooperatorName, setCooperatorName] = useState("");
-  const [grantName, setGrantName] = useState("");
+  useEffect(() => {
+    setRowsOverride(null);
+  }, [fingerprint]);
 
-  const [formData, setFormData] = useState({
-    sponsors: sponsors || "",
-    cooperators: cooperators || "",
-    supporters: supporters || "",
-    grants: grants || "",
-  });
+  const rows = rowsOverride ?? normalized;
 
   const handleSave = async () => {
+    const toSave = rows
+      .map((row, index) => ({ ...row, sortOrder: index }))
+      .filter((row) => row.name.trim().length > 0);
+
     try {
       setLoading(true);
-
       const response = await fetch(`/api/competitions/${competitionId}/relations`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ relatedOrganizations: toSave }),
       });
 
       if (!response.ok) {
@@ -166,36 +151,97 @@ export default function CompetitionRelationsEditor({
   };
 
   const handleCancel = () => {
-    setFormData({
-      sponsors: sponsors || "",
-      cooperators: cooperators || "",
-      supporters: supporters || "",
-      grants: grants || "",
-    });
+    setRowsOverride(null);
     setIsEditing(false);
   };
 
-  const handleLogoUpload = async (type: "cooperator" | "grant", file: File, name: string) => {
-    // 名前が空の場合、ファイル名（拡張子なし）を使用
-    const displayName = name.trim() || file.name.replace(/\.[^/.]+$/, "");
+  const updateRow = (id: string, patch: Partial<CompetitionRelatedOrganization>) => {
+    setRowsOverride((prev) =>
+      (prev ?? normalized).map((row) => (row.id === id ? { ...row, ...patch } : row)),
+    );
+  };
 
-    /** API の COMPETITION_RELATION_LOGO_MAX_BYTES と同じ */
+  const removeRow = (id: string) => {
+    setRowsOverride((prev) => (prev ?? normalized).filter((row) => row.id !== id));
+  };
+
+  const addRow = () => {
+    const next = createEmptyRelatedOrganization("sponsor", rows.length);
+    setRowsOverride([...(rowsOverride ?? normalized), next]);
+  };
+
+  const persistRowsBeforeLogo = async (currentRows: CompetitionRelatedOrganizationView[]) => {
+    const toSave = currentRows
+      .map((row, index) => ({ ...row, sortOrder: index }))
+      .filter((row) => row.name.trim().length > 0);
+
+    const response = await fetch(`/api/competitions/${competitionId}/relations`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ relatedOrganizations: toSave }),
+    });
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || "保存に失敗しました");
+    }
+  };
+
+  const applyLogoUploadResponse = (
+    data: CompetitionRelationLogoUploadResponse,
+    organizationId: string,
+    fallbackName: string,
+    fallbackLogoUrl?: string,
+  ) => {
+    if (Array.isArray(data.relatedOrganizations)) {
+      setRowsOverride(relatedOrganizationsWithDisplaySrc(data.relatedOrganizations));
+      return;
+    }
+    const logoUrl = typeof data.logoUrl === "string" ? data.logoUrl : fallbackLogoUrl;
+    const name =
+      typeof data.name === "string" && data.name.trim() ? data.name.trim() : fallbackName;
+    if (!logoUrl) return;
+    setRowsOverride((prev) =>
+      (prev ?? normalized).map((row) =>
+        row.id === organizationId
+          ? {
+              ...row,
+              name,
+              logoUrl,
+              displaySrc: logoUrl,
+            }
+          : row,
+      ),
+    );
+  };
+
+  const handleLogoUpload = async (row: CompetitionRelatedOrganizationView, file: File) => {
+    const displayName = row.name.trim() || file.name.replace(/\.[^/.]+$/u, "");
+
     if (file.size > 12 * 1024 * 1024) {
       toast.error("ファイルサイズは12MB以下にしてください");
       return;
     }
-
     if (!file.type.startsWith("image/")) {
       toast.error("画像ファイルを選択してください");
       return;
     }
+    if (!displayName) {
+      toast.error("名前を入力してから画像をアップロードしてください");
+      return;
+    }
 
     try {
-      if (type === "cooperator") {
-        setUploadingCooperator(true);
-      } else {
-        setUploadingGrant(true);
+      setUploadingId(row.id);
+
+      if (!row.name.trim()) {
+        updateRow(row.id, { name: displayName });
       }
+
+      await persistRowsBeforeLogo(
+        (rowsOverride ?? normalized).map((r) =>
+          r.id === row.id ? { ...r, name: displayName } : r,
+        ),
+      );
 
       const snapshot = new File([await file.arrayBuffer()], file.name, {
         type: file.type || "application/octet-stream",
@@ -205,7 +251,8 @@ export default function CompetitionRelationsEditor({
 
       const direct = await tryDirectCompetitionRelationLogoUpload(
         competitionId,
-        type,
+        row.id,
+        row.role,
         uploadFile,
         displayName,
       );
@@ -219,7 +266,8 @@ export default function CompetitionRelationsEditor({
       } else {
         const jsonTry = await tryJsonCompetitionRelationLogoUpload(
           competitionId,
-          type,
+          row.id,
+          row.role,
           uploadFile,
           displayName,
         );
@@ -231,80 +279,47 @@ export default function CompetitionRelationsEditor({
         } else {
           const formData = new FormData();
           formData.append("file", uploadFile);
-          formData.append("type", type);
+          formData.append("organizationId", row.id);
+          formData.append("role", row.role);
           formData.append("name", displayName);
 
           const response = await fetchWithConnectionRetry(
             `/api/competitions/${competitionId}/relations/logo`,
-            {
-              method: "POST",
-              body: formData,
-            },
+            { method: "POST", body: formData },
             { attempts: 4, baseDelayMs: 600 },
           );
 
           if (!response.ok) {
             const e = await response.json().catch(() => ({}));
-            throw new Error(
-              typeof e.error === "string" ? e.error : "アップロードに失敗しました",
-            );
+            throw new Error(typeof e.error === "string" ? e.error : "アップロードに失敗しました");
           }
           data = (await response.json()) as CompetitionRelationLogoUploadResponse;
         }
       }
+
       if (!data) {
         throw new Error("アップロードに失敗しました");
       }
 
-      if (type === "cooperator") {
-        if (Array.isArray(data.logos)) {
-          setCooperatorLogosOverride(relationLogosWithDisplaySrc(data.logos));
-        } else if (typeof data.logoUrl === "string") {
-          const url = data.logoUrl;
-          const nm =
-            typeof data.name === "string" && data.name.trim() ? data.name.trim() : displayName;
-          const added = relationLogosWithDisplaySrc([{ name: nm, logoUrl: url }]);
-          setCooperatorLogosOverride((prev) => [...(prev ?? normalizedCooperatorLogos), ...added]);
-        }
-        setCooperatorName("");
-      } else {
-        if (Array.isArray(data.logos)) {
-          setGrantLogosOverride(relationLogosWithDisplaySrc(data.logos));
-        } else if (typeof data.logoUrl === "string") {
-          const url = data.logoUrl;
-          const nm =
-            typeof data.name === "string" && data.name.trim() ? data.name.trim() : displayName;
-          const added = relationLogosWithDisplaySrc([{ name: nm, logoUrl: url }]);
-          setGrantLogosOverride((prev) => [...(prev ?? normalizedGrantLogos), ...added]);
-        }
-        setGrantName("");
-      }
-
+      applyLogoUploadResponse(data, row.id, displayName, data.logoUrl);
       toast.success("ロゴをアップロードしました");
       router.refresh();
     } catch (error) {
       console.error("Upload error:", error);
       toast.error(error instanceof Error ? error.message : "アップロードに失敗しました");
     } finally {
-      if (type === "cooperator") {
-        setUploadingCooperator(false);
-      } else {
-        setUploadingGrant(false);
-      }
+      setUploadingId(null);
     }
   };
 
-  const handleLogoDelete = async (type: "cooperator" | "grant", logoUrl: string) => {
-    if (!confirm("ロゴを削除しますか？")) {
-      return;
-    }
+  const handleLogoDelete = async (row: CompetitionRelatedOrganizationView) => {
+    if (!row.logoUrl) return;
+    if (!confirm("ロゴを削除しますか？")) return;
 
     try {
       const response = await fetch(
-        `/api/competitions/${competitionId}/relations/logo?type=${type}&logoUrl=${encodeURIComponent(logoUrl)}`,
-        {
-          method: "DELETE",
-        }
+        `/api/competitions/${competitionId}/relations/logo?organizationId=${encodeURIComponent(row.id)}`,
+        { method: "DELETE" },
       );
 
       if (!response.ok) {
@@ -312,13 +327,14 @@ export default function CompetitionRelationsEditor({
         throw new Error(data.error || "削除に失敗しました");
       }
 
-      if (type === "cooperator") {
-        setCooperatorLogosOverride((prev) =>
-          (prev ?? normalizedCooperatorLogos).filter((l) => l.logoUrl !== logoUrl)
-        );
+      const data = (await response.json()) as { relatedOrganizations?: unknown };
+      if (Array.isArray(data.relatedOrganizations)) {
+        setRowsOverride(relatedOrganizationsWithDisplaySrc(data.relatedOrganizations));
       } else {
-        setGrantLogosOverride((prev) =>
-          (prev ?? normalizedGrantLogos).filter((l) => l.logoUrl !== logoUrl)
+        setRowsOverride((prev) =>
+          (prev ?? normalized).map((r) =>
+            r.id === row.id ? { ...r, logoUrl: null, displaySrc: null } : r,
+          ),
         );
       }
 
@@ -330,17 +346,13 @@ export default function CompetitionRelationsEditor({
     }
   };
 
-  const hasAnyData =
-    sponsors ||
-    cooperators ||
-    supporters ||
-    grants ||
-    cooperatorLogos.length > 0 ||
-    grantLogos.length > 0;
+  const hasAnyData = rows.some((row) => row.name.trim().length > 0 || row.logoUrl);
 
   if (!isEditing && !hasAnyData && !canEdit) {
     return null;
   }
+
+  const grouped = groupRelatedOrganizationsByRole(rows.filter((r) => r.name.trim().length > 0 || r.logoUrl));
 
   return (
     <Card className="overflow-hidden">
@@ -361,190 +373,124 @@ export default function CompetitionRelationsEditor({
       <CardContent className="px-4 py-3">
         {isEditing ? (
           <div className="space-y-3">
-            <div>
-              <Label htmlFor="sponsors" className="text-xs">
-                後援
-              </Label>
-              <Textarea
-                id="sponsors"
-                value={formData.sponsors}
-                onChange={(e) => setFormData({ ...formData, sponsors: e.target.value })}
-                placeholder="複数ある場合は改行で区切ってください"
-                rows={2}
-                className="mt-1 min-h-[4rem] text-sm"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="cooperators" className="text-xs">
-                協賛
-              </Label>
-              <Textarea
-                id="cooperators"
-                value={formData.cooperators}
-                onChange={(e) => setFormData({ ...formData, cooperators: e.target.value })}
-                placeholder="複数ある場合は改行で区切ってください"
-                rows={2}
-                className="mt-1 min-h-[4rem] text-sm"
-              />
-
-              <div className="mt-3 space-y-3 rounded-lg border border-border/80 bg-muted/15 p-3">
-                <div className="space-y-0.5">
-                  <p className="text-xs font-medium text-foreground">協賛ロゴ画像</p>
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">
-                    ロゴの下に出る「表示名」を入力してから「画像を選ぶ」を押してください。空欄のときはファイル名（拡張子なし）を使います。JPEG・PNG・GIF・WebP・AVIF・BMP・SVG、および iPhone の HEIC や TIFF など（サーバーで WebP に変換して保存）に対応しています。1 ファイルあたり最大 12MB まで。
-                  </p>
-                </div>
-                {cooperatorLogos.length > 0 ? (
-                  <div className="flex flex-wrap gap-3">
-                    {cooperatorLogos.map((logo) => (
-                      <RelationLogoCard
-                        key={logo.displaySrc}
-                        logo={logo}
-                        canDelete={canEdit}
-                        onDelete={() => void handleLogoDelete("cooperator", logo.logoUrl)}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">まだロゴ画像がありません。</p>
-                )}
-                {canEdit ? (
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <Label htmlFor="cooperator-logo-name" className="text-xs">
-                        追加するロゴの表示名
-                      </Label>
-                      <Input
-                        id="cooperator-logo-name"
-                        placeholder="例: ○○株式会社"
-                        value={cooperatorName}
-                        onChange={(e) => setCooperatorName(e.target.value)}
-                        className="text-sm"
-                      />
-                    </div>
-                    <input
-                      ref={cooperatorFileRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/bmp,image/svg+xml,image/tiff,image/heic,image/heif,.heic,.heif"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          void handleLogoUpload("cooperator", file, cooperatorName);
-                          e.target.value = "";
-                        }
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      className="h-9 shrink-0 gap-1.5 sm:self-end"
-                      onClick={() => cooperatorFileRef.current?.click()}
-                      disabled={uploadingCooperator}
+            {rows.length === 0 ? (
+              <p className="text-xs text-muted-foreground">まだ関係組織が登録されていません。</p>
+            ) : (
+              <div className="space-y-2">
+                {rows.map((row) => {
+                  const logoView = relatedOrganizationToLogoView(row);
+                  return (
+                    <div
+                      key={row.id}
+                      className="grid gap-2 rounded-lg border border-border/80 bg-muted/10 p-3 sm:grid-cols-[7rem_1fr_auto_auto] sm:items-end"
                     >
-                      <Plus className="h-4 w-4" aria-hidden />
-                      {uploadingCooperator ? "アップロード中…" : "画像を選ぶ"}
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="supporters" className="text-xs">
-                協力
-              </Label>
-              <Textarea
-                id="supporters"
-                value={formData.supporters}
-                onChange={(e) => setFormData({ ...formData, supporters: e.target.value })}
-                placeholder="複数ある場合は改行で区切ってください"
-                rows={2}
-                className="mt-1 min-h-[4rem] text-sm"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="grants" className="text-xs">
-                助成
-              </Label>
-              <Textarea
-                id="grants"
-                value={formData.grants}
-                onChange={(e) => setFormData({ ...formData, grants: e.target.value })}
-                placeholder="複数ある場合は改行で区切ってください"
-                rows={2}
-                className="mt-1 min-h-[4rem] text-sm"
-              />
-
-              <div className="mt-3 space-y-3 rounded-lg border border-border/80 bg-muted/15 p-3">
-                <div className="space-y-0.5">
-                  <p className="text-xs font-medium text-foreground">助成ロゴ画像</p>
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">
-                    表示名を入力してから「画像を選ぶ」を押してください。空欄のときはファイル名（拡張子なし）を使います。JPEG・PNG・GIF・WebP・AVIF・BMP・SVG、および HEIC / TIFF など（サーバーで WebP に変換）に対応。最大 12MB まで。
-                  </p>
-                </div>
-                {grantLogos.length > 0 ? (
-                  <div className="flex flex-wrap gap-3">
-                    {grantLogos.map((logo) => (
-                      <RelationLogoCard
-                        key={logo.displaySrc}
-                        logo={logo}
-                        canDelete={canEdit}
-                        onDelete={() => void handleLogoDelete("grant", logo.logoUrl)}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">まだロゴ画像がありません。</p>
-                )}
-                {canEdit ? (
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <Label htmlFor="grant-logo-name" className="text-xs">
-                        追加するロゴの表示名
-                      </Label>
-                      <Input
-                        id="grant-logo-name"
-                        placeholder="例: ○○財団"
-                        value={grantName}
-                        onChange={(e) => setGrantName(e.target.value)}
-                        className="text-sm"
-                      />
+                      <div className="space-y-1">
+                        <Label className="text-xs">属性</Label>
+                        <Select
+                          value={row.role}
+                          onValueChange={(value) =>
+                            updateRow(row.id, { role: value as CompetitionRelationRole })
+                          }
+                        >
+                          <SelectTrigger className="h-9 text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {COMPETITION_RELATION_ROLES.map((role) => (
+                              <SelectItem key={role} value={role}>
+                                {ROLE_LABELS[role]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">名前</Label>
+                        <Input
+                          value={row.name}
+                          onChange={(e) => updateRow(row.id, { name: e.target.value })}
+                          placeholder="例: ○○株式会社"
+                          className="text-sm"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <Label className="text-xs">画像（任意）</Label>
+                        <div className="flex items-center gap-2">
+                          {logoView ? (
+                            <div className="relative h-12 w-12 overflow-hidden rounded border border-border bg-muted/25">
+                              <Image
+                                src={logoView.displaySrc}
+                                alt={logoView.name}
+                                fill
+                                className="object-contain p-1"
+                                sizes="48px"
+                                unoptimized
+                              />
+                            </div>
+                          ) : null}
+                          <input
+                            ref={(el) => {
+                              fileRefs.current[row.id] = el;
+                            }}
+                            type="file"
+                            accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/bmp,image/svg+xml,image/tiff,image/heic,image/heif,.heic,.heif"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                void handleLogoUpload(row, file);
+                                e.target.value = "";
+                              }
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            className="h-9 shrink-0 gap-1"
+                            onClick={() => fileRefs.current[row.id]?.click()}
+                            disabled={uploadingId === row.id}
+                          >
+                            <Plus className="h-4 w-4" aria-hidden />
+                            {uploadingId === row.id ? "アップロード中…" : logoView ? "変更" : "画像を選ぶ"}
+                          </Button>
+                          {logoView ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-9 w-9 shrink-0 text-destructive"
+                              onClick={() => void handleLogoDelete(row)}
+                              aria-label="ロゴを削除"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 shrink-0 self-end text-destructive sm:self-end"
+                        onClick={() => removeRow(row.id)}
+                        aria-label="行を削除"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
-                    <input
-                      ref={grantFileRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/bmp,image/svg+xml,image/tiff,image/heic,image/heif,.heic,.heif"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          void handleLogoUpload("grant", file, grantName);
-                          e.target.value = "";
-                        }
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      className="h-9 shrink-0 gap-1.5 sm:self-end"
-                      onClick={() => grantFileRef.current?.click()}
-                      disabled={uploadingGrant}
-                    >
-                      <Plus className="h-4 w-4" aria-hidden />
-                      {uploadingGrant ? "アップロード中…" : "画像を選ぶ"}
-                    </Button>
-                  </div>
-                ) : null}
+                  );
+                })}
               </div>
-            </div>
+            )}
+
+            <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addRow}>
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              行を追加
+            </Button>
 
             <div className="flex flex-wrap gap-2 pt-1">
-              <Button size="sm" className="h-8 text-xs" onClick={handleSave} disabled={loading}>
+              <Button size="sm" className="h-8 text-xs" onClick={() => void handleSave()} disabled={loading}>
                 <Save className="mr-1.5 h-3.5 w-3.5" />
                 {loading ? "保存中…" : "保存"}
               </Button>
@@ -556,57 +502,41 @@ export default function CompetitionRelationsEditor({
           </div>
         ) : (
           <div className="space-y-3">
-            {sponsors && (
-              <div>
-                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  後援
-                </h3>
-                <div className="whitespace-pre-wrap text-sm text-foreground">{sponsors}</div>
-              </div>
-            )}
+            {COMPETITION_RELATION_ROLES.map((role) => {
+              const roleRows = grouped[role];
+              if (roleRows.length === 0) return null;
 
-            {(cooperators || cooperatorLogos.length > 0) && (
-              <div>
-                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  協賛
-                </h3>
-                {cooperators && (
-                  <div className="mb-2 whitespace-pre-wrap text-sm text-foreground">{cooperators}</div>
-                )}
-                {cooperatorLogos.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-3">
-                    {cooperatorLogos.map((logo) => (
-                      <RelationLogoCard key={logo.displaySrc} logo={logo} canDelete={false} />
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            )}
+              const textOnly = roleRows.filter((r) => !r.logoUrl && r.name.trim());
+              const withLogo = roleRows.filter((r) => r.logoUrl);
 
-            {supporters && (
-              <div>
-                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  協力
-                </h3>
-                <div className="whitespace-pre-wrap text-sm text-foreground">{supporters}</div>
-              </div>
-            )}
-
-            {(grants || grantLogos.length > 0) && (
-              <div>
-                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  助成
-                </h3>
-                {grants && <div className="mb-2 whitespace-pre-wrap text-sm text-foreground">{grants}</div>}
-                {grantLogos.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-3">
-                    {grantLogos.map((logo) => (
-                      <RelationLogoCard key={logo.displaySrc} logo={logo} canDelete={false} />
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            )}
+              return (
+                <div key={role}>
+                  <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {ROLE_LABELS[role]}
+                  </h3>
+                  {textOnly.length > 0 ? (
+                    <div className="whitespace-pre-wrap text-sm text-foreground">
+                      {textOnly.map((r) => r.name).join("\n")}
+                    </div>
+                  ) : null}
+                  {withLogo.length > 0 ? (
+                    <div className={`flex flex-wrap gap-3 ${textOnly.length > 0 ? "mt-2" : ""}`}>
+                      {withLogo.map((row) => {
+                        const logo = relatedOrganizationToLogoView(row);
+                        if (!logo) return null;
+                        return (
+                          <RelationLogoCard
+                            key={row.id}
+                            logo={{ name: logo.name, displaySrc: logo.displaySrc }}
+                            canDelete={false}
+                          />
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
 
             {!hasAnyData && canEdit && (
               <p className="py-3 text-center text-xs text-muted-foreground">関係組織情報が未登録です</p>

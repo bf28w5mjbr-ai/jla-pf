@@ -2,8 +2,16 @@
 
 import type { ResultRound } from "@prisma/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import type { HeatMarshalHeatRow } from "@/components/HeatMarshalLanePanel";
-import { getHeatResultCapture, type HeatResultCaptureRow } from "@/lib/heatResultCaptureApi";
+import {
+  getHeatResultCapture,
+  getNextRoundSlStatus,
+  postNextRoundSlGenerate,
+  type HeatResultCaptureRow,
+  type NextRoundSlStatusResponse,
+} from "@/lib/heatResultCaptureApi";
 import { parseHeatMarshalResponseRound } from "@/lib/parseHeatMarshalResponseRound";
 import { snapshotRoundForTab } from "@/lib/startListEventTabDisplay";
 import type {
@@ -45,6 +53,7 @@ import {
   setResultCaptureSessionCache,
   type DayOpsStartListSessionCacheKey,
 } from "@/lib/dayOpsStartListSessionCache";
+import { createMarshalHeatFetchRunner } from "@/lib/marshalHeatFetchRunner";
 
 type Args = {
   competitionId: string;
@@ -365,7 +374,7 @@ export function useStartListEventDayOps({
     };
   }, [showResultOps, listMarshalRound, anyTabInResultMode, competitionId, eventId]);
 
-  const marshalHeatFetchInFlightRef = useRef(false);
+  const marshalHeatFetchRunnerRef = useRef(createMarshalHeatFetchRunner());
 
   const storeMarshalHeatsForRound = useCallback(
     (round: ResultRound, heats: HeatMarshalHeatRow[]) => {
@@ -379,8 +388,8 @@ export function useStartListEventDayOps({
 
   const fetchListMarshalHeatsCore = useCallback(
     async (signal?: AbortSignal, phase: HeatMarshalFetchPhase = "auto") => {
-      if (!listMarshalRound || marshalHeatFetchInFlightRef.current) return;
-      marshalHeatFetchInFlightRef.current = true;
+      if (!listMarshalRound) return;
+      if (!marshalHeatFetchRunnerRef.current.tryStart()) return;
       const round = listMarshalRound;
       const baseUrl = `/api/competitions/${competitionId}/day-ops/heat-marshal?eventId=${encodeURIComponent(eventId)}&round=${encodeURIComponent(round)}`;
       const runSummary = phase !== "full-only";
@@ -437,7 +446,15 @@ export function useStartListEventDayOps({
           setListMarshalParticipantsLoading(false);
         });
       } finally {
-        marshalHeatFetchInFlightRef.current = false;
+        marshalHeatFetchRunnerRef.current.finish(() => {
+          const cached = getMarshalSessionCache(
+            sessionCacheKey(competitionId, eventId, listMarshalRound)
+          );
+          void fetchListMarshalHeatsCore(
+            undefined,
+            cached?.hasParticipants ? "full-only" : "auto"
+          );
+        });
       }
     },
     [competitionId, eventId, listMarshalRound, storeMarshalHeatsForRound]
@@ -645,6 +662,87 @@ export function useStartListEventDayOps({
     [marshalViewModeByTab, resolveViewModeOpts]
   );
 
+  const router = useRouter();
+  const prevRoundForActiveTab =
+    activeTabIndex > 0 && tabCount > 1
+      ? snapshotRoundForTab(activeTabIndex - 1, tabCount)
+      : null;
+  const prevRoundForSl =
+    prevRoundForActiveTab === "HEAT" || prevRoundForActiveTab === "SEMI"
+      ? prevRoundForActiveTab
+      : null;
+
+  const [nextRoundSlStatus, setNextRoundSlStatus] = useState<NextRoundSlStatusResponse | null>(
+    null
+  );
+  const [nextRoundSlLoading, setNextRoundSlLoading] = useState(false);
+  const [nextRoundSlBusy, setNextRoundSlBusy] = useState(false);
+
+  const refetchNextRoundSlStatus = useCallback(async () => {
+    if (!showDayOpsShell || !prevRoundForSl) {
+      setNextRoundSlStatus(null);
+      return;
+    }
+    try {
+      setNextRoundSlLoading(true);
+      const data = await getNextRoundSlStatus(competitionId, eventId, prevRoundForSl);
+      setNextRoundSlStatus(data);
+    } catch {
+      setNextRoundSlStatus(null);
+    } finally {
+      setNextRoundSlLoading(false);
+    }
+  }, [showDayOpsShell, prevRoundForSl, competitionId, eventId]);
+
+  useEffect(() => {
+    void refetchNextRoundSlStatus();
+  }, [refetchNextRoundSlStatus]);
+
+  useEffect(() => {
+    const onChange = (e: Event) => {
+      const detail = (e as CustomEvent<{ competitionId?: string; eventId?: string }>).detail;
+      if (detail?.competitionId && detail.competitionId !== competitionId) return;
+      if (detail?.eventId && detail.eventId !== eventId) return;
+      void refetchNextRoundSlStatus();
+    };
+    window.addEventListener(JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED, onChange);
+    return () => window.removeEventListener(JLA_DAY_OPS_PARTICIPANT_STATUS_CHANGED, onChange);
+  }, [competitionId, eventId, refetchNextRoundSlStatus]);
+
+  const runNextRoundSlGenerate = useCallback(
+    async (mode: "create" | "regenerate" | "rescue") => {
+      if (!prevRoundForSl) return;
+      setNextRoundSlBusy(true);
+      try {
+        const result = await postNextRoundSlGenerate(competitionId, {
+          eventId,
+          fromRound: prevRoundForSl,
+          mode,
+        });
+        const roundLabel = result.toRound === "FINAL" ? "決勝" : "準決勝";
+        toast.success(
+          `${roundLabel}のスタートリストを生成しました（${result.participantCount}名・${result.heatCount}ヒート）`
+        );
+        dispatchJlaDayOpsParticipantStatusChanged(competitionId, eventId);
+        await refetchNextRoundSlStatus();
+        void refetchListMarshalHeats();
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "SL 生成に失敗しました");
+      } finally {
+        setNextRoundSlBusy(false);
+      }
+    },
+    [
+      prevRoundForSl,
+      competitionId,
+      eventId,
+      refetchNextRoundSlStatus,
+      refetchListMarshalHeats,
+      router,
+    ]
+  );
+
   /* eslint-enable react-hooks/set-state-in-effect */
 
   return {
@@ -669,5 +767,10 @@ export function useStartListEventDayOps({
     patchListResultHeatUnconfirmed,
     onMarshalSuccess,
     setMarshalSyncDeferred,
+    prevRoundForSl,
+    nextRoundSlStatus,
+    nextRoundSlLoading,
+    nextRoundSlBusy,
+    runNextRoundSlGenerate,
   };
 }

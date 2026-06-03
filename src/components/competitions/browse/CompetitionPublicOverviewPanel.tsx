@@ -12,7 +12,7 @@ import {
   buildParticipationEventSections,
   isUnassignedParticipationAgeBlock,
 } from "@/lib/competitionPublicParticipationEvents";
-import { relationLogosWithDisplaySrc } from "@/lib/relationLogos";
+import { resolveRelatedOrganizationsForDisplay } from "@/lib/competitionRelatedOrganizations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   CompetitionAnnouncementsManagerLazy,
@@ -198,12 +198,9 @@ export function CompetitionPublicOverviewPanel({
 
       <CompetitionRelationsEditorLazy
         competitionId={competition.id}
-        sponsors={competition.sponsors}
-        cooperators={competition.cooperators}
-        cooperatorsLogos={relationLogosWithDisplaySrc(competition.cooperatorsLogos)}
-        supporters={competition.supporters}
-        grants={competition.grants}
-        grantsLogos={relationLogosWithDisplaySrc(competition.grantsLogos)}
+        relatedOrganizations={resolveRelatedOrganizationsForDisplay({
+          relatedOrganizations: competition.relatedOrganizations,
+        })}
         canEdit={false}
       />
 

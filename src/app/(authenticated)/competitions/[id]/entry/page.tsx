@@ -253,7 +253,7 @@ export default async function CompetitionEntryPage({
       return (
         <div className="space-y-1">
           <p className="text-[10px] font-medium text-muted-foreground">
-            年齢カテゴリ別（生年月日の区分）
+            AGEカテゴリ別（生年月日の区分）
           </p>
           {catTiers.map((t, i) => (
             <p key={i} className="text-xs font-medium leading-snug">
@@ -281,7 +281,7 @@ export default async function CompetitionEntryPage({
       return (
         <div className="space-y-1">
           <p className="text-[10px] font-medium text-muted-foreground">
-            年齢帯別（開催日時点の満年齢）
+            年齢帯別（移行待ち・開催日時点の満年齢）
           </p>
           {tiers.map((t, i) => (
             <p key={i} className="text-xs font-medium leading-snug">
@@ -534,7 +534,7 @@ export default async function CompetitionEntryPage({
       userAge === null
         ? isCatFee
           ? "この大会は AGEカテゴリ別の参加費です。プロフィールに生年月日を登録してください。"
-          : "この大会は年齢帯別の参加費です。プロフィールに生年月日を登録してください。"
+          : "この大会は年齢帯別（移行待ち）の参加費です。プロフィールの生年月日または年齢情報を確認してください。"
         : isCatFee
           ? "参加費の AGEカテゴリに、あなたの生年月日が該当するものがありません。主催者へお問い合わせください。"
           : "参加費の年齢帯に、あなたの年齢が含まれていません。主催者へお問い合わせください。"

@@ -4,6 +4,8 @@ import {
   compactCertifiedLifesaverExpandedQualifications,
   deriveEntryQualificationOptionsFromTemplates,
   ENTRY_REQUIRED_CERTIFIED_LIFESAVER,
+  hasLegacyAgeBandEntryFee,
+  hasLegacyAgeBandQualifications,
   isQualificationRelaxedByAgeCategory,
   isQualificationRelaxedMulti,
   isQualificationTighteningByAgeCategory,
@@ -43,14 +45,23 @@ describe("competitionEntryAgeTiered", () => {
     expect(r.ageTierMissing).toBe(false);
   });
 
-  it("resolveEntryFeeUnits requires age for tiered fees", () => {
-    const fee = { ageFeeTiers: [{ minAge: 0, maxAge: null, individualEntryFee: 1, teamEntryFeePerTeam: 2 }] };
-    expect(parseAgeFeeTiers(fee)).not.toBeNull();
-    const noAge = resolveEntryFeeUnits(fee, null);
-    expect(noAge.ageTierMissing).toBe(true);
-    const ok = resolveEntryFeeUnits(fee, 40);
-    expect(ok.ageTierMissing).toBe(false);
-    expect(ok.individualUnit).toBe(1);
+  describe("legacy age bands (ageFeeTiers / ageQualificationTiers)", () => {
+    it("resolveEntryFeeUnits requires age for tiered fees", () => {
+      const fee = { ageFeeTiers: [{ minAge: 0, maxAge: null, individualEntryFee: 1, teamEntryFeePerTeam: 2 }] };
+      expect(parseAgeFeeTiers(fee)).not.toBeNull();
+      const noAge = resolveEntryFeeUnits(fee, null);
+      expect(noAge.ageTierMissing).toBe(true);
+      const ok = resolveEntryFeeUnits(fee, 40);
+      expect(ok.ageTierMissing).toBe(false);
+      expect(ok.individualUnit).toBe(1);
+    });
+
+    it("hasLegacyAgeBandEntryFee / hasLegacyAgeBandQualifications", () => {
+      expect(hasLegacyAgeBandEntryFee({ ageFeeTiers: [{ minAge: 0, maxAge: null, individualEntryFee: 1, teamEntryFeePerTeam: 2 }] })).toBe(true);
+      expect(hasLegacyAgeBandEntryFee({ ageCategoryFeeTiers: [{ ageCategoryId: "a", individualEntryFee: 1, teamEntryFeePerTeam: 2 }] })).toBe(false);
+      expect(hasLegacyAgeBandQualifications({ ageQualificationTiers: [{ minAge: 0, maxAge: null, requiredQualifications: ["選手登録"] }] })).toBe(true);
+      expect(hasLegacyAgeBandQualifications(["選手登録"])).toBe(false);
+    });
   });
 
   it("片側のみの生年月日上限でも pickAgeCategoryId で参加費・資格のカテゴリが一致して解決する", () => {

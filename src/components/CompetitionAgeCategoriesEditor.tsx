@@ -198,9 +198,7 @@ export default function CompetitionAgeCategoriesEditor({
 
   return (
     <div className="space-y-3">
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
-        年齢カテゴリごとに、タブの表示名と参加可能な生年月日範囲を設定します。各カテゴリに紐づく種目へも反映されます。
-      </p>
+      <p className="text-[11px] text-muted-foreground">種目タブの表示名と、参加可能な生年月日範囲です。</p>
 
       {ageCategories.length === 0 ? (
         <p className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">

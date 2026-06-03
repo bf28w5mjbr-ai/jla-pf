@@ -1,10 +1,22 @@
 "use client";
 
+import { useState } from "react";
 import { flushSync } from "react-dom";
 import { ListChecks, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import type { StartListMarshalViewMode } from "@/lib/startListEventTypes";
+import type { NextRoundSlStatusResponse } from "@/lib/heatResultCaptureApi";
+import { shouldShowNextRoundSlSection } from "@/lib/startListNextRoundSlUi";
 
 type Props = {
   tabId: string;
@@ -14,6 +26,12 @@ type Props = {
   showMarshalOps: boolean;
   showResultOps: boolean;
   onModeChange: (tabId: string, mode: StartListMarshalViewMode) => void;
+  nextRoundSl?: {
+    loading: boolean;
+    busy: boolean;
+    status: NextRoundSlStatusResponse | null;
+    onGenerate: (mode: "create" | "regenerate" | "rescue") => void | Promise<void>;
+  };
 };
 
 export function StartListMarshalModeBar({
@@ -24,9 +42,17 @@ export function StartListMarshalModeBar({
   showMarshalOps,
   showResultOps,
   onModeChange,
+  nextRoundSl,
 }: Props) {
   const highlightMarshal = mode === "marshal";
   const highlightResult = mode === "result";
+  const [rescueOpen, setRescueOpen] = useState(false);
+
+  const sl = nextRoundSl?.status;
+  const slBusy = Boolean(nextRoundSl?.busy);
+  const slLoading = Boolean(nextRoundSl?.loading);
+  const showSlSection =
+    Boolean(nextRoundSl) && shouldShowNextRoundSlSection(sl ?? null, slLoading);
 
   return (
     <div
@@ -46,9 +72,6 @@ export function StartListMarshalModeBar({
             {tabCount > 1 ? (
               <span className="ml-1.5 font-normal text-muted-foreground">（{roundName}）</span>
             ) : null}
-          </p>
-          <p className="mt-0.5 text-[10px] text-muted-foreground">
-            現在: {mode === "marshal" ? "マーシャル" : "リザルト"}
           </p>
         </div>
         <div className="flex shrink-0 flex-col gap-1.5 sm:w-[min(100%,22rem)]">
@@ -104,6 +127,96 @@ export function StartListMarshalModeBar({
           </div>
         </div>
       </div>
+
+      {showSlSection ? (
+        <div className="mt-2.5 border-t border-border/60 pt-2.5">
+          <p className="text-[10px] font-semibold text-foreground">次ラウンド SL</p>
+          <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
+            {slLoading
+              ? "状態を確認しています…"
+              : sl?.canGenerate
+                ? "前ラウンドの全ヒート確定済みです。スタートリストを生成してください。"
+                : sl?.canRegenerate
+                  ? "前ラ結果に変更があります。マーシャル開始前に SL を再生成できます。"
+                  : sl?.canRescueRegenerate
+                    ? "前ラ結果に変更があります。救済再生成は配置のみ更新し、召集済み状態は維持します。"
+                    : sl?.blockedReason ?? "前ラウンドのリザルト確定後に利用できます。"}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {sl?.canGenerate ? (
+              <Button
+                type="button"
+                size="sm"
+                className="h-7 px-2.5 text-[10px]"
+                disabled={slBusy || slLoading}
+                onClick={() => void nextRoundSl!.onGenerate("create")}
+              >
+                {slBusy ? "処理中…" : "SL生成"}
+              </Button>
+            ) : null}
+            {sl?.canRegenerate ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-7 px-2.5 text-[10px]"
+                disabled={slBusy || slLoading}
+                onClick={() => void nextRoundSl!.onGenerate("regenerate")}
+              >
+                {slBusy ? "処理中…" : "SL再生成"}
+              </Button>
+            ) : null}
+            {sl?.canRescueRegenerate ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="destructive"
+                className="h-7 px-2.5 text-[10px]"
+                disabled={slBusy || slLoading}
+                onClick={() => setRescueOpen(true)}
+              >
+                SL再生成（救済）
+              </Button>
+            ) : null}
+          </div>
+
+          <AlertDialog open={rescueOpen} onOpenChange={(open) => !slBusy && setRescueOpen(open)}>
+            <AlertDialogContent className="max-w-md">
+              <AlertDialogHeader>
+                <AlertDialogTitle>SL再生成（救済）</AlertDialogTitle>
+                <AlertDialogDescription asChild>
+                  <div className="space-y-2 text-left text-sm text-foreground">
+                    <p>
+                      次ラウンドのマーシャルが開始済みです。進出者の
+                      <span className="font-semibold"> 召集済み・終了ステータスは維持 </span>
+                      し、ヒート・レーン配置のみ前ラ結果に合わせて組み直します。
+                    </p>
+                    <p className="text-muted-foreground">
+                      通常は前ラ修正後・次ラマーシャル前に SL 再生成してください。
+                    </p>
+                  </div>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter className="gap-2 sm:gap-0">
+                <AlertDialogCancel type="button" disabled={slBusy}>
+                  キャンセル
+                </AlertDialogCancel>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={slBusy}
+                  onClick={() => {
+                    setRescueOpen(false);
+                    void nextRoundSl?.onGenerate("rescue");
+                  }}
+                >
+                  {slBusy ? "処理中…" : "実行する"}
+                </Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      ) : null}
     </div>
   );
 }
