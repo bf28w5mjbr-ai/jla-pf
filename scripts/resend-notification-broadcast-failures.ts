@@ -119,6 +119,7 @@ async function main() {
     body: sample.body,
     relatedId: jobId,
     linkUrl: sample.linkUrl ?? payload.linkUrl ?? undefined,
+    sendEmail: true,
   });
 
   const newSuccess = (job.successCount ?? 0) + successCount;

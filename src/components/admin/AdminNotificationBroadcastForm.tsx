@@ -17,6 +17,7 @@ export default function AdminNotificationBroadcastForm() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
+  const [sendEmail, setSendEmail] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [lastResult, setLastResult] = useState<null | {
     totalCount: number;
@@ -52,6 +53,7 @@ export default function AdminNotificationBroadcastForm() {
           title: title.trim(),
           body: body.trim(),
           linkUrl: linkUrl.trim() ? linkUrl.trim() : undefined,
+          sendEmail,
         }),
       });
       if (!res.ok) throw new Error("failed");
@@ -133,6 +135,16 @@ export default function AdminNotificationBroadcastForm() {
           placeholder="https://..."
         />
       </div>
+
+      <label className="flex cursor-pointer items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={sendEmail}
+          onChange={(e) => setSendEmail(e.target.checked)}
+          className="size-4 rounded border border-input"
+        />
+        メールでも送信する（登録メールアドレス宛。大量配信は数分かかることがあります）
+      </label>
 
       <Button onClick={submit} disabled={submitting}>
         {submitting ? "配信中..." : "一斉配信する"}

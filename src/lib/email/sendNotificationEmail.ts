@@ -1,6 +1,9 @@
 import { getPublicAppUrl } from "@/lib/appBaseUrl";
 import { maskEmailForHint } from "@/lib/email/maskEmail";
-import { resolveResendRegistrationFrom } from "@/lib/email/resendRegistrationOtp";
+import {
+  isResendOnboardingFrom,
+  resolveTransactionalEmailFrom,
+} from "@/lib/email/resendRegistrationOtp";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
@@ -28,7 +31,12 @@ export async function sendNotificationEmail(params: SendNotificationEmailParams)
     throw new Error("RESEND_API_KEY が未設定です");
   }
 
-  const from = resolveResendRegistrationFrom();
+  const from = resolveTransactionalEmailFrom();
+  if (isResendOnboardingFrom(from)) {
+    throw new Error(
+      "通知メールには検証済みドメインの送信元が必要です。EMAIL_FROM または REGISTRATION_EMAIL_FROM を設定してください。"
+    );
+  }
   const link = normalizeNotificationLink(params.linkUrl);
   const res = await fetch(RESEND_ENDPOINT, {
     method: "POST",

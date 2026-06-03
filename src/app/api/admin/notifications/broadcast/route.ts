@@ -19,6 +19,7 @@ const BroadcastSchema = z.object({
   title: z.string().min(1).max(120),
   body: z.string().min(1).max(1000),
   linkUrl: z.string().url().optional(),
+  sendEmail: z.boolean().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -72,6 +73,7 @@ export async function POST(request: NextRequest) {
       body: data.body,
       relatedId: job.id,
       linkUrl: data.linkUrl,
+      sendEmail: data.sendEmail ?? true,
     });
 
     await prisma.notificationJob.update({
