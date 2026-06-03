@@ -36,7 +36,7 @@ export function DashboardDeferredSkeleton() {
   return (
     <div className="space-y-8" aria-busy="true">
       <div className="h-96 animate-pulse rounded-xl border border-border/60 bg-muted/25" />
-      <div className="h-52 animate-pulse rounded-xl border border-border/60 bg-muted/25" />
+      <div className="h-64 animate-pulse rounded-xl border border-border/60 bg-muted/25" />
     </div>
   );
 }

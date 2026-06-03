@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Briefcase,
   ClipboardList,
+  Medal,
   Plus,
   ReceiptText,
   Trophy,
@@ -22,6 +23,10 @@ import {
   filterIndividualEventIdsFromEntry,
   hasSelectableWithdrawEvents,
 } from "@/lib/entryWithdrawalRequest";
+import {
+  loadUserPodiumResults,
+  podiumResultRoundLabel,
+} from "@/lib/dashboardUserPodiumResults";
 
 type OfficialAttendanceAggRow = {
   total: bigint;
@@ -36,7 +41,7 @@ type Props = {
 
 /** エントリー・経歴など DB 集約が重いブロック（Suspense 内でストリーミング） */
 export async function DashboardMainDeferred({ user }: Props) {
-  const [entries, attendancePreview, attendanceAggRows] = await Promise.all([
+  const [entries, attendancePreview, attendanceAggRows, podiumResults] = await Promise.all([
     prisma.competitionEntry.findMany({
       where: { userId: user.id },
       select: {
@@ -116,6 +121,7 @@ export async function DashboardMainDeferred({ user }: Props) {
       INNER JOIN "Competition" co ON co.id = a."competitionId"
       WHERE a."userId" = ${user.id}
     `,
+    loadUserPodiumResults(user.id),
   ] as const);
 
   const eventIds = [...new Set(entries.flatMap((e) => e.items.map((i) => i.eventId)))];
@@ -318,9 +324,11 @@ export async function DashboardMainDeferred({ user }: Props) {
             <Briefcase className="h-5 w-5 text-primary" strokeWidth={1.75} aria-hidden />
             <CardTitle className="text-lg">経歴</CardTitle>
           </div>
-          <CardDescription>オフィシャル活動実績（出席ベース）</CardDescription>
+          <CardDescription>オフィシャル活動実績と大会成績（決勝・1〜3位）</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4 px-5 py-5 sm:px-6">
+        <CardContent className="space-y-6 px-5 py-5 sm:px-6">
+          <div className="space-y-4">
+            <p className="text-xs font-medium text-muted-foreground">オフィシャル活動</p>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
               <p className="text-[11px] font-medium text-muted-foreground">実出席日数</p>
@@ -371,6 +379,59 @@ export async function DashboardMainDeferred({ user }: Props) {
               ))}
             </div>
           )}
+          </div>
+
+          <div className="space-y-3 border-t border-border/80 pt-5">
+            <div className="flex items-center gap-2">
+              <Medal className="h-4 w-4 text-primary" strokeWidth={1.75} aria-hidden />
+              <p className="text-xs font-medium text-muted-foreground">大会成績（決勝・1〜3位）</p>
+            </div>
+            {podiumResults.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
+                1〜3位の決勝成績はまだありません。
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {podiumResults.map((row) => {
+                  const competition = row.officialResult.competition;
+                  const event = row.officialResult.event;
+                  const roundLabel = podiumResultRoundLabel(row);
+                  const rank = row.rank;
+                  return (
+                    <div
+                      key={row.id}
+                      className="flex flex-col gap-1 rounded-lg border border-border/70 bg-background px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground">
+                          <Link
+                            href={appRoutes.competitions.results(competition.id)}
+                            className="hover:text-primary hover:underline"
+                          >
+                            {competition.name}
+                          </Link>
+                          <span className="text-muted-foreground">
+                            {" "}
+                            / {event.name} / {roundLabel}
+                          </span>
+                        </p>
+                        {row.entryType === "TEAM" && row.teamEntry?.teamName ? (
+                          <p className="text-xs text-muted-foreground">
+                            チーム: {row.teamEntry.teamName}
+                          </p>
+                        ) : null}
+                      </div>
+                      {rank != null ? (
+                        <Badge variant="outline" className="w-fit shrink-0 font-normal tabular-nums">
+                          {rank}位
+                        </Badge>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>
