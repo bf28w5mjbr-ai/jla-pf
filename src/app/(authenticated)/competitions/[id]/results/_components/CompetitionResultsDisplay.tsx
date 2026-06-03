@@ -57,7 +57,7 @@ export function CompetitionResultsDisplay({
       <div className="container mx-auto max-w-5xl py-10">
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">
-            公開済みの公式結果はまだありません
+            表示できる結果はまだありません（ヒート確定またはラウンド確定後に表示されます）
           </CardContent>
         </Card>
       </div>
@@ -81,9 +81,6 @@ export function CompetitionResultsDisplay({
                       ラウンド:{" "}
                       {displayResultRoundLabel(result.round, roundLabelsByEventId[result.eventId])}
                     </span>
-                    {result.publishedAt && (
-                      <span>公開: {new Date(result.publishedAt).toLocaleString("ja-JP")}</span>
-                    )}
                     {result.lockedAt && (
                       <span>確定: {new Date(result.lockedAt).toLocaleString("ja-JP")}</span>
                     )}

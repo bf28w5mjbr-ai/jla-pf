@@ -21,12 +21,12 @@ export const EntryWithdrawRequestButtonLazy = dynamic(
   { loading: () => <DashboardClientBlockSkeleton className="h-9 w-28" /> }
 );
 
+/** プロフィール・資格ブロック（DashboardMain）用 */
 export function DashboardMainSkeleton() {
   return (
     <div className="space-y-8" aria-busy="true">
       <div className="h-28 animate-pulse rounded-xl border border-border/60 bg-muted/25" />
       <div className="h-[7.5rem] animate-pulse rounded-xl border border-border/60 bg-muted/25" />
-      <DashboardDeferredSkeleton />
     </div>
   );
 }

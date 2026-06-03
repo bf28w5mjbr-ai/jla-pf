@@ -137,7 +137,12 @@ export function LiveRoundResultLaneRow({
         {displayRk}位
       </span>
     ) : (
-      laneNumber
+      <span
+        className="text-muted-foreground"
+        title={`スタートレーン ${laneNumber}（着順未入力）`}
+      >
+        L{laneNumber}
+      </span>
     );
   const showRankBadgeInline = displayRk != null && !heatConfirmed;
   const draftChecked = participant
@@ -250,7 +255,7 @@ export function LiveRoundResultLaneRow({
               ? `スタートレーン ${laneNumber}、着順は記録されていません`
               : displayRk != null
                 ? `仮着順 ${displayRk}位、スタートレーン ${laneNumber}`
-                : `スタートレーン ${laneNumber}`
+                : `着順未入力、スタートレーン ${laneNumber}`
         }
       >
         {leftColumnContent}

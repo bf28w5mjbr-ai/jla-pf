@@ -32,8 +32,8 @@ import {
   LaneRow,
   marshalDisplayClass,
   marshalParticipantForLane,
-  orderIndividualItemsByConfirmedResultRank,
-  orderTeamItemsByConfirmedResultRank,
+  orderIndividualItemsByLiveResultRank,
+  orderTeamItemsByLiveResultRank,
   snapshotLaneForIndividual,
   snapshotLaneForTeam,
   StartListParticipantRowBody,
@@ -192,14 +192,19 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
       runUpCount,
       resultDraftCount,
     });
-    const teamForResult = heatConfirmedForSort
-      ? orderTeamItemsByConfirmedResultRank(
-          teams,
+    const shouldSortByResultRank =
+      resultCaptureVisible &&
+      (heatConfirmedForSort || rankOkCount > 0 || resultDraftCount > 0);
+    const teamForResult = shouldSortByResultRank
+      ? orderTeamItemsByLiveResultRank(teams, {
           displayHeatNumber,
-          localResultRows,
+          rows: localResultRows,
           statusByKey,
-          apiHeat
-        )
+          apiHeat,
+          resultDraftOps,
+          resultInputOrder,
+          includeProvisional: !heatConfirmedForSort,
+        })
       : teams;
     const heatRankOrderKeys = rankOrderKeysForHeat(displayHeatNumber);
     return (
@@ -454,7 +459,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
         {resultCaptureVisible && m && resultCapture ? (
           <>
             <ul className="mt-1 space-y-0.5">
-              {(heatConfirmedForSort
+              {(shouldSortByResultRank
                 ? teamForResult.map((team, index) => ({
                     team,
                     originalIndex: teams.findIndex((x) => x.teamEntryId === team.teamEntryId),
@@ -688,14 +693,19 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
       runUpCount,
       resultDraftCount,
     });
-    const indForResult = heatConfirmedForSort
-      ? orderIndividualItemsByConfirmedResultRank(
-          individuals,
+    const shouldSortByResultRank =
+      resultCaptureVisible &&
+      (heatConfirmedForSort || rankOkCount > 0 || resultDraftCount > 0);
+    const indForResult = shouldSortByResultRank
+      ? orderIndividualItemsByLiveResultRank(individuals, {
           displayHeatNumber,
-          localResultRows,
+          rows: localResultRows,
           statusByKey,
-          apiHeat
-        )
+          apiHeat,
+          resultDraftOps,
+          resultInputOrder,
+          includeProvisional: !heatConfirmedForSort,
+        })
       : individuals;
     const heatRankOrderKeys = rankOrderKeysForHeat(displayHeatNumber);
     return (
@@ -949,7 +959,7 @@ export function LiveRoundHeatSection(props: LiveRoundHeatSectionProps) {
         {resultCaptureVisible && m && resultCapture ? (
           <>
             <ul className="mt-1 space-y-0.5">
-              {(heatConfirmedForSort
+              {(shouldSortByResultRank
                 ? indForResult.map((item, index) => ({
                     item,
                     originalIndex: individuals.findIndex((x) => x.entryId === item.entryId),

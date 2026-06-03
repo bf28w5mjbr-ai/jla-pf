@@ -1307,6 +1307,7 @@ model OfficialResult {
   eventId       String
   round         ResultRound @default(FINAL)
 
+  /// @deprecated 観客向け公開はヒート確定＋公開スタートリスト。新規セットしない。将来削除予定。
   publishedAt DateTime?
   lockedAt    DateTime?
   note        String?   @db.Text

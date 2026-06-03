@@ -62,7 +62,6 @@ type ApiRow = {
 type ApiResult = {
   id: string;
   round: "FINAL" | "HEAT" | "SEMI";
-  publishedAt?: string | null;
   lockedAt?: string | null;
   note?: string | null;
   rows: ApiRow[];
@@ -115,7 +114,6 @@ export function OfficialResultManager({
   const [eventId, setEventId] = useState<string>("");
   const [round, setRound] = useState<"FINAL" | "HEAT" | "SEMI">("FINAL");
   const [startListSettings, setStartListSettings] = useState<unknown>(null);
-  const [publishedAt, setPublishedAt] = useState<string>("");
   const [lockedAt, setLockedAt] = useState<string>("");
   const [note, setNote] = useState<string>("");
   const [rows, setRows] = useState<RowState[]>([]);
@@ -215,7 +213,6 @@ export function OfficialResultManager({
         const resultJson = (await resultRes.json()) as { results?: ApiResult[] };
         const matched = (resultJson.results ?? []).find((result) => result.round === round);
         if (matched) {
-          setPublishedAt(toLocalDateTimeValue(matched.publishedAt));
           setLockedAt(toLocalDateTimeValue(matched.lockedAt));
           setNote(matched.note ?? "");
           setRows(
@@ -233,7 +230,6 @@ export function OfficialResultManager({
             }))
           );
         } else {
-          setPublishedAt("");
           setLockedAt("");
           setNote("");
           setRows([]);
@@ -306,7 +302,6 @@ export function OfficialResultManager({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             round,
-            publishedAt: fromLocalDateTimeValue(publishedAt),
             lockedAt: fromLocalDateTimeValue(lockedAt),
             note: note.trim() || null,
             rows: payloadRows,
@@ -341,7 +336,7 @@ export function OfficialResultManager({
       <CardHeader>
         <CardTitle>公式結果管理</CardTitle>
         <CardDescription>
-          種目ごとに結果を登録し、公開日時と確定日時を設定できます。競技中の失格（DSQ）はスタートリストの失格管理から登録すると、公開用の公式結果に自動反映されます（この画面では DSQ を手入力しません）。
+          種目ごとに結果を登録し、確定日時で編集ロックと公開スタートリスト上の「確定結果」表示を行えます。観客向けの暫定順位は当日運用のヒート確定で公開スタートリストに表示されます。競技中の失格（DSQ）はスタートリストの失格管理から登録すると公式結果に自動反映されます（この画面では DSQ を手入力しません）。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -387,25 +382,17 @@ export function OfficialResultManager({
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="publishedAt">公開日時（任意）</Label>
-            <Input
-              id="publishedAt"
-              type="datetime-local"
-              value={publishedAt}
-              onChange={(e) => setPublishedAt(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="lockedAt">確定日時（任意）</Label>
-            <Input
-              id="lockedAt"
-              type="datetime-local"
-              value={lockedAt}
-              onChange={(e) => setLockedAt(e.target.value)}
-            />
-          </div>
+        <div className="max-w-md space-y-2">
+          <Label htmlFor="lockedAt">確定日時（任意）</Label>
+          <Input
+            id="lockedAt"
+            type="datetime-local"
+            value={lockedAt}
+            onChange={(e) => setLockedAt(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            設定後は編集不可になり、公開スタートリストのバッジが「確定結果」になります。
+          </p>
         </div>
 
         <div className="space-y-2">

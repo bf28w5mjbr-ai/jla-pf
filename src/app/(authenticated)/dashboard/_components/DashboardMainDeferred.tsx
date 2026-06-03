@@ -36,7 +36,7 @@ type Props = {
 
 /** エントリー・経歴など DB 集約が重いブロック（Suspense 内でストリーミング） */
 export async function DashboardMainDeferred({ user }: Props) {
-  const [entries, attendancePreview, attendanceAggRows] = await prisma.$transaction([
+  const [entries, attendancePreview, attendanceAggRows] = await Promise.all([
     prisma.competitionEntry.findMany({
       where: { userId: user.id },
       select: {
@@ -116,7 +116,7 @@ export async function DashboardMainDeferred({ user }: Props) {
       INNER JOIN "Competition" co ON co.id = a."competitionId"
       WHERE a."userId" = ${user.id}
     `,
-  ]);
+  ] as const);
 
   const eventIds = [...new Set(entries.flatMap((e) => e.items.map((i) => i.eventId)))];
   const events =

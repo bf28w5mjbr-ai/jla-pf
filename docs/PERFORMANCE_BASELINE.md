@@ -70,3 +70,42 @@ CURL_EXTRA_ARGS='["-H","Cookie: session=YOUR_JWT"]' \
 デプロイ後: 上記 Cookie 付き計測結果をこの節の表に TTFB avg を追記する。
 
 実装マージ直前の本番参考（未ログイン・`-L` 追従）: `/dashboard` TTFB avg **676.9 ms**（2026-06-01・3 回計測）。
+
+---
+
+## ダッシュボード高速化（2026-06 第2弾）
+
+計測日: 2026-06-03（実装マージ直後）
+
+### 変更概要
+
+| 施策 | 内容 |
+|------|------|
+| RSC 並列化 | `DashboardMainDeferred` を [`page.tsx`](../src/app/(authenticated)/dashboard/page.tsx) 直下の第 3 `Suspense` に昇格（プロフィール完了を待たずエントリー・経歴クエリ開始） |
+| 読み取りクエリ | [`DashboardMainDeferred.tsx`](../src/app/(authenticated)/dashboard/_components/DashboardMainDeferred.tsx): `prisma.$transaction` → `Promise.all`（entries / 出席 preview / 出席集計を並列） |
+| TO バナー | [`listClubAdminTechnicalOfficialAlerts`](../src/lib/technicalOfficialQueries.ts): 充足人数を chunk 12 の `Promise.all` で並列化（`listTechnicalOfficialShortagesForCompetition` と同パターン） |
+
+### 参考計測（ローカル `pnpm dev`・Cookie なし）
+
+`BASE_URL=http://localhost:3000 node scripts/measure-ttfb.mjs -n 3 --warmup 1 /dashboard`
+
+| パス | HTTP | TTFB avg | TTFB min–max | total avg | 備考 |
+|------|------|----------|--------------|-----------|------|
+| `/dashboard` | 200 | 73.2 ms | 61.7–84.6 ms | 76.2 ms | dev・未ログイン。本番ログイン済み比較には不向き |
+
+### デプロイ後に追記する計測（ログイン済み・推奨）
+
+```bash
+CURL_EXTRA_ARGS='["-H","Cookie: session=YOUR_JWT"]' \
+  BASE_URL=https://bluvium.jp pnpm measure:ttfb -- -n 5 --warmup 1 /dashboard
+```
+
+本番ビルド比較:
+
+```bash
+pnpm build && pnpm start
+CURL_EXTRA_ARGS='["-H","Cookie: session=YOUR_JWT"]' \
+  BASE_URL=http://localhost:3000 pnpm measure:ttfb -- -n 5 --warmup 1 /dashboard
+```
+
+期待: ログイン済み初回 HTML でプロフィールとエントリー/経歴ブロックのストリーム差が縮む。クラブ ADMIN は TO バナー壁時間がペア数に対しチャンク単位になる。

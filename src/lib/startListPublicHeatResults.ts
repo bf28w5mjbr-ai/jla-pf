@@ -77,7 +77,7 @@ export function buildPublicHeatResultRoundOverlays(
 
     overlays.push({
       round: official.round,
-      isFinalized: Boolean(official.publishedAt || official.lockedAt),
+      isFinalized: Boolean(official.lockedAt),
       confirmedHeatIndices,
       rowsByKey,
     });

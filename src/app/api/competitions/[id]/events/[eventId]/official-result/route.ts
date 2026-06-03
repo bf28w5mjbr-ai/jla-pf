@@ -5,6 +5,7 @@ import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { requireOrgAdmin } from "@/lib/accessControl";
 import { getRequestContext, logAuditAction } from "@/lib/auditLog";
+import { mergeOfficialResultVisibilityFilter } from "@/lib/officialResultPublicVisibility";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 
 const rowSchema = z.object({
@@ -24,7 +25,6 @@ const rowSchema = z.object({
 
 const resultSchema = z.object({
   round: z.enum(["FINAL", "HEAT", "SEMI"]).optional(),
-  publishedAt: z.string().datetime().nullable().optional(),
   lockedAt: z.string().datetime().nullable().optional(),
   note: z.string().nullable().optional(),
   rows: z.array(rowSchema),
@@ -71,12 +71,14 @@ export async function GET(
     }
 
     const results = await prisma.officialResult.findMany({
-      where: {
-        competitionId,
-        eventId,
-        ...(roundFilter ? { round: roundFilter } : {}),
-        ...(canViewUnpublished ? {} : { publishedAt: { not: null } }),
-      },
+      where: mergeOfficialResultVisibilityFilter(
+        {
+          competitionId,
+          eventId,
+          ...(roundFilter ? { round: roundFilter } : {}),
+        },
+        canViewUnpublished
+      ),
       include: {
         rows: {
           select: {
@@ -224,12 +226,11 @@ export async function PUT(
           competitionId,
           eventId,
           round,
-          publishedAt: payload.publishedAt ? new Date(payload.publishedAt) : null,
+          publishedAt: null,
           lockedAt: payload.lockedAt ? new Date(payload.lockedAt) : null,
           note: payload.note ?? null,
         },
         update: {
-          publishedAt: payload.publishedAt ? new Date(payload.publishedAt) : null,
           lockedAt: payload.lockedAt ? new Date(payload.lockedAt) : null,
           note: payload.note ?? null,
         },
@@ -282,7 +283,6 @@ export async function PUT(
         eventId,
         round,
         rowCount: payload.rows.length,
-        publishedAt: payload.publishedAt ?? null,
         lockedAt: payload.lockedAt ?? null,
       },
       request: getRequestContext(req),

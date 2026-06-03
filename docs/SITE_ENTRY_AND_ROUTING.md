@@ -147,7 +147,7 @@ Next.js **proxy**（[`src/proxy.ts`](../src/proxy.ts)）は Supabase セッシ�
 |------|------|
 | `/browse/competitions` | 大会一覧（未ログイン向け） |
 | `/competitions/view/[id]` | 大会詳細（タブ: 大会情報 / レース情報・未ログイン向け） |
-| `/competitions/[id]/results/[eventId]` | 種目別公式結果（公開。氏名・クラブ名可） |
+| `/competitions/[id]/results/[eventId]` | 旧 URL → `/competitions/[id]/start-list/[eventId]` へリダイレクト |
 | `/competitions/[id]/start-list` | スタートリスト索引（`?tab=results` へリダイレクト） |
 | `/competitions/[id]/entry/payment-intent` | 決済インテント（フロー用） |
 | `/clubs` | クラブ一覧 |
@@ -168,7 +168,7 @@ Next.js **proxy**（[`src/proxy.ts`](../src/proxy.ts)）は Supabase セッシ�
 | 大会エントリー | 公開詳細から `withLoginRedirect` → 未ログインは `/login?redirect=...` | `/competitions/[id]/entry` ほか |
 | チームエントリー | 同上 | `/competitions/[id]/team-entry` 等 |
 | テクニカルオフィシャル募集 | 公開ページ上はログイン導線 | `/competitions/[id]/official-entry` |
-| 公式結果（閲覧） | `/competitions/[id]/results/[eventId]`（氏名・クラブ名可） | `/competitions/[id]/results`（`viewerId` 付きペイロード。主催・PF 向け操作は別） |
+| 競技結果（閲覧） | 公開スタートリスト `/competitions/[id]/start-list/[eventId]`（ヒート確定で暫定順位） | `/competitions/[id]/results`（会員・記録値表。ヒート確定または `lockedAt` 後） |
 | 種目スタートリスト | `/competitions/[id]/start-list/[eventId]`（公開シェル） | 同一 URL（会員シェル・[`(adaptiveShell)`](../src/app/(adaptiveShell)/layout.tsx)） |
 | 結果管理 | — | `/competitions/[id]/results/manage` |
 

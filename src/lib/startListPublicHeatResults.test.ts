@@ -130,7 +130,7 @@ describe("buildPublicHeatResultRoundOverlays", () => {
     expect(Object.keys(overlays[0]?.rowsByKey ?? {})).not.toContain("2:I:e2");
   });
 
-  it("isFinalized が publishedAt / lockedAt で切り替わる", () => {
+  it("isFinalized は lockedAt のみで true", () => {
     const provisional = buildPublicHeatResultRoundOverlays([
       {
         round: "HEAT",
@@ -142,7 +142,7 @@ describe("buildPublicHeatResultRoundOverlays", () => {
     ]);
     expect(provisional[0]?.isFinalized).toBe(false);
 
-    const published = buildPublicHeatResultRoundOverlays([
+    const publishedAtOnly = buildPublicHeatResultRoundOverlays([
       {
         round: "HEAT",
         publishedAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -151,7 +151,7 @@ describe("buildPublicHeatResultRoundOverlays", () => {
         rows: [],
       },
     ]);
-    expect(published[0]?.isFinalized).toBe(true);
+    expect(publishedAtOnly[0]?.isFinalized).toBe(false);
 
     const locked = buildPublicHeatResultRoundOverlays([
       {

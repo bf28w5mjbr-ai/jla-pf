@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import {
   LayoutDashboard,
@@ -19,8 +18,6 @@ import {
 } from "./dashboardDynamicClients";
 import { QualificationRecordOrigin } from "@prisma/client";
 import { cn } from "@/lib/utils";
-import { DashboardMainDeferred } from "./DashboardMainDeferred";
-import { DashboardDeferredSkeleton } from "./DashboardPageSkeleton";
 
 function calcAge(dateOfBirth: Date): number {
   const today = new Date();
@@ -301,10 +298,6 @@ export async function DashboardMain({ userId }: { userId: string }) {
           </CardContent>
         </Card>
       ) : null}
-
-      <Suspense fallback={<DashboardDeferredSkeleton />}>
-        <DashboardMainDeferred user={user} />
-      </Suspense>
     </div>
   );
 }

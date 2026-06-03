@@ -585,8 +585,13 @@ export async function listClubAdminTechnicalOfficialAlerts(
     entryCountByPair.set(pairKey({ competitionId: g.competitionId, clubId: g.clubId }), g._count._all);
   }
 
-  const alerts: ClubAdminTechnicalOfficialAlert[] = [];
+  type PairNeedingAssignment = {
+    pair: Pair;
+    comp: (typeof competitions)[number];
+    required: number;
+  };
 
+  const pairsNeedingAssignment: PairNeedingAssignment[] = [];
   for (const p of pairs) {
     const comp = compById.get(p.competitionId);
     if (!comp) continue;
@@ -597,26 +602,41 @@ export async function listClubAdminTechnicalOfficialAlerts(
     const entryCount = entryCountByPair.get(k) ?? 0;
     const required = requiredTechnicalOfficialCount(entryCount, tiers);
     if (required <= 0) continue;
+    pairsNeedingAssignment.push({ pair: p, comp, required });
+  }
 
-    const assigned = await countValidTechnicalOfficialAssignments(
-      prisma,
-      p.competitionId,
-      p.clubId,
-      Boolean(comp.officialQualificationFilterEnabled)
+  const alerts: ClubAdminTechnicalOfficialAlert[] = [];
+  const ASSIGN_CHUNK = 12;
+
+  for (let i = 0; i < pairsNeedingAssignment.length; i += ASSIGN_CHUNK) {
+    const chunk = pairsNeedingAssignment.slice(i, i + ASSIGN_CHUNK);
+    const assignedCounts = await Promise.all(
+      chunk.map(({ pair, comp }) =>
+        countValidTechnicalOfficialAssignments(
+          prisma,
+          pair.competitionId,
+          pair.clubId,
+          Boolean(comp.officialQualificationFilterEnabled)
+        )
+      )
     );
 
-    const shortage = Math.max(0, required - assigned);
-    if (shortage <= 0) continue;
+    for (let j = 0; j < chunk.length; j++) {
+      const { pair, comp, required } = chunk[j];
+      const assigned = assignedCounts[j];
+      const shortage = Math.max(0, required - assigned);
+      if (shortage <= 0) continue;
 
-    alerts.push({
-      clubId: p.clubId,
-      clubName: clubNameById.get(p.clubId) ?? p.clubId,
-      competitionId: p.competitionId,
-      competitionName: comp.name,
-      shortage,
-      required,
-      assigned,
-    });
+      alerts.push({
+        clubId: pair.clubId,
+        clubName: clubNameById.get(pair.clubId) ?? pair.clubId,
+        competitionId: pair.competitionId,
+        competitionName: comp.name,
+        shortage,
+        required,
+        assigned,
+      });
+    }
   }
 
   return alerts.sort((a, b) => a.competitionName.localeCompare(b.competitionName, "ja"));

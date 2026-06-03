@@ -140,12 +140,15 @@ export function LiveRoundModeBanners({
                 <span className="font-medium">もう少し詳しく</span>
               </summary>
               <ul className="mt-1.5 list-inside list-disc space-y-1 pl-0.5 text-muted-foreground dark:text-violet-200/85">
+                <li>着順入力中は一覧を着順順に表示します（未入力は L＋レーン番号）。</li>
                 <li>チェックまたは NFC で記録。PC はドラッグ、スマホは行右の矢印で並べ替え可。</li>
                 <li>
                   脱落式:「下位から」後、ヒート見出しの「残りをランアップ」で生存者を進出登録（枠があるとき）。
                 </li>
                 <li>終了ステータス（DNS 等）は直上の「終了ステータス管理」から（公式結果に反映）。</li>
-                <li>Web 公開は主催の「公式結果」で公開日時を設定したとき（当日確定のみでは掲載されない）。</li>
+                <li>
+                  ヒートをリザルト確定すると公開スタートリストに暫定順位が表示されます。ラウンド全体の確定は結果管理の確定日時から行います。
+                </li>
               </ul>
             </details>
           </div>

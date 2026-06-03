@@ -4,6 +4,7 @@ import {
   countValidTechnicalOfficialAssignmentsDetailed,
   countClubIndividualEntryRows,
   getTechnicalOfficialStatusForClub,
+  listClubAdminTechnicalOfficialAlerts,
   listTechnicalOfficialShortagesForCompetition,
 } from "@/lib/technicalOfficialQueries";
 
@@ -171,6 +172,95 @@ describe("countValidTechnicalOfficialAssignments", () => {
       { userId: "u1", familyName: "山田", givenName: "一郎" },
       { userId: "u2", familyName: "佐藤", givenName: "二郎" },
     ]);
+  });
+});
+
+describe("listClubAdminTechnicalOfficialAlerts", () => {
+  it("evaluates assignment counts for multiple pairs concurrently within a chunk", async () => {
+    let inFlight = 0;
+    let peakInFlight = 0;
+
+    const assignmentCountFindMany = vi.fn(async () => {
+      inFlight += 1;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      inFlight -= 1;
+      return [];
+    });
+    const assignmentPairsFindMany = vi.fn().mockResolvedValue([
+      { clubId: "club-1", competitionId: "comp-a" },
+      { clubId: "club-1", competitionId: "comp-b" },
+    ]);
+
+    const tiers = [{ minEntries: 1, requiredCount: 2 }];
+    const competitionRows = [
+      {
+        id: "comp-a",
+        name: "大会A",
+        officialRecruitmentEnabled: true,
+        technicalOfficialRecruitmentEnabled: true,
+        officialQualificationFilterEnabled: false,
+        technicalOfficialTiers: tiers,
+      },
+      {
+        id: "comp-b",
+        name: "大会B",
+        officialRecruitmentEnabled: true,
+        technicalOfficialRecruitmentEnabled: true,
+        officialQualificationFilterEnabled: false,
+        technicalOfficialTiers: tiers,
+      },
+    ];
+
+    const prisma = {
+      membership: {
+        findMany: vi.fn().mockResolvedValue([{ clubId: "club-1", club: { name: "西浜" } }]),
+        findFirst: vi.fn().mockResolvedValue({ id: "m1" }),
+      },
+      competitionEntry: {
+        findMany: vi.fn().mockResolvedValue([
+          { clubId: "club-1", competitionId: "comp-a" },
+          { clubId: "club-1", competitionId: "comp-b" },
+        ]),
+        groupBy: vi.fn().mockResolvedValue([
+          { competitionId: "comp-a", clubId: "club-1", _count: { _all: 3 } },
+          { competitionId: "comp-b", clubId: "club-1", _count: { _all: 3 } },
+        ]),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+      teamEntry: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
+      competitionTechnicalOfficialAssignment: {
+        findMany: vi.fn((args: { distinct?: unknown }) =>
+          args?.distinct != null ? assignmentPairsFindMany(args) : assignmentCountFindMany(args)
+        ),
+      },
+      competitionTechnicalOfficialInvitation: { findMany: vi.fn().mockResolvedValue([]) },
+      competitionOfficialApplication: { findMany: vi.fn().mockResolvedValue([]) },
+      competition: {
+        findMany: vi.fn().mockResolvedValue(competitionRows),
+        findUnique: vi.fn().mockResolvedValue({
+          id: "comp-a",
+          status: "OPEN",
+          entryStartDate: null,
+          entryEndDate: null,
+          officialRecruitmentEnabled: true,
+          officialQualificationFilterEnabled: false,
+          technicalOfficialRecruitmentEnabled: true,
+        }),
+      },
+      club: {
+        count: vi.fn().mockResolvedValue(1),
+        findMany: vi.fn().mockResolvedValue([]),
+        findUnique: vi.fn().mockResolvedValue({ id: "club-1", name: "西浜" }),
+      },
+    } as never;
+
+    const alerts = await listClubAdminTechnicalOfficialAlerts(prisma, "user-1");
+
+    expect(alerts).toHaveLength(2);
+    expect(alerts.map((a) => a.competitionId).sort()).toEqual(["comp-a", "comp-b"]);
+    expect(assignmentCountFindMany).toHaveBeenCalledTimes(2);
+    expect(peakInFlight).toBeGreaterThan(1);
   });
 });
 

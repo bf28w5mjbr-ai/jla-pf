@@ -43,15 +43,6 @@ export function CompetitionPublicOverviewPanelSkeleton() {
   );
 }
 
-export function CompetitionPublicResultsTimetableSkeleton() {
-  return (
-    <div className="space-y-4" role="status" aria-label="競技結果タイムテーブルを読み込み中">
-      <div className="h-10 animate-pulse rounded-lg border border-border/60 bg-muted/30" />
-      <div className="min-h-[240px] animate-pulse rounded-xl border border-border/60 bg-muted/25" />
-    </div>
-  );
-}
-
 export function CompetitionPublicStartListPanelSkeleton() {
   return (
     <div className="space-y-4" role="status" aria-label="スタートリストを読み込み中">

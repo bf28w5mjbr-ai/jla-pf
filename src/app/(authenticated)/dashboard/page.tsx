@@ -2,8 +2,10 @@ import { Metadata } from "next";
 import { Suspense } from "react";
 import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { DashboardMain } from "./_components/DashboardMain";
+import { DashboardMainDeferredSlot } from "./_components/DashboardMainDeferredSlot";
 import { DashboardTechnicalOfficialBannerSlot } from "./_components/DashboardTechnicalOfficialBannerSlot";
 import {
+  DashboardDeferredSkeleton,
   DashboardMainSkeleton,
   DashboardTechnicalOfficialBannerSkeleton,
 } from "./_components/DashboardPageSkeleton";
@@ -24,6 +26,9 @@ export default async function DashboardPage() {
       </Suspense>
       <Suspense fallback={<DashboardMainSkeleton />}>
         <DashboardMain userId={userId} />
+      </Suspense>
+      <Suspense fallback={<DashboardDeferredSkeleton />}>
+        <DashboardMainDeferredSlot userId={userId} />
       </Suspense>
     </div>
   );

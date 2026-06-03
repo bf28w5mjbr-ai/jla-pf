@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySession, isPfOrAccAdmin } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { requireOrgAdmin } from "@/lib/accessControl";
+import { mergeOfficialResultVisibilityFilter } from "@/lib/officialResultPublicVisibility";
 
 export async function GET(
   req: NextRequest,
@@ -37,11 +38,10 @@ export async function GET(
     }
 
     const results = await prisma.officialResult.findMany({
-      where: {
-        competitionId: event.competitionId,
-        eventId,
-        ...(canViewUnpublished ? {} : { publishedAt: { not: null } }),
-      },
+      where: mergeOfficialResultVisibilityFilter(
+        { competitionId: event.competitionId, eventId },
+        canViewUnpublished
+      ),
       include: { rows: { orderBy: [{ heat: "asc" }, { rank: "asc" }] } },
       orderBy: { round: "asc" },
     });

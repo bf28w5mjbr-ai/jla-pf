@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { isPfOrAccAdmin, verifySession } from "@/lib/auth";
 import { requireOrgAdmin } from "@/lib/accessControl";
+import { mergeOfficialResultVisibilityFilter } from "@/lib/officialResultPublicVisibility";
 import { buildResultRoundLabelMap, type ResultRoundUiKey } from "@/lib/resultRoundLabels";
 import { prisma } from "@/server/db";
 
@@ -62,10 +63,7 @@ export async function loadCompetitionOfficialResultsPayload(
   }
 
   const results = await prisma.officialResult.findMany({
-    where: {
-      competitionId,
-      ...(canViewUnpublished ? {} : { publishedAt: { not: null } }),
-    },
+    where: mergeOfficialResultVisibilityFilter({ competitionId }, canViewUnpublished),
     include: officialResultListInclude,
     orderBy: [{ eventId: "asc" }, { round: "asc" }],
   });

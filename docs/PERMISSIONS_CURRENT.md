@@ -95,7 +95,7 @@
 | リソース | 公開範囲 | 非公開（会員・主催向け） |
 |----------|----------|-------------------------|
 | クラブ一覧・`/clubs/view/[id]` | `clubPublicSelect` の基本情報のみ（氏名・電話・番地なし） | メンバー一覧、代表者、事務局連絡先 |
-| 大会一覧・詳細 | 公開: `/browse/competitions`, `/competitions/view/[id]`。タブは「大会情報」「レース情報」のみ（レース情報タブはスタートリスト＝タイムスケジュール・種目別運用。種目別公式結果は `/competitions/[id]/results/[eventId]`、**氏名・クラブ名可**）。概要・お知らせ・ギャラリー | 会員: `/competitions`, `/competitions/[id]`（同一内容・会員シェル）。添付 PDF、TO 募集、エントリー操作は会員ルート |
+| 大会一覧・詳細 | 公開: `/browse/competitions`, `/competitions/view/[id]`。タブは「大会情報」「レース情報」のみ（レース情報＝タイムスケジュール・種目別公開スタートリスト。旧 `/results/[eventId]` は start-list へリダイレクト）。概要・お知らせ・ギャラリー | 会員: `/competitions`, `/competitions/[id]`（同一内容・会員シェル）。添付 PDF、TO 募集、エントリー操作は会員ルート |
 | スタートリスト（直接URL） | `/competitions/[id]/start-list/...`（主催が公開設定時）。公開タブには載せない | — |
 | API | `GET /api/public/clubs`, `GET /api/public/clubs/[clubId]` | `GET /api/clubs/search`（要認証） |
 

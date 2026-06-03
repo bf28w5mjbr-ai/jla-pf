@@ -540,6 +540,25 @@ export type ConfirmedHeatSortCtx = {
   apiHeat?: HeatMarshalHeatRow;
 };
 
+export type LiveHeatSortCtx = ConfirmedHeatSortCtx & {
+  resultDraftOps?: Record<
+    string,
+    { heatIndex: number; draftSequence?: number; tieWithPrevious?: boolean }
+  >;
+  resultInputOrder?: "asc" | "desc";
+  includeProvisional?: boolean;
+};
+
+export type LiveResultRankSortOpts = {
+  displayHeatNumber: number;
+  rows: HeatResultCaptureRow[];
+  statusByKey?: Record<string, string>;
+  apiHeat?: HeatMarshalHeatRow;
+  resultDraftOps?: LiveHeatSortCtx["resultDraftOps"];
+  resultInputOrder?: "asc" | "desc";
+  includeProvisional?: boolean;
+};
+
 function confirmedResultRowForIndividual(
   entryId: string,
   displayHeatNumber: number,
@@ -566,14 +585,65 @@ function confirmedResultRowForTeam(
   );
 }
 
-/** 0=進出, 1=着順, 2=DNF, 3=ターミナル/その他 */
-export function confirmedResultSortTierForIndividual(
+function marshalParticipantForIndividual(
+  apiHeat: HeatMarshalHeatRow | undefined,
+  entryId: string
+): HeatMarshalParticipant | undefined {
+  return apiHeat?.participants.find(
+    (p) => p.participantType === "INDIVIDUAL" && p.competitionEntryId === entryId
+  );
+}
+
+function marshalParticipantForTeam(
+  apiHeat: HeatMarshalHeatRow | undefined,
+  teamEntryId: string
+): HeatMarshalParticipant | undefined {
+  const rows =
+    apiHeat?.participants.filter(
+      (p) => p.participantType === "TEAM" && p.teamEntryId === teamEntryId
+    ) ?? [];
+  if (rows.length === 0) return undefined;
+  return { ...rows[0]!, status: foldTeamMarshalStatuses(rows) };
+}
+
+export function effectiveResultRankForIndividual(
   entryId: string,
-  ctx: ConfirmedHeatSortCtx
-): number {
+  ctx: LiveHeatSortCtx
+): number | null {
+  const participant = marshalParticipantForIndividual(ctx.apiHeat, entryId);
+  return effectiveResultSortRank(
+    ctx.displayHeatNumber,
+    participant,
+    ctx.apiHeat,
+    ctx.rows,
+    ctx.resultDraftOps ?? {},
+    ctx.resultInputOrder ?? "asc"
+  );
+}
+
+export function effectiveResultRankForTeam(
+  teamEntryId: string,
+  ctx: LiveHeatSortCtx
+): number | null {
+  const participant = marshalParticipantForTeam(ctx.apiHeat, teamEntryId);
+  return effectiveResultSortRank(
+    ctx.displayHeatNumber,
+    participant,
+    ctx.apiHeat,
+    ctx.rows,
+    ctx.resultDraftOps ?? {},
+    ctx.resultInputOrder ?? "asc"
+  );
+}
+
+/** 0=進出, 1=着順, 2=DNF, 3=ターミナル/その他 */
+export function liveResultSortTierForIndividual(entryId: string, ctx: LiveHeatSortCtx): number {
   const row = confirmedResultRowForIndividual(entryId, ctx.displayHeatNumber, ctx.rows);
   if (row?.advanceWithoutRank) return 0;
-  if (row?.rank != null) return 1;
+  const rank = ctx.includeProvisional
+    ? effectiveResultRankForIndividual(entryId, ctx)
+    : (row?.rank ?? null);
+  if (rank != null) return 1;
   const st = ctx.statusByKey[marshalIndividualKey(entryId)];
   if (st === "DNF") return 2;
   if (st && isDayOpsTerminalParticipantStatus(st)) return 3;
@@ -581,26 +651,42 @@ export function confirmedResultSortTierForIndividual(
 }
 
 /** 0=進出, 1=着順, 2=DNF, 3=ターミナル/その他 */
-export function confirmedResultSortTierForTeam(
-  teamEntryId: string,
-  ctx: ConfirmedHeatSortCtx
-): number {
+export function liveResultSortTierForTeam(teamEntryId: string, ctx: LiveHeatSortCtx): number {
   const row = confirmedResultRowForTeam(teamEntryId, ctx.displayHeatNumber, ctx.rows);
   if (row?.advanceWithoutRank) return 0;
-  if (row?.rank != null) return 1;
+  const rank = ctx.includeProvisional
+    ? effectiveResultRankForTeam(teamEntryId, ctx)
+    : (row?.rank ?? null);
+  if (rank != null) return 1;
   const st = foldTeamServerStatusFromMemberKeys(teamEntryId, ctx.statusByKey);
   if (st === "DNF") return 2;
   if (st && isDayOpsTerminalParticipantStatus(st)) return 3;
   return 3;
 }
 
-function compareConfirmedIndividualItems(
-  a: IndividualItem,
-  b: IndividualItem,
+/** @deprecated use liveResultSortTierForIndividual with includeProvisional: false */
+export function confirmedResultSortTierForIndividual(
+  entryId: string,
   ctx: ConfirmedHeatSortCtx
 ): number {
-  const tierA = confirmedResultSortTierForIndividual(a.entryId, ctx);
-  const tierB = confirmedResultSortTierForIndividual(b.entryId, ctx);
+  return liveResultSortTierForIndividual(entryId, { ...ctx, includeProvisional: false });
+}
+
+/** @deprecated use liveResultSortTierForTeam with includeProvisional: false */
+export function confirmedResultSortTierForTeam(
+  teamEntryId: string,
+  ctx: ConfirmedHeatSortCtx
+): number {
+  return liveResultSortTierForTeam(teamEntryId, { ...ctx, includeProvisional: false });
+}
+
+function compareLiveIndividualItems(
+  a: IndividualItem,
+  b: IndividualItem,
+  ctx: LiveHeatSortCtx
+): number {
+  const tierA = liveResultSortTierForIndividual(a.entryId, ctx);
+  const tierB = liveResultSortTierForIndividual(b.entryId, ctx);
   if (tierA !== tierB) return tierA - tierB;
 
   if (tierA === 0) {
@@ -609,18 +695,27 @@ function compareConfirmedIndividualItems(
     return laneA - laneB || a.entryId.localeCompare(b.entryId);
   }
   if (tierA === 1) {
-    const rankA =
-      confirmedResultRowForIndividual(a.entryId, ctx.displayHeatNumber, ctx.rows)?.rank ?? 100_000;
-    const rankB =
-      confirmedResultRowForIndividual(b.entryId, ctx.displayHeatNumber, ctx.rows)?.rank ?? 100_000;
+    const rankA = ctx.includeProvisional
+      ? (effectiveResultRankForIndividual(a.entryId, ctx) ?? 100_000)
+      : (confirmedResultRowForIndividual(a.entryId, ctx.displayHeatNumber, ctx.rows)?.rank ??
+        100_000);
+    const rankB = ctx.includeProvisional
+      ? (effectiveResultRankForIndividual(b.entryId, ctx) ?? 100_000)
+      : (confirmedResultRowForIndividual(b.entryId, ctx.displayHeatNumber, ctx.rows)?.rank ??
+        100_000);
     return rankA - rankB || a.entryId.localeCompare(b.entryId);
+  }
+  if (tierA === 3) {
+    const laneA = snapshotLaneForIndividual(ctx.apiHeat, a.entryId, 100_000);
+    const laneB = snapshotLaneForIndividual(ctx.apiHeat, b.entryId, 100_000);
+    return laneA - laneB || a.entryId.localeCompare(b.entryId);
   }
   return a.entryId.localeCompare(b.entryId);
 }
 
-function compareConfirmedTeamItems(a: TeamItem, b: TeamItem, ctx: ConfirmedHeatSortCtx): number {
-  const tierA = confirmedResultSortTierForTeam(a.teamEntryId, ctx);
-  const tierB = confirmedResultSortTierForTeam(b.teamEntryId, ctx);
+function compareLiveTeamItems(a: TeamItem, b: TeamItem, ctx: LiveHeatSortCtx): number {
+  const tierA = liveResultSortTierForTeam(a.teamEntryId, ctx);
+  const tierB = liveResultSortTierForTeam(b.teamEntryId, ctx);
   if (tierA !== tierB) return tierA - tierB;
 
   if (tierA === 0) {
@@ -629,13 +724,50 @@ function compareConfirmedTeamItems(a: TeamItem, b: TeamItem, ctx: ConfirmedHeatS
     return laneA - laneB || a.teamEntryId.localeCompare(b.teamEntryId);
   }
   if (tierA === 1) {
-    const rankA =
-      confirmedResultRowForTeam(a.teamEntryId, ctx.displayHeatNumber, ctx.rows)?.rank ?? 100_000;
-    const rankB =
-      confirmedResultRowForTeam(b.teamEntryId, ctx.displayHeatNumber, ctx.rows)?.rank ?? 100_000;
+    const rankA = ctx.includeProvisional
+      ? (effectiveResultRankForTeam(a.teamEntryId, ctx) ?? 100_000)
+      : (confirmedResultRowForTeam(a.teamEntryId, ctx.displayHeatNumber, ctx.rows)?.rank ??
+        100_000);
+    const rankB = ctx.includeProvisional
+      ? (effectiveResultRankForTeam(b.teamEntryId, ctx) ?? 100_000)
+      : (confirmedResultRowForTeam(b.teamEntryId, ctx.displayHeatNumber, ctx.rows)?.rank ??
+        100_000);
     return rankA - rankB || a.teamEntryId.localeCompare(b.teamEntryId);
   }
+  if (tierA === 3) {
+    const laneA = snapshotLaneForTeam(ctx.apiHeat, a.teamEntryId, 100_000);
+    const laneB = snapshotLaneForTeam(ctx.apiHeat, b.teamEntryId, 100_000);
+    return laneA - laneB || a.teamEntryId.localeCompare(b.teamEntryId);
+  }
   return a.teamEntryId.localeCompare(b.teamEntryId);
+}
+
+function liveHeatSortCtxFromOpts(opts: LiveResultRankSortOpts): LiveHeatSortCtx {
+  return {
+    displayHeatNumber: opts.displayHeatNumber,
+    rows: opts.rows,
+    statusByKey: opts.statusByKey ?? {},
+    apiHeat: opts.apiHeat,
+    resultDraftOps: opts.resultDraftOps,
+    resultInputOrder: opts.resultInputOrder,
+    includeProvisional: opts.includeProvisional,
+  };
+}
+
+export function orderIndividualItemsByLiveResultRank(
+  items: IndividualItem[],
+  opts: LiveResultRankSortOpts
+): IndividualItem[] {
+  const ctx = liveHeatSortCtxFromOpts(opts);
+  return [...items].sort((a, b) => compareLiveIndividualItems(a, b, ctx));
+}
+
+export function orderTeamItemsByLiveResultRank(
+  items: TeamItem[],
+  opts: LiveResultRankSortOpts
+): TeamItem[] {
+  const ctx = liveHeatSortCtxFromOpts(opts);
+  return [...items].sort((a, b) => compareLiveTeamItems(a, b, ctx));
 }
 
 export function orderIndividualItemsByConfirmedResultRank(
@@ -645,8 +777,13 @@ export function orderIndividualItemsByConfirmedResultRank(
   statusByKey: Record<string, string> = {},
   apiHeat?: HeatMarshalHeatRow
 ): IndividualItem[] {
-  const ctx: ConfirmedHeatSortCtx = { displayHeatNumber, rows, statusByKey, apiHeat };
-  return [...items].sort((a, b) => compareConfirmedIndividualItems(a, b, ctx));
+  return orderIndividualItemsByLiveResultRank(items, {
+    displayHeatNumber,
+    rows,
+    statusByKey,
+    apiHeat,
+    includeProvisional: false,
+  });
 }
 
 export function orderTeamItemsByConfirmedResultRank(
@@ -656,8 +793,13 @@ export function orderTeamItemsByConfirmedResultRank(
   statusByKey: Record<string, string> = {},
   apiHeat?: HeatMarshalHeatRow
 ): TeamItem[] {
-  const ctx: ConfirmedHeatSortCtx = { displayHeatNumber, rows, statusByKey, apiHeat };
-  return [...items].sort((a, b) => compareConfirmedTeamItems(a, b, ctx));
+  return orderTeamItemsByLiveResultRank(items, {
+    displayHeatNumber,
+    rows,
+    statusByKey,
+    apiHeat,
+    includeProvisional: false,
+  });
 }
 
 export function snapshotLaneForIndividual(
