@@ -9,8 +9,8 @@ export function HomeHeroSection() {
 
   return (
     <section className="w-full pb-8 pt-3 md:mx-auto md:max-w-3xl md:px-4 md:py-14 lg:max-w-5xl lg:py-16">
-      <div className="md:grid md:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] md:items-start md:gap-10 lg:gap-12">
-        <header className="order-2 max-w-2xl px-4 pt-5 md:order-1 md:max-w-none md:px-0 md:pt-2 lg:pt-4">
+      <div className="flex flex-col md:grid md:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] md:items-start md:gap-10 lg:gap-12">
+        <header className="order-2 max-w-2xl px-4 pt-4 md:order-1 md:max-w-none md:px-0 md:pt-2 lg:pt-4">
           <p className="home-hero-enter text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
             Lifesaving
           </p>
@@ -36,7 +36,7 @@ export function HomeHeroSection() {
           </div>
         </header>
 
-        <div className="relative order-1 aspect-[7/5] w-full overflow-hidden md:order-2 md:aspect-[4/3] md:rounded-2xl">
+        <div className="relative order-1 mx-4 aspect-[7/5] overflow-hidden rounded-xl md:order-2 md:mx-0 md:aspect-[4/3] md:w-full md:rounded-2xl">
           <Image
             src="/home-hero.png"
             alt="波に乗るサーファーとデジタルな海のイラスト"
