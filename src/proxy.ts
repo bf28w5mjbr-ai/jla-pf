@@ -1,6 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { tryEarlyAuthenticatedRedirect } from "@/lib/auth/earlyAuthenticatedRedirect";
 import { SESSION_COOKIE_NAME, verifySessionEdge } from "@/lib/auth/sessionEdge";
+import {
+  COVER_PAGE_CANONICAL_URL,
+  resolveRequestHostname,
+  shouldRedirectNonCoverHomeToCanonical,
+} from "@/lib/coverPageHost";
 import { getCompetitionBrowseRedirect } from "@/lib/competitionBrowseRedirect";
 import { updateSession } from "@/lib/supabase/middleware";
 
@@ -39,7 +44,30 @@ async function tryCompetitionBrowseRedirect(
   return NextResponse.redirect(new URL(destination, request.url), 307);
 }
 
+function tryNonCoverHomeRedirect(request: NextRequest): NextResponse | null {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+
+  const host = resolveRequestHostname(
+    request.headers.get("host"),
+    request.nextUrl.hostname
+  );
+  if (
+    !shouldRedirectNonCoverHomeToCanonical(request.nextUrl.pathname, host)
+  ) {
+    return null;
+  }
+
+  return NextResponse.redirect(COVER_PAGE_CANONICAL_URL, 308);
+}
+
 export async function proxy(request: NextRequest) {
+  const nonCoverHomeRedirect = tryNonCoverHomeRedirect(request);
+  if (nonCoverHomeRedirect) {
+    const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+    nonCoverHomeRedirect.headers.set("x-request-id", requestId);
+    return nonCoverHomeRedirect;
+  }
+
   const competitionBrowseRedirect = await tryCompetitionBrowseRedirect(request);
   if (competitionBrowseRedirect) {
     const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();

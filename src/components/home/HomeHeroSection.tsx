@@ -42,6 +42,7 @@ export function HomeHeroSection() {
             alt="波に乗るサーファーとデジタルな海のイラスト"
             fill
             priority
+            quality={75}
             sizes="(max-width: 768px) 100vw, 45vw"
             className="object-cover object-[88%_34%] md:object-[72%_40%]"
           />

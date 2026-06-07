@@ -36,3 +36,17 @@ export function isCoverPageHost(hostname: string | null): boolean {
   if (!hostname) return false;
   return COVER_PAGE_HOSTS.has(hostname);
 }
+
+/** カバーページ以外のホストで `/` に来た場合の正規 URL */
+export const COVER_PAGE_CANONICAL_URL = "https://bluvium.jp/";
+
+/**
+ * 非カバーホストの `/` を bluvium.jp へリダイレクトするか判定。
+ * proxy から利用（page.tsx で headers() を避け ISR を可能にする）。
+ */
+export function shouldRedirectNonCoverHomeToCanonical(
+  pathname: string,
+  hostname: string | null
+): boolean {
+  return pathname === "/" && Boolean(hostname) && !isCoverPageHost(hostname);
+}

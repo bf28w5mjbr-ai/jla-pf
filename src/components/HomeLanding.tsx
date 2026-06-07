@@ -1,38 +1,28 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { HomeAboutSection } from "@/components/home/HomeAboutSection";
 import { HomeClosingCtaSection } from "@/components/home/HomeClosingCtaSection";
-import { HomeCompetitionsShowcase } from "@/components/home/HomeCompetitionsShowcase";
-import { HomeClubsShowcase } from "@/components/home/HomeClubsShowcase";
 import { HomeHeroSection } from "@/components/home/HomeHeroSection";
 import { HomePlatformSection } from "@/components/home/HomePlatformSection";
 import { Button } from "@/components/ui/button";
-import type { HomeFeaturedClub, HomeFeaturedCompetition } from "@/lib/homeFeaturedContent";
 
 type Props = {
-  upcomingCompetitions: HomeFeaturedCompetition[];
-  competitionCategories: string[];
-  featuredClubs: HomeFeaturedClub[];
+  competitionsSection: ReactNode;
+  clubsSection: ReactNode;
 };
 
-export function HomeLanding({
-  upcomingCompetitions,
-  competitionCategories,
-  featuredClubs,
-}: Props) {
+export function HomeLanding({ competitionsSection, clubsSection }: Props) {
   return (
     <div className="flex flex-col">
       <HomeHeroSection />
 
-      <HomeCompetitionsShowcase
-        competitions={upcomingCompetitions}
-        categories={competitionCategories}
-      />
+      {competitionsSection}
 
       <HomeAboutSection />
 
       <HomePlatformSection />
 
-      <HomeClubsShowcase clubs={featuredClubs} />
+      {clubsSection}
 
       <HomeClosingCtaSection />
 
