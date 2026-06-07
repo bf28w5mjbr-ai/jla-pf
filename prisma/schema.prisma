@@ -1082,7 +1082,7 @@ model StripeEvent {
 model EntryCheckoutSession {
   id                      String                     @id @default(cuid())
   competitionId           String
-  clubId                  String
+  clubId                  String?
   userId                  String
   status                  EntryCheckoutSessionStatus @default(PENDING)
   amount                  Int
@@ -1100,7 +1100,7 @@ model EntryCheckoutSession {
   entryId                 String?
 
   competition Competition       @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  club        Club              @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  club        Club?             @relation(fields: [clubId], references: [id], onDelete: SetNull)
   user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   entry       CompetitionEntry? @relation(fields: [entryId], references: [id], onDelete: SetNull)
 

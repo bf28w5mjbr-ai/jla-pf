@@ -25,6 +25,7 @@ import { refreshOrganizationStripeConnectFlags } from "@/lib/organizerStripeConn
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
 import { ENTRY_CHECKOUT_PAID_STATUSES } from "@/lib/entryCheckoutSessionPaid";
 import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
+import { entryRequiresClubSelection } from "@/lib/entryClubPaymentRules";
 import { clearIndividualWithdrawalParticipantStatusesForEvents } from "@/lib/entryWithdrawalReinstatement";
 import {
   collectEventIdsFromEntrySavePayload,
@@ -250,7 +251,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         : null;
     const requireClubMembership = competition.requireClubMembership ?? false;
 
-    if (requireClubMembership && (!clubId || typeof clubId !== "string")) {
+    if (entryRequiresClubSelection({ requireClubMembership, clubId })) {
       return NextResponse.json(
         { message: "所属クラブを選択してください" },
         { status: 400 }
@@ -685,13 +686,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
     }
 
-    if (totalFee > 0 && (!clubId || typeof clubId !== "string")) {
-      return NextResponse.json(
-        { message: "決済を行う場合は所属クラブが必要です" },
-        { status: 400 }
-      );
-    }
-
     const entrySnapshot = {
       notes: typeof notes === "string" ? notes.trim() : null,
       items: entryItemsData,
@@ -1027,7 +1021,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const entryCheckoutSession = await prisma.entryCheckoutSession.create({
         data: {
           competitionId,
-          clubId: clubId as string,
+          clubId: typeof clubId === "string" ? clubId : null,
           userId: session.userId,
           amount: checkoutTotalYen,
           entryId: result.entry.id,
