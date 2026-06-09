@@ -5,7 +5,6 @@ import {
   parseClubIdFromClubCompetitionEntryFeeOwnerId,
 } from "@/lib/competitionStripeDisputeAccess";
 import { summarizeCompetitionStripeFinance } from "@/lib/competitionFinanceSummary";
-import { reconcileCompetitionEntryCheckoutRefundsFromStripe, listCompetitionStripeConnectOrphanRefunds } from "@/lib/entryCheckoutStripeRefund";
 import {
   hasOrganizerPostPayApproval,
   isEntryFeeSettled,
@@ -102,10 +101,6 @@ export default async function CompetitionFinanceTabContent({
     notFound();
   }
 
-  await reconcileCompetitionEntryCheckoutRefundsFromStripe(competition.id, {
-    maxPiScans: 40,
-  });
-
   const [entries, teamEntries, expenses, balanceLines] = await Promise.all([
     prisma.competitionEntry.findMany({
       where: { competitionId: competition.id },
@@ -186,16 +181,9 @@ export default async function CompetitionFinanceTabContent({
         })
       : [];
 
-  const connectAccountId = competition.organization.stripeConnectAccountId;
-  const stripeOrphanRefunds =
-    connectAccountId != null
-      ? await listCompetitionStripeConnectOrphanRefunds(competition.id, connectAccountId)
-      : [];
-
   const stripeFinance = summarizeCompetitionStripeFinance({
     entries,
     teamPayments,
-    stripeOrphanRefunds,
   });
   const platformFeePercentLabel = (getPlatformFeeBps() / 100).toFixed(
     getPlatformFeeBps() % 100 === 0 ? 0 : 1
@@ -305,36 +293,45 @@ export default async function CompetitionFinanceTabContent({
       : [];
   const disputedClubMap = new Map(disputedClubs.map((c) => [c.id, c.name]));
 
-  const disputeRows: DisputeEvidenceRow[] = [];
-  for (const row of openEntryDisputes) {
-    const disputeId = row.stripeDisputeId;
-    if (!disputeId) continue;
-    const sum = await stripeDisputeSummary(disputeId);
-    disputeRows.push({
-      disputeId,
-      scopeLabel: `個人エントリー: ${row.user.profile?.familyName ?? ""} ${row.user.profile?.givenName ?? ""}（${row.user.email}）`,
-      amountYen: row.amount,
-      dueByLabel: sum.dueByLabel,
-      stripeStatus: sum.status,
-    });
-  }
-  for (const row of openTeamDisputes) {
-    const disputeId = row.stripeDisputeId;
-    if (!disputeId) continue;
-    const clubId = parseClubIdFromClubCompetitionEntryFeeOwnerId(competition.id, row.ownerId);
-    const clubName = clubId ? disputedClubMap.get(clubId) : undefined;
-    const sum = await stripeDisputeSummary(disputeId);
-    const scopeKind = isClubPrepaidIndividualPaymentOwnerId(row.ownerId)
-      ? "クラブ個人枠請求"
-      : "チーム請求";
-    disputeRows.push({
-      disputeId,
-      scopeLabel: `${scopeKind}: ${clubName ?? "クラブ"}${clubId ? `（${clubId}）` : ""}`,
-      amountYen: row.amount,
-      dueByLabel: sum.dueByLabel,
-      stripeStatus: sum.status,
-    });
-  }
+  const [entryDisputeRows, teamDisputeRows] = await Promise.all([
+    Promise.all(
+      openEntryDisputes.map(async (row) => {
+        const disputeId = row.stripeDisputeId;
+        if (!disputeId) return null;
+        const sum = await stripeDisputeSummary(disputeId);
+        return {
+          disputeId,
+          scopeLabel: `個人エントリー: ${row.user.profile?.familyName ?? ""} ${row.user.profile?.givenName ?? ""}（${row.user.email}）`,
+          amountYen: row.amount,
+          dueByLabel: sum.dueByLabel,
+          stripeStatus: sum.status,
+        } satisfies DisputeEvidenceRow;
+      })
+    ),
+    Promise.all(
+      openTeamDisputes.map(async (row) => {
+        const disputeId = row.stripeDisputeId;
+        if (!disputeId) return null;
+        const clubId = parseClubIdFromClubCompetitionEntryFeeOwnerId(competition.id, row.ownerId);
+        const clubName = clubId ? disputedClubMap.get(clubId) : undefined;
+        const sum = await stripeDisputeSummary(disputeId);
+        const scopeKind = isClubPrepaidIndividualPaymentOwnerId(row.ownerId)
+          ? "クラブ個人枠請求"
+          : "チーム請求";
+        return {
+          disputeId,
+          scopeLabel: `${scopeKind}: ${clubName ?? "クラブ"}${clubId ? `（${clubId}）` : ""}`,
+          amountYen: row.amount,
+          dueByLabel: sum.dueByLabel,
+          stripeStatus: sum.status,
+        } satisfies DisputeEvidenceRow;
+      })
+    ),
+  ]);
+  const disputeRows: DisputeEvidenceRow[] = [
+    ...entryDisputeRows.filter((row): row is DisputeEvidenceRow => row != null),
+    ...teamDisputeRows.filter((row): row is DisputeEvidenceRow => row != null),
+  ];
 
   return (
     <Card className="min-w-0 overflow-hidden">
@@ -348,9 +345,9 @@ export default async function CompetitionFinanceTabContent({
             自動集計（Stripe 決済・経費ワークフロー）
           </h3>
           <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">
-            Stripe カード決済のみ（表示時に Connect 返金を同期）。手動入金・クラブ一括は含みません。
+            Stripe カード決済のみ（Webhook 同期済みの DB 集計）。手動入金・クラブ一括は含みません。
           </p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Stat
               label="1. エントリー収入"
               value={formatYen(stripeFinance.entryIncomeNetYen)}
@@ -364,21 +361,6 @@ export default async function CompetitionFinanceTabContent({
                   ? `返金付随 −${formatYen(stripeFinance.platformFeeRefundYen)}（グロス ${formatYen(stripeFinance.platformFeeGrossYen)}）`
                   : undefined
               }
-            />
-            <Stat
-              label="3. Stripe手数料差額"
-              value={formatYen(stripeFinance.stripeProcessingSurplusYen)}
-              valueClassName={
-                stripeFinance.stripeProcessingSurplusYen < 0 ? "text-destructive" : undefined
-              }
-              sub={[
-                `上乗せ ${formatYen(stripeFinance.processingFeeCollectedYen)} · 実手数料 ${formatYen(stripeFinance.actualStripeFeeYen)}`,
-                !stripeFinance.stripeFeeDataComplete
-                  ? `一部決済の実手数料未取得（${stripeFinance.stripeFeeRecordedCount}/${stripeFinance.stripeFeeExpectedCount}件）`
-                  : null,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
             />
           </div>
           <div className="mt-3 grid grid-cols-1 gap-3 border-t border-border/60 pt-3 sm:grid-cols-2 lg:grid-cols-4">
