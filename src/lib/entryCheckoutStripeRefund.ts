@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import type Stripe from "stripe";
 import { prisma } from "@/server/db";
 import { logAuditAction } from "@/lib/auditLog";
@@ -345,7 +346,12 @@ async function applyRefundFromCheckoutMetadata(
       continue;
     }
 
-    const fee = baseEntryFee > 0 ? baseEntryFee : session.entry.totalFee;
+    const fee =
+      baseEntryFee > 0
+        ? baseEntryFee
+        : typeof current.entryFeeYen === "number" && Number.isFinite(current.entryFeeYen)
+          ? current.entryFeeYen
+          : session.entry?.totalFee ?? 0;
     const proc =
       baseProcessingFee > 0
         ? baseProcessingFee
@@ -361,7 +367,7 @@ async function applyRefundFromCheckoutMetadata(
           refundState,
           entryFeeYen: fee,
           processingFeeYen: proc,
-        }),
+        }) as Prisma.InputJsonValue,
       },
     });
     updated += 1;
@@ -574,7 +580,7 @@ export async function applyStripeRefundToPaymentIntent(
     const entryFeeYen =
       typeof current.entryFeeYen === "number" && Number.isFinite(current.entryFeeYen)
         ? current.entryFeeYen
-        : session.entry.totalFee;
+        : session.entry?.totalFee ?? 0;
     const processingFeeYen =
       typeof current.processingFeeYen === "number" && Number.isFinite(current.processingFeeYen)
         ? current.processingFeeYen
@@ -602,7 +608,7 @@ export async function applyStripeRefundToPaymentIntent(
 
     await prisma.entryCheckoutSession.update({
       where: { id: session.id },
-      data: { payload: nextPayload },
+      data: { payload: nextPayload as Prisma.InputJsonValue },
     });
     updated += 1;
 
