@@ -2,6 +2,11 @@ import type Stripe from "stripe";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
+import {
+  fetchStripeBalanceTransactionFeeYen,
+  STRIPE_BALANCE_TRANSACTION_FEE_PAYLOAD_KEY,
+  STRIPE_BALANCE_TRANSACTION_FEE_SYNCED_AT_KEY,
+} from "@/lib/stripeBalanceTransactionFee";
 import { fetchStripeReceiptUrlForCheckoutSessionId } from "@/lib/stripeEntryReceiptUrl";
 import { safeServerErrorLog } from "@/lib/safeServerLog";
 import {
@@ -75,6 +80,7 @@ export async function finalizeEntryCheckoutSessionsFromStripeSession(
       id: true,
       entryId: true,
       competitionId: true,
+      payload: true,
     },
   });
 
@@ -99,6 +105,30 @@ export async function finalizeEntryCheckoutSessionsFromStripeSession(
       ...(paymentIntentId ? { stripePaymentIntentId: paymentIntentId } : {}),
     },
   });
+
+  if (paymentIntentId) {
+    const stripeBalanceTransactionFeeYen =
+      await fetchStripeBalanceTransactionFeeYen(paymentIntentId);
+    if (stripeBalanceTransactionFeeYen != null) {
+      const syncedAt = new Date().toISOString();
+      for (const target of targets) {
+        const currentPayload =
+          target.payload && typeof target.payload === "object" && !Array.isArray(target.payload)
+            ? (target.payload as Record<string, unknown>)
+            : {};
+        await prisma.entryCheckoutSession.update({
+          where: { id: target.id },
+          data: {
+            payload: {
+              ...currentPayload,
+              [STRIPE_BALANCE_TRANSACTION_FEE_PAYLOAD_KEY]: stripeBalanceTransactionFeeYen,
+              [STRIPE_BALANCE_TRANSACTION_FEE_SYNCED_AT_KEY]: syncedAt,
+            },
+          },
+        });
+      }
+    }
+  }
 
   const eventIdsByCompetition = new Map<string, Set<string>>();
   for (const target of targets) {

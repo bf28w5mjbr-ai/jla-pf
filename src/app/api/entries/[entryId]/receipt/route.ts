@@ -379,7 +379,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           "本書は大会エントリー管理システム（Bluvium）により発行された、主催団体名義の領収書です。\n" +
           "カード決済等をご利用の場合、決済代行会社（Stripe 等）の明細名で請求が表示されることがあります。\n" +
           (processingYen > 0
-            ? "「決済手数料」はカード決済に伴う費用の目安としてお支払いいただいた金額です。"
+            ? "「決済手数料」はカード決済手数料としてお支払いいただいた金額です。"
             : ""),
         issuer: {
           name: hostIssuerName,

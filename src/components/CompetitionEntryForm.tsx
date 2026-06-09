@@ -1251,7 +1251,7 @@ export default function CompetitionEntryForm({
                         </div>
                         {estimatedProcessingFeeYen > 0 ? (
                           <p className="text-[10px] leading-relaxed text-muted-foreground">
-                            上記の決済手数料はカード決済に伴う費用の目安としてお支払いいただきます（お支払い者負担）。
+                            上記の決済手数料はカード決済手数料としてお支払いいただきます（お支払い者負担）。
                           </p>
                         ) : null}
                       </div>

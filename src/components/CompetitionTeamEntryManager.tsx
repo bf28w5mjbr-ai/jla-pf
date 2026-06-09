@@ -995,7 +995,7 @@ export default function CompetitionTeamEntryManager({
                           </dd>
                         </div>
                         <p className="text-[10px] leading-relaxed text-muted-foreground">
-                          決済手数料はカード決済に伴う費用の目安です（お支払い者負担）。Stripe
+                          決済手数料はカード決済手数料です（お支払い者負担）。Stripe
                           の画面では参加費と手数料が内訳表示されます。
                         </p>
                       </>

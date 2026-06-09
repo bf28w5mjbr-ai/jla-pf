@@ -4,10 +4,13 @@ import { prisma } from "@/server/db";
 import {
   parseClubIdFromClubCompetitionEntryFeeOwnerId,
 } from "@/lib/competitionStripeDisputeAccess";
+import { summarizeCompetitionStripeFinance } from "@/lib/competitionFinanceSummary";
+import { reconcileCompetitionEntryCheckoutRefundsFromStripe, listCompetitionStripeConnectOrphanRefunds } from "@/lib/entryCheckoutStripeRefund";
 import {
   hasOrganizerPostPayApproval,
   isEntryFeeSettled,
 } from "@/lib/entryOrganizerPostPay";
+import { getPlatformFeeBps } from "@/lib/platformFee";
 import { stripe } from "@/lib/stripe";
 import {
   buildClubPrepaidIndividualPaymentOwnerId,
@@ -91,12 +94,17 @@ export default async function CompetitionFinanceTabContent({
       id: true,
       name: true,
       organizationId: true,
+      organization: { select: { stripeConnectAccountId: true } },
     },
   });
 
   if (!competition || competition.organizationId !== organizationId) {
     notFound();
   }
+
+  await reconcileCompetitionEntryCheckoutRefundsFromStripe(competition.id, {
+    maxPiScans: 40,
+  });
 
   const [entries, teamEntries, expenses, balanceLines] = await Promise.all([
     prisma.competitionEntry.findMany({
@@ -109,8 +117,7 @@ export default async function CompetitionFinanceTabContent({
         organizerManualPaidAt: true,
         checkoutSessions: {
           orderBy: { createdAt: "desc" },
-          take: 1,
-          select: { status: true },
+          select: { status: true, amount: true, payload: true },
         },
       },
     }),
@@ -139,7 +146,6 @@ export default async function CompetitionFinanceTabContent({
     }),
   ]);
 
-  let individualReceived = 0;
   let individualPending = 0;
   let postPayApprovedUnsettled = 0;
   let postPayApprovedUnsettledCount = 0;
@@ -154,13 +160,12 @@ export default async function CompetitionFinanceTabContent({
       checkoutSessions: e.checkoutSessions.map((s) => ({ status: s.status })),
     };
     if (isEntryFeeSettled(feeInput)) {
-      individualReceived += e.totalFee;
-    } else {
-      individualPending += e.totalFee;
-      if (hasOrganizerPostPayApproval(e)) {
-        postPayApprovedUnsettled += e.totalFee;
-        postPayApprovedUnsettledCount += 1;
-      }
+      continue;
+    }
+    individualPending += e.totalFee;
+    if (hasOrganizerPostPayApproval(e)) {
+      postPayApprovedUnsettled += e.totalFee;
+      postPayApprovedUnsettledCount += 1;
     }
   }
 
@@ -177,16 +182,28 @@ export default async function CompetitionFinanceTabContent({
             ownerId: { in: teamAndPrepaidOwnerIds },
             type: "COMPETITION_ENTRY_FEE",
           },
-          select: { ownerId: true, status: true, amount: true },
+          select: { ownerId: true, status: true, amount: true, metadata: true },
         })
       : [];
 
-  let teamReceived = 0;
+  const connectAccountId = competition.organization.stripeConnectAccountId;
+  const stripeOrphanRefunds =
+    connectAccountId != null
+      ? await listCompetitionStripeConnectOrphanRefunds(competition.id, connectAccountId)
+      : [];
+
+  const stripeFinance = summarizeCompetitionStripeFinance({
+    entries,
+    teamPayments,
+    stripeOrphanRefunds,
+  });
+  const platformFeePercentLabel = (getPlatformFeeBps() / 100).toFixed(
+    getPlatformFeeBps() % 100 === 0 ? 0 : 1
+  );
+
   let teamPending = 0;
   for (const p of teamPayments) {
-    if (p.status === "SUCCEEDED" || p.status === "DISPUTED") {
-      teamReceived += p.amount;
-    } else if (p.status === "PENDING") {
+    if (p.status === "PENDING") {
       teamPending += p.amount;
     }
   }
@@ -211,8 +228,8 @@ export default async function CompetitionFinanceTabContent({
     .filter((x) => x.status === "APPROVED")
     .reduce((s, x) => s + x.totalAmount, 0);
 
-  const totalRevenue = individualReceived + teamReceived;
-  const netAfterPaidExpenses = totalRevenue - expensePaidTotal;
+  const netAfterPaidExpenses =
+    stripeFinance.entryIncomeNetYen - stripeFinance.platformFeeYen - expensePaidTotal;
 
   let manualIncome = 0;
   let manualExpense = 0;
@@ -328,10 +345,43 @@ export default async function CompetitionFinanceTabContent({
       <CardContent className="min-w-0 space-y-4 p-3 sm:p-4">
         <section aria-labelledby="finance-auto-heading">
           <h3 id="finance-auto-heading" className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            自動集計（エントリー・経費ワークフロー）
+            自動集計（Stripe 決済・経費ワークフロー）
           </h3>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
-            <Stat label="個人（決済済）" value={formatYen(individualReceived)} />
+          <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">
+            Stripe カード決済のみ（表示時に Connect 返金を同期）。手動入金・クラブ一括は含みません。
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Stat
+              label="1. エントリー収入"
+              value={formatYen(stripeFinance.entryIncomeNetYen)}
+              sub={`参加費 B · グロス ${formatYen(stripeFinance.entryGrossYen)} · 返金 ${formatYen(stripeFinance.entryRefundYen)}`}
+            />
+            <Stat
+              label={`2. PF手数料（${platformFeePercentLabel}%）`}
+              value={formatYen(stripeFinance.platformFeeYen)}
+              sub={
+                stripeFinance.platformFeeRefundYen > 0
+                  ? `返金付随 −${formatYen(stripeFinance.platformFeeRefundYen)}（グロス ${formatYen(stripeFinance.platformFeeGrossYen)}）`
+                  : undefined
+              }
+            />
+            <Stat
+              label="3. Stripe手数料差額"
+              value={formatYen(stripeFinance.stripeProcessingSurplusYen)}
+              valueClassName={
+                stripeFinance.stripeProcessingSurplusYen < 0 ? "text-destructive" : undefined
+              }
+              sub={[
+                `上乗せ ${formatYen(stripeFinance.processingFeeCollectedYen)} · 実手数料 ${formatYen(stripeFinance.actualStripeFeeYen)}`,
+                !stripeFinance.stripeFeeDataComplete
+                  ? `一部決済の実手数料未取得（${stripeFinance.stripeFeeRecordedCount}/${stripeFinance.stripeFeeExpectedCount}件）`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            />
+          </div>
+          <div className="mt-3 grid grid-cols-1 gap-3 border-t border-border/60 pt-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat label="個人（未決済）" value={formatYen(individualPending)} />
             <Stat
               label="個人（後払い・未入金）"
@@ -343,11 +393,10 @@ export default async function CompetitionFinanceTabContent({
               }
             />
             <Stat
-              label="チーム（入金済）"
-              value={formatYen(teamReceived)}
+              label="チーム（Stripe未入金）"
+              value={formatYen(teamPending)}
               sub={teamSubParts.length > 0 ? teamSubParts.join(" · ") : undefined}
             />
-            <Stat label="収入計（確定）" value={formatYen(totalRevenue)} />
             <Stat
               label="経費（支払済）"
               value={formatYen(expensePaidTotal)}
@@ -357,8 +406,10 @@ export default async function CompetitionFinanceTabContent({
                   : undefined
               }
             />
+          </div>
+          <div className="mt-3 border-t border-border/60 pt-3">
             <Stat
-              label="差引"
+              label="差引（エントリー収入 − PF − 経費）"
               value={formatYen(netAfterPaidExpenses)}
               valueClassName="text-primary"
             />

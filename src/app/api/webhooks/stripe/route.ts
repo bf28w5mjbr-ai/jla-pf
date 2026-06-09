@@ -13,6 +13,15 @@ import { logAuditAction } from "@/lib/auditLog";
 import { finalizeEntryCheckoutSessionsFromStripeSession } from "@/lib/entryCheckoutStripeFinalize";
 import { applyStripeDisputeToEntryCheckoutSessions } from "@/lib/entryCheckoutStripeDispute";
 import {
+  applyStripeConnectDestinationRefund,
+  applyStripeRefundToEntryCheckoutSessions,
+} from "@/lib/entryCheckoutStripeRefund";
+import {
+  fetchStripeBalanceTransactionFeeYen,
+  STRIPE_BALANCE_TRANSACTION_FEE_PAYLOAD_KEY,
+  STRIPE_BALANCE_TRANSACTION_FEE_SYNCED_AT_KEY,
+} from "@/lib/stripeBalanceTransactionFee";
+import {
   finalizeOrganizerSubscriptionCheckoutSession,
   syncOrganizerSubscriptionFromStripeSubscription,
 } from "@/lib/organizerSubscriptionStripe";
@@ -87,6 +96,37 @@ async function markStripeEventFailed(id: string, error: unknown) {
   });
 }
 
+async function mergeStripeBalanceTransactionFeeIntoPaymentMetadata(
+  paymentId: string,
+  paymentIntentId: string | null
+): Promise<void> {
+  if (!paymentIntentId) return;
+  const feeYen = await fetchStripeBalanceTransactionFeeYen(paymentIntentId);
+  if (feeYen == null) return;
+
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    select: { metadata: true },
+  });
+  if (!payment) return;
+
+  const currentMeta =
+    payment.metadata && typeof payment.metadata === "object" && !Array.isArray(payment.metadata)
+      ? (payment.metadata as Record<string, unknown>)
+      : {};
+
+  await prisma.payment.update({
+    where: { id: paymentId },
+    data: {
+      metadata: {
+        ...currentMeta,
+        [STRIPE_BALANCE_TRANSACTION_FEE_PAYLOAD_KEY]: feeYen,
+        [STRIPE_BALANCE_TRANSACTION_FEE_SYNCED_AT_KEY]: new Date().toISOString(),
+      },
+    },
+  });
+}
+
 async function updatePaymentByCheckoutSession(session: Stripe.Checkout.Session) {
   const paymentIntentId = extractPaymentIntentId(session.payment_intent);
   const paidAt = session.created
@@ -104,14 +144,25 @@ async function updatePaymentByCheckoutSession(session: Stripe.Checkout.Session) 
       where: { id: session.metadata.paymentId },
       data: updateData,
     });
+    await mergeStripeBalanceTransactionFeeIntoPaymentMetadata(
+      session.metadata.paymentId,
+      paymentIntentId
+    );
     return;
   }
 
   if (session.id) {
+    const payments = await prisma.payment.findMany({
+      where: { stripeCheckoutSessionId: session.id },
+      select: { id: true },
+    });
     await prisma.payment.updateMany({
       where: { stripeCheckoutSessionId: session.id },
       data: updateData,
     });
+    for (const payment of payments) {
+      await mergeStripeBalanceTransactionFeeIntoPaymentMetadata(payment.id, paymentIntentId);
+    }
     return;
   }
 
@@ -126,6 +177,7 @@ async function updatePaymentByCheckoutSession(session: Stripe.Checkout.Session) 
       where: { id: payment.id },
       data: updateData,
     });
+    await mergeStripeBalanceTransactionFeeIntoPaymentMetadata(payment.id, paymentIntentId);
   }
 }
 
@@ -214,14 +266,29 @@ async function updatePaymentByPaymentIntent(
   }
 }
 
-async function updatePaymentByRefund(charge: Stripe.Charge) {
+async function updatePaymentByRefund(charge: Stripe.Charge, connectAccountId?: string | null) {
+  if (connectAccountId) {
+    await applyStripeConnectDestinationRefund(charge, connectAccountId);
+    const paymentIntentId = extractPaymentIntentId(charge.payment_intent);
+    if (paymentIntentId) {
+      await prisma.payment.updateMany({
+        where: { stripePaymentIntentId: paymentIntentId },
+        data: { status: "REFUNDED" },
+      });
+    }
+    return;
+  }
+
   const paymentIntentId = extractPaymentIntentId(charge.payment_intent);
   if (!paymentIntentId) return;
 
-  await prisma.payment.updateMany({
-    where: { stripePaymentIntentId: paymentIntentId },
-    data: { status: "REFUNDED" },
-  });
+  await Promise.all([
+    prisma.payment.updateMany({
+      where: { stripePaymentIntentId: paymentIntentId },
+      data: { status: "REFUNDED" },
+    }),
+    applyStripeRefundToEntryCheckoutSessions(charge),
+  ]);
 }
 
 async function updatePaymentByDispute(
@@ -421,7 +488,7 @@ export async function POST(req: NextRequest) {
       }
       case "charge.refunded": {
         const charge = event.data.object as Stripe.Charge;
-        await updatePaymentByRefund(charge);
+        await updatePaymentByRefund(charge, event.account ?? null);
         break;
       }
       case "charge.dispute.created":
