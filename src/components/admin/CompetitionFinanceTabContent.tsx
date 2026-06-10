@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/server/db";
 import {
@@ -241,6 +242,50 @@ export default async function CompetitionFinanceTabContent({
   if (clubsWithTeamEntryButNoSucceededPayment > 0) {
     teamSubParts.push(`未入金クラブ ${clubsWithTeamEntryButNoSucceededPayment}件`);
   }
+  const entryIncomeSubParts = [
+    "参加費 B",
+    `グロス ${formatYen(stripeFinance.entryGrossYen)}`,
+  ];
+  if (stripeFinance.entryRefundYen > 0) {
+    entryIncomeSubParts.push(`返金 ${formatYen(stripeFinance.entryRefundYen)}`);
+  }
+  const supplementalAutoStats = [
+    individualPending > 0 ? (
+      <Stat key="individual-pending" label="個人（未決済）" value={formatYen(individualPending)} />
+    ) : null,
+    postPayApprovedUnsettled > 0 ? (
+      <Stat
+        key="post-pay-approved-unsettled"
+        label="個人（後払い・未入金）"
+        value={formatYen(postPayApprovedUnsettled)}
+        sub={
+          postPayApprovedUnsettledCount > 0
+            ? `${postPayApprovedUnsettledCount}件`
+            : undefined
+        }
+      />
+    ) : null,
+    teamPending > 0 ? (
+      <Stat
+        key="team-pending"
+        label="チーム（Stripe未入金）"
+        value={formatYen(teamPending)}
+        sub={teamSubParts.length > 0 ? teamSubParts.join(" · ") : undefined}
+      />
+    ) : null,
+    expensePaidTotal > 0 ? (
+      <Stat
+        key="expense-paid"
+        label="経費（支払済）"
+        value={formatYen(expensePaidTotal)}
+        sub={
+          expenseApprovedUnpaid > 0
+            ? `承認済未払 ${formatYen(expenseApprovedUnpaid)}`
+            : undefined
+        }
+      />
+    ) : null,
+  ].filter((stat): stat is NonNullable<ReactNode> => stat != null);
 
   const teamOwnerPrefix = `competition-team-entry:${competition.id}:`;
   const prepaidOwnerPrefix = `competition-club-prepaid-individual:${competition.id}:`;
@@ -351,7 +396,7 @@ export default async function CompetitionFinanceTabContent({
             <Stat
               label="1. エントリー収入"
               value={formatYen(stripeFinance.entryIncomeNetYen)}
-              sub={`参加費 B · グロス ${formatYen(stripeFinance.entryGrossYen)} · 返金 ${formatYen(stripeFinance.entryRefundYen)}`}
+              sub={entryIncomeSubParts.join(" · ")}
             />
             <Stat
               label={`2. PF手数料（${platformFeePercentLabel}%）`}
@@ -363,32 +408,11 @@ export default async function CompetitionFinanceTabContent({
               }
             />
           </div>
-          <div className="mt-3 grid grid-cols-1 gap-3 border-t border-border/60 pt-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat label="個人（未決済）" value={formatYen(individualPending)} />
-            <Stat
-              label="個人（後払い・未入金）"
-              value={formatYen(postPayApprovedUnsettled)}
-              sub={
-                postPayApprovedUnsettledCount > 0
-                  ? `${postPayApprovedUnsettledCount}件`
-                  : undefined
-              }
-            />
-            <Stat
-              label="チーム（Stripe未入金）"
-              value={formatYen(teamPending)}
-              sub={teamSubParts.length > 0 ? teamSubParts.join(" · ") : undefined}
-            />
-            <Stat
-              label="経費（支払済）"
-              value={formatYen(expensePaidTotal)}
-              sub={
-                expenseApprovedUnpaid > 0
-                  ? `承認済未払 ${formatYen(expenseApprovedUnpaid)}`
-                  : undefined
-              }
-            />
-          </div>
+          {supplementalAutoStats.length > 0 ? (
+            <div className="mt-3 grid grid-cols-1 gap-3 border-t border-border/60 pt-3 sm:grid-cols-2 lg:grid-cols-4">
+              {supplementalAutoStats}
+            </div>
+          ) : null}
           <div className="mt-3 border-t border-border/60 pt-3">
             <Stat
               label="差引（エントリー収入 − PF − 経費）"
