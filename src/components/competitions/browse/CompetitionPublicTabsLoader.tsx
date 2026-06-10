@@ -4,6 +4,7 @@ import { verifySessionCached } from "@/lib/auth";
 import { verifyDayOpsUnlockFromCookies } from "@/lib/dayOpsUnlockCookie";
 import { getCompetitionPublicLightMeta } from "@/lib/competitionPublicPageLoader";
 import CompetitionPublicPageTabs from "@/components/public/CompetitionPublicPageTabs";
+import { CompetitionSubheading } from "./competitionEditorialUi";
 import type { CompetitionPublicTabValue } from "@/lib/competitionPublicTab";
 import { CompetitionPublicOverviewPanelLoader } from "./CompetitionPublicOverviewPanelLoader";
 import { CompetitionPublicStartListPanelLoader } from "./CompetitionPublicStartListPanelLoader";
@@ -18,13 +19,16 @@ type Props = {
   competitionId: string;
   activeTab: TabValue;
   detailBasePath: string;
+  layout?: "classic" | "editorial";
 };
 
 export async function CompetitionPublicTabsLoader({
   competitionId,
   activeTab,
   detailBasePath,
+  layout = "classic",
 }: Props) {
+  const isEditorial = layout === "editorial";
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
   const session = await verifySessionCached(token);
@@ -36,28 +40,38 @@ export async function CompetitionPublicTabsLoader({
   const dayOpsUnlockConfigured = Boolean(competitionMeta?.dayOpsAccessSecretHash);
 
   return (
-    <div className="space-y-4">
+    <div className={isEditorial ? "space-y-5" : "space-y-4"}>
+      {isEditorial ? (
+        <div className="mb-1">
+          <CompetitionSubheading>Details</CompetitionSubheading>
+        </div>
+      ) : null}
       <CompetitionPublicPageTabs
         competitionId={competitionId}
         detailBasePath={detailBasePath}
+        variant={isEditorial ? "editorial" : "classic"}
         overview={
           activeTab === "overview" ? (
-            <Suspense fallback={<CompetitionPublicOverviewPanelSkeleton />}>
+            <Suspense fallback={<CompetitionPublicOverviewPanelSkeleton layout={layout} />}>
               <CompetitionPublicOverviewPanelLoader
                 competitionId={competitionId}
                 sessionUserId={sessionUserId}
+                layout={layout}
               />
             </Suspense>
           ) : null
         }
         results={
           activeTab === "results" ? (
-            <Suspense fallback={<CompetitionPublicStartListPanelSkeleton />}>
+            <Suspense
+              fallback={<CompetitionPublicStartListPanelSkeleton layout={layout} />}
+            >
               <CompetitionPublicStartListPanelLoader
                 competitionId={competitionId}
                 sessionUserId={sessionUserId}
                 hasDayOpsUnlock={hasDayOpsUnlock}
                 dayOpsUnlockConfigured={dayOpsUnlockConfigured}
+                layout={layout}
               />
             </Suspense>
           ) : null

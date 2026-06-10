@@ -12,6 +12,10 @@ import { prisma } from "@/server/db";
 import { parseScheduleRowOrderByDayJson } from "@/lib/scheduleRowOrder";
 import { firstCompetitionScheduleDayKey } from "@/lib/competitionScheduleDays";
 import {
+  CompetitionEditorialPanel,
+  CompetitionSubheading,
+} from "./competitionEditorialUi";
+import {
   DayOpsUnlockBannerLazy,
   StartListEventIndexBarsLazy,
   StartListVisibilityAdminControlsLazy,
@@ -22,6 +26,7 @@ type Props = {
   sessionUserId: string | null;
   hasDayOpsUnlock: boolean;
   dayOpsUnlockConfigured: boolean;
+  layout?: "classic" | "editorial";
 };
 
 export async function CompetitionPublicStartListPanelLoader({
@@ -29,7 +34,9 @@ export async function CompetitionPublicStartListPanelLoader({
   sessionUserId,
   hasDayOpsUnlock,
   dayOpsUnlockConfigured,
+  layout = "classic",
 }: Props) {
+  const isEditorial = layout === "editorial";
   const competition = await loadCompetitionPublicStartListDetail(competitionId, sessionUserId);
 
   if (!competition) {
@@ -81,61 +88,80 @@ export async function CompetitionPublicStartListPanelLoader({
       : Promise.resolve(new Map<string, Set<"HEAT" | "SEMI" | "FINAL">>()),
   ]);
 
+  const adminBar = (
+    <div className="flex flex-wrap items-center gap-2">
+      <DayOpsUnlockBannerLazy
+        competitionId={competitionId}
+        passphraseConfigured={dayOpsUnlockConfigured}
+        alreadyUnlocked={hasDayOpsUnlock}
+      />
+      <div className="ml-auto flex justify-end">
+        <StartListVisibilityAdminControlsLazy
+          canManage={canToggleStartListVisibility}
+          organizationId={competition.organizationId}
+          competitionId={competitionId}
+          initialVisible={competition.startListPubliclyVisible ?? true}
+        />
+      </div>
+    </div>
+  );
+
+  const startListBody = canViewStartListOnPublicPage ? (
+    <StartListEventIndexBarsLazy
+      competitionId={competition.id}
+      competitionName={competition.name}
+      competitionStartDate={competition.startDate}
+      competitionEndDate={competition.endDate}
+      scheduleTabs={scheduleTabsForPanel}
+      events={eventsForStartListPanel.map((event) => ({
+        id: event.id,
+        name: event.name,
+        sex: event.sex,
+        type: event.type,
+        displayOrder: event.displayOrder,
+        ageCategoryId: event.ageCategory?.id ?? null,
+        ageCategoryName: event.ageCategory?.name ?? null,
+        ageCategoryDisplayOrder: event.ageCategory?.displayOrder ?? null,
+        scheduledStartAt: event.scheduledStartAt,
+        roundScheduledStarts: event.roundScheduledStarts,
+        scheduledEndAt: event.scheduledEndAt,
+        startListRoundCount: event.startListRoundCount,
+        scheduleTabId: event.scheduleTabId,
+        scheduleTabSortOrder: event.scheduleTabSortOrder,
+        entryCount: startListEntryCountByEventId[event.id] ?? 0,
+        preliminaryHeatLaneCount: event.preliminaryHeatLaneCount,
+        startListHeatPlanConfirmedAt: event.startListHeatPlanConfirmedAt,
+        marshalStartedAt: event.marshalStartedAt,
+        marshalLockedRounds: [...(marshalLockedRoundsByEventId.get(event.id) ?? new Set())],
+      }))}
+      initialStartListSettings={competition.startListSettings}
+      canReorder={canEditPublishedSchedule}
+      canEditSchedule={canEditPublishedSchedule}
+      canEditRoundCount={canEditPublishedSchedule}
+    />
+  ) : (
+    <p className="rounded-xl border border-border/55 bg-muted/10 px-3 py-6 text-center text-sm text-muted-foreground">
+      この大会のスタートリスト全体が主催の設定により非公開です（タイムスケジュールと全種目のリスト）。主催管理者または当日運用でアンロックした端末から閲覧・編集できます。
+    </p>
+  );
+
+  if (isEditorial) {
+    return (
+      <div className="space-y-4">
+        {adminBar}
+        <CompetitionEditorialPanel accent="muted">
+          <CompetitionSubheading>Race</CompetitionSubheading>
+          <h3 className="mt-1 text-base font-semibold text-foreground">レース情報</h3>
+          <div className="mt-4 -mx-1">{startListBody}</div>
+        </CompetitionEditorialPanel>
+      </div>
+    );
+  }
+
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2">
-        <DayOpsUnlockBannerLazy
-          competitionId={competitionId}
-          passphraseConfigured={dayOpsUnlockConfigured}
-          alreadyUnlocked={hasDayOpsUnlock}
-        />
-        <div className="ml-auto flex justify-end">
-          <StartListVisibilityAdminControlsLazy
-            canManage={canToggleStartListVisibility}
-            organizationId={competition.organizationId}
-            competitionId={competitionId}
-            initialVisible={competition.startListPubliclyVisible ?? true}
-          />
-        </div>
-      </div>
-      {canViewStartListOnPublicPage ? (
-        <StartListEventIndexBarsLazy
-          competitionId={competition.id}
-          competitionName={competition.name}
-          competitionStartDate={competition.startDate}
-          competitionEndDate={competition.endDate}
-          scheduleTabs={scheduleTabsForPanel}
-          events={eventsForStartListPanel.map((event) => ({
-            id: event.id,
-            name: event.name,
-            sex: event.sex,
-            type: event.type,
-            displayOrder: event.displayOrder,
-            ageCategoryId: event.ageCategory?.id ?? null,
-            ageCategoryName: event.ageCategory?.name ?? null,
-            ageCategoryDisplayOrder: event.ageCategory?.displayOrder ?? null,
-            scheduledStartAt: event.scheduledStartAt,
-            roundScheduledStarts: event.roundScheduledStarts,
-            scheduledEndAt: event.scheduledEndAt,
-            startListRoundCount: event.startListRoundCount,
-            scheduleTabId: event.scheduleTabId,
-            scheduleTabSortOrder: event.scheduleTabSortOrder,
-            entryCount: startListEntryCountByEventId[event.id] ?? 0,
-            preliminaryHeatLaneCount: event.preliminaryHeatLaneCount,
-            startListHeatPlanConfirmedAt: event.startListHeatPlanConfirmedAt,
-            marshalStartedAt: event.marshalStartedAt,
-            marshalLockedRounds: [...(marshalLockedRoundsByEventId.get(event.id) ?? new Set())],
-          }))}
-          initialStartListSettings={competition.startListSettings}
-          canReorder={canEditPublishedSchedule}
-          canEditSchedule={canEditPublishedSchedule}
-          canEditRoundCount={canEditPublishedSchedule}
-        />
-      ) : (
-        <p className="rounded-lg border border-border/60 bg-muted/10 px-3 py-6 text-center text-sm text-muted-foreground">
-          この大会のスタートリスト全体が主催の設定により非公開です（タイムスケジュールと全種目のリスト）。主催管理者または当日運用でアンロックした端末から閲覧・編集できます。
-        </p>
-      )}
+      {adminBar}
+      {startListBody}
     </>
   );
 }

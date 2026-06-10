@@ -34,6 +34,7 @@ type Props = {
   viewHrefs: { all: string; upcoming: string; past: string };
   categoryHrefs: { all: string; byCategory: Record<string, string> };
   resetHref: string;
+  variant?: "panel" | "header";
 };
 
 export function CompetitionsListControls({
@@ -46,7 +47,9 @@ export function CompetitionsListControls({
   viewHrefs,
   categoryHrefs,
   resetHref,
+  variant = "panel",
 }: Props) {
+  const isHeader = variant === "header";
   const [filterOpen, setFilterOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
 
@@ -62,9 +65,40 @@ export function CompetitionsListControls({
         ? "過去"
         : "すべて";
 
+  const activeFilters = (
+    <div
+      className={cn(
+        "flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground",
+        isHeader && "sm:justify-end"
+      )}
+    >
+      <span className="rounded-full border border-border/60 bg-background/80 px-2.5 py-0.5 text-foreground/90">
+        {SORT_LABEL[sort]}
+      </span>
+      <span className="rounded-full border border-border/60 bg-muted/30 px-2.5 py-0.5">{viewLabel}</span>
+      <span className="rounded-full border border-border/60 bg-muted/30 px-2.5 py-0.5">
+        {selectedCategory === "ALL" ? "全カテゴリ" : selectedCategory}
+      </span>
+      {searchQuery.length > 0 ? (
+        <span
+          className="max-w-[14rem] truncate rounded-full border border-orange-200/70 bg-orange-50/50 px-2.5 py-0.5 text-orange-900 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-100"
+          title={searchQuery}
+        >
+          「{searchQuery}」
+        </span>
+      ) : null}
+    </div>
+  );
+
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className={cn(isHeader ? "space-y-3" : "space-y-2")}>
+      <div
+        className={cn(
+          "flex flex-col gap-3",
+          isHeader ? "sm:flex-row sm:items-center sm:justify-between" : "gap-2"
+        )}
+      >
+        <div className="flex flex-wrap items-center gap-2">
         <Dialog open={sortOpen} onOpenChange={setSortOpen}>
           <DialogTrigger asChild>
             <Button
@@ -269,25 +303,11 @@ export function CompetitionsListControls({
             </div>
           </DialogContent>
         </Dialog>
+        </div>
+        {isHeader ? activeFilters : null}
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-        <span className="rounded-md bg-muted/80 px-1.5 py-0.5 text-foreground/90">
-          {SORT_LABEL[sort]}
-        </span>
-        <span className="rounded-md bg-muted/50 px-1.5 py-0.5">{viewLabel}</span>
-        <span className="rounded-md bg-muted/50 px-1.5 py-0.5">
-          {selectedCategory === "ALL" ? "全カテゴリ" : selectedCategory}
-        </span>
-        {searchQuery.length > 0 && (
-          <span
-            className="max-w-[14rem] truncate rounded-md bg-primary/10 px-1.5 py-0.5 text-primary"
-            title={searchQuery}
-          >
-            「{searchQuery}」
-          </span>
-        )}
-      </div>
+      {!isHeader ? activeFilters : null}
     </div>
   );
 }

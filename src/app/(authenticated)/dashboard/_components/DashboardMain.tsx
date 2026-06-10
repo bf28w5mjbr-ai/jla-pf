@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowRight, Settings, Shield } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { appRoutes } from "@/lib/appRoutes";
 import { getAuthenticatedAppUser } from "@/lib/authenticatedLayoutData";
 import { getCachedQualificationTemplates } from "@/lib/qualificationTemplateCache";
@@ -84,11 +83,22 @@ export async function DashboardMain({ userId }: { userId: string }) {
   );
 
   const settingsAction = (
-    <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground" asChild>
-      <Link href="/settings" aria-label="設定" title="設定">
-        <Settings className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-      </Link>
-    </Button>
+    <Link
+      href="/settings"
+      aria-label="設定"
+      title="設定"
+      className={cn(
+        "group inline-flex shrink-0 items-center justify-center p-1 text-muted-foreground",
+        "transition-colors hover:text-foreground",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      )}
+    >
+      <Settings
+        className="size-[1.125rem] transition-transform duration-300 group-hover:rotate-90 sm:size-5"
+        strokeWidth={1.75}
+        aria-hidden
+      />
+    </Link>
   );
 
   return (

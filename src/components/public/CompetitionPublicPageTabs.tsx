@@ -20,12 +20,15 @@ function CompetitionPublicPageTabsInner({
   detailBasePath,
   overview,
   results,
+  variant = "classic",
 }: {
   competitionId: string;
   detailBasePath: string;
   overview: ReactNode;
   results: ReactNode;
+  variant?: "classic" | "editorial";
 }) {
+  const isEditorial = variant === "editorial";
   const router = useRouter();
   const searchParams = useSearchParams();
   const value = tabFromSearchParams(searchParams);
@@ -54,28 +57,42 @@ function CompetitionPublicPageTabsInner({
       <Tabs value={value} onValueChange={onValueChange} className="w-full">
         <TabsList
           className={cn(
-            "grid h-auto w-full grid-cols-2 gap-1 rounded-xl border border-border/80 bg-muted/30 p-1 sm:inline-flex sm:w-auto sm:grid-cols-none sm:flex-wrap sm:justify-start"
+            isEditorial
+              ? "flex h-auto w-full items-stretch gap-1 overflow-x-auto rounded-2xl border border-border/55 bg-background/95 p-1.5 shadow-sm [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              : "grid h-auto w-full grid-cols-2 gap-1 rounded-xl border border-border/80 bg-muted/30 p-1 sm:inline-flex sm:w-auto sm:grid-cols-none sm:flex-wrap sm:justify-start"
           )}
           aria-label="大会情報の表示切替"
         >
           <TabsTrigger
             value="overview"
-            className="h-9 rounded-lg px-3 text-xs font-medium data-[state=active]:shadow-sm sm:h-8"
+            className={cn(
+              "rounded-xl px-3 text-xs font-medium data-[state=active]:shadow-sm sm:text-sm",
+              isEditorial ? "min-w-[7rem] flex-1 py-2.5 sm:min-w-[8rem]" : "h-9 sm:h-8"
+            )}
           >
             大会情報
           </TabsTrigger>
           <TabsTrigger
             value="results"
-            className="h-9 rounded-lg px-3 text-xs font-medium data-[state=active]:shadow-sm sm:h-8"
+            className={cn(
+              "rounded-xl px-3 text-xs font-medium data-[state=active]:shadow-sm sm:text-sm",
+              isEditorial ? "min-w-[7rem] flex-1 py-2.5 sm:min-w-[8rem]" : "h-9 sm:h-8"
+            )}
           >
             レース情報
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="mt-4 space-y-3 sm:space-y-4">
+        <TabsContent
+          value="overview"
+          className={cn("space-y-3 sm:space-y-4", isEditorial ? "mt-5" : "mt-4")}
+        >
           {overview}
         </TabsContent>
-        <TabsContent value="results" className="mt-4 space-y-3 sm:mt-4">
+        <TabsContent
+          value="results"
+          className={cn("space-y-3", isEditorial ? "mt-5" : "mt-4 sm:mt-4")}
+        >
           {results}
         </TabsContent>
       </Tabs>
@@ -85,12 +102,21 @@ function CompetitionPublicPageTabsInner({
 
 function TabsFallback({
   detailBasePath,
+  variant = "classic",
 }: {
   detailBasePath: string;
+  variant?: "classic" | "editorial";
 }) {
+  const isEditorial = variant === "editorial";
   return (
     <div className="w-full space-y-4" role="status" aria-label="タブを読み込み中">
-      <div className="grid grid-cols-2 gap-1 rounded-xl border border-border/80 bg-muted/30 p-1 sm:inline-flex sm:w-auto">
+      <div
+        className={cn(
+          isEditorial
+            ? "grid grid-cols-2 gap-1 rounded-2xl border border-border/55 bg-background/95 p-1.5 shadow-sm"
+            : "grid grid-cols-2 gap-1 rounded-xl border border-border/80 bg-muted/30 p-1 sm:inline-flex sm:w-auto"
+        )}
+      >
         <Link
           href={detailBasePath}
           className="flex h-9 items-center justify-center rounded-lg bg-background px-3 text-xs font-medium text-foreground shadow-sm sm:h-8"
@@ -114,20 +140,23 @@ export default function CompetitionPublicPageTabs({
   detailBasePath,
   overview,
   results,
+  variant = "classic",
 }: {
   competitionId: string;
   /** タブ切替・フォールバックリンクのベース（末尾スラッシュなし） */
   detailBasePath: string;
   overview: ReactNode;
   results: ReactNode;
+  variant?: "classic" | "editorial";
 }) {
   return (
-    <Suspense fallback={<TabsFallback detailBasePath={detailBasePath} />}>
+    <Suspense fallback={<TabsFallback detailBasePath={detailBasePath} variant={variant} />}>
       <CompetitionPublicPageTabsInner
         competitionId={competitionId}
         detailBasePath={detailBasePath}
         overview={overview}
         results={results}
+        variant={variant}
       />
     </Suspense>
   );

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { verifySession } from "@/lib/auth";
 import { notificationUnreadCountTag } from "@/lib/cacheTags";
-import { syncTechnicalOfficialShortageNotificationsForUser } from "@/lib/technicalOfficialShortageNotification";
 import { prisma } from "@/server/db";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 
@@ -23,8 +22,6 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const limit = parseLimit(searchParams.get("limit"));
-
-    await syncTechnicalOfficialShortageNotificationsForUser(session.userId);
 
     const [items, unreadCount] = await Promise.all([
       prisma.notification.findMany({

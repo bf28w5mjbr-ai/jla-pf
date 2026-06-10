@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  CompetitionEditorialPanel,
+  CompetitionSubheading,
+} from "@/components/competitions/browse/competitionEditorialUi";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,13 +24,15 @@ export type PublicGalleryPhoto = {
 
 type Props = {
   photos: PublicGalleryPhoto[];
+  layout?: "classic" | "editorial";
 };
 
 function isAbsoluteImageUrl(url: string) {
   return url.startsWith("http://") || url.startsWith("https://");
 }
 
-export default function CompetitionPublicGallery({ photos }: Props) {
+export default function CompetitionPublicGallery({ photos, layout = "classic" }: Props) {
+  const isEditorial = layout === "editorial";
   const [open, setOpen] = useState(false);
   const [index, setIndex] = useState(0);
 
@@ -54,42 +60,61 @@ export default function CompetitionPublicGallery({ photos }: Props) {
 
   if (count === 0) return null;
 
+  const galleryGrid = (
+    <>
+      <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+        {photos.map((p, i) => (
+          <li key={p.id}>
+            <button
+              type="button"
+              className="relative aspect-[4/3] w-full overflow-hidden rounded-lg border border-border/60 bg-muted/15 outline-none ring-offset-background transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => {
+                setIndex(i);
+                setOpen(true);
+              }}
+            >
+              <Image
+                src={p.imageUrl}
+                alt={p.fileName || `写真 ${i + 1}`}
+                fill
+                className="object-cover"
+                sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                unoptimized={isAbsoluteImageUrl(p.imageUrl)}
+              />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {!isEditorial ? (
+        <p className="mt-3 text-center text-[11px] text-muted-foreground">
+          写真をタップすると拡大表示できます
+        </p>
+      ) : null}
+    </>
+  );
+
   return (
     <>
-      <Card className="border-border/80 shadow-sm">
-        <CardHeader className="border-b border-border/80 bg-muted/20 px-4 py-3 sm:px-5">
-          <CardTitle className="flex items-center gap-2 text-base font-semibold tracking-tight">
-            <Images className="h-4 w-4 text-primary/80" aria-hidden />
+      {isEditorial ? (
+        <CompetitionEditorialPanel accent="muted">
+          <CompetitionSubheading>Gallery</CompetitionSubheading>
+          <h3 className="mt-1 flex items-center gap-2 text-base font-semibold text-foreground">
+            <Images className="size-4 text-primary/80" aria-hidden />
             フォトギャラリー
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 py-4 sm:px-5 sm:py-5">
-          <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-            {photos.map((p, i) => (
-              <li key={p.id}>
-                <button
-                  type="button"
-                  className="relative aspect-[4/3] w-full overflow-hidden rounded-lg border border-border/60 bg-muted/15 outline-none ring-offset-background transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => {
-                    setIndex(i);
-                    setOpen(true);
-                  }}
-                >
-                  <Image
-                    src={p.imageUrl}
-                    alt={p.fileName || `写真 ${i + 1}`}
-                    fill
-                    className="object-cover"
-                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                    unoptimized={!isAbsoluteImageUrl(p.imageUrl)}
-                  />
-                </button>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-3 text-center text-[11px] text-muted-foreground">写真をタップすると拡大表示できます</p>
-        </CardContent>
-      </Card>
+          </h3>
+          <div className="mt-4">{galleryGrid}</div>
+        </CompetitionEditorialPanel>
+      ) : (
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="border-b border-border/80 bg-muted/20 px-4 py-3 sm:px-5">
+            <CardTitle className="flex items-center gap-2 text-base font-semibold tracking-tight">
+              <Images className="h-4 w-4 text-primary/80" aria-hidden />
+              フォトギャラリー
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 py-4 sm:px-5 sm:py-5">{galleryGrid}</CardContent>
+        </Card>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
@@ -109,7 +134,7 @@ export default function CompetitionPublicGallery({ photos }: Props) {
                   className="object-contain p-2 sm:p-4"
                   sizes="100vw"
                   priority
-                  unoptimized={!isAbsoluteImageUrl(current.imageUrl)}
+                  unoptimized={isAbsoluteImageUrl(current.imageUrl)}
                 />
               </div>
               {count > 1 ? (

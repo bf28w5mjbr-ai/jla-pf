@@ -39,7 +39,10 @@ export function AuthenticatedAppShell({
     pathname === "/settings" ||
     pathname.startsWith("/settings/") ||
     pathname === "/qualifications" ||
-    pathname.startsWith("/qualifications/");
+    pathname.startsWith("/qualifications/") ||
+    pathname.startsWith("/organizations/") ||
+    pathname === "/competitions" ||
+    pathname.startsWith("/competitions/");
 
   return (
     <UnreadNotificationCountProvider initialUnreadCount={unreadNotificationCount}>

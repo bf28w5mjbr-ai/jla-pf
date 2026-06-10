@@ -3,6 +3,11 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  CompetitionEditorialPanel,
+  CompetitionSubheading,
+} from "@/components/competitions/browse/competitionEditorialUi";
+import { cn } from "@/lib/utils";
 import { Eye, EyeOff, Pencil, Plus, Trash2 } from "lucide-react";
 
 type Announcement = {
@@ -17,13 +22,16 @@ type Props = {
   competitionId: string;
   initialAnnouncements: Announcement[];
   canEdit: boolean;
+  layout?: "classic" | "editorial";
 };
 
-export default function CompetitionAnnouncementsManager({ 
-  competitionId, 
-  initialAnnouncements, 
-  canEdit 
+export default function CompetitionAnnouncementsManager({
+  competitionId,
+  initialAnnouncements,
+  canEdit,
+  layout = "classic",
 }: Props) {
+  const isEditorial = layout === "editorial";
   const [announcements, setAnnouncements] = useState<Announcement[]>(initialAnnouncements);
   const [isEditing, setIsEditing] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -169,23 +177,16 @@ export default function CompetitionAnnouncementsManager({
     }
   };
 
-  return (
-    <Card className="overflow-hidden">
-      <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <CardTitle className="text-base font-semibold">お知らせ</CardTitle>
-            <CardDescription className="text-xs">大会ページに表示されるお知らせです。</CardDescription>
-          </div>
-          {canEdit && !isEditing && (
-            <Button onClick={() => setIsEditing(true)} size="sm" className="h-8 text-xs">
-              <Plus className="mr-1 h-3.5 w-3.5" />
-              追加
-            </Button>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3 px-4 py-3">
+  const headerActions =
+    canEdit && !isEditing ? (
+      <Button onClick={() => setIsEditing(true)} size="sm" className="h-8 text-xs">
+        <Plus className="mr-1 h-3.5 w-3.5" />
+        追加
+      </Button>
+    ) : null;
+
+  const body = (
+    <div className="space-y-3">
         {isEditing && (
           <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
             <input
@@ -235,7 +236,12 @@ export default function CompetitionAnnouncementsManager({
             {announcements.map((announcement) => (
               <div
                 key={announcement.id}
-                className="rounded-md border border-border bg-muted/15 px-2.5 py-2"
+                className={cn(
+                  "border px-2.5 py-2",
+                  isEditorial
+                    ? "rounded-xl border-border/55 bg-muted/10"
+                    : "rounded-md border-border bg-muted/15"
+                )}
               >
                 {editingId === announcement.id ? (
                   <div className="space-y-2 rounded-md border border-border bg-background p-3">
@@ -330,7 +336,36 @@ export default function CompetitionAnnouncementsManager({
         ) : (
           <p className="py-3 text-center text-xs text-muted-foreground">お知らせはまだありません</p>
         )}
-      </CardContent>
+    </div>
+  );
+
+  if (isEditorial) {
+    return (
+      <CompetitionEditorialPanel accent="orange">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <CompetitionSubheading>News</CompetitionSubheading>
+            <h3 className="mt-1 text-base font-semibold text-foreground">お知らせ</h3>
+          </div>
+          {headerActions}
+        </div>
+        <div className="mt-4">{body}</div>
+      </CompetitionEditorialPanel>
+    );
+  }
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <CardTitle className="text-base font-semibold">お知らせ</CardTitle>
+            <CardDescription className="text-xs">大会ページに表示されるお知らせです。</CardDescription>
+          </div>
+          {headerActions}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 px-4 py-3">{body}</CardContent>
     </Card>
   );
 }

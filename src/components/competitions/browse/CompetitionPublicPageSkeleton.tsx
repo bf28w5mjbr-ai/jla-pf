@@ -1,7 +1,20 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-export function CompetitionPublicHeaderSkeleton() {
+export function CompetitionPublicHeaderSkeleton({
+  layout = "classic",
+}: {
+  layout?: "classic" | "editorial";
+} = {}) {
+  if (layout === "editorial") {
+    return (
+      <div className="space-y-5" role="status" aria-label="大会情報を読み込み中">
+        <div className="h-48 animate-pulse rounded-2xl border border-border/55 bg-muted/20" />
+        <div className="h-36 animate-pulse rounded-2xl border border-border/55 bg-muted/15" />
+      </div>
+    );
+  }
+
   return (
     <div
       className="overflow-hidden rounded-xl border border-border/80 shadow-md ring-1 ring-border/40"
@@ -33,36 +46,69 @@ export function CompetitionPublicHeaderSkeleton() {
   );
 }
 
-export function CompetitionPublicOverviewPanelSkeleton() {
+export function CompetitionPublicOverviewPanelSkeleton({
+  layout = "classic",
+}: {
+  layout?: "classic" | "editorial";
+} = {}) {
   return (
     <div className="space-y-4" role="status" aria-label="大会ページを読み込み中">
-      <div className="h-64 animate-pulse rounded-xl border border-border/60 bg-muted/30" />
+      <div
+        className={cn(
+          "h-64 animate-pulse border bg-muted/30",
+          layout === "editorial" ? "rounded-2xl border-border/55" : "rounded-xl border-border/60"
+        )}
+      />
       <div className="h-40 animate-pulse rounded-xl border border-border/60 bg-muted/25" />
       <div className="h-32 animate-pulse rounded-xl border border-border/60 bg-muted/20" />
     </div>
   );
 }
 
-export function CompetitionPublicStartListPanelSkeleton() {
+export function CompetitionPublicStartListPanelSkeleton({
+  layout = "classic",
+}: {
+  layout?: "classic" | "editorial";
+} = {}) {
+  const isEditorial = layout === "editorial";
   return (
     <div className="space-y-4" role="status" aria-label="スタートリストを読み込み中">
       <div className="flex justify-end">
-        <div className="h-9 w-28 animate-pulse rounded-lg border border-border/60 bg-muted/30" />
+        <div
+          className={cn(
+            "h-9 w-28 animate-pulse border bg-muted/30",
+            isEditorial ? "rounded-xl border-border/55" : "rounded-lg border-border/60"
+          )}
+        />
       </div>
-      <div className="min-h-[320px] animate-pulse rounded-xl border border-border/60 bg-muted/25" />
+      <div
+        className={cn(
+          "min-h-[320px] animate-pulse border bg-muted/25",
+          isEditorial ? "rounded-2xl border-border/55" : "rounded-xl border-border/60"
+        )}
+      />
     </div>
   );
 }
 
 export function CompetitionPublicPageTabsSkeleton({
   detailBasePath,
+  layout = "classic",
 }: {
   competitionId?: string;
   detailBasePath: string;
+  layout?: "classic" | "editorial";
 }) {
+  const isEditorial = layout === "editorial";
   return (
     <div className="w-full space-y-4" role="status" aria-label="タブを読み込み中">
-      <div className="grid grid-cols-2 gap-1 rounded-xl border border-border/80 bg-muted/30 p-1 sm:inline-flex sm:w-auto">
+      <div
+        className={cn(
+          isEditorial
+            ? "grid grid-cols-2 gap-1 rounded-2xl border border-border/55 bg-background/95 p-1.5 shadow-sm"
+            : "grid grid-cols-2 gap-1 rounded-xl border border-border/80 bg-muted/30 p-1 sm:inline-flex sm:w-auto"
+        )}
+      >
         <Link
           href={detailBasePath}
           className="flex h-9 items-center justify-center rounded-lg bg-background px-3 text-xs font-medium text-foreground shadow-sm sm:h-8"
@@ -76,7 +122,7 @@ export function CompetitionPublicPageTabsSkeleton({
           レース情報
         </Link>
       </div>
-      <CompetitionPublicOverviewPanelSkeleton />
+      <CompetitionPublicOverviewPanelSkeleton layout={layout} />
     </div>
   );
 }

@@ -1,16 +1,17 @@
-import { redirect } from "next/navigation";
+import { Metadata } from "next";
 
 import { getRequiredAuthenticatedUserId } from "@/lib/auth";
-import { syncTechnicalOfficialShortageNotificationsForUser } from "@/lib/technicalOfficialShortageNotification";
 import { prisma } from "@/server/db";
 import NotificationCenter from "@/components/NotificationCenter";
+
+export const metadata: Metadata = {
+  title: "通知センター | Bluvium",
+};
 
 export const dynamic = "force-dynamic";
 
 export default async function ProfileNotificationsPage() {
   const userId = await getRequiredAuthenticatedUserId();
-
-  await syncTechnicalOfficialShortageNotificationsForUser(userId);
 
   const [items, unreadCount] = await Promise.all([
     prisma.notification.findMany({
@@ -34,7 +35,7 @@ export default async function ProfileNotificationsPage() {
   ]);
 
   return (
-    <div className="app-page mx-auto w-full max-w-4xl px-4 py-6 sm:px-6">
+    <div className="mx-auto w-full max-w-3xl space-y-8 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
       <NotificationCenter
         initialItems={items.map((item) => ({
           ...item,

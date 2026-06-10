@@ -14,6 +14,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  buildEntryStatusLabel,
+  entryStatusBadgeClass,
+} from "@/lib/competitionEntryStatusDisplay";
+import {
+  CompetitionEditorialPanel,
+  CompetitionFact,
+  CompetitionSubheading,
+} from "./competitionEditorialUi";
+import {
   BadgeCheck,
   Building2,
   Calendar,
@@ -38,9 +47,14 @@ import { CompetitionHostInquiryDialogLazy } from "./competitionPublicDynamicClie
 
 type Props = {
   competitionId: string;
+  layout?: "classic" | "editorial";
 };
 
-export async function CompetitionPublicHeaderLoader({ competitionId }: Props) {
+export async function CompetitionPublicHeaderLoader({
+  competitionId,
+  layout = "classic",
+}: Props) {
+  const isEditorial = layout === "editorial";
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
   const session = await verifySessionCached(token);
@@ -132,6 +146,204 @@ export async function CompetitionPublicHeaderLoader({ competitionId }: Props) {
     sessionUserId ? path : `/login?redirect=${encodeURIComponent(path)}`;
 
   const signInRedirectPath = `/login?redirect=${encodeURIComponent(appRoutes.competitions.root(competitionId))}`;
+
+  const entryStatus = buildEntryStatusLabel(now, entryStart, entryEnd);
+
+  const entrySection = showHeroEntrySection && heroEntryMode ? (
+    <CompetitionEditorialPanel accent="emerald" className={isEditorial ? "mt-5" : undefined}>
+      <div className="flex gap-3 sm:gap-4">
+        <div
+          className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-emerald-200/80 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+          aria-hidden
+        >
+          <ClipboardList className="size-5" strokeWidth={1.75} />
+        </div>
+        <div className="min-w-0 flex-1 space-y-3">
+          {heroEntryMode === "preview" ? (
+            <>
+              <div>
+                <CompetitionSubheading>Entry</CompetitionSubheading>
+                <h2 className="mt-1 text-base font-semibold tracking-tight text-foreground sm:text-lg">
+                  エントリー
+                </h2>
+                {entryStart && entryEnd ? (
+                  <p className="mt-1 text-xs leading-snug text-muted-foreground">
+                    受付期間 {formatCompetitionEntryPeriodRangeJa(entryStart, entryEnd)}
+                  </p>
+                ) : null}
+              </div>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                受付開始後に、こちらからエントリー手続きができます。
+              </p>
+            </>
+          ) : (
+            <>
+              <div>
+                <CompetitionSubheading>Entry</CompetitionSubheading>
+                <h2 className="mt-1 text-base font-semibold tracking-tight text-foreground sm:text-lg">
+                  エントリー
+                </h2>
+                {entryStart && entryEnd ? (
+                  <p className="mt-1 text-xs leading-snug text-muted-foreground">
+                    受付期間 {formatCompetitionEntryPeriodRangeJa(entryStart, entryEnd)}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    種目のエントリー・お支払いはこちらから行えます。
+                  </p>
+                )}
+              </div>
+
+              {!sessionUserId ? (
+                <p className="rounded-xl border border-border/55 bg-muted/20 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                  エントリー申込・お支払いには
+                  <Button
+                    variant="link"
+                    className="mx-0.5 inline h-auto min-h-0 p-0 text-xs font-medium"
+                    asChild
+                  >
+                    <Link href={signInRedirectPath}>ログイン</Link>
+                  </Button>
+                  が必要です。
+                </p>
+              ) : null}
+
+              <div
+                className={cn(
+                  "grid gap-2.5",
+                  entryButtonCount === 1 && "max-w-md",
+                  entryButtonCount >= 2 && "sm:grid-cols-2",
+                  entryButtonCount >= 3 && "lg:grid-cols-3"
+                )}
+              >
+                {hasIndividualEvents || hasTeamEvents ? (
+                  <Button asChild size="sm" className="h-auto min-h-10 w-full whitespace-normal px-3 py-2.5">
+                    <Link
+                      href={withLoginRedirect(appRoutes.competitions.entry(competition.id))}
+                      className="gap-2"
+                    >
+                      <Users className="size-4 shrink-0 opacity-85" aria-hidden />
+                      <span className="min-w-0 flex-1 text-balance leading-snug">個人エントリー</span>
+                      <ChevronRight className="size-3.5 shrink-0 opacity-70" aria-hidden />
+                    </Link>
+                  </Button>
+                ) : null}
+                {showTeamEntryButton && firstAdminClubForTeamEntry ? (
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="h-auto min-h-10 w-full whitespace-normal px-3 py-2.5"
+                  >
+                    <Link
+                      href={withLoginRedirect(
+                        appRoutes.competitions.teamEntry(competition.id, {
+                          clubId: firstAdminClubForTeamEntry.id,
+                        })
+                      )}
+                      className="gap-2"
+                    >
+                      <Building2 className="size-4 shrink-0 opacity-85" aria-hidden />
+                      <span className="min-w-0 flex-1 text-balance leading-snug">
+                        クラブ管理者（チーム種目エントリー）
+                      </span>
+                      <ChevronRight className="size-3.5 shrink-0 opacity-60" aria-hidden />
+                    </Link>
+                  </Button>
+                ) : null}
+                {showOfficialEntryButton ? (
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="h-auto min-h-10 w-full whitespace-normal px-3 py-2.5"
+                  >
+                    <Link
+                      href={withLoginRedirect(appRoutes.competitions.officialEntry(competition.id))}
+                      className="gap-2"
+                    >
+                      <BadgeCheck className="size-4 shrink-0 opacity-85" aria-hidden />
+                      <span className="min-w-0 flex-1 text-balance leading-snug">オフィシャルエントリー</span>
+                      <ChevronRight className="size-3.5 shrink-0 opacity-60" aria-hidden />
+                    </Link>
+                  </Button>
+                ) : null}
+              </div>
+
+              {sessionUserId && hasTeamEvents && !showTeamEntryButton ? (
+                <p className="rounded-xl border border-border/55 bg-muted/20 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                  チーム種目のエントリーは、所属クラブの
+                  <strong className="font-medium text-foreground">管理者</strong>
+                  がクラブの「チーム管理」から登録します。
+                </p>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
+    </CompetitionEditorialPanel>
+  ) : null;
+
+  if (isEditorial) {
+    return (
+      <div className="space-y-0">
+        <CompetitionEditorialPanel accent="orange">
+          <CompetitionSubheading>Competition</CompetitionSubheading>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h1 className="text-balance text-2xl font-semibold tracking-tight text-foreground sm:text-[1.75rem]">
+                {competition.name}
+              </h1>
+              {competition.nameKana ? (
+                <p className="mt-1 text-sm text-muted-foreground">{competition.nameKana}</p>
+              ) : null}
+            </div>
+            <span
+              className={cn(
+                "inline-flex w-fit shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-medium",
+                entryStatusBadgeClass(entryStatus.tone)
+              )}
+            >
+              {entryStatus.label}
+            </span>
+          </div>
+
+          <div className="mt-5 grid gap-4 border-t border-border/45 pt-5 sm:grid-cols-2">
+            <CompetitionFact
+              icon={Building2}
+              label="主催"
+              value={`${competitionHostDisplayName(competition)}${hostAbbr ? `（${hostAbbr}）` : ""}`}
+            />
+            <CompetitionFact
+              icon={Calendar}
+              label="開催日"
+              value={formatCompactJaDateRange(competition.startDate, competition.endDate)}
+            />
+            <CompetitionFact icon={MapPin} label="会場" value={competition.venue}>
+              {competition.venueAddress ? (
+                <p className="mt-1 text-xs leading-snug text-muted-foreground">
+                  {competition.venueAddress}
+                </p>
+              ) : null}
+            </CompetitionFact>
+          </div>
+
+          {competition.status !== "CANCELLED" ? (
+            <div className="mt-4 border-t border-border/45 pt-4">
+              <CompetitionHostInquiryDialogLazy
+                competitionId={competitionId}
+                competitionName={competition.name}
+                senderNamePreview={senderNamePreview}
+                isAuthenticated={Boolean(sessionUserId)}
+                loginHref={signInRedirectPath}
+              />
+            </div>
+          ) : null}
+        </CompetitionEditorialPanel>
+        {entrySection}
+      </div>
+    );
+  }
 
   return (
     <Card className="overflow-hidden border-border/80 shadow-md ring-1 ring-border/40">

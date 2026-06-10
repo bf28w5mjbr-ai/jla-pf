@@ -48,6 +48,23 @@ describe("syncTechnicalOfficialShortageNotificationsForUser", () => {
     vi.clearAllMocks();
   });
 
+  it("skips sync for non-club-admin users", async () => {
+    const db = {
+      membership: { count: vi.fn().mockResolvedValue(0) },
+      notification: {
+        findMany: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+      },
+    } as never;
+
+    const result = await syncTechnicalOfficialShortageNotificationsForUser("user-1", db);
+
+    expect(result).toEqual({ created: 0, updated: 0, removed: 0 });
+    expect(listClubAdminTechnicalOfficialAlerts).not.toHaveBeenCalled();
+  });
+
   it("creates notifications for active shortages", async () => {
     vi.mocked(listClubAdminTechnicalOfficialAlerts).mockResolvedValue([alert]);
 
@@ -57,6 +74,7 @@ describe("syncTechnicalOfficialShortageNotificationsForUser", () => {
     const findMany = vi.fn().mockResolvedValue([]);
 
     const db = {
+      membership: { count: vi.fn().mockResolvedValue(1) },
       notification: { findMany, create, update, delete: deleteFn },
     } as never;
 
@@ -83,6 +101,7 @@ describe("syncTechnicalOfficialShortageNotificationsForUser", () => {
     const deleteFn = vi.fn().mockResolvedValue({ id: "n-old" });
 
     const db = {
+      membership: { count: vi.fn().mockResolvedValue(1) },
       notification: {
         findMany,
         create: vi.fn(),
@@ -112,6 +131,7 @@ describe("syncTechnicalOfficialShortageNotificationsForUser", () => {
     const update = vi.fn().mockResolvedValue({ id: "n1" });
 
     const db = {
+      membership: { count: vi.fn().mockResolvedValue(1) },
       notification: {
         findMany,
         create: vi.fn(),

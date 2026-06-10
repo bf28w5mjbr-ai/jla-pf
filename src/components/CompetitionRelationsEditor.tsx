@@ -5,6 +5,10 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
+import {
+  CompetitionEditorialPanel,
+  CompetitionSubheading,
+} from "@/components/competitions/browse/competitionEditorialUi";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
@@ -88,6 +92,7 @@ interface CompetitionRelationsEditorProps {
   competitionId: string;
   relatedOrganizations?: unknown;
   canEdit: boolean;
+  layout?: "classic" | "editorial";
 }
 
 function buildOrganizationsFingerprint(orgs: CompetitionRelatedOrganization[]): string {
@@ -98,7 +103,9 @@ export default function CompetitionRelationsEditor({
   competitionId,
   relatedOrganizations,
   canEdit,
+  layout = "classic",
 }: CompetitionRelationsEditorProps) {
+  const isEditorial = layout === "editorial";
   const router = useRouter();
   const normalized = useMemo(
     () => relatedOrganizationsWithDisplaySrc(relatedOrganizations ?? null),
@@ -354,23 +361,16 @@ export default function CompetitionRelationsEditor({
 
   const grouped = groupRelatedOrganizationsByRole(rows.filter((r) => r.name.trim().length > 0 || r.logoUrl));
 
-  return (
-    <Card className="overflow-hidden">
-      <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <CardTitle className="text-base font-semibold">関係組織</CardTitle>
-            <CardDescription className="text-xs">後援・協賛・協力・助成（公開ページに表示）</CardDescription>
-          </div>
-          {canEdit && !isEditing && (
-            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setIsEditing(true)}>
-              <Edit className="mr-1.5 h-3.5 w-3.5" />
-              編集
-            </Button>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent className="px-4 py-3">
+  const headerActions =
+    canEdit && !isEditing ? (
+      <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setIsEditing(true)}>
+        <Edit className="mr-1.5 h-3.5 w-3.5" />
+        編集
+      </Button>
+    ) : null;
+
+  const body = (
+    <div className="px-0 py-0">
         {isEditing ? (
           <div className="space-y-3">
             {rows.length === 0 ? (
@@ -543,7 +543,36 @@ export default function CompetitionRelationsEditor({
             )}
           </div>
         )}
-      </CardContent>
+    </div>
+  );
+
+  if (isEditorial) {
+    return (
+      <CompetitionEditorialPanel accent="muted">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <CompetitionSubheading>Partners</CompetitionSubheading>
+            <h3 className="mt-1 text-base font-semibold text-foreground">関係組織</h3>
+          </div>
+          {headerActions}
+        </div>
+        <div className="mt-4">{body}</div>
+      </CompetitionEditorialPanel>
+    );
+  }
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <CardTitle className="text-base font-semibold">関係組織</CardTitle>
+            <CardDescription className="text-xs">後援・協賛・協力・助成（公開ページに表示）</CardDescription>
+          </div>
+          {headerActions}
+        </div>
+      </CardHeader>
+      <CardContent className="px-4 py-3">{body}</CardContent>
     </Card>
   );
 }

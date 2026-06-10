@@ -31,6 +31,13 @@ export async function syncTechnicalOfficialShortageNotificationsForUser(
   userId: string,
   db: PrismaClient = prisma
 ): Promise<{ created: number; updated: number; removed: number }> {
+  const isClubAdmin = await db.membership.count({
+    where: { userId, status: "APPROVED", role: "ADMIN" },
+  });
+  if (isClubAdmin === 0) {
+    return { created: 0, updated: 0, removed: 0 };
+  }
+
   const alerts = await listClubAdminTechnicalOfficialAlerts(db, userId);
   const activeRelatedIds = new Set(
     alerts.map((alert) => technicalOfficialShortageRelatedId(alert.clubId, alert.competitionId))

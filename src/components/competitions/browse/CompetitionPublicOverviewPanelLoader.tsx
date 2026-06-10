@@ -5,11 +5,13 @@ import { CompetitionPublicOverviewPanel } from "./CompetitionPublicOverviewPanel
 type Props = {
   competitionId: string;
   sessionUserId: string | null;
+  layout?: "classic" | "editorial";
 };
 
 export async function CompetitionPublicOverviewPanelLoader({
   competitionId,
   sessionUserId,
+  layout = "classic",
 }: Props) {
   const competition = await loadCompetitionPublicOverviewDetail(competitionId, sessionUserId);
 
@@ -27,6 +29,7 @@ export async function CompetitionPublicOverviewPanelLoader({
       hasIndividualEvents={hasIndividualEvents}
       hasTeamEvents={hasTeamEvents}
       showEntryLinks={showEntryLinks}
+      layout={layout}
     />
   );
 }

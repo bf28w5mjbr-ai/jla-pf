@@ -21,6 +21,7 @@ export default function MemberCompetitionsPage({
 }) {
   return (
     <CompetitionsBrowseListPage
+      layout="editorial"
       listBasePath={appRoutes.competitions.list()}
       competitionDetailHref={appRoutes.competitions.root}
       searchParams={searchParams}

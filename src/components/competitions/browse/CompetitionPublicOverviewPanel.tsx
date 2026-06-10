@@ -15,6 +15,11 @@ import {
 import { resolveRelatedOrganizationsForDisplay } from "@/lib/competitionRelatedOrganizations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  CompetitionEditorialPanel,
+  CompetitionSubheading,
+} from "./competitionEditorialUi";
+import { cn } from "@/lib/utils";
+import {
   CompetitionAnnouncementsManagerLazy,
   CompetitionPublicGalleryLazy,
   CompetitionRelationsEditorLazy,
@@ -31,6 +36,7 @@ type Props = {
   hasIndividualEvents: boolean;
   hasTeamEvents: boolean;
   showEntryLinks: boolean;
+  layout?: "classic" | "editorial";
 };
 
 export function CompetitionPublicOverviewPanel({
@@ -38,7 +44,9 @@ export function CompetitionPublicOverviewPanel({
   hasIndividualEvents,
   hasTeamEvents,
   showEntryLinks,
+  layout = "classic",
 }: Props) {
+  const isEditorial = layout === "editorial";
   const participationEventSections = buildParticipationEventSections(
     competition.events,
     competition.ageCategories
@@ -49,21 +57,8 @@ export function CompetitionPublicOverviewPanel({
     hasTeamEvents,
   });
 
-  return (
-    <div className="space-y-4">
-      {(competition.events.length > 0 ||
-        competition.maxParticipants ||
-        entryFeeDisplay !== null ||
-        (showEntryLinks && (hasIndividualEvents || hasTeamEvents))) && (
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="border-b border-border/80 bg-muted/20 px-4 py-3 sm:px-5">
-            <CardTitle className="text-base font-semibold tracking-tight">参加情報</CardTitle>
-            <p className="mt-1 text-[11px] leading-snug text-muted-foreground sm:text-xs">
-              種目・参加費・参加資格・対象者など、エントリー前にご確認ください。
-            </p>
-          </CardHeader>
-          <CardContent className="p-0 sm:p-0">
-            <div className="divide-y divide-border">
+  const participationBody = (
+    <div className={cn(isEditorial ? "space-y-0 divide-y divide-border/45" : "divide-y divide-border")}>
               {competition.events.length > 0 ? (
                 <details className="group px-4 py-3 sm:px-5">
                   <summary className="flex cursor-pointer list-none items-start gap-3 marker:content-none [&::-webkit-details-marker]:hidden">
@@ -178,22 +173,58 @@ export function CompetitionPublicOverviewPanel({
                 </div>
               </div>
 
-            </div>
-          </CardContent>
-        </Card>
-      )}
+    </div>
+  );
+
+  const showParticipation =
+    competition.events.length > 0 ||
+    competition.maxParticipants ||
+    entryFeeDisplay !== null ||
+    (showEntryLinks && (hasIndividualEvents || hasTeamEvents));
+
+  return (
+    <div className={cn(isEditorial ? "space-y-5" : "space-y-4")}>
+      {showParticipation ? (
+        isEditorial ? (
+          <CompetitionEditorialPanel accent="muted">
+            <CompetitionSubheading>Participation</CompetitionSubheading>
+            <h3 className="mt-1 text-base font-semibold text-foreground">参加情報</h3>
+            <div className="mt-4 -mx-1">{participationBody}</div>
+          </CompetitionEditorialPanel>
+        ) : (
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader className="border-b border-border/80 bg-muted/20 px-4 py-3 sm:px-5">
+              <CardTitle className="text-base font-semibold tracking-tight">参加情報</CardTitle>
+              <p className="mt-1 text-[11px] leading-snug text-muted-foreground sm:text-xs">
+                種目・参加費・参加資格・対象者など、エントリー前にご確認ください。
+              </p>
+            </CardHeader>
+            <CardContent className="p-0 sm:p-0">{participationBody}</CardContent>
+          </Card>
+        )
+      ) : null}
 
       {competition.description ? (
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader className="border-b border-border/80 bg-muted/20 px-4 py-3 sm:px-5">
-            <CardTitle className="text-base font-semibold tracking-tight">大会について</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 py-4 sm:px-5 sm:py-5">
-            <div className="max-w-3xl whitespace-pre-wrap text-sm leading-[1.7] text-foreground/90">
+        isEditorial ? (
+          <CompetitionEditorialPanel accent="orange">
+            <CompetitionSubheading>About</CompetitionSubheading>
+            <h3 className="mt-1 text-base font-semibold text-foreground">大会について</h3>
+            <div className="mt-4 max-w-3xl whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
               {competition.description}
             </div>
-          </CardContent>
-        </Card>
+          </CompetitionEditorialPanel>
+        ) : (
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader className="border-b border-border/80 bg-muted/20 px-4 py-3 sm:px-5">
+              <CardTitle className="text-base font-semibold tracking-tight">大会について</CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 py-4 sm:px-5 sm:py-5">
+              <div className="max-w-3xl whitespace-pre-wrap text-sm leading-[1.7] text-foreground/90">
+                {competition.description}
+              </div>
+            </CardContent>
+          </Card>
+        )
       ) : null}
 
       <CompetitionRelationsEditorLazy
@@ -202,6 +233,7 @@ export function CompetitionPublicOverviewPanel({
           relatedOrganizations: competition.relatedOrganizations,
         })}
         canEdit={false}
+        layout={layout}
       />
 
       {competition.announcements.length > 0 ? (
@@ -215,10 +247,11 @@ export function CompetitionPublicOverviewPanel({
             createdAt: toIsoStringOrNull(a.createdAt) ?? "",
           }))}
           canEdit={false}
+          layout={layout}
         />
       ) : null}
 
-      <CompetitionPublicGalleryLazy photos={competition.galleryPhotos} />
+      <CompetitionPublicGalleryLazy photos={competition.galleryPhotos} layout={layout} />
     </div>
   );
 }

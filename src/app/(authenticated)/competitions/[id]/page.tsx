@@ -28,6 +28,7 @@ export default async function MemberCompetitionDetailPage({
 
   return (
     <CompetitionBrowseDetailPage
+      layout="editorial"
       competitionId={id}
       activeTab={activeTab}
       detailBasePath={appRoutes.competitions.root(id)}
