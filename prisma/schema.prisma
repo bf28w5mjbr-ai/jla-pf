@@ -108,6 +108,11 @@ model UserProfile {
   dateOfBirth          DateTime // 生年月日
   sex                  Sex // 性別（必須）
   profilePhotoUrl      String? // プロフィール写真URL
+  profilePhotoAspectRatio Float? // プロフィール写真の width / height
+  profilePhotoSubjectX  Float? // 被写体領域左端（正規化 0〜1）
+  profilePhotoSubjectY  Float? // 被写体領域上端（正規化 0〜1）
+  profilePhotoSubjectW  Float? // 被写体領域幅（正規化 0〜1）
+  profilePhotoSubjectH  Float? // 被写体領域高さ（正規化 0〜1）
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

@@ -5,7 +5,7 @@ import {
 
 export default function DashboardLoading() {
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-3 py-6 sm:space-y-8 sm:px-5 sm:py-8 lg:px-8 lg:py-10">
+    <div className="flex flex-col">
       <DashboardMainSkeleton />
       <DashboardDeferredSkeleton />
     </div>

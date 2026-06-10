@@ -8,12 +8,14 @@ import {
   CheckCircle2,
   ChevronRight,
   Mail,
+  Nfc,
   Settings,
   Shield,
   Smartphone,
   UserRound,
   Users,
 } from "lucide-react";
+import { NfcTagManagerLazy } from "./_components/settingsDynamicClients";
 import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { Button } from "@/components/ui/button";
@@ -90,6 +92,7 @@ export default async function SettingsPage() {
       role: true,
       address: true,
       jlaProfile: true,
+      nfcTag: { select: { nfcTagId: true } },
       createdAt: true,
     },
   });
@@ -113,7 +116,7 @@ export default async function SettingsPage() {
           設定
         </h1>
         <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
-          セキュリティ・個人情報・危険な操作をまとめて管理できます。
+          セキュリティ・NFCタグ・個人情報・危険な操作をまとめて管理できます。
         </p>
       </header>
 
@@ -173,6 +176,21 @@ export default async function SettingsPage() {
                 }
               />
             </div>
+          </CardContent>
+        </Card>
+
+        <Card padding="none" className="overflow-hidden border-border/90 shadow-sm">
+          <CardHeader className="border-b border-border/80 bg-muted/25">
+            <div className="flex flex-wrap items-center gap-2">
+              <Nfc className="h-5 w-5 text-primary" strokeWidth={1.75} aria-hidden />
+              <CardTitle className="text-lg">NFCタグ</CardTitle>
+            </div>
+            <CardDescription>
+              大会やイベントで利用する NFC タグをアカウントに登録します。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-5 sm:p-6">
+            <NfcTagManagerLazy initialNfcTagId={user.nfcTag?.nfcTagId ?? null} />
           </CardContent>
         </Card>
 

@@ -9,12 +9,8 @@ function DashboardClientBlockSkeleton({ className }: { className?: string }) {
 
 export const DashboardProfilePhotoLazy = dynamic(
   () => import("@/components/DashboardProfilePhoto"),
-  { loading: () => <DashboardClientBlockSkeleton className="h-[88px] w-[88px] rounded-full" /> }
+  { loading: () => <DashboardClientBlockSkeleton className="h-9 w-14 rounded-lg" /> }
 );
-
-export const NfcTagManagerLazy = dynamic(() => import("@/components/NfcTagManager"), {
-  loading: () => <DashboardClientBlockSkeleton className="h-20" />,
-});
 
 export const EntryWithdrawRequestButtonLazy = dynamic(
   () => import("@/components/EntryWithdrawRequestButton"),

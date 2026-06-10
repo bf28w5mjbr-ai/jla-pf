@@ -1,32 +1,23 @@
 import Link from "next/link";
-import {
-  ArrowRight,
-  Briefcase,
-  ClipboardList,
-  Medal,
-  Plus,
-  ReceiptText,
-  Trophy,
-  Users,
-} from "lucide-react";
+import { ArrowRight, Users } from "lucide-react";
 import { appRoutes } from "@/lib/appRoutes";
 import type { AuthenticatedAppUser } from "@/lib/authenticatedLayoutData";
 import { prisma } from "@/server/db";
 import { Button } from "@/components/ui/button";
+import { dashboardSectionClassName } from "./dashboardLayout";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/DataTable";
-import { EntryWithdrawRequestButtonLazy } from "./dashboardDynamicClients";
+import { DashboardCareerSection } from "./DashboardCareerSection";
+import { DashboardEntryStatusCard } from "./DashboardEntryStatusCard";
 import { getEntryUserFacingStatus } from "@/lib/entryFinalization";
 import {
   buildWithdrawableEventOptions,
   filterIndividualEventIdsFromEntry,
   hasSelectableWithdrawEvents,
 } from "@/lib/entryWithdrawalRequest";
-import {
-  loadUserPodiumResults,
-  podiumResultRoundLabel,
-} from "@/lib/dashboardUserPodiumResults";
+import { loadUserPodiumResults } from "@/lib/dashboardUserPodiumResults";
 
 type OfficialAttendanceAggRow = {
   total: bigint;
@@ -152,26 +143,29 @@ export async function DashboardMainDeferred({ user }: Props) {
   const pendingMemberships = user.memberships.filter((m) => m.status === "PENDING");
 
   return (
-    <div className="space-y-8">
-      <Card padding="none" className="overflow-hidden border-border/90 shadow-sm">
-        <CardHeader className="border-b border-border/80 bg-muted/25">
-          <div className="flex items-center gap-2">
-            <ClipboardList className="h-5 w-5 text-primary" strokeWidth={1.75} aria-hidden />
-            <CardTitle className="text-lg">エントリー状況</CardTitle>
-          </div>
-          <CardDescription>直近の大会エントリー（最大5件）</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 p-5 sm:p-6">
+    <section className={cn(dashboardSectionClassName, "border-t border-border/40 pb-16 pt-12 sm:pb-20 sm:pt-16")}>
+      <div className="space-y-8">
+      <div>
+        <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+          Entries
+        </p>
+        <h3 className="mt-1 text-balance text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+          エントリー状況
+        </h3>
+        <p className="mt-1 text-sm text-muted-foreground">直近の大会エントリー（最大5件）</p>
+
+        <div className="mt-6 space-y-3 sm:space-y-4">
           {entries.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-border/90 bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+            <p className="rounded-2xl border border-dashed border-border/70 px-5 py-10 text-center text-sm text-muted-foreground">
               まだエントリー履歴がありません。
             </p>
           ) : (
             entries.map((entry) => {
+              const checkoutSessions = entry.checkoutSessions.map((s) => ({ status: s.status }));
               const userStatus = getEntryUserFacingStatus({
                 status: entry.status,
                 totalFee: entry.totalFee,
-                checkoutSessions: entry.checkoutSessions.map((s) => ({ status: s.status })),
+                checkoutSessions,
                 clubIndividualFeePaidAt: entry.clubIndividualFeePaidAt,
                 organizerPostPayApprovedAt: entry.organizerPostPayApprovedAt,
                 organizerManualPaidAt: entry.organizerManualPaidAt,
@@ -194,83 +188,49 @@ export async function DashboardMainDeferred({ user }: Props) {
               });
               const withdrawnCount = withdrawableEvents.filter((event) => event.alreadyWithdrawn)
                 .length;
-              const hasWithdrawRequest = withdrawnCount > 0;
               const canRequestWithdraw =
                 entry.status !== "CANCELLED" &&
                 hasSelectableWithdrawEvents(withdrawableEvents) &&
                 (entry.competition.status === "PUBLISHED" || entry.competition.status === "ONGOING");
 
               return (
-                <div
+                <DashboardEntryStatusCard
                   key={entry.id}
-                  className="rounded-xl border border-border/80 bg-card/80 p-4 shadow-sm dark:bg-card/40"
-                >
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0 flex gap-3">
-                      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                        <Trophy className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-                      </span>
-                      <div>
-                        <p className="font-semibold text-foreground">{entry.competition.name}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          受付日: {new Date(entry.createdAt).toLocaleDateString("ja-JP")}
-                        </p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          状態: {userStatus.userLabel}
-                          {hasWithdrawRequest ? ` / 棄権申請済み（${withdrawnCount}種目）` : ""}
-                          {" / "}
-                          参加費: ¥{entry.totalFee.toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2 lg:justify-end">
-                      <Button asChild variant="outline" size="sm">
-                        <Link href={appRoutes.competitions.entry(entry.competition.id)}>
-                          エントリー詳細
-                        </Link>
-                      </Button>
-                      {canIssueReceipt ? (
-                        <Button asChild variant="outline" size="sm" className="gap-1">
-                          <Link
-                            href={`/api/entries/${entry.id}/receipt?format=pdf`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            <ReceiptText className="h-4 w-4" />
-                            領収書
-                          </Link>
-                        </Button>
-                      ) : null}
-                      {isResultPublished ? (
-                        <Button asChild size="sm">
-                          <Link href={appRoutes.competitions.results(entry.competition.id)}>
-                            大会リザルト
-                          </Link>
-                        </Button>
-                      ) : null}
-                      {canRequestWithdraw ? (
-                        <EntryWithdrawRequestButtonLazy
-                          competitionId={entry.competition.id}
-                          entryId={entry.id}
-                          withdrawableEvents={withdrawableEvents}
-                        />
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
+                  entryId={entry.id}
+                  competitionId={entry.competition.id}
+                  competitionName={entry.competition.name}
+                  competitionStartDate={entry.competition.startDate}
+                  competitionStatus={entry.competition.status}
+                  createdAt={entry.createdAt}
+                  totalFee={entry.totalFee}
+                  entryStatus={entry.status}
+                  businessEstablished={userStatus.businessEstablished}
+                  userLabel={userStatus.userLabel}
+                  hasOpenDispute={checkoutSessions.some((s) => s.status === "DISPUTED")}
+                  withdrawnCount={withdrawnCount}
+                  canIssueReceipt={canIssueReceipt}
+                  isResultPublished={isResultPublished}
+                  canRequestWithdraw={canRequestWithdraw}
+                  withdrawableEvents={withdrawableEvents}
+                />
               );
             })
           )}
-          <div className="flex justify-end border-t border-border/60 pt-2">
-            <Button asChild variant="ghost" size="sm" className="gap-1">
-              <Link href={appRoutes.me.entries()}>
-                すべてのエントリー履歴
-                <ArrowRight className="h-4 w-4" aria-hidden />
-              </Link>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+
+        <div className="mt-5 flex justify-end">
+          <Link
+            href={appRoutes.me.entries()}
+            className="group inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            すべてのエントリー履歴
+            <ArrowRight
+              className="size-3.5 transition-transform group-hover:translate-x-0.5"
+              aria-hidden
+            />
+          </Link>
+        </div>
+      </div>
 
       {pendingMemberships.length > 0 ? (
         <Card padding="none" className="overflow-hidden border-border/90 shadow-sm">
@@ -318,122 +278,17 @@ export async function DashboardMainDeferred({ user }: Props) {
         </Card>
       ) : null}
 
-      <Card padding="none" className="overflow-hidden border-border/90 shadow-sm">
-        <CardHeader className="border-b border-border/80 bg-muted/25">
-          <div className="flex items-center gap-2">
-            <Briefcase className="h-5 w-5 text-primary" strokeWidth={1.75} aria-hidden />
-            <CardTitle className="text-lg">経歴</CardTitle>
-          </div>
-          <CardDescription>オフィシャル活動実績と大会成績（決勝・1〜3位）</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6 px-5 py-5 sm:px-6">
-          <div className="space-y-4">
-            <p className="text-xs font-medium text-muted-foreground">オフィシャル活動</p>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
-              <p className="text-[11px] font-medium text-muted-foreground">実出席日数</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
-                {officialAttendanceTotalDays}日
-              </p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
-              <p className="text-[11px] font-medium text-muted-foreground">換算活動日数</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
-                {officialAttendanceWeightedDays.toFixed(1)}日
-              </p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
-              <p className="text-[11px] font-medium text-muted-foreground">内訳</p>
-              <p className="mt-1 text-sm text-foreground">
-                A級 {officialAttendanceAClassDays}日 / B級 {officialAttendanceBClassDays}日
-              </p>
-            </div>
-          </div>
-
-          {officialAttendanceTotalDays === 0 ? (
-            <p className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
-              まだオフィシャル出席実績がありません。
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {attendancePreview.map((row) => (
-                <div
-                  key={row.id}
-                  className="flex flex-col gap-1 rounded-lg border border-border/70 bg-background px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">{row.competition.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(row.attendanceDate).toLocaleDateString("ja-JP")} /{" "}
-                      {row.competition.competitionType === "A"
-                        ? "A級"
-                        : row.competition.competitionType === "B"
-                          ? "B級"
-                          : "種別未設定"}
-                    </p>
-                  </div>
-                  <Badge variant="outline" className="w-fit font-normal">
-                    {row.method === "NFC" ? "NFC記録" : "手動記録"}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          )}
-          </div>
-
-          <div className="space-y-3 border-t border-border/80 pt-5">
-            <div className="flex items-center gap-2">
-              <Medal className="h-4 w-4 text-primary" strokeWidth={1.75} aria-hidden />
-              <p className="text-xs font-medium text-muted-foreground">大会成績（決勝・1〜3位）</p>
-            </div>
-            {podiumResults.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
-                1〜3位の決勝成績はまだありません。
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {podiumResults.map((row) => {
-                  const competition = row.officialResult.competition;
-                  const event = row.officialResult.event;
-                  const roundLabel = podiumResultRoundLabel(row);
-                  const rank = row.rank;
-                  return (
-                    <div
-                      key={row.id}
-                      className="flex flex-col gap-1 rounded-lg border border-border/70 bg-background px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-foreground">
-                          <Link
-                            href={appRoutes.competitions.results(competition.id)}
-                            className="hover:text-primary hover:underline"
-                          >
-                            {competition.name}
-                          </Link>
-                          <span className="text-muted-foreground">
-                            {" "}
-                            / {event.name} / {roundLabel}
-                          </span>
-                        </p>
-                        {row.entryType === "TEAM" && row.teamEntry?.teamName ? (
-                          <p className="text-xs text-muted-foreground">
-                            チーム: {row.teamEntry.teamName}
-                          </p>
-                        ) : null}
-                      </div>
-                      {rank != null ? (
-                        <Badge variant="outline" className="w-fit shrink-0 font-normal tabular-nums">
-                          {rank}位
-                        </Badge>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+      <DashboardCareerSection
+        stats={{
+          totalDays: officialAttendanceTotalDays,
+          weightedDays: officialAttendanceWeightedDays,
+          aClassDays: officialAttendanceAClassDays,
+          bClassDays: officialAttendanceBClassDays,
+        }}
+        attendancePreview={attendancePreview}
+        podiumResults={podiumResults}
+      />
+      </div>
+    </section>
   );
 }

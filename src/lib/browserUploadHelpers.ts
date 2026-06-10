@@ -3,6 +3,8 @@
  * （1回目がサーバーに届いているのに応答だけ落ちるケースでは二重投稿の可能性があるが、
  * ロゴ上書き用途では許容し、接続系エラーのみ再試行する）
  */
+import { PROFILE_PHOTO_MAX_EDGE_PX } from "@/lib/profilePhotoUpload";
+
 export async function fetchWithConnectionRetry(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
@@ -25,10 +27,15 @@ export async function fetchWithConnectionRetry(
   throw lastError;
 }
 
-function isLikelyRasterLogo(file: File): boolean {
+function isLikelyRasterImage(file: File): boolean {
   if (file.type === "image/svg+xml") return false;
   if (file.name.toLowerCase().endsWith(".svg")) return false;
   return file.type.startsWith("image/");
+}
+
+export async function downscaleProfilePhotoFileIfLarge(file: File): Promise<File> {
+  if (!file.type.startsWith("image/")) return file;
+  return downscaleRasterImageFileIfLarge(file, PROFILE_PHOTO_MAX_EDGE_PX);
 }
 
 /**
@@ -39,8 +46,17 @@ export async function downscaleRasterLogoFileIfLarge(
   file: File,
   maxEdge = 1920,
 ): Promise<File> {
-  if (!isLikelyRasterLogo(file)) return file;
-  if (file.size < 900_000) return file;
+  return downscaleRasterImageFileIfLarge(file, maxEdge, { minBytesToAttempt: 900_000 });
+}
+
+async function downscaleRasterImageFileIfLarge(
+  file: File,
+  maxEdge: number,
+  options?: { minBytesToAttempt?: number },
+): Promise<File> {
+  if (!isLikelyRasterImage(file)) return file;
+  const minBytes = options?.minBytesToAttempt ?? 0;
+  if (file.size < minBytes) return file;
 
   let bitmap: ImageBitmap;
   try {
@@ -70,7 +86,7 @@ export async function downscaleRasterLogoFileIfLarge(
     );
     if (!blob || blob.size >= file.size) return file;
 
-    const base = file.name.replace(/\.[^./\\]+$/i, "") || "logo";
+    const base = file.name.replace(/\.[^./\\]+$/i, "") || "upload";
     return new File([blob], `${base}-upload.webp`, { type: "image/webp" });
   } finally {
     bitmap.close();

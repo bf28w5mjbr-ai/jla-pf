@@ -2,6 +2,16 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  appendProfilePhotoSubjectToFormData,
+  detectProfilePhotoSubjectInBrowser,
+} from "@/lib/browserProfilePhotoSubject";
+import { downscaleProfilePhotoFileIfLarge } from "@/lib/browserUploadHelpers";
+import {
+  isProfilePhotoWithinSizeLimit,
+  profilePhotoFileTooLargeMessage,
+  profilePhotoMaxSizeLabelMb,
+} from "@/lib/profilePhotoUpload";
 
 interface ProfilePhotoUploadProps {
   currentPhotoUrl?: string | null;
@@ -13,33 +23,43 @@ export default function ProfilePhotoUpload({ currentPhotoUrl, userName }: Profil
   const [preview, setPreview] = useState<string | null>(currentPhotoUrl || null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const rawFile = e.target.files?.[0];
+    if (!rawFile) return;
 
-    // ファイルサイズチェック（5MB以下）
-    if (file.size > 5 * 1024 * 1024) {
-      alert("ファイルサイズは5MB以下にしてください");
-      return;
-    }
-
-    // 画像形式チェック
-    if (!file.type.startsWith("image/")) {
+    if (!rawFile.type.startsWith("image/")) {
       alert("画像ファイルを選択してください");
       return;
     }
 
-    // プレビュー表示
+    setUploading(true);
+    let file = rawFile;
+    try {
+      file = await downscaleProfilePhotoFileIfLarge(rawFile);
+    } catch {
+      file = rawFile;
+    }
+
+    if (!isProfilePhotoWithinSizeLimit(file.size)) {
+      alert(profilePhotoFileTooLargeMessage());
+      setUploading(false);
+      return;
+    }
+
     const reader = new FileReader();
     reader.onloadend = () => {
       setPreview(reader.result as string);
     };
     reader.readAsDataURL(file);
 
-    // アップロード処理
-    setUploading(true);
     try {
       const formData = new FormData();
       formData.append("file", file);
+      try {
+        const subject = await detectProfilePhotoSubjectInBrowser(file);
+        appendProfilePhotoSubjectToFormData(formData, subject);
+      } catch {
+        // 構図検出失敗時はサーバー側フォールバック
+      }
 
       const response = await fetch("/api/upload/profile-photo", {
         method: "POST",
@@ -138,7 +158,7 @@ export default function ProfilePhotoUpload({ currentPhotoUrl, userName }: Profil
       </div>
 
       <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
-        5MB以下のJPG、PNG、GIF画像
+        {profilePhotoMaxSizeLabelMb()}MB以下の画像（JPEG、PNG、GIF、WebP など）
       </p>
     </div>
   );

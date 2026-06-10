@@ -17,6 +17,11 @@ const authenticatedAppUserSelect = {
       givenNameKana: true,
       dateOfBirth: true,
       profilePhotoUrl: true,
+      profilePhotoAspectRatio: true,
+      profilePhotoSubjectX: true,
+      profilePhotoSubjectY: true,
+      profilePhotoSubjectW: true,
+      profilePhotoSubjectH: true,
     },
   },
   contact: { select: { phoneNumber: true } },
@@ -90,6 +95,11 @@ export type AuthenticatedAppUser = Omit<
   jlaMemberNumber: string | null;
   nfcTagId: string | null;
   profilePhotoUrl: string | null;
+  profilePhotoAspectRatio: number | null;
+  profilePhotoSubjectX: number | null;
+  profilePhotoSubjectY: number | null;
+  profilePhotoSubjectW: number | null;
+  profilePhotoSubjectH: number | null;
 };
 
 /**
@@ -114,6 +124,11 @@ export const getAuthenticatedAppUser = cache(async (userId: string) => {
     jlaMemberNumber: u.jlaProfile?.jlaMemberNumber ?? null,
     nfcTagId: u.nfcTag?.nfcTagId ?? null,
     profilePhotoUrl: u.profile?.profilePhotoUrl ?? null,
+    profilePhotoAspectRatio: u.profile?.profilePhotoAspectRatio ?? null,
+    profilePhotoSubjectX: u.profile?.profilePhotoSubjectX ?? null,
+    profilePhotoSubjectY: u.profile?.profilePhotoSubjectY ?? null,
+    profilePhotoSubjectW: u.profile?.profilePhotoSubjectW ?? null,
+    profilePhotoSubjectH: u.profile?.profilePhotoSubjectH ?? null,
   } satisfies AuthenticatedAppUser;
 });
 

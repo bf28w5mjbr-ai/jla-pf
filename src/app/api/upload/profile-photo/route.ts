@@ -11,6 +11,12 @@ import {
   deletePublicAssetByUrl,
   uploadPublicAsset,
 } from "@/lib/supabase/storage";
+import {
+  isProfilePhotoWithinSizeLimit,
+  profilePhotoFileTooLargeMessage,
+} from "@/lib/profilePhotoUpload";
+import { parseProfilePhotoSubjectFromFormData } from "@/lib/profilePhotoUploadSubject";
+import { detectProfilePhotoSubjectWithSharp } from "@/lib/profilePhotoSubjectSharp";
 import { validateRasterImageBuffer } from "@/lib/uploadValidation";
 
 export const maxDuration = 60;
@@ -32,15 +38,30 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    // ファイルサイズチェック（5MB）
-    if (file.size > 5 * 1024 * 1024) {
-      return NextResponse.json({ error: "File too large" }, { status: 400 });
+    if (!isProfilePhotoWithinSizeLimit(file.size)) {
+      return NextResponse.json({ error: profilePhotoFileTooLargeMessage() }, { status: 400 });
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const validated = await validateRasterImageBuffer(buffer);
     if (!validated.ok) {
       return NextResponse.json({ error: validated.message }, { status: 400 });
+    }
+
+    let profilePhotoAspectRatio: number | null = null;
+    try {
+      const sharpMod = await import("sharp");
+      const meta = await sharpMod.default(buffer).metadata();
+      if (meta.width && meta.height && meta.height > 0) {
+        profilePhotoAspectRatio = meta.width / meta.height;
+      }
+    } catch {
+      profilePhotoAspectRatio = null;
+    }
+
+    let subject = parseProfilePhotoSubjectFromFormData(formData);
+    if (!subject) {
+      subject = await detectProfilePhotoSubjectWithSharp(buffer);
     }
 
     const filename = `${sess.userId}-${Date.now()}.${validated.value.ext}`;
@@ -70,12 +91,23 @@ export async function POST(request: NextRequest) {
       where: { id: sess.userId },
       data: {
         profile: {
-          update: { profilePhotoUrl: photoUrl },
+          update: {
+            profilePhotoUrl: photoUrl,
+            profilePhotoAspectRatio,
+            profilePhotoSubjectX: subject?.x ?? null,
+            profilePhotoSubjectY: subject?.y ?? null,
+            profilePhotoSubjectW: subject?.width ?? null,
+            profilePhotoSubjectH: subject?.height ?? null,
+          },
         },
       },
     });
 
-    return NextResponse.json({ url: photoUrl });
+    return NextResponse.json({
+      url: photoUrl,
+      aspectRatio: profilePhotoAspectRatio,
+      subject,
+    });
   } catch (error) {
     return jsonInternalError500("POST api/upload/profile-photo/route.ts", error);
   }
@@ -104,7 +136,14 @@ export async function DELETE() {
       where: { id: sess.userId },
       data: {
         profile: {
-          update: { profilePhotoUrl: null },
+          update: {
+            profilePhotoUrl: null,
+            profilePhotoAspectRatio: null,
+            profilePhotoSubjectX: null,
+            profilePhotoSubjectY: null,
+            profilePhotoSubjectW: null,
+            profilePhotoSubjectH: null,
+          },
         },
       },
     });

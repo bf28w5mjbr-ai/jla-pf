@@ -1,21 +1,19 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import {
-  Plus,
-  Settings,
-  Shield,
-  Users,
-} from "lucide-react";
+import { ArrowRight, Settings, Shield } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { appRoutes } from "@/lib/appRoutes";
 import { getAuthenticatedAppUser } from "@/lib/authenticatedLayoutData";
 import { getCachedQualificationTemplates } from "@/lib/qualificationTemplateCache";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
-  DashboardProfilePhotoLazy,
-  NfcTagManagerLazy,
-} from "./dashboardDynamicClients";
-import { QualificationRecordOrigin } from "@prisma/client";
+  buildClubCaptionLine,
+  buildQualificationCaptionLine,
+} from "./DashboardProfileHeroCaption";
+import { DashboardKeywordTagWithAdd } from "./DashboardKeywordTag";
+import { DashboardProfileHeroContact } from "./DashboardProfileHeroContact";
+import { DashboardProfileHeroSection } from "./DashboardProfileHeroSection";
+import { DashboardSectionHeading } from "./DashboardSectionHeading";
+import { dashboardSectionClassName } from "./dashboardLayout";
 import { cn } from "@/lib/utils";
 
 function calcAge(dateOfBirth: Date): number {
@@ -36,18 +34,6 @@ export async function DashboardMain({ userId }: { userId: string }) {
   ]);
   if (!user) redirect("/login");
 
-  const clubStatusLabel = {
-    APPROVED: "所属",
-    PENDING: "申請中",
-    REJECTED: "却下",
-  } as const;
-
-  const clubStatusClass = {
-    APPROVED: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200",
-    PENDING: "border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-200",
-    REJECTED: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200",
-  } as const;
-
   const qualificationLabelByKind = new Map<string, string>();
   for (const t of qualificationTemplates) {
     if (!qualificationLabelByKind.has(t.kind)) {
@@ -57,230 +43,104 @@ export async function DashboardMain({ userId }: { userId: string }) {
   const qualificationDisplayLabel = (kind: string) => qualificationLabelByKind.get(kind) ?? kind;
 
   const applicationQualifications = user.qualifications.filter(
-    (q) => q.recordOrigin === QualificationRecordOrigin.USER_APPLICATION
+    (q) => q.recordOrigin === "USER_APPLICATION"
   );
   const heldQualifications = user.qualifications.filter(
-    (q) => q.recordOrigin === QualificationRecordOrigin.ASSOCIATION_IMPORT
+    (q) => q.recordOrigin === "ASSOCIATION_IMPORT"
+  );
+  const allQualifications = [...applicationQualifications, ...heldQualifications];
+
+  const clubCaption = buildClubCaptionLine(user.memberships);
+  const qualificationCaption = buildQualificationCaptionLine(
+    allQualifications,
+    qualificationDisplayLabel
   );
 
-  const qualificationStatusLabel = {
-    APPROVED: "有効",
-    PENDING: "審査中",
-    REJECTED: "却下",
-    EXPIRED: "期限切れ",
-  } as const;
-  const qualificationStatusClass = {
-    APPROVED: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200",
-    PENDING: "border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-200",
-    REJECTED: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200",
-    EXPIRED: "border-border bg-muted text-muted-foreground",
-  } as const;
+  const heroCaptions = (
+    <>
+      <DashboardKeywordTagWithAdd
+        sublabel="Club"
+        addHref={appRoutes.profile.clubs()}
+        addLabel="クラブを追加"
+      >
+        {clubCaption ?? "未所属"}
+      </DashboardKeywordTagWithAdd>
+      <DashboardKeywordTagWithAdd
+        sublabel="License"
+        addHref="/qualifications"
+        addLabel="資格を追加"
+      >
+        {qualificationCaption ?? "資格なし"}
+      </DashboardKeywordTagWithAdd>
+    </>
+  );
+
+  const heroMeta = (
+    <p>
+      {user.familyNameKana} {user.givenNameKana}
+      <span className="mx-2 opacity-60">·</span>
+      {calcAge(user.dateOfBirth)}歳
+    </p>
+  );
+
+  const settingsAction = (
+    <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground" asChild>
+      <Link href="/settings" aria-label="設定" title="設定">
+        <Settings className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+      </Link>
+    </Button>
+  );
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col">
       <h1 className="sr-only">マイページ</h1>
 
-      <section className="space-y-5">
-        <div className="flex items-center justify-between gap-3 border-b border-border/80 pb-4">
-          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-            <Users className="h-4 w-4 text-primary" strokeWidth={1.75} aria-hidden />
-            プロフィール
-          </div>
-          <Button variant="outline" size="sm" className="shrink-0 gap-1.5" asChild>
-            <Link href="/settings">
-              <Settings className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-              設定
-            </Link>
-          </Button>
-        </div>
-
-        <div className="grid gap-6 md:grid-cols-[88px_1fr]">
-          <div className="flex justify-center md:justify-start">
-            <DashboardProfilePhotoLazy
-              currentPhotoUrl={user.profilePhotoUrl}
-              userName={`${user.familyName}${user.givenName}`}
-            />
-          </div>
-          <div className="min-w-0 space-y-6">
-            <div>
-              <div className="flex flex-wrap items-baseline gap-3">
-                <h2 className="text-lg font-semibold tracking-tight text-foreground sm:text-xl lg:text-2xl">
-                  {user.familyName} {user.givenName}
-                </h2>
-                <span className="text-sm text-muted-foreground">{calcAge(user.dateOfBirth)}歳</span>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                フリガナ：{user.familyNameKana} {user.givenNameKana}
-              </p>
-            </div>
-
-            <div className="space-y-2 border-t border-border/60 pt-5">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-foreground">所属クラブ</h3>
-                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" asChild>
-                  <Link href={appRoutes.profile.clubs()} aria-label="クラブを追加" title="クラブを追加">
-                    <Plus className="h-4 w-4" aria-hidden />
-                  </Link>
-                </Button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {user.memberships.length === 0 && (
-                  <p className="text-sm text-muted-foreground">未所属です。クラブ参加を申請できます。</p>
-                )}
-                {user.memberships.map((m) => (
-                  <span
-                    key={m.id}
-                    className={cn(
-                      "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold shadow-sm",
-                      clubStatusClass[m.status]
-                    )}
-                    title={clubStatusLabel[m.status]}
-                  >
-                    <span title={m.club.abbreviation ? m.club.name : undefined}>
-                      {m.club.abbreviation || m.club.name}
-                    </span>
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <dl className="grid grid-cols-1 gap-x-4 gap-y-3 border-t border-border/60 pt-5 text-xs sm:grid-cols-2">
-              <div>
-                <dt className="font-medium text-muted-foreground">電話番号</dt>
-                <dd className="mt-0.5 font-mono text-sm text-foreground">{user.phoneNumber}</dd>
-              </div>
-              <div className="sm:col-span-2">
-                <dt className="font-medium text-muted-foreground">メール</dt>
-                <dd className="mt-0.5 break-all font-mono text-sm text-foreground">{user.email}</dd>
-              </div>
-              {user.jlaMemberNumber ? (
-                <div className="sm:col-span-2">
-                  <dt className="font-medium text-muted-foreground">JLA会員番号</dt>
-                  <dd className="mt-0.5 font-mono text-sm text-foreground">{user.jlaMemberNumber}</dd>
-                </div>
-              ) : null}
-            </dl>
-
-            <div className="border-t border-border/60 pt-5">
-              <h3 className="text-sm font-semibold text-foreground">NFCタグ紐付け</h3>
-              <div className="mt-2">
-                <NfcTagManagerLazy initialNfcTagId={user.nfcTagId ?? null} />
-              </div>
-            </div>
-
-            <div className="space-y-3 border-t border-border/60 pt-5">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-foreground">資格</h3>
-                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" asChild>
-                  <Link href="/qualifications" aria-label="資格を選択" title="資格を選択">
-                    <Plus className="h-4 w-4" aria-hidden />
-                  </Link>
-                </Button>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <h4 className="text-xs font-semibold text-muted-foreground">申請資格</h4>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {applicationQualifications.length === 0 && (
-                      <p className="text-xs text-muted-foreground">申請資格はまだありません。</p>
-                    )}
-                    {applicationQualifications.map((q) => {
-                      const expiryDate = q.expiryDate ? new Date(q.expiryDate) : null;
-                      const now = new Date();
-                      const isExpired = !!expiryDate && expiryDate.getTime() < now.getTime();
-                      const isExpiringSoon =
-                        !!expiryDate &&
-                        !isExpired &&
-                        expiryDate.getTime() - now.getTime() <= 1000 * 60 * 60 * 24 * 30;
-                      const status = isExpired ? "EXPIRED" : q.status;
-
-                      return (
-                        <div key={q.id} className="relative inline-flex items-center gap-1">
-                          <span
-                            className={cn(
-                              "inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold shadow-sm",
-                              qualificationStatusClass[status]
-                            )}
-                            title={`${qualificationDisplayLabel(q.kind)}｜${qualificationStatusLabel[status]}${expiryDate ? `｜有効期限 ${expiryDate.toLocaleDateString("ja-JP")}` : ""}`}
-                          >
-                            <span>{qualificationDisplayLabel(q.kind)}</span>
-                          </span>
-                          {isExpiringSoon ? (
-                            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-[10px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
-                              !
-                            </span>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-xs font-semibold text-muted-foreground">保有資格</h4>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {heldQualifications.length === 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        協会公式データの連携後にここに表示されます。
-                      </p>
-                    )}
-                    {heldQualifications.map((q) => {
-                      const expiryDate = q.expiryDate ? new Date(q.expiryDate) : null;
-                      const now = new Date();
-                      const isExpired = !!expiryDate && expiryDate.getTime() < now.getTime();
-                      const isExpiringSoon =
-                        !!expiryDate &&
-                        !isExpired &&
-                        expiryDate.getTime() - now.getTime() <= 1000 * 60 * 60 * 24 * 30;
-                      const status = isExpired ? "EXPIRED" : q.status;
-
-                      return (
-                        <div key={q.id} className="relative inline-flex items-center gap-1">
-                          <span
-                            className={cn(
-                              "inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold shadow-sm",
-                              qualificationStatusClass[status]
-                            )}
-                            title={`${qualificationDisplayLabel(q.kind)}｜${qualificationStatusLabel[status]}${expiryDate ? `｜有効期限 ${expiryDate.toLocaleDateString("ja-JP")}` : ""}`}
-                          >
-                            <span>{qualificationDisplayLabel(q.kind)}</span>
-                          </span>
-                          {isExpiringSoon ? (
-                            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-[10px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
-                              !
-                            </span>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      <DashboardProfileHeroSection
+        familyName={user.familyName}
+        givenName={user.givenName}
+        meta={heroMeta}
+        contact={
+          <DashboardProfileHeroContact
+            phoneNumber={user.phoneNumber}
+            email={user.email}
+            jlaMemberNumber={user.jlaMemberNumber}
+          />
+        }
+        captions={heroCaptions}
+        settingsAction={settingsAction}
+      />
 
       {user._count.passkeyCredentials === 0 ? (
-        <Card padding="none" className="overflow-hidden border-primary/30 bg-primary/[0.06] shadow-sm dark:bg-primary/10">
-          <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-            <div className="flex gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                <Shield className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-              </div>
-              <div className="min-w-0 space-y-1">
-                <h2 className="text-sm font-semibold text-foreground">パスキーでログインを強化</h2>
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  端末の顔・指紋やセキュリティキーでログインできます。フィッシング対策と、デバイスに紐づく認証として推奨します。
-                </p>
-              </div>
-            </div>
-            <Button asChild size="sm" className="w-full shrink-0 sm:w-auto">
-              <Link href="/register/passkey?returnTo=%2Fdashboard">パスキーを登録</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      ) : null}
+        <section
+          className={cn(
+            dashboardSectionClassName,
+            "border-t border-border/40 py-16 sm:py-20"
+          )}
+        >
+          <DashboardSectionHeading
+            label="Security"
+            title="パスキーでログインを強化"
+            subtitle="端末の顔・指紋やセキュリティキーで、より安全にログインできます。"
+          />
+          <div className="mt-10">
+            <Link
+              href="/register/passkey?returnTo=%2Fdashboard"
+              className="group inline-flex items-center gap-3 border-b border-transparent pb-0.5 text-sm font-medium tracking-wide text-foreground transition-colors hover:border-foreground/30"
+            >
+              <span>パスキーを登録</span>
+              <span className="flex size-8 items-center justify-center rounded-full border border-border/80 transition-colors group-hover:border-foreground/30 group-hover:bg-muted/40">
+                <Shield className="size-3.5" aria-hidden />
+                <ArrowRight
+                  className="size-3.5 transition-transform group-hover:translate-x-0.5"
+                  aria-hidden
+                />
+              </span>
+            </Link>
+          </div>
+        </section>
+      ) : (
+        <div className="pb-10 sm:pb-12" />
+      )}
     </div>
   );
 }

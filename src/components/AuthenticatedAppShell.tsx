@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { AppMobileTopBar } from "@/components/AppMobileTopBar";
 import { UnreadNotificationCountProvider } from "@/components/UnreadNotificationCountContext";
+import { cn } from "@/lib/utils";
 
 interface Organization {
   id: string;
@@ -31,6 +33,8 @@ export function AuthenticatedAppShell({
   unreadNotificationCount,
 }: AuthenticatedAppShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const pathname = usePathname();
+  const isDashboardFullBleed = pathname === "/dashboard";
 
   return (
     <UnreadNotificationCountProvider initialUnreadCount={unreadNotificationCount}>
@@ -47,7 +51,12 @@ export function AuthenticatedAppShell({
         <div className="flex min-w-0 flex-1 flex-col">
           <AppMobileTopBar onOpenMenu={() => setIsSidebarOpen(true)} isMenuOpen={isSidebarOpen} />
           <main
-            className="app-main-canvas min-h-screen min-w-0 flex-1 px-[var(--app-content-gutter)] pb-[var(--safe-area-bottom)] pt-2 lg:pt-[var(--safe-area-top)]"
+            className={cn(
+              "app-main-canvas min-h-screen min-w-0 flex-1 pb-[var(--safe-area-bottom)]",
+              isDashboardFullBleed
+                ? "px-0 pt-0"
+                : "px-[var(--app-content-gutter)] pt-2 lg:pt-[var(--safe-area-top)]"
+            )}
           >
             {children}
           </main>
