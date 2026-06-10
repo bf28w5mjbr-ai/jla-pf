@@ -249,11 +249,14 @@ export default async function CompetitionFinanceTabContent({
   if (stripeFinance.entryRefundYen > 0) {
     entryIncomeSubParts.push(`返金 ${formatYen(stripeFinance.entryRefundYen)}`);
   }
-  const supplementalAutoStats = [
-    individualPending > 0 ? (
+  const supplementalAutoStats: ReactNode[] = [];
+  if (individualPending > 0) {
+    supplementalAutoStats.push(
       <Stat key="individual-pending" label="個人（未決済）" value={formatYen(individualPending)} />
-    ) : null,
-    postPayApprovedUnsettled > 0 ? (
+    );
+  }
+  if (postPayApprovedUnsettled > 0) {
+    supplementalAutoStats.push(
       <Stat
         key="post-pay-approved-unsettled"
         label="個人（後払い・未入金）"
@@ -264,16 +267,20 @@ export default async function CompetitionFinanceTabContent({
             : undefined
         }
       />
-    ) : null,
-    teamPending > 0 ? (
+    );
+  }
+  if (teamPending > 0) {
+    supplementalAutoStats.push(
       <Stat
         key="team-pending"
         label="チーム（Stripe未入金）"
         value={formatYen(teamPending)}
         sub={teamSubParts.length > 0 ? teamSubParts.join(" · ") : undefined}
       />
-    ) : null,
-    expensePaidTotal > 0 ? (
+    );
+  }
+  if (expensePaidTotal > 0) {
+    supplementalAutoStats.push(
       <Stat
         key="expense-paid"
         label="経費（支払済）"
@@ -284,8 +291,8 @@ export default async function CompetitionFinanceTabContent({
             : undefined
         }
       />
-    ) : null,
-  ].filter((stat): stat is NonNullable<ReactNode> => stat != null);
+    );
+  }
 
   const teamOwnerPrefix = `competition-team-entry:${competition.id}:`;
   const prepaidOwnerPrefix = `competition-club-prepaid-individual:${competition.id}:`;
