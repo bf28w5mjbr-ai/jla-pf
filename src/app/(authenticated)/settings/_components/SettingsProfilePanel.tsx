@@ -176,8 +176,7 @@ export function SettingsProfilePanel({
             <div className="flex flex-wrap gap-2 pt-1">
               {birthLabel ? (
                 <ProfileMetaTag>
-                  {birthLabel}
-                  {dateOfBirth ? ` · ${calcAge(dateOfBirth)}歳` : ""}
+                  {`${birthLabel}${dateOfBirth ? ` · ${calcAge(dateOfBirth)}歳` : ""}`}
                 </ProfileMetaTag>
               ) : (
                 <ProfileMetaTag>生年月日 未登録</ProfileMetaTag>
