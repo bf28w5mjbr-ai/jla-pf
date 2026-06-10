@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckSquare, Save, Square } from "lucide-react";
+import { BadgeCheck, CheckSquare, Save, Search, Square } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -231,151 +232,197 @@ export default function QualificationsSelectionClient({
   const checkedCount = checkedTemplateIds.size;
 
   return (
-    <div className="space-y-6" id="qual-checklist">
-      <div className="rounded-xl border border-blue-200/70 bg-blue-50/60 p-4 text-sm text-blue-950 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-100">
-        <p className="font-semibold">資格の紐づけ</p>
-        <p className="mt-1 text-xs leading-relaxed">
-          保有している資格にチェックを入れて「保存」すると、すぐにアカウントに反映され、ダッシュボードへ移動します（協会の承認は不要です）。JLA
-          メンバーIDはアカウントに1つだけ登録します。
-          <span className="font-medium text-foreground">
-            アカウントにまだ紐づいていない場合は、資格を1件以上保存するときにIDの入力が必要です。すでに紐づけ済みの場合は入力不要です。
-          </span>
-        </p>
-      </div>
-
-      <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="資格名や前提条件で検索"
-          className="h-9"
-        />
-        <p className="text-xs text-muted-foreground sm:text-right">
-          表示中: <span className="font-semibold text-foreground">{grouped.total}</span> 件
-        </p>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">
-          チェック中: <span className="font-semibold text-foreground">{checkedCount}</span> 件
-        </p>
-        <div className="flex items-center gap-1.5">
-          <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={selectAll}>
-            <CheckSquare className="mr-1 h-3.5 w-3.5" />
-            全選択
-          </Button>
-          <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={clearAll}>
-            <Square className="mr-1 h-3.5 w-3.5" />
-            すべて外す
-          </Button>
+    <div className="space-y-5" id="qual-checklist">
+      <div
+        className={cn(
+          "rounded-2xl border border-border/55 bg-muted/20 px-4 py-4 sm:px-5",
+          "grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center"
+        )}
+      >
+        <div className="relative">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="資格名や前提条件で検索"
+            className="h-10 bg-background/80 pl-9"
+          />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end">
+          <p className="text-xs text-muted-foreground">
+            表示中{" "}
+            <span className="font-semibold tabular-nums text-foreground">{grouped.total}</span> 件
+            <span className="mx-2 text-border">·</span>
+            チェック中{" "}
+            <span className="font-semibold tabular-nums text-foreground">{checkedCount}</span> 件
+          </p>
+          <div className="flex items-center gap-1.5">
+            <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={selectAll}>
+              <CheckSquare className="mr-1 size-3.5" aria-hidden />
+              全選択
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={clearAll}>
+              <Square className="mr-1 size-3.5" aria-hidden />
+              すべて外す
+            </Button>
+          </div>
         </div>
       </div>
 
       <div className="space-y-5">
         {grouped.domains.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border/90 bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
-            条件に一致する資格が見つかりませんでした。
-          </p>
+          <div className="rounded-2xl border border-dashed border-border/70 bg-muted/15 px-5 py-12 text-center">
+            <p className="text-sm text-muted-foreground">条件に一致する資格が見つかりませんでした。</p>
+          </div>
         ) : (
           grouped.domains.map((domain) => {
             const rows = grouped.map.get(domain) ?? [];
             return (
-              <section key={domain} className="space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-sm font-semibold text-foreground">
-                    {domainLabelMap[domain] ?? domain}
-                  </h2>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-[11px]"
-                      onClick={() => selectDomain(domain)}
-                    >
-                      この領域を選択
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-[11px]"
-                      onClick={() => clearDomain(domain)}
-                    >
-                      この領域を解除
-                    </Button>
-                  </div>
-                </div>
-                <ul className="grid gap-3">
-                  {rows.map((template) => {
-                    const label = qualificationJapaneseLabel(template.kind, template.name);
-                    const linked = linkedTemplateIdSet.has(template.id);
-                    const locked = lockedTemplateIdSetForUi.has(template.id);
-                    const checked = checkedTemplateIds.has(template.id);
-                    return (
-                      <li
-                        key={template.id}
-                        className={cn(
-                          "rounded-xl border p-4 shadow-sm",
-                          linked && checked
-                            ? "border-emerald-300/70 bg-emerald-50/40 dark:border-emerald-800/70 dark:bg-emerald-950/20"
-                            : checked
-                              ? "border-primary/60 bg-primary/5"
-                              : "border-border/80 bg-muted/10"
-                        )}
+              <section
+                key={domain}
+                className={cn(
+                  "relative overflow-hidden rounded-2xl border border-border/55 bg-background/70 px-5 py-5 sm:px-6 sm:py-6",
+                  "transition-[border-color,background-color] duration-200 hover:border-orange-200/70 hover:bg-orange-50/20 dark:hover:border-orange-900/45 dark:hover:bg-orange-950/10"
+                )}
+              >
+                <div
+                  className="pointer-events-none absolute -right-10 -top-10 size-28 rounded-full bg-orange-500/8 dark:bg-orange-400/6"
+                  aria-hidden
+                />
+                <div
+                  className="absolute bottom-5 left-0 top-5 w-0.5 rounded-full bg-gradient-to-b from-orange-500/70 via-orange-400/30 to-transparent sm:bottom-6 sm:top-6"
+                  aria-hidden
+                />
+
+                <div className="relative pl-3 sm:pl-4">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-border/45 pb-4">
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                        {domain}
+                      </p>
+                      <h2 className="mt-1 text-base font-semibold text-foreground">
+                        {domainLabelMap[domain] ?? domain}
+                      </h2>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2.5 text-xs"
+                        onClick={() => selectDomain(domain)}
                       >
-                        <label className="flex cursor-pointer items-start gap-3">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            disabled={locked}
-                            onChange={() => toggle(template.id)}
-                            className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="block text-sm font-semibold text-foreground">{label}</span>
-                            <span className="mt-1 flex flex-wrap gap-1.5 text-[11px]">
-                              {template.level ? (
-                                <span className="rounded border border-border/80 bg-background px-1.5 py-0.5 text-muted-foreground">
-                                  区分: {template.level}
-                                </span>
-                              ) : null}
-                              {typeof template.minAge === "number" ? (
-                                <span className="rounded border border-border/80 bg-background px-1.5 py-0.5 text-muted-foreground">
-                                  最低年齢: {template.minAge}歳
-                                </span>
-                              ) : null}
-                              <span className="rounded border border-border/80 bg-background px-1.5 py-0.5 text-muted-foreground">
-                                {template.requiresExpiry && template.validityMonths
-                                  ? `有効期間: ${template.validityMonths}か月`
-                                  : "有効期限: なし"}
+                        この領域を選択
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2.5 text-xs"
+                        onClick={() => clearDomain(domain)}
+                      >
+                        この領域を解除
+                      </Button>
+                    </div>
+                  </div>
+
+                  <ul className="grid gap-3">
+                    {rows.map((template) => {
+                      const label = qualificationJapaneseLabel(template.kind, template.name);
+                      const linked = linkedTemplateIdSet.has(template.id);
+                      const locked = lockedTemplateIdSetForUi.has(template.id);
+                      const checked = checkedTemplateIds.has(template.id);
+                      return (
+                        <li
+                          key={template.id}
+                          className={cn(
+                            "rounded-xl border px-4 py-3.5 transition-[border-color,background-color,box-shadow] duration-200",
+                            linked && checked
+                              ? "border-emerald-300/70 bg-emerald-50/50 shadow-sm dark:border-emerald-800/70 dark:bg-emerald-950/25"
+                              : checked
+                                ? "border-orange-300/70 bg-orange-50/40 shadow-sm dark:border-orange-800/60 dark:bg-orange-950/20"
+                                : "border-border/60 bg-background/80 hover:border-border hover:bg-muted/20"
+                          )}
+                        >
+                          <label
+                            className={cn(
+                              "flex items-start gap-3",
+                              locked ? "cursor-not-allowed opacity-90" : "cursor-pointer"
+                            )}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={locked}
+                              onChange={() => toggle(template.id)}
+                              className="mt-0.5 size-4 rounded border-border text-primary focus:ring-primary"
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-semibold text-foreground">{label}</span>
+                                {linked ? (
+                                  <Badge
+                                    variant="secondary"
+                                    className={cn(
+                                      "border font-normal",
+                                      locked
+                                        ? "border-emerald-200/80 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100"
+                                        : "border-emerald-200/80 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100"
+                                    )}
+                                  >
+                                    {locked ? (
+                                      <>
+                                        <BadgeCheck className="mr-1 size-3" aria-hidden />
+                                        公式資格
+                                      </>
+                                    ) : (
+                                      "保存済み"
+                                    )}
+                                  </Badge>
+                                ) : null}
                               </span>
-                              {linked ? (
-                                <span className="rounded border border-emerald-300/80 bg-emerald-100/70 px-1.5 py-0.5 text-emerald-800 dark:border-emerald-700/70 dark:bg-emerald-900/40 dark:text-emerald-200">
-                                  {locked ? "公式資格" : "保存済み"}
+                              <span className="mt-2 flex flex-wrap gap-1.5">
+                                {template.level ? (
+                                  <span className="inline-flex items-center rounded-full border border-border/70 bg-background/80 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                                    区分: {template.level}
+                                  </span>
+                                ) : null}
+                                {typeof template.minAge === "number" ? (
+                                  <span className="inline-flex items-center rounded-full border border-border/70 bg-background/80 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                                    最低年齢: {template.minAge}歳
+                                  </span>
+                                ) : null}
+                                <span className="inline-flex items-center rounded-full border border-border/70 bg-background/80 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                                  {template.requiresExpiry && template.validityMonths
+                                    ? `有効期間: ${template.validityMonths}か月`
+                                    : "有効期限: なし"}
+                                </span>
+                              </span>
+                              {template.prerequisiteExpression ? (
+                                <span className="mt-2 block text-xs leading-relaxed text-muted-foreground">
+                                  前提条件: {qualificationJapaneseExpression(template.prerequisiteExpression)}
+                                </span>
+                              ) : template.prerequisiteKinds.length > 0 ? (
+                                <span className="mt-2 block text-xs leading-relaxed text-muted-foreground">
+                                  前提条件:{" "}
+                                  {qualificationJapaneseList(template.prerequisiteKinds).join(" / ")}
+                                </span>
+                              ) : null}
+                              {template.nextKinds.length > 0 ? (
+                                <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                                  次資格: {qualificationJapaneseList(template.nextKinds).join(" / ")}
                                 </span>
                               ) : null}
                             </span>
-                            {template.prerequisiteExpression ? (
-                              <span className="mt-1 block text-xs text-muted-foreground">
-                                前提条件: {qualificationJapaneseExpression(template.prerequisiteExpression)}
-                              </span>
-                            ) : template.prerequisiteKinds.length > 0 ? (
-                              <span className="mt-1 block text-xs text-muted-foreground">
-                                前提条件: {qualificationJapaneseList(template.prerequisiteKinds).join(" / ")}
-                              </span>
-                            ) : null}
-                            {template.nextKinds.length > 0 ? (
-                              <span className="mt-0.5 block text-xs text-muted-foreground">
-                                次資格: {qualificationJapaneseList(template.nextKinds).join(" / ")}
-                              </span>
-                            ) : null}
-                          </span>
-                        </label>
-                      </li>
-                    );
-                  })}
-                </ul>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
               </section>
             );
           })
@@ -384,42 +431,56 @@ export default function QualificationsSelectionClient({
 
       {!accountJlaLinked && checkedCount > 0 ? (
         <div
-          className="rounded-xl border border-amber-200/90 bg-amber-50/90 p-4 dark:border-amber-900/60 dark:bg-amber-950/35"
+          className={cn(
+            "relative overflow-hidden rounded-2xl border border-amber-200/80 bg-amber-50/50 px-5 py-5 dark:border-amber-900/60 dark:bg-amber-950/25 sm:px-6"
+          )}
           id="qual-save-requires-jla"
         >
-          <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">
-            JLAメンバーIDがアカウントに未登録です
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-amber-950/85 dark:text-amber-100/85">
-            資格を保存するには、協会発行のメンバーIDが必要です。マイページの「資格の管理」でJLAメンバーIDを登録済みならページを再表示すると反映され、この欄は不要になります。
-          </p>
-          <div className="mt-3 max-w-xs space-y-2">
-            <Label htmlFor="qual-inline-jla-id">JLAメンバーID（保存時に必須）</Label>
-            <Input
-              id="qual-inline-jla-id"
-              value={jlaMemberNumber}
-              onChange={(e) => setJlaMemberNumber(normalizeJlaMemberNumber(e.target.value))}
-              numericInput="integer"
-              maxLength={9}
-              placeholder="500123456"
-              inputMode="numeric"
-              autoComplete="off"
-              className="font-mono"
-            />
-            <p className="text-xs text-amber-900/80 dark:text-amber-200/80">
-              500から始まる半角9桁の数字で入力してください。
+          <div
+            className="absolute bottom-4 left-0 top-4 w-0.5 rounded-full bg-gradient-to-b from-amber-500/70 via-amber-400/30 to-transparent sm:bottom-5 sm:top-5"
+            aria-hidden
+          />
+          <div className="relative pl-3 sm:pl-4">
+            <p className="text-base font-semibold text-amber-950 dark:text-amber-100">
+              JLAメンバーIDがアカウントに未登録です
             </p>
+            <p className="mt-1 text-sm leading-relaxed text-amber-950/85 dark:text-amber-100/85">
+              資格を保存するには、協会発行のメンバーIDが必要です。マイページの「資格の管理」でJLAメンバーIDを登録済みならページを再表示すると反映され、この欄は不要になります。
+            </p>
+            <div className="mt-4 max-w-xs space-y-2">
+              <Label htmlFor="qual-inline-jla-id">JLAメンバーID（保存時に必須）</Label>
+              <Input
+                id="qual-inline-jla-id"
+                value={jlaMemberNumber}
+                onChange={(e) => setJlaMemberNumber(normalizeJlaMemberNumber(e.target.value))}
+                numericInput="integer"
+                maxLength={9}
+                placeholder="500123456"
+                inputMode="numeric"
+                autoComplete="off"
+                className="bg-background/90 font-mono"
+              />
+              <p className="text-xs text-amber-900/80 dark:text-amber-200/80">
+                500から始まる半角9桁の数字で入力してください。
+              </p>
+            </div>
           </div>
         </div>
       ) : null}
 
-      <div className="sticky bottom-2 z-20 rounded-xl border border-border/80 bg-background/95 p-3 shadow-sm backdrop-blur">
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button type="button" onClick={() => void persist()} disabled={submitting}>
-            <Save className="mr-1 h-4 w-4" />
-            {submitting ? "保存中..." : "保存"}
-          </Button>
-        </div>
+      <div
+        className={cn(
+          "sticky bottom-3 z-20 rounded-2xl border border-border/55 bg-background/95 px-5 py-4 shadow-sm backdrop-blur sm:px-6",
+          "flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+        )}
+      >
+        <p className="text-center text-xs text-muted-foreground sm:text-left sm:text-sm">
+          チェックした資格を保存すると、ダッシュボードへ移動します。
+        </p>
+        <Button type="button" onClick={() => void persist()} disabled={submitting} className="sm:min-w-[8rem]">
+          <Save className="mr-1.5 size-4" aria-hidden />
+          {submitting ? "保存中..." : "保存"}
+        </Button>
       </div>
     </div>
   );

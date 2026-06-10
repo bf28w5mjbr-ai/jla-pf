@@ -2,12 +2,13 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { ArrowLeft, ListChecks } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { ArrowLeft } from "lucide-react";
+import { dashboardSectionClassName } from "@/app/(authenticated)/dashboard/_components/dashboardLayout";
+import { SettingsEditorialSection } from "@/app/(authenticated)/settings/_components/SettingsEditorialSection";
 import { verifySessionCached } from "@/lib/auth";
 import { resolveQualificationTemplateMeta } from "@/lib/qualificationTemplateRules";
 import { prisma } from "@/server/db";
+import { cn } from "@/lib/utils";
 import QualificationsSelectionClient from "./QualificationsSelectionClient";
 
 export const metadata: Metadata = {
@@ -68,53 +69,50 @@ export default async function QualificationsSelectPage() {
     .map((q) => q.templateId);
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-8 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
-      <header className="space-y-4 border-b border-border/80 pb-8">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-ml-2 h-9 gap-1.5 px-2 text-muted-foreground hover:text-foreground"
-          asChild
-        >
-          <Link href="/dashboard">
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            ダッシュボードに戻る
-          </Link>
-        </Button>
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-primary">
-            <ListChecks className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-            <span className="text-sm font-medium">資格選択</span>
-          </div>
-          <h1 className="text-balance text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            資格一覧から選択
-          </h1>
-          <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            必要な資格を複数選択して、対象の講習一覧を表示できます。
-          </p>
-        </div>
-      </header>
+    <div className="flex flex-col">
+      <h1 className="sr-only">資格一覧から選択</h1>
 
-      <Card padding="none" className="overflow-hidden border-border/90 shadow-sm">
-        <CardHeader className="border-b border-border/80 bg-muted/25">
-          <CardTitle className="text-lg">資格一覧</CardTitle>
-          <CardDescription>保有している資格にチェックを入れ、保存するとアカウントにすぐ反映されます。</CardDescription>
-        </CardHeader>
-        <CardContent className="p-5 sm:p-6">
-          {templates.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-border/90 bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
-              表示できる資格がありません。
-            </p>
-          ) : (
-            <QualificationsSelectionClient
-              templates={templates}
-              linkedTemplateIds={linkedTemplateIds}
-              lockedTemplateIds={lockedTemplateIds}
-              initialJlaMemberNumber={user?.jlaProfile?.jlaMemberNumber ?? null}
-            />
+      <section
+        className={cn(
+          dashboardSectionClassName,
+          "border-b border-border/40 pb-0 pt-10 sm:pt-12"
+        )}
+      >
+        <Link
+          href="/dashboard"
+          className={cn(
+            "group inline-flex items-center gap-1.5 rounded-full border border-transparent px-2 py-1.5 text-sm text-muted-foreground",
+            "transition-colors hover:border-border/60 hover:bg-muted/30 hover:text-foreground",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           )}
-        </CardContent>
-      </Card>
+        >
+          <ArrowLeft
+            className="size-4 transition-transform group-hover:-translate-x-0.5"
+            aria-hidden
+          />
+          ダッシュボードに戻る
+        </Link>
+      </section>
+
+      <SettingsEditorialSection
+        label="Qualifications"
+        title="資格一覧から選択"
+        contentClassName="space-y-5"
+        className="border-t-0 pt-8 sm:pt-10"
+      >
+        {templates.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border/70 bg-muted/15 px-5 py-12 text-center">
+            <p className="text-sm text-muted-foreground">表示できる資格がありません。</p>
+          </div>
+        ) : (
+          <QualificationsSelectionClient
+            templates={templates}
+            linkedTemplateIds={linkedTemplateIds}
+            lockedTemplateIds={lockedTemplateIds}
+            initialJlaMemberNumber={user?.jlaProfile?.jlaMemberNumber ?? null}
+          />
+        )}
+      </SettingsEditorialSection>
     </div>
   );
 }

@@ -35,7 +35,11 @@ export function AuthenticatedAppShell({
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const pathname = usePathname();
   const isDashboardFullBleed =
-    pathname === "/dashboard" || pathname === "/settings" || pathname.startsWith("/settings/");
+    pathname === "/dashboard" ||
+    pathname === "/settings" ||
+    pathname.startsWith("/settings/") ||
+    pathname === "/qualifications" ||
+    pathname.startsWith("/qualifications/");
 
   return (
     <UnreadNotificationCountProvider initialUnreadCount={unreadNotificationCount}>
