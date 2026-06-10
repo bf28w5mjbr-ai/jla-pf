@@ -60,7 +60,7 @@ describe("resolveCompetitionManagementActiveTab", () => {
 
   it("delegates to parse for searchParams.tab", () => {
     expect(resolveCompetitionManagementActiveTab({ tab: "entries" })).toBe("entries");
-    expect(resolveCompetitionManagementActiveTab({ tab: ["finance"] })).toBe("finance");
+    expect(resolveCompetitionManagementActiveTab({ tab: ["entries"] })).toBe("entries");
     expect(resolveCompetitionManagementActiveTab({})).toBe("page");
   });
 

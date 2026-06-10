@@ -25,8 +25,7 @@ export const EntryWithdrawRequestButtonLazy = dynamic(
 export function DashboardMainSkeleton() {
   return (
     <div className="space-y-8" aria-busy="true">
-      <div className="h-28 animate-pulse rounded-xl border border-border/60 bg-muted/25" />
-      <div className="h-[7.5rem] animate-pulse rounded-xl border border-border/60 bg-muted/25" />
+      <div className="h-64 animate-pulse rounded-xl border border-border/60 bg-muted/25 sm:h-72" />
     </div>
   );
 }
@@ -41,11 +40,3 @@ export function DashboardDeferredSkeleton() {
   );
 }
 
-export function DashboardTechnicalOfficialBannerSkeleton() {
-  return (
-    <div
-      className="h-14 animate-pulse rounded-lg border border-border/50 bg-muted/30"
-      aria-hidden
-    />
-  );
-}

@@ -3,11 +3,10 @@ import { Suspense } from "react";
 import { getRequiredAuthenticatedUserId } from "@/lib/auth";
 import { DashboardMain } from "./_components/DashboardMain";
 import { DashboardMainDeferredSlot } from "./_components/DashboardMainDeferredSlot";
-import { DashboardTechnicalOfficialBannerSlot } from "./_components/DashboardTechnicalOfficialBannerSlot";
+import { SyncTechnicalOfficialShortageNotificationsSlot } from "./_components/SyncTechnicalOfficialShortageNotificationsSlot";
 import {
   DashboardDeferredSkeleton,
   DashboardMainSkeleton,
-  DashboardTechnicalOfficialBannerSkeleton,
 } from "./_components/DashboardPageSkeleton";
 
 export const metadata: Metadata = {
@@ -21,8 +20,8 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-3 py-6 sm:space-y-8 sm:px-5 sm:py-8 lg:px-8 lg:py-10">
-      <Suspense fallback={<DashboardTechnicalOfficialBannerSkeleton />}>
-        <DashboardTechnicalOfficialBannerSlot userId={userId} />
+      <Suspense fallback={null}>
+        <SyncTechnicalOfficialShortageNotificationsSlot userId={userId} />
       </Suspense>
       <Suspense fallback={<DashboardMainSkeleton />}>
         <DashboardMain userId={userId} />

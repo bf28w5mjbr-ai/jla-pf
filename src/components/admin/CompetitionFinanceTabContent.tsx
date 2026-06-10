@@ -26,6 +26,8 @@ type Props = {
   organizationId: string;
   competitionId: string;
   canEdit: boolean;
+  /** 事業パネル内に埋め込むとき外枠 Card を省略 */
+  embedded?: boolean;
 };
 
 const formatYen = (n: number) => `¥${n.toLocaleString("ja-JP")}`;
@@ -51,12 +53,25 @@ function Stat({
   value,
   valueClassName,
   sub,
+  compact = false,
 }: {
   label: string;
   value: string;
   valueClassName?: string;
   sub?: string;
+  compact?: boolean;
 }) {
+  if (compact) {
+    return (
+      <div className="min-w-0 rounded-md border border-border/60 bg-muted/20 px-2 py-1.5">
+        <p className="truncate text-[10px] font-medium leading-tight text-muted-foreground">{label}</p>
+        <p className={`mt-0.5 truncate text-sm font-semibold tabular-nums ${valueClassName ?? ""}`}>
+          {value}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-w-0 border-b border-border/60 pb-2 last:border-0 last:pb-0 sm:border-0 sm:pb-0">
       <p className="text-[11px] font-medium leading-tight text-muted-foreground">{label}</p>
@@ -70,10 +85,31 @@ function Stat({
   );
 }
 
+const financeFoldSummaryClass =
+  "flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2 text-xs font-medium text-foreground marker:content-none hover:bg-muted/40 [&::-webkit-details-marker]:hidden";
+
+function FinanceFoldSection({
+  summary,
+  children,
+  className,
+}: {
+  summary: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <details className={`group rounded-md border border-border/70 bg-muted/10 ${className ?? ""}`}>
+      <summary className={financeFoldSummaryClass}>{summary}</summary>
+      <div className="space-y-2 border-t border-border/60 px-2.5 py-2">{children}</div>
+    </details>
+  );
+}
+
 export default async function CompetitionFinanceTabContent({
   organizationId,
   competitionId,
   canEdit,
+  embedded = false,
 }: Props) {
   if (!canEdit) {
     return (
@@ -385,88 +421,146 @@ export default async function CompetitionFinanceTabContent({
     ...teamDisputeRows.filter((row): row is DisputeEvidenceRow => row != null),
   ];
 
-  return (
-    <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="space-y-1 border-b border-border bg-muted/30 py-3">
-        <CardTitle className="text-base">事業収支</CardTitle>
-        <p className="text-xs text-muted-foreground">{competition.name}</p>
-      </CardHeader>
-      <CardContent className="min-w-0 space-y-4 p-3 sm:p-4">
-        <section aria-labelledby="finance-auto-heading">
-          <h3 id="finance-auto-heading" className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            自動集計（Stripe 決済・経費ワークフロー）
-          </h3>
-          <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">
-            Stripe カード決済のみ（Webhook 同期済みの DB 集計）。手動入金・クラブ一括は含みません。
-          </p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Stat
-              label="1. エントリー収入"
-              value={formatYen(stripeFinance.entryIncomeNetYen)}
-              sub={entryIncomeSubParts.join(" · ")}
-            />
-            <Stat
-              label={`2. PF手数料（${platformFeePercentLabel}%）`}
-              value={formatYen(stripeFinance.platformFeeYen)}
-              sub={
-                stripeFinance.platformFeeRefundYen > 0
-                  ? `返金付随 −${formatYen(stripeFinance.platformFeeRefundYen)}（グロス ${formatYen(stripeFinance.platformFeeGrossYen)}）`
-                  : undefined
-              }
-            />
-          </div>
-          {supplementalAutoStats.length > 0 ? (
-            <div className="mt-3 grid grid-cols-1 gap-3 border-t border-border/60 pt-3 sm:grid-cols-2 lg:grid-cols-4">
-              {supplementalAutoStats}
-            </div>
-          ) : null}
-          <div className="mt-3 border-t border-border/60 pt-3">
-            <Stat
-              label="差引（エントリー収入 − PF − 経費）"
-              value={formatYen(netAfterPaidExpenses)}
-              valueClassName="text-primary"
-            />
-          </div>
-        </section>
+  const hasFinanceDetailAlerts =
+    supplementalAutoStats.length > 0 ||
+    stripeFinance.platformFeeRefundYen > 0 ||
+    expenseApprovedUnpaid > 0;
 
-        <CompetitionDisputeEvidencePanel
-          organizationId={organizationId}
-          competitionId={competition.id}
-          rows={disputeRows}
-        />
+  const manualSummaryParts: string[] = [];
+  if (balanceLineDtos.length > 0) {
+    manualSummaryParts.push(`${balanceLineDtos.length}行`);
+  }
+  if (manualNet !== 0) {
+    manualSummaryParts.push(`差額 ${formatYen(manualNet)}`);
+  }
 
-        <section
-          aria-labelledby="finance-manual-heading"
-          className="rounded-md border border-border/80 bg-muted/20 px-3 py-2.5"
-        >
-          <h3 id="finance-manual-heading" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            手動仕訳（下表と連動・エントリー集計とは別）
-          </h3>
-          <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Stat
-              label="収入"
-              value={formatYen(manualIncome)}
-              valueClassName="text-emerald-700 dark:text-emerald-400"
-            />
-            <Stat
-              label="支出"
-              value={formatYen(manualExpense)}
-              valueClassName="text-rose-700 dark:text-rose-400"
-            />
-            <Stat label="差額" value={formatYen(manualNet)} />
-          </div>
-        </section>
-
-        <div className="border-t border-border pt-4">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            手動仕訳の登録・一覧
-          </h3>
-          <CompetitionBalanceSheetPanel
-            competitionId={competition.id}
-            initialLines={balanceLineDtos}
+  const body = (
+    <>
+      <section aria-label="Stripe 集計サマリ">
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+          <Stat compact label="エントリー収入" value={formatYen(stripeFinance.entryIncomeNetYen)} />
+          <Stat
+            compact
+            label={`PF ${platformFeePercentLabel}%`}
+            value={formatYen(stripeFinance.platformFeeYen)}
+          />
+          <Stat
+            compact
+            label="差引"
+            value={formatYen(netAfterPaidExpenses)}
+            valueClassName="text-primary"
           />
         </div>
-      </CardContent>
+      </section>
+
+      <FinanceFoldSection
+        summary={
+          <>
+            <span>詳細</span>
+            {hasFinanceDetailAlerts ? (
+              <span className="text-[10px] font-normal text-amber-700 dark:text-amber-400">要確認</span>
+            ) : null}
+          </>
+        }
+      >
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          Stripe カード決済のみ（Webhook 同期済みの DB 集計）。手動入金・クラブ一括は含みません。差引 =
+          エントリー収入 − PF手数料 − 経費（支払済）。
+        </p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Stat
+            label="エントリー収入（内訳）"
+            value={formatYen(stripeFinance.entryIncomeNetYen)}
+            sub={entryIncomeSubParts.join(" · ")}
+          />
+          <Stat
+            label={`PF手数料（${platformFeePercentLabel}%）`}
+            value={formatYen(stripeFinance.platformFeeYen)}
+            sub={
+              stripeFinance.platformFeeRefundYen > 0
+                ? `返金付随 −${formatYen(stripeFinance.platformFeeRefundYen)}（グロス ${formatYen(stripeFinance.platformFeeGrossYen)}）`
+                : undefined
+            }
+          />
+        </div>
+        {supplementalAutoStats.length > 0 ? (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {supplementalAutoStats}
+          </div>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">未収・経費の保留項目はありません。</p>
+        )}
+      </FinanceFoldSection>
+
+      {disputeRows.length > 0 ? (
+        <FinanceFoldSection
+          className="border-amber-200/80 bg-amber-50/40 dark:border-amber-900/50 dark:bg-amber-950/20"
+          summary={
+            <>
+              <span>紛争（チャージバック）</span>
+              <span className="text-[10px] font-normal text-muted-foreground">{disputeRows.length}件</span>
+            </>
+          }
+        >
+          <CompetitionDisputeEvidencePanel
+            organizationId={organizationId}
+            competitionId={competition.id}
+            rows={disputeRows}
+            embedded
+          />
+        </FinanceFoldSection>
+      ) : null}
+
+      <FinanceFoldSection
+        summary={
+          <>
+            <span>手動仕訳</span>
+            {manualSummaryParts.length > 0 ? (
+              <span className="text-[10px] font-normal text-muted-foreground">
+                {manualSummaryParts.join(" · ")}
+              </span>
+            ) : null}
+          </>
+        }
+      >
+        <p className="text-[11px] text-muted-foreground">
+          下表と連動。エントリー集計とは別です。
+        </p>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums">
+          <span>
+            収入{" "}
+            <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+              {formatYen(manualIncome)}
+            </span>
+          </span>
+          <span>
+            支出{" "}
+            <span className="font-semibold text-rose-700 dark:text-rose-400">
+              {formatYen(manualExpense)}
+            </span>
+          </span>
+          <span>
+            差額 <span className="font-semibold">{formatYen(manualNet)}</span>
+          </span>
+        </div>
+        <CompetitionBalanceSheetPanel
+          competitionId={competition.id}
+          initialLines={balanceLineDtos}
+        />
+      </FinanceFoldSection>
+    </>
+  );
+
+  if (embedded) {
+    return <div className="min-w-0 space-y-2">{body}</div>;
+  }
+
+  return (
+    <Card className="min-w-0 overflow-hidden">
+      <CardHeader className="border-b border-border bg-muted/30 py-2.5">
+        <CardTitle className="text-base">事業収支</CardTitle>
+      </CardHeader>
+      <CardContent className="min-w-0 space-y-2 p-2.5 sm:p-3">{body}</CardContent>
     </Card>
   );
 }

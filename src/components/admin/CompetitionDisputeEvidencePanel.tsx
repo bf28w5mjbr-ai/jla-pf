@@ -28,10 +28,13 @@ export default function CompetitionDisputeEvidencePanel({
   organizationId,
   competitionId,
   rows,
+  embedded = false,
 }: {
   organizationId: string;
   competitionId: string;
   rows: DisputeEvidenceRow[];
+  /** details 内に埋め込むとき見出しを省略 */
+  embedded?: boolean;
 }) {
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
@@ -72,16 +75,22 @@ export default function CompetitionDisputeEvidencePanel({
 
   return (
     <section
-      aria-labelledby="dispute-evidence-heading"
-      className="rounded-md border border-amber-200/80 bg-amber-50/50 px-3 py-3 dark:border-amber-900/50 dark:bg-amber-950/25"
+      aria-labelledby={embedded ? undefined : "dispute-evidence-heading"}
+      className={
+        embedded
+          ? "space-y-3"
+          : "rounded-md border border-amber-200/80 bg-amber-50/50 px-3 py-3 dark:border-amber-900/50 dark:bg-amber-950/25"
+      }
     >
-      <h3
-        id="dispute-evidence-heading"
-        className="text-xs font-semibold uppercase tracking-wide text-amber-950 dark:text-amber-100"
-      >
-        カード決済の紛争（チャージバック）
-      </h3>
-      <p className="mt-1 text-[11px] leading-relaxed text-amber-950/90 dark:text-amber-50/90">
+      {embedded ? null : (
+        <h3
+          id="dispute-evidence-heading"
+          className="text-xs font-semibold uppercase tracking-wide text-amber-950 dark:text-amber-100"
+        >
+          カード決済の紛争（チャージバック）
+        </h3>
+      )}
+      <p className={`text-[11px] leading-relaxed text-amber-950/90 dark:text-amber-50/90 ${embedded ? "" : "mt-1"}`}>
         Stripe のプラットフォーム決済に付いた紛争です。証拠ファイルは Stripe の{" "}
         <code className="rounded bg-amber-100/80 px-0.5 text-[10px] dark:bg-amber-900/60">dispute_evidence</code>{" "}
         としてアップロードされ、<code className="rounded bg-amber-100/80 px-0.5 text-[10px] dark:bg-amber-900/60">disputes.update</code>{" "}

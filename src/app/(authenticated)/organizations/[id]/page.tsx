@@ -148,12 +148,21 @@ export default async function OrganizationDetailPage({
     session_id?: string;
     tab?: string;
     stripe_connect?: string;
+    financeCompetition?: string;
   }>;
 }) {
   const { id } = await params;
-  const { payment, session_id: sessionId, tab: tabParam, stripe_connect: stripeConnect } =
-    await searchParams;
-  const activeTab = parseOrganizationDetailTab(tabParam);
+  const {
+    payment,
+    session_id: sessionId,
+    tab: tabParam,
+    stripe_connect: stripeConnect,
+    financeCompetition,
+  } = await searchParams;
+  const activeTab =
+    financeCompetition != null && financeCompetition.trim() !== ""
+      ? "business"
+      : parseOrganizationDetailTab(tabParam);
   const userId = await getRequiredAuthenticatedUserId();
 
   if (payment === "success") {
@@ -683,6 +692,7 @@ export default async function OrganizationDetailPage({
             <OrganizationBusinessPanelTabContent
               organizationId={organization.id}
               isOrgAdmin={isOrgAdmin}
+              expandedFinanceCompetitionId={financeCompetition ?? null}
             />
           </TabsContent>
         </OrganizationDetailTabsClient>

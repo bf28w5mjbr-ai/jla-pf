@@ -12,9 +12,9 @@ import {
   ExternalLink,
   LayoutList,
   MapPin,
-  PieChart,
   Settings2,
   UserCog,
+  Wallet,
 } from "lucide-react";
 import { getRequiredAuthenticatedUserId, verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
@@ -28,7 +28,6 @@ import CompetitionGalleryManager from "@/components/CompetitionGalleryManager";
 import CompetitionEntrySettingsEditor from "@/components/CompetitionEntrySettingsEditor";
 import CompetitionParticipationConditionsEditor from "@/components/CompetitionParticipationConditionsEditor";
 import CompetitionEntriesTabContent from "@/components/admin/CompetitionEntriesTabContent";
-import CompetitionFinanceTabContent from "@/components/admin/CompetitionFinanceTabContent";
 import CompetitionOfficialTabHeavy from "@/components/admin/CompetitionOfficialTabHeavy";
 import CompetitionOfficialSubTabsClient from "@/components/admin/CompetitionOfficialSubTabsClient";
 import CompetitionStatusToggleButton from "@/components/CompetitionStatusToggleButton";
@@ -88,7 +87,7 @@ function buildCompetitionManagementIncludeForPageTab(userId: string): Prisma.Com
   };
 }
 
-/** オフィシャル / エントリー / 収支タブ用（ヘッダーと権限用の organization のみ + 種目件数） */
+/** オフィシャル / エントリータブ用（ヘッダーと権限用の organization のみ + 種目件数） */
 function buildCompetitionManagementIncludeForLightTab(userId: string): Prisma.CompetitionInclude {
   return {
     organization: {
@@ -143,6 +142,14 @@ export default async function CompetitionDetailPage({
 }) {
   const { id: organizationId, competitionId } = await params;
   const resolvedSearchParams = await searchParams;
+  const rawTab = Array.isArray(resolvedSearchParams.tab)
+    ? resolvedSearchParams.tab[0]
+    : resolvedSearchParams.tab;
+  if (typeof rawTab === "string" && rawTab.trim().toLowerCase() === "finance") {
+    redirect(
+      `/organizations/${organizationId}?tab=business&financeCompetition=${competitionId}`
+    );
+  }
   const activeTab = resolveCompetitionManagementActiveTab(resolvedSearchParams);
   const officialSub = parseOfficialSubTab(resolvedSearchParams.officialSub);
   const userId = await getRequiredAuthenticatedUserId();
@@ -350,6 +357,14 @@ export default async function CompetitionDetailPage({
               />
               <Button variant="outline" size="sm" className="gap-1.5" asChild>
                 <Link
+                  href={`/organizations/${organizationId}?tab=business&financeCompetition=${competitionId}`}
+                >
+                  <Wallet className="h-4 w-4 opacity-80" aria-hidden />
+                  事業パネル（収支）
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" className="gap-1.5" asChild>
+                <Link
                   href={`/competitions/${competitionId}/start-list`}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -376,7 +391,7 @@ export default async function CompetitionDetailPage({
       <CompetitionManagementTabsClient activeTab={activeTab}>
         <div className="sticky top-[calc(var(--safe-area-top,0px)+2.75rem)] z-20 -mx-4 bg-transparent px-4 py-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:top-2 lg:px-8">
           <TabsList
-            className="grid h-auto w-full grid-cols-2 gap-1 bg-transparent p-0 sm:grid-cols-4"
+            className="grid h-auto w-full grid-cols-3 gap-1 bg-transparent p-0"
             aria-label="大会管理のセクション"
           >
             <CompetitionManagementTabTrigger
@@ -399,13 +414,6 @@ export default async function CompetitionDetailPage({
             >
               <ClipboardList className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
               <span>エントリー</span>
-            </CompetitionManagementTabTrigger>
-            <CompetitionManagementTabTrigger
-              value="finance"
-              className="gap-1.5 rounded-md border border-transparent bg-background/50 px-2 py-2.5 text-xs font-medium transition-colors hover:bg-background/70 data-[state=active]:border-border data-[state=active]:bg-background data-[state=active]:shadow-sm sm:px-3 sm:text-sm"
-            >
-              <PieChart className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-              <span>収支</span>
             </CompetitionManagementTabTrigger>
           </TabsList>
         </div>
@@ -680,16 +688,6 @@ export default async function CompetitionDetailPage({
         <TabsContent value="entries" className="min-w-0 space-y-5 pt-4">
           {activeTab === "entries" ? (
             <CompetitionEntriesTabContent
-              organizationId={organizationId}
-              competitionId={competitionId}
-              canEdit={canEdit}
-            />
-          ) : null}
-        </TabsContent>
-
-        <TabsContent value="finance" className="min-w-0 space-y-5 pt-4">
-          {activeTab === "finance" ? (
-            <CompetitionFinanceTabContent
               organizationId={organizationId}
               competitionId={competitionId}
               canEdit={canEdit}

@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
-  LayoutDashboard,
   Plus,
   Settings,
   Shield,
@@ -79,18 +78,7 @@ export async function DashboardMain({ userId }: { userId: string }) {
 
   return (
     <div className="space-y-8">
-      <header className="space-y-2 border-b border-border/80 pb-6 sm:pb-8">
-        <div className="flex items-center gap-2 text-primary">
-          <LayoutDashboard className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-          <span className="text-sm font-medium">マイページ</span>
-        </div>
-        <h1 className="text-balance text-xl font-semibold tracking-tight text-foreground sm:text-2xl lg:text-3xl">
-          ダッシュボード
-        </h1>
-        <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-          プロフィール・エントリー・所属クラブの状況をひと目で確認できます。
-        </p>
-      </header>
+      <h1 className="sr-only">マイページ</h1>
 
       <Card padding="none" className="overflow-hidden border-border/90 shadow-sm">
         <div className="border-b border-border/80 bg-muted/20 px-5 py-4 sm:px-6">

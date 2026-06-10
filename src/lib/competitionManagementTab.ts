@@ -2,7 +2,6 @@ export const COMPETITION_MANAGEMENT_TAB_VALUES = [
   "page",
   "official",
   "entries",
-  "finance",
 ] as const;
 
 export type CompetitionManagementTabValue =

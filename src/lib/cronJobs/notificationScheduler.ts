@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { formatAdminWallClockSameAsDatetimeLocal } from "@/lib/datetimeLocal";
 import { createNotification } from "@/lib/notificationService";
 import { SHOW_PROFILE_QUALIFICATIONS_MANAGEMENT_NAV } from "@/lib/profileQualificationsNav";
+import { syncTechnicalOfficialShortageNotificationsForUser } from "@/lib/technicalOfficialShortageNotification";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -61,6 +62,18 @@ export async function sendEntryDeadlineReminders(): Promise<void> {
 export async function sendRelayDeadlineReminders(): Promise<void> {
   // リレーオーダー締切機能が未整備のため、現状は未送信
   return;
+}
+
+export async function syncTechnicalOfficialShortageNotifications(): Promise<void> {
+  const clubAdmins = await prisma.membership.findMany({
+    where: { status: "APPROVED", role: "ADMIN" },
+    distinct: ["userId"],
+    select: { userId: true },
+  });
+
+  for (const { userId } of clubAdmins) {
+    await syncTechnicalOfficialShortageNotificationsForUser(userId);
+  }
 }
 
 export async function sendQualificationExpiryReminders(): Promise<void> {

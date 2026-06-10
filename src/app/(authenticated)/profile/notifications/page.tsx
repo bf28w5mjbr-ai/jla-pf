@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { getRequiredAuthenticatedUserId } from "@/lib/auth";
+import { syncTechnicalOfficialShortageNotificationsForUser } from "@/lib/technicalOfficialShortageNotification";
 import { prisma } from "@/server/db";
 import NotificationCenter from "@/components/NotificationCenter";
 
@@ -8,6 +9,8 @@ export const dynamic = "force-dynamic";
 
 export default async function ProfileNotificationsPage() {
   const userId = await getRequiredAuthenticatedUserId();
+
+  await syncTechnicalOfficialShortageNotificationsForUser(userId);
 
   const [items, unreadCount] = await Promise.all([
     prisma.notification.findMany({
