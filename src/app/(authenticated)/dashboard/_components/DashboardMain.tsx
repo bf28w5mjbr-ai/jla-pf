@@ -80,191 +80,186 @@ export async function DashboardMain({ userId }: { userId: string }) {
     <div className="space-y-8">
       <h1 className="sr-only">マイページ</h1>
 
-      <Card padding="none" className="overflow-hidden border-border/90 shadow-sm">
-        <div className="border-b border-border/80 bg-muted/20 px-5 py-4 sm:px-6">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <Users className="h-4 w-4 text-primary" strokeWidth={1.75} aria-hidden />
-              プロフィール
+      <section className="space-y-5">
+        <div className="flex items-center justify-between gap-3 border-b border-border/80 pb-4">
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <Users className="h-4 w-4 text-primary" strokeWidth={1.75} aria-hidden />
+            プロフィール
+          </div>
+          <Button variant="outline" size="sm" className="shrink-0 gap-1.5" asChild>
+            <Link href="/settings">
+              <Settings className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+              設定
+            </Link>
+          </Button>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-[88px_1fr]">
+          <div className="flex justify-center md:justify-start">
+            <DashboardProfilePhotoLazy
+              currentPhotoUrl={user.profilePhotoUrl}
+              userName={`${user.familyName}${user.givenName}`}
+            />
+          </div>
+          <div className="min-w-0 space-y-6">
+            <div>
+              <div className="flex flex-wrap items-baseline gap-3">
+                <h2 className="text-lg font-semibold tracking-tight text-foreground sm:text-xl lg:text-2xl">
+                  {user.familyName} {user.givenName}
+                </h2>
+                <span className="text-sm text-muted-foreground">{calcAge(user.dateOfBirth)}歳</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                フリガナ：{user.familyNameKana} {user.givenNameKana}
+              </p>
             </div>
-            <Button variant="outline" size="sm" className="shrink-0 gap-1.5" asChild>
-              <Link href="/settings">
-                <Settings className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-                設定
-              </Link>
-            </Button>
+
+            <div className="space-y-2 border-t border-border/60 pt-5">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-foreground">所属クラブ</h3>
+                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" asChild>
+                  <Link href={appRoutes.profile.clubs()} aria-label="クラブを追加" title="クラブを追加">
+                    <Plus className="h-4 w-4" aria-hidden />
+                  </Link>
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {user.memberships.length === 0 && (
+                  <p className="text-sm text-muted-foreground">未所属です。クラブ参加を申請できます。</p>
+                )}
+                {user.memberships.map((m) => (
+                  <span
+                    key={m.id}
+                    className={cn(
+                      "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold shadow-sm",
+                      clubStatusClass[m.status]
+                    )}
+                    title={clubStatusLabel[m.status]}
+                  >
+                    <span title={m.club.abbreviation ? m.club.name : undefined}>
+                      {m.club.abbreviation || m.club.name}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <dl className="grid grid-cols-1 gap-x-4 gap-y-3 border-t border-border/60 pt-5 text-xs sm:grid-cols-2">
+              <div>
+                <dt className="font-medium text-muted-foreground">電話番号</dt>
+                <dd className="mt-0.5 font-mono text-sm text-foreground">{user.phoneNumber}</dd>
+              </div>
+              <div className="sm:col-span-2">
+                <dt className="font-medium text-muted-foreground">メール</dt>
+                <dd className="mt-0.5 break-all font-mono text-sm text-foreground">{user.email}</dd>
+              </div>
+              {user.jlaMemberNumber ? (
+                <div className="sm:col-span-2">
+                  <dt className="font-medium text-muted-foreground">JLA会員番号</dt>
+                  <dd className="mt-0.5 font-mono text-sm text-foreground">{user.jlaMemberNumber}</dd>
+                </div>
+              ) : null}
+            </dl>
+
+            <div className="border-t border-border/60 pt-5">
+              <h3 className="text-sm font-semibold text-foreground">NFCタグ紐付け</h3>
+              <div className="mt-2">
+                <NfcTagManagerLazy initialNfcTagId={user.nfcTagId ?? null} />
+              </div>
+            </div>
+
+            <div className="space-y-3 border-t border-border/60 pt-5">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-foreground">資格</h3>
+                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" asChild>
+                  <Link href="/qualifications" aria-label="資格を選択" title="資格を選択">
+                    <Plus className="h-4 w-4" aria-hidden />
+                  </Link>
+                </Button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-xs font-semibold text-muted-foreground">申請資格</h4>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {applicationQualifications.length === 0 && (
+                      <p className="text-xs text-muted-foreground">申請資格はまだありません。</p>
+                    )}
+                    {applicationQualifications.map((q) => {
+                      const expiryDate = q.expiryDate ? new Date(q.expiryDate) : null;
+                      const now = new Date();
+                      const isExpired = !!expiryDate && expiryDate.getTime() < now.getTime();
+                      const isExpiringSoon =
+                        !!expiryDate &&
+                        !isExpired &&
+                        expiryDate.getTime() - now.getTime() <= 1000 * 60 * 60 * 24 * 30;
+                      const status = isExpired ? "EXPIRED" : q.status;
+
+                      return (
+                        <div key={q.id} className="relative inline-flex items-center gap-1">
+                          <span
+                            className={cn(
+                              "inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold shadow-sm",
+                              qualificationStatusClass[status]
+                            )}
+                            title={`${qualificationDisplayLabel(q.kind)}｜${qualificationStatusLabel[status]}${expiryDate ? `｜有効期限 ${expiryDate.toLocaleDateString("ja-JP")}` : ""}`}
+                          >
+                            <span>{qualificationDisplayLabel(q.kind)}</span>
+                          </span>
+                          {isExpiringSoon ? (
+                            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-[10px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
+                              !
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-xs font-semibold text-muted-foreground">保有資格</h4>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {heldQualifications.length === 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        協会公式データの連携後にここに表示されます。
+                      </p>
+                    )}
+                    {heldQualifications.map((q) => {
+                      const expiryDate = q.expiryDate ? new Date(q.expiryDate) : null;
+                      const now = new Date();
+                      const isExpired = !!expiryDate && expiryDate.getTime() < now.getTime();
+                      const isExpiringSoon =
+                        !!expiryDate &&
+                        !isExpired &&
+                        expiryDate.getTime() - now.getTime() <= 1000 * 60 * 60 * 24 * 30;
+                      const status = isExpired ? "EXPIRED" : q.status;
+
+                      return (
+                        <div key={q.id} className="relative inline-flex items-center gap-1">
+                          <span
+                            className={cn(
+                              "inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold shadow-sm",
+                              qualificationStatusClass[status]
+                            )}
+                            title={`${qualificationDisplayLabel(q.kind)}｜${qualificationStatusLabel[status]}${expiryDate ? `｜有効期限 ${expiryDate.toLocaleDateString("ja-JP")}` : ""}`}
+                          >
+                            <span>{qualificationDisplayLabel(q.kind)}</span>
+                          </span>
+                          {isExpiringSoon ? (
+                            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-[10px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
+                              !
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-        <CardContent className="p-5 sm:p-6">
-          <div className="grid gap-6 md:grid-cols-[88px_1fr]">
-            <div className="flex justify-center md:justify-start">
-              <DashboardProfilePhotoLazy
-                currentPhotoUrl={user.profilePhotoUrl}
-                userName={`${user.familyName}${user.givenName}`}
-              />
-            </div>
-            <div className="min-w-0 space-y-5">
-              <div>
-                <div className="flex flex-wrap items-baseline gap-3">
-                  <h2 className="text-lg font-semibold tracking-tight text-foreground sm:text-xl lg:text-2xl">
-                    {user.familyName} {user.givenName}
-                  </h2>
-                  <span className="text-sm text-muted-foreground">{calcAge(user.dateOfBirth)}歳</span>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  フリガナ：{user.familyNameKana} {user.givenNameKana}
-                </p>
-              </div>
-
-              <div className="grid gap-5 rounded-2xl border border-border/80 bg-muted/20 p-4 sm:p-5">
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="text-sm font-semibold text-foreground">所属クラブ</h3>
-                    <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" asChild>
-                      <Link href={appRoutes.profile.clubs()} aria-label="クラブを追加" title="クラブを追加">
-                        <Plus className="h-4 w-4" aria-hidden />
-                      </Link>
-                    </Button>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {user.memberships.length === 0 && (
-                      <p className="text-sm text-muted-foreground">未所属です。クラブ参加を申請できます。</p>
-                    )}
-                    {user.memberships.map((m) => (
-                      <span
-                        key={m.id}
-                        className={cn(
-                          "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold shadow-sm",
-                          clubStatusClass[m.status]
-                        )}
-                        title={clubStatusLabel[m.status]}
-                      >
-                        <span title={m.club.abbreviation ? m.club.name : undefined}>
-                          {m.club.abbreviation || m.club.name}
-                        </span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
-                  <div className="rounded-lg border border-border/60 bg-background/80 px-3 py-2">
-                    <dt className="font-medium text-muted-foreground">電話番号</dt>
-                    <dd className="mt-0.5 font-mono text-foreground">{user.phoneNumber}</dd>
-                  </div>
-                  <div className="rounded-lg border border-border/60 bg-background/80 px-3 py-2 sm:col-span-2">
-                    <dt className="font-medium text-muted-foreground">メール</dt>
-                    <dd className="mt-0.5 break-all font-mono text-foreground">{user.email}</dd>
-                  </div>
-                  {user.jlaMemberNumber ? (
-                    <div className="rounded-lg border border-border/60 bg-background/80 px-3 py-2 sm:col-span-2">
-                      <dt className="font-medium text-muted-foreground">JLA会員番号</dt>
-                      <dd className="mt-0.5 font-mono text-foreground">{user.jlaMemberNumber}</dd>
-                    </div>
-                  ) : null}
-                </div>
-
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">NFCタグ紐付け</h3>
-                  <div className="mt-2 rounded-xl border border-border bg-background p-3">
-                    <NfcTagManagerLazy initialNfcTagId={user.nfcTagId ?? null} />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="text-sm font-semibold text-foreground">資格</h3>
-                    <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" asChild>
-                      <Link href="/qualifications" aria-label="資格を選択" title="資格を選択">
-                        <Plus className="h-4 w-4" aria-hidden />
-                      </Link>
-                    </Button>
-                  </div>
-                  <div className="mt-3 space-y-4">
-                    <div>
-                      <h4 className="text-xs font-semibold text-muted-foreground">申請資格</h4>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {applicationQualifications.length === 0 && (
-                          <p className="text-xs text-muted-foreground">申請資格はまだありません。</p>
-                        )}
-                        {applicationQualifications.map((q) => {
-                          const expiryDate = q.expiryDate ? new Date(q.expiryDate) : null;
-                          const now = new Date();
-                          const isExpired = !!expiryDate && expiryDate.getTime() < now.getTime();
-                          const isExpiringSoon =
-                            !!expiryDate &&
-                            !isExpired &&
-                            expiryDate.getTime() - now.getTime() <= 1000 * 60 * 60 * 24 * 30;
-                          const status = isExpired ? "EXPIRED" : q.status;
-
-                          return (
-                            <div key={q.id} className="relative inline-flex items-center gap-1">
-                              <span
-                                className={cn(
-                                  "inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold shadow-sm",
-                                  qualificationStatusClass[status]
-                                )}
-                                title={`${qualificationDisplayLabel(q.kind)}｜${qualificationStatusLabel[status]}${expiryDate ? `｜有効期限 ${expiryDate.toLocaleDateString("ja-JP")}` : ""}`}
-                              >
-                                <span>{qualificationDisplayLabel(q.kind)}</span>
-                              </span>
-                              {isExpiringSoon ? (
-                                <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-[10px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
-                                  !
-                                </span>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div>
-                      <h4 className="text-xs font-semibold text-muted-foreground">保有資格</h4>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {heldQualifications.length === 0 && (
-                          <p className="text-xs text-muted-foreground">
-                            協会公式データの連携後にここに表示されます。
-                          </p>
-                        )}
-                        {heldQualifications.map((q) => {
-                          const expiryDate = q.expiryDate ? new Date(q.expiryDate) : null;
-                          const now = new Date();
-                          const isExpired = !!expiryDate && expiryDate.getTime() < now.getTime();
-                          const isExpiringSoon =
-                            !!expiryDate &&
-                            !isExpired &&
-                            expiryDate.getTime() - now.getTime() <= 1000 * 60 * 60 * 24 * 30;
-                          const status = isExpired ? "EXPIRED" : q.status;
-
-                          return (
-                            <div key={q.id} className="relative inline-flex items-center gap-1">
-                              <span
-                                className={cn(
-                                  "inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold shadow-sm",
-                                  qualificationStatusClass[status]
-                                )}
-                                title={`${qualificationDisplayLabel(q.kind)}｜${qualificationStatusLabel[status]}${expiryDate ? `｜有効期限 ${expiryDate.toLocaleDateString("ja-JP")}` : ""}`}
-                              >
-                                <span>{qualificationDisplayLabel(q.kind)}</span>
-                              </span>
-                              {isExpiringSoon ? (
-                                <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-[10px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
-                                  !
-                                </span>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      </section>
 
       {user._count.passkeyCredentials === 0 ? (
         <Card padding="none" className="overflow-hidden border-primary/30 bg-primary/[0.06] shadow-sm dark:bg-primary/10">
