@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AutofillSyncForm } from "@/components/ui/autofill-sync-form";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
 import { fieldHintClass } from "@/lib/explanation";
@@ -53,20 +52,37 @@ function FormSection({
   return (
     <section
       className={cn(
-        "rounded-2xl border border-border/80 bg-card/50 p-5 shadow-sm sm:p-6 dark:bg-card/30",
+        "relative overflow-hidden rounded-2xl border border-border/55 bg-background/70 px-5 py-5 sm:px-6 sm:py-6",
+        "transition-[border-color,background-color] duration-200",
+        "hover:border-orange-200/70 hover:bg-orange-50/20 dark:hover:border-orange-900/45 dark:hover:bg-orange-950/10",
         className
       )}
     >
-      <div className="mb-5 flex gap-3 border-b border-border/60 pb-4">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-primary">
-          <Icon className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-        </span>
-        <div className="min-w-0 space-y-1">
-          <h2 className="text-base font-semibold text-foreground">{title}</h2>
-          {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
+      <div
+        className="pointer-events-none absolute -right-10 -top-10 size-28 rounded-full bg-orange-500/8 dark:bg-orange-400/6"
+        aria-hidden
+      />
+      <div
+        className="absolute bottom-5 left-0 top-5 w-0.5 rounded-full bg-gradient-to-b from-orange-500/70 via-orange-400/30 to-transparent sm:bottom-6 sm:top-6"
+        aria-hidden
+      />
+
+      <div className="relative pl-3 sm:pl-4">
+        <div className="mb-5 flex gap-3 border-b border-border/45 pb-4">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-muted/30 text-muted-foreground">
+            <Icon className="size-4" strokeWidth={1.75} aria-hidden />
+          </span>
+          <div className="min-w-0 space-y-1">
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              {title}
+            </p>
+            {description ? (
+              <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>
+            ) : null}
+          </div>
         </div>
+        <div className="space-y-5">{children}</div>
       </div>
-      <div className="space-y-5">{children}</div>
     </section>
   );
 }
@@ -159,20 +175,12 @@ export default function EditProfileForm({ user }: EditProfileFormProps) {
   const fieldGrid = "grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-4";
 
   return (
-    <Card padding="none" className="overflow-hidden border-border/90 shadow-md">
-      <CardHeader className="border-b border-border/80 bg-muted/25 px-5 py-5 sm:px-6">
-        <CardTitle className="text-lg">入力フォーム</CardTitle>
-        <CardDescription>
-          内容を変更したあと、「変更を保存」で反映されます。
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-8 p-5 sm:p-6">
-        <AutofillSyncForm onSubmit={handleSubmit} className="space-y-8">
-          <FormSection
-            icon={User}
-            title="基本情報"
-            description="身分証・大会記録などに利用される氏名と生年月日です。"
-          >
+    <AutofillSyncForm onSubmit={handleSubmit} className="space-y-5">
+      <FormSection
+        icon={User}
+        title="基本情報"
+        description="身分証・大会記録などに利用される氏名と生年月日です。"
+      >
             <div className={fieldGrid}>
               <div className="space-y-2">
                 <Label htmlFor="familyName">姓 *</Label>
@@ -267,13 +275,13 @@ export default function EditProfileForm({ user }: EditProfileFormProps) {
                 </RadioGroup>
               </div>
             </div>
-          </FormSection>
+      </FormSection>
 
-          <FormSection
-            icon={MapPin}
-            title="住所"
-            description="郵便番号を入力すると、都道府県・市区町村・町域を自動で埋めることがあります。"
-          >
+      <FormSection
+        icon={MapPin}
+        title="住所"
+        description="郵便番号を入力すると、都道府県・市区町村・町域を自動で埋めることがあります。"
+      >
             <div className="max-w-xs space-y-2">
               <Label htmlFor="postalCode">郵便番号 *</Label>
               <Input
@@ -339,13 +347,13 @@ export default function EditProfileForm({ user }: EditProfileFormProps) {
                 onChange={(e) => setFormData({ ...formData, addressLine2: e.target.value })}
               />
             </div>
-          </FormSection>
+      </FormSection>
 
-          <FormSection
-            icon={Phone}
-            title="緊急連絡先"
-            description="任意です。大会や災害時の連絡先として利用することがあります。"
-          >
+      <FormSection
+        icon={Phone}
+        title="緊急連絡先"
+        description="任意です。大会や災害時の連絡先として利用することがあります。"
+      >
             <div className={fieldGrid}>
               <div className="space-y-2">
                 <Label htmlFor="emergencyContactFamilyName">姓</Label>
@@ -382,24 +390,32 @@ export default function EditProfileForm({ user }: EditProfileFormProps) {
                 }
               />
             </div>
-          </FormSection>
+      </FormSection>
 
-          <div className="flex flex-col-reverse gap-3 border-t border-border/80 pt-6 sm:flex-row sm:justify-end sm:gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => router.back()}
-              disabled={loading}
-              className="w-full sm:w-auto sm:min-w-[7rem]"
-            >
-              キャンセル
-            </Button>
-            <Button type="submit" disabled={loading} className="w-full sm:w-auto sm:min-w-[10rem]">
-              {loading ? "保存中..." : "変更を保存"}
-            </Button>
-          </div>
-        </AutofillSyncForm>
-      </CardContent>
-    </Card>
+      <div
+        className={cn(
+          "relative overflow-hidden rounded-2xl border border-border/55 bg-muted/20 px-5 py-4 sm:px-6",
+          "flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+        )}
+      >
+        <p className="text-center text-xs text-muted-foreground sm:text-left sm:text-sm">
+          内容を変更したあと、「変更を保存」で反映されます。
+        </p>
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => router.back()}
+            disabled={loading}
+            className="w-full sm:w-auto sm:min-w-[7rem]"
+          >
+            キャンセル
+          </Button>
+          <Button type="submit" disabled={loading} className="w-full sm:w-auto sm:min-w-[10rem]">
+            {loading ? "保存中..." : "変更を保存"}
+          </Button>
+        </div>
+      </div>
+    </AutofillSyncForm>
   );
 }

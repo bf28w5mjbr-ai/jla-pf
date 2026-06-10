@@ -6,7 +6,7 @@ import { AlertTriangle } from "lucide-react";
 import PasswordVerificationModal from "@/components/PasswordVerificationModal";
 import { usePasswordProtectedAction } from "@/lib/hooks/usePasswordProtectedAction";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 export default function AccountDangerZone() {
   const router = useRouter();
@@ -53,20 +53,42 @@ export default function AccountDangerZone() {
 
   return (
     <>
-      <Card className="overflow-hidden border-destructive/35 bg-destructive/5 shadow-sm dark:bg-destructive/10">
-        <CardHeader className="space-y-1 border-b border-destructive/20 pb-4">
-          <div className="flex items-center gap-2 text-destructive">
-            <AlertTriangle className="h-5 w-5 shrink-0" strokeWidth={1.75} aria-hidden />
-            <CardTitle className="text-lg text-destructive">危険な操作</CardTitle>
+      <div>
+        <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-destructive/80">
+          Danger
+        </p>
+        <h2 className="mt-1 text-balance text-xl font-semibold tracking-tight text-destructive sm:text-2xl">
+          危険な操作
+        </h2>
+        <p className="mt-1 text-sm text-destructive/85 dark:text-destructive/75">
+          取り消しできない処理です。内容をよく確認してください。
+        </p>
+      </div>
+
+      <div
+        className={cn(
+          "relative mt-6 overflow-hidden rounded-2xl border border-destructive/35 bg-destructive/5 px-5 py-5 sm:px-6 sm:py-6 dark:bg-destructive/10",
+          "transition-[border-color,background-color] duration-200 hover:border-destructive/50 hover:bg-destructive/8"
+        )}
+      >
+        <div
+          className="pointer-events-none absolute -right-10 -top-10 size-28 rounded-full bg-destructive/8"
+          aria-hidden
+        />
+        <div
+          className="absolute bottom-5 left-0 top-5 w-0.5 rounded-full bg-gradient-to-b from-destructive/70 via-destructive/35 to-transparent sm:bottom-6 sm:top-6"
+          aria-hidden
+        />
+
+        <div className="relative space-y-4">
+          <div className="flex items-start gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-destructive/30 bg-destructive/10 text-destructive">
+              <AlertTriangle className="size-4" strokeWidth={1.75} aria-hidden />
+            </span>
+            <p className="text-sm leading-relaxed text-destructive/95 dark:text-destructive/85">
+              アカウントを削除すると、すべてのデータが完全に削除され、復元できません。
+            </p>
           </div>
-          <CardDescription className="text-destructive/90 dark:text-destructive/80">
-            取り消しできない処理です。内容をよく確認してください。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-2">
-          <p className="text-sm leading-relaxed text-destructive/95 dark:text-destructive/85">
-            アカウントを削除すると、すべてのデータが完全に削除され、復元できません。
-          </p>
 
           {error ? (
             <div
@@ -86,8 +108,8 @@ export default function AccountDangerZone() {
           >
             {deleteLoading ? "削除中..." : "アカウントを削除"}
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       <PasswordVerificationModal
         isOpen={isModalOpen}

@@ -2,11 +2,13 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { ArrowLeft, UserRound } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import { dashboardSectionClassName } from "@/app/(authenticated)/dashboard/_components/dashboardLayout";
+import { SettingsEditorialSection } from "@/app/(authenticated)/settings/_components/SettingsEditorialSection";
 import { verifySessionCached } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import EditProfileForm from "@/components/EditProfileForm";
-import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "個人情報編集 | Bluvium",
@@ -51,32 +53,40 @@ export default async function EditProfilePage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
-      <header className="space-y-4 border-b border-border/80 pb-8">
-        <Button variant="ghost" size="sm" className="-ml-2 h-9 gap-1.5 px-2 text-muted-foreground hover:text-foreground" asChild>
-          <Link href="/settings">
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            設定に戻る
-          </Link>
-        </Button>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-primary">
-              <UserRound className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-              <span className="text-sm font-medium">プロフィール</span>
-            </div>
-            <h1 className="text-balance text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-              個人情報の編集
-            </h1>
-            <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
-              大会エントリーや所属審査に表示される氏名・住所などを更新できます。必須項目は
-              <span className="text-foreground">*</span> です。
-            </p>
-          </div>
-        </div>
-      </header>
+    <div className="flex flex-col">
+      <h1 className="sr-only">個人情報の編集</h1>
 
-      <EditProfileForm user={formUser} />
+      <section
+        className={cn(
+          dashboardSectionClassName,
+          "border-b border-border/40 pb-0 pt-10 sm:pt-12"
+        )}
+      >
+        <Link
+          href="/settings"
+          className={cn(
+            "group inline-flex items-center gap-1.5 rounded-full border border-transparent px-2 py-1.5 text-sm text-muted-foreground",
+            "transition-colors hover:border-border/60 hover:bg-muted/30 hover:text-foreground",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          )}
+        >
+          <ArrowLeft
+            className="size-4 transition-transform group-hover:-translate-x-0.5"
+            aria-hidden
+          />
+          設定に戻る
+        </Link>
+      </section>
+
+      <SettingsEditorialSection
+        label="Profile"
+        title="個人情報の編集"
+        description="大会エントリーや所属審査に表示される氏名・住所などを更新できます。必須項目は * です。"
+        contentClassName="space-y-5"
+        className="border-t-0 pt-8 sm:pt-10"
+      >
+        <EditProfileForm user={formUser} />
+      </SettingsEditorialSection>
     </div>
   );
 }
