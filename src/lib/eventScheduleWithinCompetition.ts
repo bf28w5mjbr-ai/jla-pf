@@ -1,4 +1,7 @@
-import { formatDateForDatetimeLocalInput } from "@/lib/datetimeLocal";
+import {
+  COMPETITION_ADMIN_DATE_TIME_ZONE,
+  formatDateForDatetimeLocalInput,
+} from "@/lib/datetimeLocal";
 
 const TOKYO = "Asia/Tokyo";
 
@@ -66,7 +69,11 @@ export function competitionScheduleDatetimeLocalMinMax(
     competitionEndDate
   );
   return {
-    min: formatDateForDatetimeLocalInput(minUtc),
-    max: formatDateForDatetimeLocalInput(maxUtc),
+    min: formatDateForDatetimeLocalInput(minUtc, {
+      timeZone: COMPETITION_ADMIN_DATE_TIME_ZONE,
+    }),
+    max: formatDateForDatetimeLocalInput(maxUtc, {
+      timeZone: COMPETITION_ADMIN_DATE_TIME_ZONE,
+    }),
   };
 }

@@ -1,5 +1,8 @@
 import { prisma } from "@/server/db";
-import { createNotificationIfAbsent } from "@/lib/notificationService";
+import {
+  createNotificationIfAbsent,
+  runBroadcastEmailDispatch,
+} from "@/lib/notificationService";
 
 export async function notifyCompetitionAnnouncementPublished(params: {
   announcementId: string;
@@ -31,22 +34,35 @@ export async function notifyCompetitionAnnouncementPublished(params: {
   for (const row of individualEntrants) targetUserIds.add(row.userId);
   for (const row of teamEntrants) targetUserIds.add(row.userId);
 
-  const body = params.content.length > 160 ? `${params.content.slice(0, 160)}...` : params.content;
+  const userIds = [...targetUserIds];
+  if (userIds.length === 0) return;
+
+  const previewBody =
+    params.content.length > 160 ? `${params.content.slice(0, 160)}...` : params.content;
   const linkUrl = `/competitions/${params.competitionId}`;
+  const title = `大会のお知らせ: ${params.title}`;
 
   await Promise.all(
-    [...targetUserIds].map((userId) =>
+    userIds.map((userId) =>
       createNotificationIfAbsent({
         userId,
         category: "COMPETITION",
         type: "COMPETITION_ANNOUNCEMENT_PUBLISHED",
-        title: `大会のお知らせ: ${params.title}`,
-        body,
+        title,
+        body: previewBody,
         relatedId: params.announcementId,
         linkUrl,
       })
     )
   );
+
+  void runBroadcastEmailDispatch(userIds, {
+    title,
+    body: params.content,
+    linkUrl,
+  }).catch((error) => {
+    console.error("Competition announcement email dispatch error:", error);
+  });
 }
 
 export async function notifyClubAnnouncementPublished(params: {

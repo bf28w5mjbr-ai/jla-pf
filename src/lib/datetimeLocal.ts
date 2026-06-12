@@ -1,6 +1,11 @@
 /** 大会エントリー期間など、管理画面で扱う日時の壁時計（SSR と端末で一致させる） */
 export const COMPETITION_ADMIN_DATE_TIME_ZONE = "Asia/Tokyo";
 
+/** 種目日程・タイムスケジュールの datetime-local（日本時間の壁時計） */
+export const COMPETITION_SCHEDULE_DATETIME_LOCAL_OPTS = {
+  timeZone: COMPETITION_ADMIN_DATE_TIME_ZONE,
+} as const;
+
 export type DatetimeLocalFormatOptions = {
   /** IANA（例: Asia/Tokyo）。省略時は実行環境のローカル暦・ローカル時刻 */
   timeZone?: string;
@@ -125,6 +130,28 @@ export function datetimeLocalInputValueToUtcIsoString(
   const dt = new Date(y, mo - 1, d, h, min, sec, 0);
   if (Number.isNaN(dt.getTime())) return null;
   return dt.toISOString();
+}
+
+/**
+ * 種目日程・タイムスケジュール用。`YYYY-MM-DDTHH:mm` は {@link COMPETITION_ADMIN_DATE_TIME_ZONE} の壁時計として解釈し、
+ * オフセット付き ISO 等は通常の `Date` 解析に委ねる。
+ */
+export function parseCompetitionScheduleDatetimeInput(v: unknown): Date | null {
+  if (v === null || v === "") return null;
+  if (typeof v !== "string") throw new Error("invalid");
+  const trimmed = v.trim();
+  if (!trimmed) return null;
+  if (DATETIME_LOCAL_RE.test(trimmed)) {
+    const iso = datetimeLocalInputValueToUtcIsoString(
+      trimmed,
+      COMPETITION_SCHEDULE_DATETIME_LOCAL_OPTS
+    );
+    if (!iso) throw new Error("invalid");
+    return new Date(iso);
+  }
+  const d = new Date(trimmed);
+  if (Number.isNaN(d.getTime())) throw new Error("invalid");
+  return d;
 }
 
 /** 公開画面向けの短い日付（例: 2025/4/12） */

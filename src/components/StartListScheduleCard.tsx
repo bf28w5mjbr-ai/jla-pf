@@ -24,6 +24,10 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import {
+  COMPETITION_SCHEDULE_DATETIME_LOCAL_OPTS,
+  datetimeLocalInputValueToUtcIsoString,
+} from "@/lib/datetimeLocal";
+import {
   formatEventStartTimeColumnJa,
   formatScheduleDateHeadingJa,
   scheduleDateKeyFromIso,
@@ -496,10 +500,10 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
                   const rk = roundStartKey(event.id, roundIndex);
                   const draftRaw = (roundStarts[rk] ?? "").trim();
                   const roundIso = draftRaw
-                    ? (() => {
-                        const d = new Date(draftRaw);
-                        return Number.isNaN(d.getTime()) ? null : d.toISOString();
-                      })()
+                    ? datetimeLocalInputValueToUtcIsoString(
+                        draftRaw,
+                        COMPETITION_SCHEDULE_DATETIME_LOCAL_OPTS
+                      )
                     : effectiveRoundStartIso({
                         scheduledStartAt: event.scheduledStartAt,
                         roundScheduledStarts: event.roundScheduledStarts,
@@ -511,10 +515,10 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
                     ? (roundStarts[roundStartKey(prevRow.event.id, prevRow.roundIndex)] ?? "").trim()
                     : "";
                   const prevIso = prevDraftRaw
-                    ? (() => {
-                        const d = new Date(prevDraftRaw);
-                        return Number.isNaN(d.getTime()) ? null : d.toISOString();
-                      })()
+                    ? datetimeLocalInputValueToUtcIsoString(
+                        prevDraftRaw,
+                        COMPETITION_SCHEDULE_DATETIME_LOCAL_OPTS
+                      )
                     : prevRow
                       ? effectiveRoundStartIso({
                           scheduledStartAt: prevRow.event.scheduledStartAt,

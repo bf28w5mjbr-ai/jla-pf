@@ -19,6 +19,7 @@ import {
 import { canManageCompetitionStartListSettings } from "@/lib/competitionStartListAccess";
 import { verifyDayOpsUnlockFromRequest } from "@/lib/dayOpsUnlockCookie";
 import { assertEventScheduleWithinCompetitionRange } from "@/lib/eventScheduleWithinCompetition";
+import { parseCompetitionScheduleDatetimeInput } from "@/lib/datetimeLocal";
 import {
   mergeRoundScheduledStart,
   parseRoundScheduledStarts,
@@ -223,11 +224,11 @@ export async function PATCH(
         );
       }
       const parseOneStart = (v: unknown): Date | null => {
-        if (v === null || v === "") return null;
-        if (typeof v !== "string") throw new Error("invalid");
-        const d = new Date(v);
-        if (Number.isNaN(d.getTime())) throw new Error("invalid");
-        return d;
+        try {
+          return parseCompetitionScheduleDatetimeInput(v);
+        } catch {
+          throw new Error("invalid");
+        }
       };
       let parsedStart: Date | null;
       try {
@@ -890,13 +891,11 @@ export async function PATCH(
       }
 
       const parseScheduleField = (v: unknown): Date | null => {
-        if (v === null || v === "") return null;
-        if (typeof v !== "string") {
+        try {
+          return parseCompetitionScheduleDatetimeInput(v);
+        } catch {
           throw new Error("invalid");
         }
-        const d = new Date(v);
-        if (Number.isNaN(d.getTime())) throw new Error("invalid");
-        return d;
       };
 
       let nextStart: Date | null | undefined;

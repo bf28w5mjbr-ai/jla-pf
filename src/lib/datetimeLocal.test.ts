@@ -4,6 +4,7 @@ import {
   datetimeLocalInputValueToUtcIsoString,
   formatAdminWallClockSameAsDatetimeLocal,
   formatDateForDatetimeLocalInput,
+  parseCompetitionScheduleDatetimeInput,
 } from "./datetimeLocal";
 
 describe("entry period (Asia/Tokyo) datetime-local", () => {
@@ -64,6 +65,27 @@ describe("entry period (Asia/Tokyo) datetime-local", () => {
     process.env.TZ = "America/Los_Angeles";
     const s = formatAdminWallClockSameAsDatetimeLocal("2026-07-01T06:00:00.000Z");
     expect(s).toBe("2026-07-01 15:00");
+  });
+});
+
+describe("parseCompetitionScheduleDatetimeInput", () => {
+  const originalTz = process.env.TZ;
+
+  afterEach(() => {
+    if (originalTz === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTz;
+  });
+
+  it("parses datetime-local as JST wall clock regardless of host TZ", () => {
+    process.env.TZ = "UTC";
+    const d = parseCompetitionScheduleDatetimeInput("2026-06-13T14:00");
+    expect(d?.toISOString()).toBe("2026-06-13T05:00:00.000Z");
+  });
+
+  it("accepts ISO strings with offset", () => {
+    process.env.TZ = "UTC";
+    const d = parseCompetitionScheduleDatetimeInput("2026-06-13T05:00:00.000Z");
+    expect(d?.toISOString()).toBe("2026-06-13T05:00:00.000Z");
   });
 });
 

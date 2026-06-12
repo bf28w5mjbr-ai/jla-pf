@@ -4,7 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatDateForDatetimeLocalInput } from "@/lib/datetimeLocal";
+import {
+  COMPETITION_SCHEDULE_DATETIME_LOCAL_OPTS,
+  datetimeLocalInputValueToUtcIsoString,
+  formatDateForDatetimeLocalInput,
+  parseCompetitionScheduleDatetimeInput,
+} from "@/lib/datetimeLocal";
 import {
   competitionScheduleDatetimeLocalMinMax,
   isInstantWithinCompetitionEventSchedule,
@@ -94,7 +99,9 @@ function roundStartsDraftFromBarItems(events: readonly StartListEventBarItem[]):
         roundScheduledStarts: e.roundScheduledStarts,
         roundIndex: ri,
       });
-      rs[roundStartKey(e.id, ri)] = iso ? formatDateForDatetimeLocalInput(new Date(iso)) : "";
+      rs[roundStartKey(e.id, ri)] = iso
+        ? formatDateForDatetimeLocalInput(new Date(iso), COMPETITION_SCHEDULE_DATETIME_LOCAL_OPTS)
+        : "";
     }
   }
   return rs;
@@ -845,12 +852,14 @@ export default function StartListEventIndexBars({
 
     for (const entry of dirtyEntries) {
       if (entry.raw.trim() === "") continue;
-      const parsed = new Date(entry.raw);
-      if (Number.isNaN(parsed.getTime())) {
+      let parsed: Date | null;
+      try {
+        parsed = parseCompetitionScheduleDatetimeInput(entry.raw);
+      } catch {
         toast.error("日時の形式が不正です");
         return false;
       }
-      if (!isInstantWithinCompetitionEventSchedule(parsed, compStart, compEnd)) {
+      if (!parsed || !isInstantWithinCompetitionEventSchedule(parsed, compStart, compEnd)) {
         toast.error("開始日時は大会の開催期間内にしてください");
         return false;
       }
@@ -871,7 +880,13 @@ export default function StartListEventIndexBars({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               scheduleRoundIndex: entry.roundIndex,
-              scheduledStartAt: entry.raw.trim() === "" ? null : entry.raw,
+              scheduledStartAt:
+                entry.raw.trim() === ""
+                  ? null
+                  : datetimeLocalInputValueToUtcIsoString(
+                      entry.raw.trim(),
+                      COMPETITION_SCHEDULE_DATETIME_LOCAL_OPTS
+                    ),
             }),
           }
         );
@@ -926,11 +941,15 @@ export default function StartListEventIndexBars({
       toast.error("1件目の開始日時を入力してください");
       return;
     }
-    const base = new Date(baseStr);
-    if (Number.isNaN(base.getTime())) {
+    const baseIso = datetimeLocalInputValueToUtcIsoString(
+      baseStr,
+      COMPETITION_SCHEDULE_DATETIME_LOCAL_OPTS
+    );
+    if (!baseIso) {
       toast.error("1件目の開始日時の形式が不正です");
       return;
     }
+    const base = new Date(baseIso);
     const step = Number.parseInt(staggerMinutes, 10);
     if (!Number.isFinite(step) || step < 1 || step > 24 * 60) {
       toast.error("間隔は1〜1440分（24時間）以内で指定してください");
@@ -967,7 +986,10 @@ export default function StartListEventIndexBars({
       for (let i = 0; i < visibleRoundRows.length; i++) {
         const row = visibleRoundRows[i]!;
         const at = new Date(base.getTime() + i * step * 60_000);
-        next[roundStartKey(row.event.id, row.roundIndex)] = formatDateForDatetimeLocalInput(at);
+        next[roundStartKey(row.event.id, row.roundIndex)] = formatDateForDatetimeLocalInput(
+          at,
+          COMPETITION_SCHEDULE_DATETIME_LOCAL_OPTS
+        );
       }
       return next;
     });

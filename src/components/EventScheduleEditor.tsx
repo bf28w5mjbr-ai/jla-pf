@@ -7,7 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatDateForDatetimeLocalInput } from "@/lib/datetimeLocal";
+import {
+  COMPETITION_SCHEDULE_DATETIME_LOCAL_OPTS,
+  datetimeLocalInputValueToUtcIsoString,
+  formatDateForDatetimeLocalInput,
+  parseCompetitionScheduleDatetimeInput,
+} from "@/lib/datetimeLocal";
 import {
   competitionScheduleDatetimeLocalMinMax,
   isInstantWithinCompetitionEventSchedule,
@@ -40,16 +45,28 @@ export default function EventScheduleEditor({
     [compStart, compEnd]
   );
   const [start, setStart] = useState(
-    initialStart ? formatDateForDatetimeLocalInput(new Date(initialStart)) : ""
+    initialStart
+      ? formatDateForDatetimeLocalInput(new Date(initialStart), COMPETITION_SCHEDULE_DATETIME_LOCAL_OPTS)
+      : ""
   );
   const [end, setEnd] = useState(
-    initialEnd ? formatDateForDatetimeLocalInput(new Date(initialEnd)) : ""
+    initialEnd
+      ? formatDateForDatetimeLocalInput(new Date(initialEnd), COMPETITION_SCHEDULE_DATETIME_LOCAL_OPTS)
+      : ""
   );
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setStart(initialStart ? formatDateForDatetimeLocalInput(new Date(initialStart)) : "");
-    setEnd(initialEnd ? formatDateForDatetimeLocalInput(new Date(initialEnd)) : "");
+    setStart(
+      initialStart
+        ? formatDateForDatetimeLocalInput(new Date(initialStart), COMPETITION_SCHEDULE_DATETIME_LOCAL_OPTS)
+        : ""
+    );
+    setEnd(
+      initialEnd
+        ? formatDateForDatetimeLocalInput(new Date(initialEnd), COMPETITION_SCHEDULE_DATETIME_LOCAL_OPTS)
+        : ""
+    );
   }, [initialStart, initialEnd]);
 
   if (!canEdit) {
@@ -57,14 +74,13 @@ export default function EventScheduleEditor({
   }
 
   const handleSave = async () => {
-    const startParsed = start.trim() === "" ? null : new Date(start);
-    const endParsed = end.trim() === "" ? null : new Date(end);
-    if (startParsed && Number.isNaN(startParsed.getTime())) {
-      toast.error("開始日時の形式が不正です");
-      return;
-    }
-    if (endParsed && Number.isNaN(endParsed.getTime())) {
-      toast.error("終了日時の形式が不正です");
+    let startParsed: Date | null = null;
+    let endParsed: Date | null = null;
+    try {
+      startParsed = start.trim() === "" ? null : parseCompetitionScheduleDatetimeInput(start);
+      endParsed = end.trim() === "" ? null : parseCompetitionScheduleDatetimeInput(end);
+    } catch {
+      toast.error("日時の形式が不正です");
       return;
     }
     if (startParsed && !isInstantWithinCompetitionEventSchedule(startParsed, compStart, compEnd)) {
@@ -85,8 +101,20 @@ export default function EventScheduleEditor({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          scheduledStartAt: start.trim() === "" ? null : start,
-          scheduledEndAt: end.trim() === "" ? null : end,
+          scheduledStartAt:
+            start.trim() === ""
+              ? null
+              : datetimeLocalInputValueToUtcIsoString(
+                  start.trim(),
+                  COMPETITION_SCHEDULE_DATETIME_LOCAL_OPTS
+                ),
+          scheduledEndAt:
+            end.trim() === ""
+              ? null
+              : datetimeLocalInputValueToUtcIsoString(
+                  end.trim(),
+                  COMPETITION_SCHEDULE_DATETIME_LOCAL_OPTS
+                ),
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { message?: string };

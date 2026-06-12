@@ -1,3 +1,4 @@
+import { parseCompetitionScheduleDatetimeInput } from "@/lib/datetimeLocal";
 import { effectiveRoundStartIso, roundStartKey } from "@/lib/eventRoundScheduledStarts";
 import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
 import type { ScheduleRoundRow } from "@/lib/competitionScheduleTabDisplay";
@@ -40,8 +41,12 @@ export function effectiveStartMsForRow(
 ): number {
   const draft = roundStartsDraft[roundStartKey(event.id, roundIndex)]?.trim();
   if (draft) {
-    const d = new Date(draft);
-    return Number.isNaN(d.getTime()) ? Number.POSITIVE_INFINITY : d.getTime();
+    try {
+      const d = parseCompetitionScheduleDatetimeInput(draft);
+      return d ? d.getTime() : Number.POSITIVE_INFINITY;
+    } catch {
+      return Number.POSITIVE_INFINITY;
+    }
   }
   const iso = effectiveRoundStartIso({
     scheduledStartAt: event.scheduledStartAt,
