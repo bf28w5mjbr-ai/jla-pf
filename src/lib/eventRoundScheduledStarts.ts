@@ -49,6 +49,15 @@ export function roundStartKey(eventId: string, roundIndex: number): string {
   return `${eventId}:${roundIndex}`;
 }
 
+export function parseRoundStartKey(key: string): { eventId: string; roundIndex: number } | null {
+  const lastColon = key.lastIndexOf(":");
+  if (lastColon <= 0) return null;
+  const eventId = key.slice(0, lastColon);
+  const roundIndex = Number.parseInt(key.slice(lastColon + 1), 10);
+  if (!eventId || !Number.isInteger(roundIndex) || roundIndex < 0) return null;
+  return { eventId, roundIndex };
+}
+
 /** ラウンド別があればそれを、なければ第1ラウンドは scheduledStartAt を返す */
 export function effectiveRoundStartIso(params: {
   scheduledStartAt: Date | string | null | undefined;

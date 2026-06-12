@@ -15,8 +15,8 @@ import {
 import { resolveRelatedOrganizationsForDisplay } from "@/lib/competitionRelatedOrganizations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  CompetitionEditorialPanel,
-  CompetitionSubheading,
+  CompetitionEditorialSection,
+  CompetitionFlatField,
 } from "./competitionEditorialUi";
 import { cn } from "@/lib/utils";
 import {
@@ -58,8 +58,77 @@ export function CompetitionPublicOverviewPanel({
   });
 
   const participationBody = (
-    <div className={cn(isEditorial ? "space-y-0 divide-y divide-border/45" : "divide-y divide-border")}>
+    <div className={cn(isEditorial ? "divide-y divide-border/40" : "divide-y divide-border")}>
               {competition.events.length > 0 ? (
+                isEditorial ? (
+                  <details className="group py-1">
+                    <summary className="flex cursor-pointer list-none items-start gap-3.5 py-3 marker:content-none transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+                      <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full border border-border/55 bg-muted/20 text-muted-foreground shadow-sm">
+                        <ListOrdered className="size-4" strokeWidth={1.75} aria-hidden />
+                      </span>
+                      <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                        <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                          種目
+                        </p>
+                        <ChevronDown
+                          className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-180"
+                          aria-hidden
+                        />
+                      </div>
+                    </summary>
+                    <div className="flex flex-col gap-4 pb-2 pl-[2.875rem]">
+                      {participationEventSections.map((section) => (
+                        <div key={section.category}>
+                          {participationEventSections.length > 1 ? (
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
+                              {section.label}
+                            </p>
+                          ) : null}
+                          <div className="flex flex-col gap-3">
+                            {section.ageBlocks.map((block) => {
+                              const framed = section.ageBlocks.length > 1;
+                              const showAgeLabel =
+                                section.ageBlocks.length > 1 ||
+                                (section.ageBlocks.length === 1 &&
+                                  !isUnassignedParticipationAgeBlock(block));
+                              return (
+                                <div
+                                  key={`${section.category}-${block.key}`}
+                                  className={
+                                    framed ? "border-t border-border/40 pt-3 first:border-t-0 first:pt-0" : undefined
+                                  }
+                                >
+                                  {showAgeLabel ? (
+                                    <p className="mb-2 text-[11px] font-medium tracking-wide text-muted-foreground">
+                                      {block.title}
+                                    </p>
+                                  ) : null}
+                                  <ul className="flex flex-col gap-2.5">
+                                    {block.rows.map((row) => (
+                                      <li key={row.key}>
+                                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                          <span className="text-sm font-medium text-foreground">{row.name}</span>
+                                          <span className="text-[11px] leading-snug text-muted-foreground">
+                                            {row.metaLine}
+                                          </span>
+                                        </div>
+                                        {row.scheduleLine ? (
+                                          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground/90">
+                                            {row.scheduleLine}
+                                          </p>
+                                        ) : null}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ) : (
                 <details className="group px-4 py-3 sm:px-5">
                   <summary className="flex cursor-pointer list-none items-start gap-3 marker:content-none [&::-webkit-details-marker]:hidden">
                     <ListOrdered className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" aria-hidden />
@@ -125,9 +194,15 @@ export function CompetitionPublicOverviewPanel({
                     ))}
                   </div>
                 </details>
+                )
               ) : null}
 
               {competition.maxParticipants ? (
+                isEditorial ? (
+                  <CompetitionFlatField icon={Users} label="最大参加者数">
+                    <p className="font-medium">{competition.maxParticipants.toLocaleString()}名</p>
+                  </CompetitionFlatField>
+                ) : (
                 <div className="flex gap-3 px-4 py-3 sm:px-5">
                   <Users className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
                   <div className="min-w-0 flex-1">
@@ -137,9 +212,15 @@ export function CompetitionPublicOverviewPanel({
                     </p>
                   </div>
                 </div>
+                )
               ) : null}
 
               {entryFeeDisplay !== null ? (
+                isEditorial ? (
+                  <CompetitionFlatField icon={Coins} label="参加費">
+                    {entryFeeDisplay}
+                  </CompetitionFlatField>
+                ) : (
                 <div className="flex gap-3 px-4 py-3 sm:px-5">
                   <Coins className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
                   <div className="min-w-0 flex-1">
@@ -147,8 +228,18 @@ export function CompetitionPublicOverviewPanel({
                     <div className="mt-0.5">{entryFeeDisplay}</div>
                   </div>
                 </div>
+                )
               ) : null}
 
+              {isEditorial ? (
+                <CompetitionFlatField icon={BadgeCheck} label="参加資格">
+                  {renderRequiredQualifications(
+                    competition.requiredQualifications,
+                    competition.ageCategories
+                  )}
+                  {showCertifiedLifesaverHelp(competition.requiredQualifications)}
+                </CompetitionFlatField>
+              ) : (
               <div className="flex gap-3 px-4 py-3 sm:px-5">
                 <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
                 <div className="min-w-0 flex-1">
@@ -162,7 +253,13 @@ export function CompetitionPublicOverviewPanel({
                   {showCertifiedLifesaverHelp(competition.requiredQualifications)}
                 </div>
               </div>
+              )}
 
+              {isEditorial ? (
+                <CompetitionFlatField icon={FileText} label="参加対象者">
+                  {renderParticipantEligibility(competition.participantEligibilityText)}
+                </CompetitionFlatField>
+              ) : (
               <div className="flex gap-3 px-4 py-3 sm:px-5">
                 <FileText className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
                 <div className="min-w-0 flex-1">
@@ -172,6 +269,7 @@ export function CompetitionPublicOverviewPanel({
                   </div>
                 </div>
               </div>
+              )}
 
     </div>
   );
@@ -183,14 +281,17 @@ export function CompetitionPublicOverviewPanel({
     (showEntryLinks && (hasIndividualEvents || hasTeamEvents));
 
   return (
-    <div className={cn(isEditorial ? "space-y-5" : "space-y-4")}>
+    <div className={cn(isEditorial ? "space-y-0" : "space-y-4")}>
       {showParticipation ? (
         isEditorial ? (
-          <CompetitionEditorialPanel accent="muted">
-            <CompetitionSubheading>Participation</CompetitionSubheading>
-            <h3 className="mt-1 text-base font-semibold text-foreground">参加情報</h3>
-            <div className="mt-4 -mx-1">{participationBody}</div>
-          </CompetitionEditorialPanel>
+          <CompetitionEditorialSection
+            subheading="Participation"
+            title="参加情報"
+            variant="flat"
+            accent="orange"
+          >
+            {participationBody}
+          </CompetitionEditorialSection>
         ) : (
           <Card className="border-border/80 shadow-sm">
             <CardHeader className="border-b border-border/80 bg-muted/20 px-4 py-3 sm:px-5">
@@ -206,13 +307,11 @@ export function CompetitionPublicOverviewPanel({
 
       {competition.description ? (
         isEditorial ? (
-          <CompetitionEditorialPanel accent="orange">
-            <CompetitionSubheading>About</CompetitionSubheading>
-            <h3 className="mt-1 text-base font-semibold text-foreground">大会について</h3>
-            <div className="mt-4 max-w-3xl whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
+          <CompetitionEditorialSection subheading="About" title="大会について" variant="flat" accent="muted">
+            <div className="max-w-3xl whitespace-pre-wrap text-[0.9375rem] leading-[1.85] text-foreground/88">
               {competition.description}
             </div>
-          </CompetitionEditorialPanel>
+          </CompetitionEditorialSection>
         ) : (
           <Card className="border-border/80 shadow-sm">
             <CardHeader className="border-b border-border/80 bg-muted/20 px-4 py-3 sm:px-5">

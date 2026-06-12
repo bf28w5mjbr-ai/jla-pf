@@ -40,10 +40,15 @@ export async function CompetitionPublicTabsLoader({
   const dayOpsUnlockConfigured = Boolean(competitionMeta?.dayOpsAccessSecretHash);
 
   return (
-    <div className={isEditorial ? "space-y-5" : "space-y-4"}>
+    <div className={isEditorial ? "space-y-6" : "space-y-4"}>
       {isEditorial ? (
-        <div className="mb-1">
-          <CompetitionSubheading>Details</CompetitionSubheading>
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <CompetitionSubheading>Details</CompetitionSubheading>
+            <h2 className="mt-1.5 text-xl font-semibold tracking-tight text-foreground sm:text-[1.375rem]">
+              大会詳細
+            </h2>
+          </div>
         </div>
       ) : null}
       <CompetitionPublicPageTabs

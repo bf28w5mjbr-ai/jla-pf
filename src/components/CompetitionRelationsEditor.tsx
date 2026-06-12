@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import {
-  CompetitionEditorialPanel,
+  CompetitionEditorialSection,
   CompetitionSubheading,
 } from "@/components/competitions/browse/competitionEditorialUi";
 import { Label } from "@/components/ui/label";
@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { Edit, Save, X, Trash2, Plus, ImageIcon } from "lucide-react";
 import { downscaleRasterLogoFileIfLarge, fetchWithConnectionRetry } from "@/lib/browserUploadHelpers";
 import {
@@ -50,7 +51,7 @@ function RelationLogoCard({
   const [broken, setBroken] = useState(false);
   return (
     <div className="flex w-[8.75rem] flex-col gap-1">
-      <div className="relative flex h-16 w-full items-center justify-center overflow-hidden rounded-md border border-border bg-muted/25">
+      <div className="relative flex h-16 w-full items-center justify-center overflow-hidden rounded-xl border border-border/55 bg-muted/15 ring-1 ring-border/30">
         {!broken ? (
           <Image
             src={logo.displaySrc}
@@ -501,7 +502,7 @@ export default function CompetitionRelationsEditor({
             </div>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className={cn("space-y-5", isEditorial && "space-y-6")}>
             {COMPETITION_RELATION_ROLES.map((role) => {
               const roleRows = grouped[role];
               if (roleRows.length === 0) return null;
@@ -511,11 +512,20 @@ export default function CompetitionRelationsEditor({
 
               return (
                 <div key={role}>
-                  <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    {ROLE_LABELS[role]}
-                  </h3>
+                  {isEditorial ? (
+                    <CompetitionSubheading>{ROLE_LABELS[role]}</CompetitionSubheading>
+                  ) : (
+                    <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {ROLE_LABELS[role]}
+                    </h3>
+                  )}
                   {textOnly.length > 0 ? (
-                    <div className="whitespace-pre-wrap text-sm text-foreground">
+                    <div
+                      className={cn(
+                        "whitespace-pre-wrap text-foreground",
+                        isEditorial ? "mt-2 text-sm leading-relaxed" : "text-sm"
+                      )}
+                    >
                       {textOnly.map((r) => r.name).join("\n")}
                     </div>
                   ) : null}
@@ -548,16 +558,15 @@ export default function CompetitionRelationsEditor({
 
   if (isEditorial) {
     return (
-      <CompetitionEditorialPanel accent="muted">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <CompetitionSubheading>Partners</CompetitionSubheading>
-            <h3 className="mt-1 text-base font-semibold text-foreground">関係組織</h3>
-          </div>
-          {headerActions}
-        </div>
-        <div className="mt-4">{body}</div>
-      </CompetitionEditorialPanel>
+      <CompetitionEditorialSection
+        subheading="Partners"
+        title="関係組織"
+        titleExtra={headerActions}
+        variant="flat"
+        accent="muted"
+      >
+        {body}
+      </CompetitionEditorialSection>
     );
   }
 

@@ -10,6 +10,107 @@ export function CompetitionSubheading({ children }: { children: string }) {
   );
 }
 
+const accentLineClass = {
+  orange: "from-orange-500/75 via-orange-400/30 to-transparent",
+  emerald: "from-emerald-500/75 via-emerald-400/30 to-transparent",
+  muted: "from-foreground/20 via-foreground/8 to-transparent",
+} as const;
+
+export function CompetitionEditorialSection({
+  subheading,
+  title,
+  titleExtra,
+  children,
+  className,
+  variant = "panel",
+  accent = "muted",
+}: {
+  subheading: string;
+  title: ReactNode;
+  titleExtra?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  variant?: "panel" | "flat";
+  accent?: "orange" | "emerald" | "muted";
+}) {
+  const header = (
+    <div className={titleExtra ? "flex flex-wrap items-start justify-between gap-3" : undefined}>
+      <div className="min-w-0">
+        <CompetitionSubheading>{subheading}</CompetitionSubheading>
+        <div
+          className={cn(
+            "mt-1.5 font-semibold tracking-tight text-foreground",
+            variant === "flat" ? "text-lg sm:text-[1.125rem]" : "text-base"
+          )}
+        >
+          {title}
+        </div>
+      </div>
+      {titleExtra}
+    </div>
+  );
+
+  if (variant === "flat") {
+    return (
+      <section
+        className={cn(
+          "relative pb-12 last:pb-0",
+          "[&:not(:first-child)]:pt-14 sm:[&:not(:first-child)]:pt-16",
+          "[&:not(:first-child)]:before:pointer-events-none [&:not(:first-child)]:before:absolute [&:not(:first-child)]:before:inset-x-0 [&:not(:first-child)]:before:top-0 [&:not(:first-child)]:before:h-px [&:not(:first-child)]:before:bg-gradient-to-r [&:not(:first-child)]:before:from-border/70 [&:not(:first-child)]:before:via-border/25 [&:not(:first-child)]:before:to-transparent",
+          className
+        )}
+      >
+        <div className="flex gap-4 sm:gap-5">
+          <div
+            className={cn(
+              "mt-1.5 w-0.5 shrink-0 self-stretch rounded-full bg-gradient-to-b",
+              accentLineClass[accent]
+            )}
+            aria-hidden
+          />
+          <div className="min-w-0 flex-1 space-y-5">
+            {header}
+            <div>{children}</div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <CompetitionEditorialPanel accent={accent} className={className}>
+      {header}
+      <div className="mt-4">{children}</div>
+    </CompetitionEditorialPanel>
+  );
+}
+
+export function CompetitionFlatField({
+  icon: Icon,
+  label,
+  children,
+  className,
+}: {
+  icon: LucideIcon;
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex gap-3.5 py-4", className)}>
+      <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full border border-border/55 bg-muted/20 text-muted-foreground shadow-sm">
+        <Icon className="size-4" strokeWidth={1.75} aria-hidden />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+          {label}
+        </p>
+        <div className="mt-1.5 text-sm leading-relaxed text-foreground">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 export function CompetitionEditorialPanel({
   children,
   className,

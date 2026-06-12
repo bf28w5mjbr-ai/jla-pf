@@ -9,7 +9,11 @@ import {
   competitionScheduleDatetimeLocalMinMax,
   isInstantWithinCompetitionEventSchedule,
 } from "@/lib/eventScheduleWithinCompetition";
-import { effectiveRoundStartIso, roundStartKey } from "@/lib/eventRoundScheduledStarts";
+import {
+  effectiveRoundStartIso,
+  parseRoundStartKey,
+  roundStartKey,
+} from "@/lib/eventRoundScheduledStarts";
 import {
   buildScheduleRoundRowsFromKeys,
   buildScheduleTabListItems,
@@ -37,7 +41,6 @@ import { StartListScheduleCard } from "@/components/StartListScheduleCard";
 import {
   buildScheduleDayAreaPartition,
   buildPublicScheduleSections,
-  findDayTabForRowKey,
   formatScheduleRowKey,
   moveRowKeyInDayAreaPartition,
   partitionsDeepEqual,
@@ -48,12 +51,12 @@ import {
 import {
   enumerateCompetitionScheduleDays,
   firstCompetitionScheduleDayKey,
-  dayKeyFromInstant,
 } from "@/lib/competitionScheduleDays";
 import {
   compareStartListEvents,
   sortRowsByStartTimeOrder,
 } from "@/lib/startListScheduleUtils";
+import { cn } from "@/lib/utils";
 
 export type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
 
@@ -68,6 +71,7 @@ type Props = {
   canReorder: boolean;
   canEditSchedule?: boolean;
   canEditRoundCount?: boolean;
+  chrome?: "classic" | "editorial";
 };
 
 type SchedulePatchResponseEvent = {
@@ -149,6 +153,7 @@ export default function StartListEventIndexBars({
   canReorder,
   canEditSchedule = false,
   canEditRoundCount = false,
+  chrome = "classic",
 }: Props) {
   const router = useRouter();
 
@@ -183,10 +188,9 @@ export default function StartListEventIndexBars({
   const [dragId, setDragId] = useState<string | null>(null);
   const [reorderSaving, setReorderSaving] = useState(false);
   const [roundStarts, setRoundStarts] = useState<Record<string, string>>({});
-  const [timeSavingId, setTimeSavingId] = useState<string | null>(null);
+  const [scheduleTimesSaving, setScheduleTimesSaving] = useState(false);
   const [staggerBase, setStaggerBase] = useState("");
   const [staggerMinutes, setStaggerMinutes] = useState("15");
-  const [bulkApplying, setBulkApplying] = useState(false);
   /** ラウンド設定カードの年齢（未分類）タブ */
   const [activeRoundSettingsAgeTab, setActiveRoundSettingsAgeTab] = useState<string>("");
   /** タイムスケジュールで表示・並べ替え対象にする開催日 */
@@ -686,128 +690,237 @@ export default function StartListEventIndexBars({
     }
   };
 
-  const saveRoundStart = async (eventId: string, roundIndex: number, options?: { silent?: boolean }) => {
-    const rk = roundStartKey(eventId, roundIndex);
-    const raw = roundStarts[rk] ?? "";
-    if (raw.trim() !== "") {
-      const parsed = new Date(raw);
+  const scheduleTimesDirty = useMemo(() => {
+    const saved = savedRoundStartsRef.current;
+    const keys = new Set([...Object.keys(roundStarts), ...Object.keys(saved)]);
+    for (const rk of keys) {
+      if ((roundStarts[rk] ?? "").trim() !== (saved[rk] ?? "").trim()) return true;
+    }
+    return false;
+  }, [roundStarts]);
+
+  const discardScheduleTimesDraft = useCallback(() => {
+    setRoundStarts({ ...savedRoundStartsRef.current });
+    setRowOrderByDayAndTab(
+      JSON.parse(JSON.stringify(savedPartitionRef.current)) as ScheduleDayAreaPartition
+    );
+  }, []);
+
+  const persistVisibleRowOrderIfChanged = useCallback(
+    async (successMessage?: string): Promise<boolean> => {
+      if (!canReorder) return false;
+      const areaId = resolvedScheduleAreaTabId;
+      const dayKey = resolvedActiveScheduleDayKey;
+      if (!areaId || !dayKey) return false;
+
+      const currentKeys = rowOrderByTabId[areaId] ?? [];
+      const savedKeys = savedPartitionRef.current[dayKey]?.[areaId] ?? [];
+      if (currentKeys.join(",") === savedKeys.join(",")) return false;
+
+      await persistTabRowOrder(areaId, dayKey, currentKeys, successMessage);
+      savedPartitionRef.current = JSON.parse(
+        JSON.stringify(rowOrderByDayAndTab)
+      ) as ScheduleDayAreaPartition;
+      return true;
+    },
+    [
+      canReorder,
+      resolvedScheduleAreaTabId,
+      resolvedActiveScheduleDayKey,
+      rowOrderByTabId,
+      rowOrderByDayAndTab,
+      persistTabRowOrder,
+    ]
+  );
+
+  useEffect(() => {
+    if (!canReorder || !canEditSchedule) return;
+    const areaId = resolvedScheduleAreaTabId;
+    const dayKey = resolvedActiveScheduleDayKey;
+    if (!areaId || !dayKey) return;
+
+    const saved = savedRoundStartsRef.current;
+    const draftKeys = new Set([...Object.keys(roundStarts), ...Object.keys(saved)]);
+    let hasDraftChanges = false;
+    for (const rk of draftKeys) {
+      if ((roundStarts[rk] ?? "").trim() !== (saved[rk] ?? "").trim()) {
+        hasDraftChanges = true;
+        break;
+      }
+    }
+    if (!hasDraftChanges) return;
+
+    setRowOrderByDayAndTab((prev) => {
+      const currentKeys = prev[dayKey]?.[areaId] ?? [];
+      if (currentKeys.length === 0) return prev;
+
+      const expanded = buildScheduleRoundRowsFromKeys(
+        currentKeys,
+        order,
+        roundCounts,
+        (id) => heatSettingForExpandedRow(id),
+        parseRoundCountDraft
+      );
+      const sortedRows = sortRowsByStartTimeOrder(expanded, roundStarts);
+      const nextKeys = sortedRows.map((r) => formatScheduleRowKey(r.event.id, r.roundIndex));
+      if (nextKeys.join(",") === currentKeys.join(",")) return prev;
+
+      const next = { ...prev };
+      const shell = { ...(next[dayKey] ?? {}) };
+      shell[areaId] = nextKeys;
+      next[dayKey] = shell;
+      return next;
+    });
+  }, [
+    roundStarts,
+    canReorder,
+    canEditSchedule,
+    resolvedScheduleAreaTabId,
+    resolvedActiveScheduleDayKey,
+    order,
+    roundCounts,
+    heatSettingForExpandedRow,
+    parseRoundCountDraft,
+  ]);
+
+  const maybeSortVisibleAreaByTime = useCallback(
+    async (
+      mergedOrder: StartListEventBarItem[],
+      mergedRoundStarts: Record<string, string>,
+      successMessage?: string
+    ): Promise<boolean> => {
+      if (!canReorder) return false;
+      const areaId = resolvedScheduleAreaTabId;
+      const dayKey = resolvedActiveScheduleDayKey;
+      if (!areaId || !dayKey) return false;
+
+      const currentKeys = rowOrderByTabId[areaId] ?? [];
+      const expanded = buildScheduleRoundRowsFromKeys(
+        currentKeys,
+        mergedOrder,
+        roundCounts,
+        (id) => heatSettingForExpandedRow(id),
+        parseRoundCountDraft
+      );
+      const sortedRows = sortRowsByStartTimeOrder(expanded, mergedRoundStarts);
+      const nextKeys = sortedRows.map((r) => formatScheduleRowKey(r.event.id, r.roundIndex));
+      if (nextKeys.join(",") === currentKeys.join(",")) return false;
+
+      setRowOrderByDayAndTab((prev) => {
+        const next = { ...prev };
+        const shell = { ...(next[dayKey] ?? {}) };
+        shell[areaId] = nextKeys;
+        next[dayKey] = shell;
+        return next;
+      });
+      await persistTabRowOrder(areaId, dayKey, nextKeys, successMessage);
+      return true;
+    },
+    [
+      canReorder,
+      resolvedScheduleAreaTabId,
+      resolvedActiveScheduleDayKey,
+      rowOrderByTabId,
+      roundCounts,
+      heatSettingForExpandedRow,
+      parseRoundCountDraft,
+      persistTabRowOrder,
+    ]
+  );
+
+  const saveAllDirtyRoundStarts = async (): Promise<boolean> => {
+    const saved = savedRoundStartsRef.current;
+    const dirtyEntries: Array<{ eventId: string; roundIndex: number; raw: string }> = [];
+    const keys = new Set([...Object.keys(roundStarts), ...Object.keys(saved)]);
+
+    for (const rk of keys) {
+      const raw = roundStarts[rk] ?? "";
+      if (raw.trim() === (saved[rk] ?? "").trim()) continue;
+      const parsed = parseRoundStartKey(rk);
+      if (!parsed) continue;
+      dirtyEntries.push({ ...parsed, raw });
+    }
+
+    if (dirtyEntries.length === 0) return true;
+
+    for (const entry of dirtyEntries) {
+      if (entry.raw.trim() === "") continue;
+      const parsed = new Date(entry.raw);
       if (Number.isNaN(parsed.getTime())) {
-        if (!options?.silent) toast.error("日時の形式が不正です");
+        toast.error("日時の形式が不正です");
         return false;
       }
       if (!isInstantWithinCompetitionEventSchedule(parsed, compStart, compEnd)) {
-        if (!options?.silent) toast.error("開始日時は大会の開催期間内にしてください");
+        toast.error("開始日時は大会の開催期間内にしてください");
         return false;
       }
     }
-    if (raw.trim() === (savedRoundStartsRef.current[rk] ?? "").trim()) {
-      return true;
-    }
-    setTimeSavingId(`${eventId}:${roundIndex}`);
+
+    setScheduleTimesSaving(true);
     try {
-      const res = await fetch(
-        `/api/competitions/${competitionId}/events/${encodeURIComponent(eventId)}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            scheduleRoundIndex: roundIndex,
-            scheduledStartAt: raw.trim() === "" ? null : raw,
-          }),
-        }
-      );
-      const data = (await res.json().catch(() => ({}))) as {
-        message?: string;
-        events?: SchedulePatchResponseEvent[];
-      };
-      if (!res.ok) throw new Error(data.message || "開始時刻の保存に失敗しました");
-
-      const apiEvents = data.events;
-      let mergedRoundStarts = roundStarts;
       let mergedOrder = order;
+      dirtyEntries.sort(
+        (a, b) => a.eventId.localeCompare(b.eventId) || a.roundIndex - b.roundIndex
+      );
 
-      if (apiEvents?.length) {
-        mergedOrder = applyScheduleEventsPatchToOrder(order, apiEvents);
-        setOrder(mergedOrder);
-        const byId = new Map(apiEvents.map((ev) => [ev.id, ev]));
-        const u = byId.get(eventId);
-        if (u) {
-          mergedRoundStarts = { ...roundStarts };
-          const nRounds =
-            typeof u.startListRoundCount === "number" && u.startListRoundCount >= 1
-              ? Math.min(32, u.startListRoundCount)
-              : 1;
-          for (let ri = 0; ri < nRounds; ri += 1) {
-            const iso = effectiveRoundStartIso({
-              scheduledStartAt: u.scheduledStartAt,
-              roundScheduledStarts: u.roundScheduledStarts,
-              roundIndex: ri,
-            });
-            mergedRoundStarts[roundStartKey(eventId, ri)] = iso
-              ? formatDateForDatetimeLocalInput(new Date(iso))
-              : "";
+      for (const entry of dirtyEntries) {
+        const res = await fetch(
+          `/api/competitions/${competitionId}/events/${encodeURIComponent(entry.eventId)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              scheduleRoundIndex: entry.roundIndex,
+              scheduledStartAt: entry.raw.trim() === "" ? null : entry.raw,
+            }),
           }
-          setRoundStarts(mergedRoundStarts);
-          savedRoundStartsRef.current = mergedRoundStarts;
+        );
+        const data = (await res.json().catch(() => ({}))) as {
+          message?: string;
+          events?: SchedulePatchResponseEvent[];
+        };
+        if (!res.ok) throw new Error(data.message || "開始時刻の保存に失敗しました");
+        if (data.events?.length) {
+          mergedOrder = applyScheduleEventsPatchToOrder(mergedOrder, data.events);
         }
       }
 
-      if (canReorder && apiEvents?.length) {
-        const areaId = resolvedScheduleAreaTabId;
-        const dayKey = resolvedActiveScheduleDayKey;
-        if (areaId && dayKey) {
-          const currentKeys = rowOrderByTabId[areaId] ?? [];
-          const expanded = buildScheduleRoundRowsFromKeys(
-            currentKeys,
-            mergedOrder,
-            roundCounts,
-            (id) => heatSettingForExpandedRow(id),
-            parseRoundCountDraft
+      const nextRoundStarts = roundStartsDraftFromBarItems(mergedOrder);
+      setRoundStarts(nextRoundStarts);
+      setOrder(mergedOrder);
+      savedRoundStartsRef.current = nextRoundStarts;
+
+      const sorted = await maybeSortVisibleAreaByTime(
+        mergedOrder,
+        nextRoundStarts,
+        "開始時刻を保存し、時刻順に並べ替えました"
+      );
+
+      if (!sorted) {
+        const orderPersisted = await persistVisibleRowOrderIfChanged(
+          dirtyEntries.length > 1
+            ? `開始時刻を${dirtyEntries.length}件保存し、時刻順に並べ替えました`
+            : "開始時刻を保存し、時刻順に並べ替えました"
+        );
+        if (!orderPersisted) {
+          toast.success(
+            dirtyEntries.length > 1
+              ? `開始時刻を${dirtyEntries.length}件保存しました`
+              : "開始時刻を保存しました"
           );
-          const sortedRows = sortRowsByStartTimeOrder(expanded, mergedRoundStarts);
-          const nextKeys = sortedRows.map((r) => formatScheduleRowKey(r.event.id, r.roundIndex));
-          if (nextKeys.join(",") !== currentKeys.join(",")) {
-            setRowOrderByDayAndTab((prev) => {
-              const next = { ...prev };
-              const shell = { ...(next[dayKey] ?? {}) };
-              shell[areaId] = nextKeys;
-              next[dayKey] = shell;
-              return next;
-            });
-            await persistTabRowOrder(
-              areaId,
-              dayKey,
-              nextKeys,
-              "開始時刻を保存し、時刻順に並べ替えました"
-            );
-            return true;
-          }
+          router.refresh();
         }
       }
-
-      const rowKey = formatScheduleRowKey(eventId, roundIndex);
-      const assigned = findDayTabForRowKey(rowKey, rowOrderByDayAndTab);
-      if (raw.trim() !== "" && assigned) {
-        const savedDayKey = dayKeyFromInstant(new Date(raw));
-        if (savedDayKey && savedDayKey !== assigned.dayKey) {
-          toast.warning(
-            "開始時刻の日付と、振り分けた開催日が一致していません。割当は変更していません。"
-          );
-        }
-      }
-
-      if (!options?.silent) toast.success(data.message || "開始時刻を保存しました");
-      router.refresh();
       return true;
     } catch (e) {
-      if (!options?.silent) toast.error(e instanceof Error ? e.message : "開始時刻の保存に失敗しました");
+      toast.error(e instanceof Error ? e.message : "開始時刻の保存に失敗しました");
       return false;
     } finally {
-      setTimeSavingId(null);
+      setScheduleTimesSaving(false);
     }
   };
 
-  const applyStaggerAndSave = async () => {
+  const applyStaggerDraft = () => {
     const baseStr = staggerBase.trim();
     if (!baseStr) {
       toast.error("1件目の開始日時を入力してください");
@@ -838,7 +951,6 @@ export default function StartListEventIndexBars({
       return;
     }
 
-    const slots: { eventId: string; roundIndex: number; at: Date }[] = [];
     for (let i = 0; i < visibleRoundRows.length; i++) {
       const row = visibleRoundRows[i]!;
       const at = new Date(base.getTime() + i * step * 60_000);
@@ -848,83 +960,18 @@ export default function StartListEventIndexBars({
         );
         return;
       }
-      slots.push({
-        eventId: row.event.id,
-        roundIndex: row.roundIndex,
-        at,
-      });
     }
 
-    setBulkApplying(true);
-    try {
-      let mergedOrder = order;
-      for (const slot of slots) {
-        const payload = formatDateForDatetimeLocalInput(slot.at);
-        const res = await fetch(
-          `/api/competitions/${competitionId}/events/${encodeURIComponent(slot.eventId)}`,
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              scheduleRoundIndex: slot.roundIndex,
-              scheduledStartAt: payload,
-            }),
-          }
-        );
-        const data = (await res.json().catch(() => ({}))) as {
-          message?: string;
-          events?: SchedulePatchResponseEvent[];
-        };
-        if (!res.ok) {
-          throw new Error(data.message || "一括保存に失敗しました");
-        }
-        if (data.events?.length) {
-          mergedOrder = applyScheduleEventsPatchToOrder(mergedOrder, data.events);
-        }
+    setRoundStarts((prev) => {
+      const next = { ...prev };
+      for (let i = 0; i < visibleRoundRows.length; i++) {
+        const row = visibleRoundRows[i]!;
+        const at = new Date(base.getTime() + i * step * 60_000);
+        next[roundStartKey(row.event.id, row.roundIndex)] = formatDateForDatetimeLocalInput(at);
       }
-
-      const nextRoundStarts = roundStartsDraftFromBarItems(mergedOrder);
-      setRoundStarts(nextRoundStarts);
-      setOrder(mergedOrder);
-
-      if (canReorder) {
-        const currentKeys = visibleRoundRows.map((r) =>
-          formatScheduleRowKey(r.event.id, r.roundIndex)
-        );
-        const expanded = buildScheduleRoundRowsFromKeys(
-          currentKeys,
-          mergedOrder,
-          roundCounts,
-          (id) => heatSettingForExpandedRow(id),
-          parseRoundCountDraft
-        );
-        const sortedRows = sortRowsByStartTimeOrder(expanded, nextRoundStarts);
-        const nextKeys = sortedRows.map((r) => formatScheduleRowKey(r.event.id, r.roundIndex));
-        if (nextKeys.join(",") !== currentKeys.join(",")) {
-          setRowOrderByDayAndTab((prev) => {
-            const next = { ...prev };
-            const shell = { ...(next[resolvedActiveScheduleDayKey] ?? {}) };
-            shell[areaId] = nextKeys;
-            next[resolvedActiveScheduleDayKey] = shell;
-            return next;
-          });
-          await persistTabRowOrder(
-            areaId,
-            resolvedActiveScheduleDayKey,
-            nextKeys,
-            "一括で開始時刻を保存し、時刻順に並べ替えました"
-          );
-          return;
-        }
-      }
-
-      toast.success("一括で開始時刻を保存しました");
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "一括保存に失敗しました");
-    } finally {
-      setBulkApplying(false);
-    }
+      return next;
+    });
+    toast.success("このエリアに開始時刻を反映しました。下部の「保存」で確定してください。");
   };
 
   const handleDropOn = (targetRowKey: string) => {
@@ -985,7 +1032,8 @@ export default function StartListEventIndexBars({
     }
     parts.push("行をタップで詳細");
     if (canEditSchedule) {
-      parts.push("時刻を保存すると自動で時刻順に並びます");
+      parts.push("時刻を入力すると自動で時刻順に並びます");
+      parts.push("下部の「保存」で一括確定");
       parts.push("開始は開催期内・終了は種目ページ");
     }
     return parts.join(" · ");
@@ -1050,8 +1098,9 @@ export default function StartListEventIndexBars({
       activeAgeCategoryTab={resolvedRoundSettingsAgeTab}
       onAgeCategoryTabChange={setActiveRoundSettingsAgeTab}
       extraHeatUiLocked={
-        bulkApplying || timeSavingId !== null || reorderSaving || roundSetupBulkSaving
+        scheduleTimesSaving || scheduleTimesDirty || reorderSaving || roundSetupBulkSaving
       }
+      chrome={chrome}
     />
   ) : null;
 
@@ -1078,8 +1127,8 @@ export default function StartListEventIndexBars({
       setNewTabNameDraft={setNewTabNameDraft}
       tabMutationSaving={tabMutationSaving}
       reorderSaving={reorderSaving}
-      bulkApplying={bulkApplying}
-      timeSavingId={timeSavingId}
+      scheduleTimesSaving={scheduleTimesSaving}
+      scheduleTimesDirty={scheduleTimesDirty}
       roundSetupBulkSaving={roundSetupBulkSaving}
       addScheduleTab={addScheduleTab}
       setDeleteTargetTabId={setDeleteTargetTabId}
@@ -1090,7 +1139,7 @@ export default function StartListEventIndexBars({
       setStaggerBase={setStaggerBase}
       staggerMinutes={staggerMinutes}
       setStaggerMinutes={setStaggerMinutes}
-      applyStaggerAndSave={applyStaggerAndSave}
+      applyStaggerDraft={applyStaggerDraft}
       visibleRoundRows={visibleRoundRows}
       dragId={dragId}
       setDragId={setDragId}
@@ -1099,8 +1148,8 @@ export default function StartListEventIndexBars({
       roundCounts={roundCounts}
       roundStarts={roundStarts}
       setRoundStarts={setRoundStarts}
-      saveRoundStart={saveRoundStart}
-      saveRoundStartOnBlur={(eventId, roundIndex) => void saveRoundStart(eventId, roundIndex, { silent: true })}
+      onSaveScheduleTimes={() => saveAllDirtyRoundStarts()}
+      onDiscardScheduleTimes={discardScheduleTimesDraft}
       rowsByTabId={rowsByTabId}
       rowsByTabIdAndDay={rowsByTabIdAndDay}
       assignDirty={assignDirty}
@@ -1112,13 +1161,14 @@ export default function StartListEventIndexBars({
       deleteOpen={deleteOpen}
       deleteTargetTabId={deleteTargetTabId}
       deleteMigrateToTabId={deleteMigrateToTabId}
+      chrome={chrome}
       submitDeleteTab={submitDeleteTab}
     />
   );
 
   if (splitRoundSettingsCard) {
     return (
-      <div className="space-y-3">
+      <div className={cn("space-y-3", chrome === "editorial" && "space-y-5")}>
         {roundSettingsCard}
         {scheduleCard}
       </div>

@@ -4,8 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  CompetitionEditorialPanel,
-  CompetitionSubheading,
+  CompetitionEditorialSection,
 } from "@/components/competitions/browse/competitionEditorialUi";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ChevronLeft, ChevronRight, Images } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export type PublicGalleryPhoto = {
   id: string;
@@ -62,12 +62,17 @@ export default function CompetitionPublicGallery({ photos, layout = "classic" }:
 
   const galleryGrid = (
     <>
-      <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+      <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4">
         {photos.map((p, i) => (
           <li key={p.id}>
             <button
               type="button"
-              className="relative aspect-[4/3] w-full overflow-hidden rounded-lg border border-border/60 bg-muted/15 outline-none ring-offset-background transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-ring"
+              className={cn(
+                "group relative aspect-[4/3] w-full overflow-hidden outline-none ring-offset-background transition duration-300 focus-visible:ring-2 focus-visible:ring-ring",
+                isEditorial
+                  ? "rounded-xl ring-1 ring-border/50 hover:ring-orange-300/55 hover:shadow-md dark:hover:ring-orange-800/45"
+                  : "rounded-lg border border-border/60 bg-muted/15 hover:opacity-95"
+              )}
               onClick={() => {
                 setIndex(i);
                 setOpen(true);
@@ -77,7 +82,10 @@ export default function CompetitionPublicGallery({ photos, layout = "classic" }:
                 src={p.imageUrl}
                 alt={p.fileName || `写真 ${i + 1}`}
                 fill
-                className="object-cover"
+                className={cn(
+                  "object-cover",
+                  isEditorial && "transition-transform duration-300 group-hover:scale-[1.03]"
+                )}
                 sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                 unoptimized={isAbsoluteImageUrl(p.imageUrl)}
               />
@@ -96,14 +104,19 @@ export default function CompetitionPublicGallery({ photos, layout = "classic" }:
   return (
     <>
       {isEditorial ? (
-        <CompetitionEditorialPanel accent="muted">
-          <CompetitionSubheading>Gallery</CompetitionSubheading>
-          <h3 className="mt-1 flex items-center gap-2 text-base font-semibold text-foreground">
-            <Images className="size-4 text-primary/80" aria-hidden />
-            フォトギャラリー
-          </h3>
-          <div className="mt-4">{galleryGrid}</div>
-        </CompetitionEditorialPanel>
+        <CompetitionEditorialSection
+          subheading="Gallery"
+          title={
+            <span className="flex items-center gap-2">
+              <Images className="size-4 text-primary/80" aria-hidden />
+              フォトギャラリー
+            </span>
+          }
+          variant="flat"
+          accent="muted"
+        >
+          {galleryGrid}
+        </CompetitionEditorialSection>
       ) : (
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="border-b border-border/80 bg-muted/20 px-4 py-3 sm:px-5">

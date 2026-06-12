@@ -12,10 +12,6 @@ import { prisma } from "@/server/db";
 import { parseScheduleRowOrderByDayJson } from "@/lib/scheduleRowOrder";
 import { firstCompetitionScheduleDayKey } from "@/lib/competitionScheduleDays";
 import {
-  CompetitionEditorialPanel,
-  CompetitionSubheading,
-} from "./competitionEditorialUi";
-import {
   DayOpsUnlockBannerLazy,
   StartListEventIndexBarsLazy,
   StartListVisibilityAdminControlsLazy,
@@ -138,6 +134,7 @@ export async function CompetitionPublicStartListPanelLoader({
       canReorder={canEditPublishedSchedule}
       canEditSchedule={canEditPublishedSchedule}
       canEditRoundCount={canEditPublishedSchedule}
+      chrome={layout === "editorial" ? "editorial" : "classic"}
     />
   ) : (
     <p className="rounded-xl border border-border/55 bg-muted/10 px-3 py-6 text-center text-sm text-muted-foreground">
@@ -149,11 +146,7 @@ export async function CompetitionPublicStartListPanelLoader({
     return (
       <div className="space-y-4">
         {adminBar}
-        <CompetitionEditorialPanel accent="muted">
-          <CompetitionSubheading>Race</CompetitionSubheading>
-          <h3 className="mt-1 text-base font-semibold text-foreground">レース情報</h3>
-          <div className="mt-4 -mx-1">{startListBody}</div>
-        </CompetitionEditorialPanel>
+        {startListBody}
       </div>
     );
   }

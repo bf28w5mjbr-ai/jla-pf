@@ -39,6 +39,7 @@ import {
 import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
 import { sexLabelJa } from "@/lib/sexLabelJa";
 import { cn } from "@/lib/utils";
+import { CompetitionSubheading } from "@/components/competitions/browse/competitionEditorialUi";
 import { StartListScheduleAssignBoard } from "@/components/StartListScheduleAssignBoard";
 import {
   StartListSchedulePublicView,
@@ -70,8 +71,8 @@ export type StartListScheduleCardProps = {
   setNewTabNameDraft: (v: string) => void;
   tabMutationSaving: boolean;
   reorderSaving: boolean;
-  bulkApplying: boolean;
-  timeSavingId: string | null;
+  scheduleTimesSaving: boolean;
+  scheduleTimesDirty: boolean;
   roundSetupBulkSaving?: boolean;
   addScheduleTab: () => void | Promise<void>;
   setDeleteTargetTabId: (id: string) => void;
@@ -80,7 +81,7 @@ export type StartListScheduleCardProps = {
   setStaggerBase: (v: string) => void;
   staggerMinutes: string;
   setStaggerMinutes: (v: string) => void;
-  applyStaggerAndSave: () => void | Promise<void>;
+  applyStaggerDraft: () => void;
   visibleRoundRows: ScheduleRoundRow<StartListEventBarItem>[];
   rowsByTabId: Record<string, ScheduleRoundRow<StartListEventBarItem>[]>;
   rowsByTabIdAndDay?: Record<string, Record<string, ScheduleRoundRow<StartListEventBarItem>[]>>;
@@ -97,14 +98,15 @@ export type StartListScheduleCardProps = {
   roundCounts: Record<string, string>;
   roundStarts: Record<string, string>;
   setRoundStarts: Dispatch<SetStateAction<Record<string, string>>>;
-  saveRoundStart: (eventId: string, roundIndex: number) => void | Promise<void | boolean>;
-  saveRoundStartOnBlur?: (eventId: string, roundIndex: number) => void;
+  onSaveScheduleTimes?: () => void | Promise<void | boolean>;
+  onDiscardScheduleTimes?: () => void;
   deleteOpen: boolean;
   setDeleteOpen: (open: boolean) => void;
   deleteTargetTabId: string | null;
   deleteMigrateToTabId: string;
   setDeleteMigrateToTabId: (v: string) => void;
   submitDeleteTab: () => void | Promise<void>;
+  chrome?: "classic" | "editorial";
 };
 
 export function StartListScheduleCard(props: StartListScheduleCardProps) {
@@ -130,8 +132,8 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
     setNewTabNameDraft,
     tabMutationSaving,
     reorderSaving,
-    bulkApplying,
-    timeSavingId,
+    scheduleTimesSaving,
+    scheduleTimesDirty,
     roundSetupBulkSaving = false,
     addScheduleTab,
     setDeleteTargetTabId,
@@ -141,7 +143,7 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
     setStaggerBase,
     staggerMinutes,
     setStaggerMinutes,
-    applyStaggerAndSave,
+    applyStaggerDraft,
     visibleRoundRows,
     rowsByTabId,
     rowsByTabIdAndDay = {},
@@ -158,13 +160,17 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
     roundCounts,
     roundStarts,
     setRoundStarts,
-    saveRoundStartOnBlur,
+    onSaveScheduleTimes,
+    onDiscardScheduleTimes,
     deleteOpen,
     deleteTargetTabId,
     deleteMigrateToTabId,
     setDeleteMigrateToTabId,
     submitDeleteTab,
+    chrome = "classic",
   } = props;
+
+  const isEditorial = chrome === "editorial";
 
   const [scheduleCardMode, setScheduleCardMode] = useState<ScheduleCardMode>("schedule");
   const [areaTabsEditMode, setAreaTabsEditMode] = useState(false);
@@ -212,22 +218,62 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
 
   return (
     <>
-      <Card className="overflow-hidden border-border/80 shadow-sm">
-        <CardHeader className="space-y-0.5 border-b border-border/80 bg-muted/15 px-2.5 py-1.5">
+      <Card
+        className={cn(
+          "overflow-hidden",
+          isEditorial
+            ? "rounded-2xl border-border/50 bg-muted/10 shadow-none"
+            : "border-border/80 shadow-sm"
+        )}
+      >
+        <CardHeader
+          className={cn(
+            "space-y-0.5 border-b",
+            isEditorial
+              ? "border-border/45 bg-background/40 px-3 py-3 sm:px-4"
+              : "border-border/80 bg-muted/15 px-2.5 py-1.5"
+          )}
+        >
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0 space-y-0.5">
-              <CardTitle className="text-sm font-semibold leading-tight">タイムスケジュール</CardTitle>
+              {isEditorial ? (
+                <>
+                  <CompetitionSubheading>Schedule</CompetitionSubheading>
+                  <p className="text-base font-semibold tracking-tight text-foreground sm:text-[1.0625rem]">
+                    タイムスケジュール
+                  </p>
+                </>
+              ) : (
+                <CardTitle className="text-sm font-semibold leading-tight">タイムスケジュール</CardTitle>
+              )}
               {competitionName ? (
-                <p className="truncate text-[10px] text-muted-foreground">{competitionName}</p>
+                <p
+                  className={cn(
+                    "truncate text-muted-foreground",
+                    isEditorial ? "text-xs" : "text-[10px]"
+                  )}
+                >
+                  {competitionName}
+                </p>
               ) : null}
             </div>
             {canReorder ? (
-              <div className="inline-flex shrink-0 rounded-lg border border-border/60 bg-muted/40 p-0.5">
+              <div
+                className={cn(
+                  "inline-flex shrink-0 p-0.5",
+                  isEditorial
+                    ? "rounded-xl border border-border/50 bg-muted/15"
+                    : "rounded-lg border border-border/60 bg-muted/40"
+                )}
+              >
                 <Button
                   type="button"
                   size="sm"
                   variant={effectiveMode === "assign" ? "secondary" : "ghost"}
-                  className="h-7 px-2.5 text-[11px]"
+                  className={cn(
+                    "h-7 px-2.5 text-[11px]",
+                    isEditorial && "rounded-lg data-[state=active]:shadow-sm"
+                  )}
                   disabled={modeSwitchDisabled}
                   onClick={() => void switchMode("assign")}
                 >
@@ -237,7 +283,10 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
                   type="button"
                   size="sm"
                   variant={effectiveMode === "schedule" ? "secondary" : "ghost"}
-                  className="h-7 px-2.5 text-[11px]"
+                  className={cn(
+                    "h-7 px-2.5 text-[11px]",
+                    isEditorial && "rounded-lg"
+                  )}
                   disabled={modeSwitchDisabled}
                   onClick={() => void switchMode("schedule")}
                 >
@@ -247,17 +296,34 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
             ) : null}
           </div>
           {hintText ? (
-            <p className="text-[10px] leading-snug text-muted-foreground">{hintText}</p>
+            <p
+              className={cn(
+                "leading-snug text-muted-foreground",
+                isEditorial ? "text-xs leading-relaxed" : "text-[10px] leading-snug"
+              )}
+            >
+              {hintText}
+            </p>
           ) : null}
           {showScheduleDayTabs && setActiveScheduleDayKey ? (
-            <div className="mt-2 border-t border-border/40 pt-2">
+            <div className={cn("mt-2 border-t border-border/40 pt-2", isEditorial && "mt-3")}>
               <Tabs value={resolvedActiveScheduleDayKey} onValueChange={setActiveScheduleDayKey}>
-                <TabsList className="h-auto min-h-9 min-w-0 flex-wrap justify-start gap-1 bg-muted/50 p-1">
+                <TabsList
+                  className={cn(
+                    "h-auto min-h-9 min-w-0 flex-wrap justify-start gap-1",
+                    isEditorial
+                      ? "rounded-xl border border-border/50 bg-background/80 p-1"
+                      : "bg-muted/50 p-1"
+                  )}
+                >
                   {scheduleDayTabs.map((d) => (
                     <TabsTrigger
                       key={d.key}
                       value={d.key}
-                      className="shrink-0 px-2 py-1 text-[11px]"
+                      className={cn(
+                        "shrink-0 px-2 py-1 text-[11px]",
+                        isEditorial && "rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                      )}
                     >
                       {d.label}
                     </TabsTrigger>
@@ -267,9 +333,16 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
             </div>
           ) : null}
           {showScheduleAreaTabs ? (
-            <div className="mt-2 border-t border-border/40 pt-2">
+            <div className={cn("mt-2 border-t border-border/40 pt-2", isEditorial && "mt-3")}>
               <Tabs value={scheduleAreaTabId} onValueChange={setActiveAreaTabId}>
-                <TabsList className="h-auto min-h-9 min-w-0 flex-wrap justify-start gap-1 bg-muted/50 p-1">
+                <TabsList
+                  className={cn(
+                    "h-auto min-h-9 min-w-0 flex-wrap justify-start gap-1",
+                    isEditorial
+                      ? "rounded-xl border border-border/50 bg-background/80 p-1"
+                      : "bg-muted/50 p-1"
+                  )}
+                >
                   {scheduleAreaTabsForDisplay.map((t) => {
                     const rowCount =
                       scheduleTabBarItems.find((x) => x.id === t.id)?.rowCount ?? 0;
@@ -277,7 +350,10 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
                       <TabsTrigger
                         key={t.id}
                         value={t.id}
-                        className="max-w-[11rem] shrink-0 gap-1 px-2 py-1 text-left text-[11px]"
+                        className={cn(
+                          "max-w-[11rem] shrink-0 gap-1 px-2 py-1 text-left text-[11px]",
+                          isEditorial && "rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                        )}
                       >
                         <span className="truncate">{t.name}</span>
                         <span className="shrink-0 tabular-nums text-muted-foreground">
@@ -299,6 +375,7 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
               scheduleTabCount={scheduleTabs.length}
               scheduleTabs={scheduleTabs.map((t) => ({ id: t.id, name: t.name }))}
               roundCounts={roundCounts}
+              chrome={chrome}
             />
           ) : effectiveMode === "assign" ? (
             <StartListScheduleAssignBoard
@@ -326,9 +403,19 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
           ) : (
             <>
               {canEditSchedule ? (
-                <div className="border-b border-border/50 bg-muted/5 px-2.5 py-2">
-                  <p className="mb-1.5 text-[10px] font-medium text-muted-foreground">
-                    一括で開始時刻（表示中の日・エリアの上から順に、各行＝ラウンドごとに分刻みで保存）
+                <div
+                  className={cn(
+                    "border-b border-border/50 bg-muted/5",
+                    isEditorial ? "px-3 py-2 sm:px-4" : "px-2.5 py-2"
+                  )}
+                >
+                  <p
+                    className={cn(
+                      "font-medium text-muted-foreground",
+                      isEditorial ? "mb-2 text-[11px] uppercase tracking-[0.12em]" : "mb-1.5 text-[10px]"
+                    )}
+                  >
+                    一括で開始時刻
                   </p>
                   <div className="flex flex-wrap items-end gap-2">
                     <div className="space-y-0.5">
@@ -338,12 +425,15 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
                       <Input
                         id="stagger-base"
                         type="datetime-local"
-                        className="h-7 max-w-[10.5rem] text-[11px]"
+                        className={cn(
+                          "h-7 max-w-[10.5rem] text-[11px]",
+                          isEditorial && "rounded-md border-border/55"
+                        )}
                         min={scheduleMinMax.min}
                         max={scheduleMinMax.max}
                         value={staggerBase}
                         onChange={(e) => setStaggerBase(e.target.value)}
-                        disabled={bulkApplying || roundSetupBulkSaving || reorderSaving}
+                        disabled={scheduleTimesSaving || roundSetupBulkSaving || reorderSaving}
                       />
                     </div>
                     <div className="space-y-0.5">
@@ -355,31 +445,43 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
                         numericInput="integer"
                         min={1}
                         max={1440}
-                        className="h-7 w-[4.25rem] text-[11px]"
+                        className={cn(
+                          "h-7 w-[4.25rem] text-[11px]",
+                          isEditorial && "rounded-md border-border/55"
+                        )}
                         value={staggerMinutes}
                         onChange={(e) => setStaggerMinutes(e.target.value)}
-                        disabled={bulkApplying || roundSetupBulkSaving || reorderSaving}
+                        disabled={scheduleTimesSaving || roundSetupBulkSaving || reorderSaving}
                       />
                     </div>
                     <Button
                       type="button"
                       size="sm"
                       variant="secondary"
-                      className="h-7 px-2 text-[11px]"
-                      onClick={() => void applyStaggerAndSave()}
+                      className={cn(
+                        "h-7 px-2 text-[11px]",
+                        isEditorial && "rounded-lg shadow-sm"
+                      )}
+                      onClick={applyStaggerDraft}
                       disabled={
-                        bulkApplying ||
+                        scheduleTimesSaving ||
                         reorderSaving ||
-                        timeSavingId !== null ||
                         roundSetupBulkSaving
                       }
                     >
-                      {bulkApplying ? "保存中…" : "このエリアに保存"}
+                      このエリアに反映
                     </Button>
                   </div>
                 </div>
               ) : null}
-              <ul className="divide-y divide-border/50">
+              <ul
+                className={cn(
+                  "divide-y divide-border/50",
+                  isEditorial &&
+                    visibleRoundRows.length > 8 &&
+                    "max-h-[min(70vh,640px)] overflow-y-auto"
+                )}
+              >
                 {visibleRoundRows.length === 0 ? (
                   <li className="px-2.5 py-6 text-center text-xs text-muted-foreground">
                     {canReorder
@@ -392,20 +494,34 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
                 {visibleRoundRows.map(({ event, roundIndex, roundLabel }, rowIdx) => {
                   const rowKey = formatScheduleRowKey(event.id, roundIndex);
                   const rk = roundStartKey(event.id, roundIndex);
-                  const roundIso = effectiveRoundStartIso({
-                    scheduledStartAt: event.scheduledStartAt,
-                    roundScheduledStarts: event.roundScheduledStarts,
-                    roundIndex,
-                  });
+                  const draftRaw = (roundStarts[rk] ?? "").trim();
+                  const roundIso = draftRaw
+                    ? (() => {
+                        const d = new Date(draftRaw);
+                        return Number.isNaN(d.getTime()) ? null : d.toISOString();
+                      })()
+                    : effectiveRoundStartIso({
+                        scheduledStartAt: event.scheduledStartAt,
+                        roundScheduledStarts: event.roundScheduledStarts,
+                        roundIndex,
+                      });
                   const timeColumn = formatEventStartTimeColumnJa(roundIso);
                   const prevRow = rowIdx > 0 ? visibleRoundRows[rowIdx - 1] : null;
-                  const prevIso = prevRow
-                    ? effectiveRoundStartIso({
-                        scheduledStartAt: prevRow.event.scheduledStartAt,
-                        roundScheduledStarts: prevRow.event.roundScheduledStarts,
-                        roundIndex: prevRow.roundIndex,
-                      })
-                    : null;
+                  const prevDraftRaw = prevRow
+                    ? (roundStarts[roundStartKey(prevRow.event.id, prevRow.roundIndex)] ?? "").trim()
+                    : "";
+                  const prevIso = prevDraftRaw
+                    ? (() => {
+                        const d = new Date(prevDraftRaw);
+                        return Number.isNaN(d.getTime()) ? null : d.toISOString();
+                      })()
+                    : prevRow
+                      ? effectiveRoundStartIso({
+                          scheduledStartAt: prevRow.event.scheduledStartAt,
+                          roundScheduledStarts: prevRow.event.roundScheduledStarts,
+                          roundIndex: prevRow.roundIndex,
+                        })
+                      : null;
                   const dateKey = scheduleDateKeyFromIso(roundIso);
                   const prevDateKey = scheduleDateKeyFromIso(prevIso);
                   const showDateHeading = dateKey && dateKey !== prevDateKey;
@@ -434,12 +550,16 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
                     nRounds > 1
                       ? `/competitions/${competitionId}/start-list/${event.id}?roundIndex=${roundIndex}`
                       : `/competitions/${competitionId}/start-list/${event.id}`;
-                  const isSaving = timeSavingId === `${event.id}:${roundIndex}`;
 
                   return (
                     <li key={rowKey} className="list-none">
                       {dateHeading ? (
-                        <div className="border-b border-border/40 bg-muted/10 px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
+                        <div
+                          className={cn(
+                            "border-b border-border/40 bg-muted/10 font-medium text-muted-foreground",
+                            isEditorial ? "px-3 py-1 text-[10px] sm:px-4" : "px-2.5 py-1 text-[10px]"
+                          )}
+                        >
                           {dateHeading}
                         </div>
                       ) : null}
@@ -448,7 +568,7 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
                           "flex flex-col sm:flex-row sm:items-stretch",
                           dragId === rowKey
                             ? "bg-muted/40"
-                            : rowIdx % 2 === 1
+                            : !isEditorial && rowIdx % 2 === 1
                               ? "bg-muted/[0.04]"
                               : ""
                         )}
@@ -459,7 +579,10 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
                               type="button"
                               draggable
                               aria-label={`${event.name}（${roundLabel}）の並べ替え`}
-                              className="flex w-7 shrink-0 cursor-grab touch-none items-center justify-center border-r border-border/50 px-0 text-muted-foreground active:cursor-grabbing"
+                              className={cn(
+                                "flex shrink-0 cursor-grab touch-none items-center justify-center border-r border-border/50 px-0 text-muted-foreground active:cursor-grabbing",
+                                isEditorial ? "w-6" : "w-7"
+                              )}
                               onDragStart={(e) => {
                                 setDragId(rowKey);
                                 e.dataTransfer.effectAllowed = "move";
@@ -473,60 +596,94 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
                           ) : null}
                           <div
                             className={cn(
-                              "flex w-[3.25rem] shrink-0 items-center justify-center border-r border-border/50 px-1 tabular-nums text-[11px]",
-                              canEditSchedule ? "text-muted-foreground" : "font-medium text-foreground"
+                              "flex shrink-0 items-center justify-center border-r border-border/50 px-1 tabular-nums",
+                              isEditorial
+                                ? "w-11 text-xs font-medium"
+                                : "w-[3.25rem] text-[11px]",
+                              canEditSchedule && !isEditorial
+                                ? "text-muted-foreground"
+                                : "font-medium text-foreground"
                             )}
                           >
                             {timeColumn ?? (
-                              <span className="text-[10px] text-muted-foreground/70">未定</span>
+                              <span className="text-[10px] font-normal text-muted-foreground/70">
+                                未定
+                              </span>
                             )}
                           </div>
                           <Link
                             href={startListHref}
                             prefetch={false}
-                            className="flex min-w-0 flex-1 flex-col gap-0.5 px-2 py-1.5 text-left text-sm transition hover:bg-muted/30 sm:flex-row sm:items-center sm:gap-2"
+                            className={cn(
+                              "flex min-w-0 flex-1 text-left transition hover:bg-muted/30",
+                              isEditorial
+                                ? "flex-col justify-center gap-0.5 px-3 py-2 sm:px-4"
+                                : "flex-col gap-0.5 px-2 py-1.5 text-sm sm:flex-row sm:items-center sm:gap-2"
+                            )}
                             {...rowDrop}
                           >
-                            <span className="min-w-0 flex-1">
-                              <span className="flex flex-wrap items-center gap-1.5">
-                                <span className="truncate text-[13px] font-medium leading-tight">
-                                  {event.name}
+                            {isEditorial ? (
+                              <>
+                                <span className="flex min-w-0 items-center gap-1.5">
+                                  <span className="truncate text-xs font-medium leading-tight">
+                                    {event.name}
+                                  </span>
+                                  <span className="shrink-0 rounded-full border border-border/55 bg-muted/20 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+                                    {roundLabel}
+                                  </span>
                                 </span>
-                                <Badge
-                                  variant="secondary"
-                                  className="h-4 shrink-0 px-1.5 text-[9px] font-normal"
-                                >
-                                  {roundLabel}
-                                </Badge>
-                              </span>
-                            </span>
-                            <span className="shrink-0 text-[10px] text-muted-foreground">
-                              {sexLabelJa(event.sex)}
-                              {event.type === "TEAM" ? " · 団体" : " · 個人"}
-                              {event.ageCategoryName ? ` · ${event.ageCategoryName}` : ""}
-                            </span>
+                                <span className="truncate text-[10px] leading-tight text-muted-foreground">
+                                  {sexLabelJa(event.sex)}
+                                  {event.type === "TEAM" ? " · 団体" : " · 個人"}
+                                  {event.ageCategoryName ? ` · ${event.ageCategoryName}` : ""}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="min-w-0 flex-1">
+                                  <span className="flex flex-wrap items-center gap-1.5">
+                                    <span className="truncate text-[13px] font-medium leading-tight">
+                                      {event.name}
+                                    </span>
+                                    <Badge
+                                      variant="secondary"
+                                      className="h-4 shrink-0 px-1.5 text-[9px] font-normal"
+                                    >
+                                      {roundLabel}
+                                    </Badge>
+                                  </span>
+                                </span>
+                                <span className="shrink-0 text-[10px] text-muted-foreground">
+                                  {sexLabelJa(event.sex)}
+                                  {event.type === "TEAM" ? " · 団体" : " · 個人"}
+                                  {event.ageCategoryName ? ` · ${event.ageCategoryName}` : ""}
+                                </span>
+                              </>
+                            )}
                           </Link>
                         </div>
                         {canEditSchedule ? (
-                          <div className="flex shrink-0 items-center gap-1 border-t border-border/50 px-2 py-1 sm:w-auto sm:border-l sm:border-t-0 sm:py-1 sm:pl-2 sm:pr-2">
+                          <div
+                            className={cn(
+                              "flex shrink-0 items-center gap-1 border-t border-border/50 sm:border-l sm:border-t-0",
+                              isEditorial ? "px-3 py-1.5 sm:px-4" : "px-2 py-1 sm:py-1 sm:pl-2 sm:pr-2"
+                            )}
+                          >
                             <Input
                               type="datetime-local"
                               aria-label={`${event.name}（${roundLabel}）の開始時刻`}
-                              className="h-7 max-w-[10.5rem] text-[11px]"
+                              className={cn(
+                                "h-7 max-w-[10.5rem] text-[11px]",
+                                isEditorial && "rounded-md border-border/55"
+                              )}
                               min={scheduleMinMax.min}
                               max={scheduleMinMax.max}
                               value={roundStarts[rk] ?? ""}
                               onChange={(e) =>
                                 setRoundStarts((p) => ({ ...p, [rk]: e.target.value }))
                               }
-                              onBlur={() => saveRoundStartOnBlur?.(event.id, roundIndex)}
-                              disabled={bulkApplying || roundSetupBulkSaving || reorderSaving}
+                              disabled={scheduleTimesSaving || roundSetupBulkSaving || reorderSaving}
                             />
-                            {isSaving ? (
-                              <span className="shrink-0 text-[10px] text-muted-foreground">
-                                保存中
-                              </span>
-                            ) : null}
                           </div>
                         ) : null}
                       </div>
@@ -539,10 +696,44 @@ export function StartListScheduleCard(props: StartListScheduleCardProps) {
                   並べ替え保存中…
                 </p>
               ) : null}
-              {canEditSchedule && bulkApplying ? (
-                <p className="border-t border-border/50 px-2.5 py-1 text-[10px] text-muted-foreground">
-                  一括保存中…
-                </p>
+              {canEditSchedule ? (
+                <div
+                  className={cn(
+                    "flex flex-wrap items-center gap-2 border-t border-border/50 bg-muted/5",
+                    isEditorial ? "px-3 py-2 sm:px-4" : "px-2.5 py-2"
+                  )}
+                >
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={scheduleTimesDirty ? "default" : "secondary"}
+                    className={cn("h-7 px-2.5 text-[11px]", isEditorial && "rounded-lg shadow-sm")}
+                    onClick={() => void onSaveScheduleTimes?.()}
+                    disabled={
+                      !scheduleTimesDirty ||
+                      scheduleTimesSaving ||
+                      reorderSaving ||
+                      roundSetupBulkSaving
+                    }
+                  >
+                    {scheduleTimesSaving ? "保存中…" : "保存"}
+                  </Button>
+                  {scheduleTimesDirty ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-[11px] text-muted-foreground"
+                      onClick={() => onDiscardScheduleTimes?.()}
+                      disabled={scheduleTimesSaving || reorderSaving || roundSetupBulkSaving}
+                    >
+                      変更を破棄
+                    </Button>
+                  ) : null}
+                  {scheduleTimesDirty ? (
+                    <span className="text-[10px] text-muted-foreground">未保存の変更あり</span>
+                  ) : null}
+                </div>
               ) : null}
             </>
           )}

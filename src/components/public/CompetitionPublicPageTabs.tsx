@@ -58,7 +58,7 @@ function CompetitionPublicPageTabsInner({
         <TabsList
           className={cn(
             isEditorial
-              ? "flex h-auto w-full items-stretch gap-1 overflow-x-auto rounded-2xl border border-border/55 bg-background/95 p-1.5 shadow-sm [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              ? "flex h-auto w-full items-stretch gap-1 overflow-x-auto rounded-2xl border border-border/50 bg-muted/15 p-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               : "grid h-auto w-full grid-cols-2 gap-1 rounded-xl border border-border/80 bg-muted/30 p-1 sm:inline-flex sm:w-auto sm:grid-cols-none sm:flex-wrap sm:justify-start"
           )}
           aria-label="大会情報の表示切替"
@@ -66,8 +66,10 @@ function CompetitionPublicPageTabsInner({
           <TabsTrigger
             value="overview"
             className={cn(
-              "rounded-xl px-3 text-xs font-medium data-[state=active]:shadow-sm sm:text-sm",
-              isEditorial ? "min-w-[7rem] flex-1 py-2.5 sm:min-w-[8rem]" : "h-9 sm:h-8"
+              "rounded-xl px-3 text-xs font-medium transition-all duration-200 sm:text-sm",
+              isEditorial
+                ? "relative min-w-[7rem] flex-1 py-2.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=inactive]:text-muted-foreground sm:min-w-[8rem] data-[state=active]:after:absolute data-[state=active]:after:bottom-1.5 data-[state=active]:after:left-1/2 data-[state=active]:after:h-0.5 data-[state=active]:after:w-10 data-[state=active]:after:-translate-x-1/2 data-[state=active]:after:rounded-full data-[state=active]:after:bg-orange-500/80"
+                : "h-9 data-[state=active]:shadow-sm sm:h-8"
             )}
           >
             大会情報
@@ -75,8 +77,10 @@ function CompetitionPublicPageTabsInner({
           <TabsTrigger
             value="results"
             className={cn(
-              "rounded-xl px-3 text-xs font-medium data-[state=active]:shadow-sm sm:text-sm",
-              isEditorial ? "min-w-[7rem] flex-1 py-2.5 sm:min-w-[8rem]" : "h-9 sm:h-8"
+              "rounded-xl px-3 text-xs font-medium transition-all duration-200 sm:text-sm",
+              isEditorial
+                ? "relative min-w-[7rem] flex-1 py-2.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=inactive]:text-muted-foreground sm:min-w-[8rem] data-[state=active]:after:absolute data-[state=active]:after:bottom-1.5 data-[state=active]:after:left-1/2 data-[state=active]:after:h-0.5 data-[state=active]:after:w-10 data-[state=active]:after:-translate-x-1/2 data-[state=active]:after:rounded-full data-[state=active]:after:bg-orange-500/80"
+                : "h-9 data-[state=active]:shadow-sm sm:h-8"
             )}
           >
             レース情報
@@ -85,13 +89,13 @@ function CompetitionPublicPageTabsInner({
 
         <TabsContent
           value="overview"
-          className={cn("space-y-3 sm:space-y-4", isEditorial ? "mt-5" : "mt-4")}
+          className={cn(isEditorial ? "mt-6 space-y-0" : "mt-4 space-y-3 sm:space-y-4")}
         >
           {overview}
         </TabsContent>
         <TabsContent
           value="results"
-          className={cn("space-y-3", isEditorial ? "mt-5" : "mt-4 sm:mt-4")}
+          className={cn(isEditorial ? "mt-6 space-y-0" : "mt-4 space-y-3 sm:space-y-4")}
         >
           {results}
         </TabsContent>

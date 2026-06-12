@@ -4,8 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  CompetitionEditorialPanel,
-  CompetitionSubheading,
+  CompetitionEditorialSection,
 } from "@/components/competitions/browse/competitionEditorialUi";
 import { cn } from "@/lib/utils";
 import { Eye, EyeOff, Pencil, Plus, Trash2 } from "lucide-react";
@@ -232,15 +231,14 @@ export default function CompetitionAnnouncementsManager({
         )}
 
         {announcements.length > 0 ? (
-          <div className="space-y-2">
+          <div className={cn(isEditorial ? "divide-y divide-border/45" : "space-y-2")}>
             {announcements.map((announcement) => (
               <div
                 key={announcement.id}
                 className={cn(
-                  "border px-2.5 py-2",
                   isEditorial
-                    ? "rounded-xl border-border/55 bg-muted/10"
-                    : "rounded-md border-border bg-muted/15"
+                    ? "py-4 first:pt-0"
+                    : "rounded-md border border-border bg-muted/15 px-2.5 py-2"
                 )}
               >
                 {editingId === announcement.id ? (
@@ -275,13 +273,33 @@ export default function CompetitionAnnouncementsManager({
                     </div>
                   </div>
                 ) : (
-                <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <h4 className="text-sm font-semibold">{announcement.title}</h4>
-                    <p className="mt-0.5 whitespace-pre-wrap text-xs text-muted-foreground">
+                    {isEditorial && !canEdit ? (
+                      <p className="text-[11px] font-medium tabular-nums uppercase tracking-[0.14em] text-muted-foreground/80">
+                        {new Date(announcement.createdAt).toLocaleDateString("ja-JP")}
+                      </p>
+                    ) : null}
+                    <h4
+                      className={cn(
+                        "font-semibold tracking-tight text-foreground",
+                        isEditorial ? "mt-1 text-[0.9375rem]" : "text-sm"
+                      )}
+                    >
+                      {announcement.title}
+                    </h4>
+                    <p
+                      className={cn(
+                        "mt-1.5 whitespace-pre-wrap",
+                        isEditorial
+                          ? "text-sm leading-[1.75] text-foreground/85"
+                          : "text-xs text-muted-foreground"
+                      )}
+                    >
                       {announcement.content}
                     </p>
-                    <div className="mt-1 flex items-center gap-2">
+                    {canEdit ? (
+                    <div className="mt-2 flex items-center gap-2">
                       <span
                         className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] ${
                           announcement.publishedAt
@@ -292,9 +310,12 @@ export default function CompetitionAnnouncementsManager({
                         {announcement.publishedAt ? "公開中" : "下書き"}
                       </span>
                     </div>
+                    ) : null}
+                    {!isEditorial || canEdit ? (
                     <p className="mt-1 text-[11px] text-muted-foreground">
                       {new Date(announcement.createdAt).toLocaleDateString("ja-JP")}
                     </p>
+                    ) : null}
                   </div>
                   {canEdit && (
                     <div className="flex shrink-0 items-center gap-1">
@@ -341,16 +362,15 @@ export default function CompetitionAnnouncementsManager({
 
   if (isEditorial) {
     return (
-      <CompetitionEditorialPanel accent="orange">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <CompetitionSubheading>News</CompetitionSubheading>
-            <h3 className="mt-1 text-base font-semibold text-foreground">お知らせ</h3>
-          </div>
-          {headerActions}
-        </div>
-        <div className="mt-4">{body}</div>
-      </CompetitionEditorialPanel>
+      <CompetitionEditorialSection
+        subheading="News"
+        title="お知らせ"
+        titleExtra={headerActions}
+        variant="flat"
+        accent="orange"
+      >
+        {body}
+      </CompetitionEditorialSection>
     );
   }
 
