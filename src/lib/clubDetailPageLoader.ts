@@ -1,50 +1,30 @@
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { redirectUnlessCanViewClubDetail } from "@/lib/clubAccess";
-import {
-  countClubMembershipsByStatus,
-  loadClubRepresentativeMemberOptions,
-} from "@/lib/clubMembersTabLoader";
-import { isClubAdminRole } from "@/lib/roleScopes";
+import { loadClubMembershipBundle } from "@/lib/clubMembersTabLoader";
 import { appRoutes } from "@/lib/appRoutes";
 import { prisma } from "@/server/db";
 
 export const loadClubDetailPageData = cache(async (clubId: string, userId: string) => {
   await redirectUnlessCanViewClubDetail(clubId, userId);
 
-  const [club, userMembership, membershipCounts] = await Promise.all([
+  const [club, membershipBundle] = await Promise.all([
     prisma.club.findUnique({
       where: { id: clubId },
-      include: {
-        creator: {
-          select: {
-            profile: { select: { familyName: true, givenName: true } },
-          },
-        },
-      },
     }),
-    prisma.membership.findFirst({
-      where: { clubId, userId },
-      select: { id: true, userId: true, role: true, status: true },
-    }),
-    countClubMembershipsByStatus(clubId),
+    loadClubMembershipBundle(clubId, userId),
   ]);
 
   if (!club) {
     redirect(appRoutes.profile.clubs());
   }
 
-  const isClubAdmin = !!(userMembership && isClubAdminRole(userMembership.role));
-  const representativeMemberOptions = isClubAdmin
-    ? await loadClubRepresentativeMemberOptions(clubId)
-    : [];
-
   return {
     club,
-    userMembership,
-    approvedMemberCount: membershipCounts.approved,
-    isClubAdmin,
-    representativeMemberOptions,
+    userMembership: membershipBundle.userMembership,
+    approvedMemberCount: membershipBundle.approvedMemberCount,
+    isClubAdmin: membershipBundle.isClubAdmin,
+    representativeMemberOptions: membershipBundle.representativeMemberOptions,
     userId,
   };
 });

@@ -1,14 +1,32 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Eye, EyeOff, Pencil, Pin, Trash2, Plus, X, Send } from "lucide-react";
+import {
+  ChevronDown,
+  Eye,
+  EyeOff,
+  Pencil,
+  Pin,
+  Trash2,
+  Plus,
+  X,
+  Send,
+} from "lucide-react";
 import { isClubAdminRole } from "@/lib/roleScopes";
+import { cn } from "@/lib/utils";
+import {
+  ClubEditorialEmptyState,
+  ClubEditorialFormPanel,
+  ClubEditorialLoadingState,
+  OrgEditorialPanel,
+  OrgSubheading,
+} from "@/components/clubEditorialUi";
 
 type AnnouncementAuthor = {
   id: string;
@@ -34,6 +52,10 @@ type ClubAnnouncementsProps = {
   currentUserId: string;
   currentUserRole: "ADMIN" | "MEMBER" | string;
 };
+
+function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("ja-JP", { month: "numeric", day: "numeric" });
+}
 
 export default function ClubAnnouncements({
   clubId,
@@ -208,220 +230,240 @@ export default function ClubAnnouncements({
   };
 
   if (loading) {
-    return <div>読み込み中...</div>;
+    return <ClubEditorialLoadingState label="お知らせを読み込み中" />;
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">クラブのお知らせ</h2>
-        {canCreateAnnouncement && (
+    <OrgEditorialPanel accent="orange" className="!px-4 !py-3 sm:!px-5 sm:!py-4">
+      <div className="flex items-center justify-between gap-2">
+        <OrgSubheading>Announcements</OrgSubheading>
+        {canCreateAnnouncement ? (
           <Button
             onClick={() => setShowCreateForm(!showCreateForm)}
             variant={showCreateForm ? "outline" : "default"}
             size="sm"
-            className="h-9 px-4 shadow-sm"
+            className="h-7 shrink-0 gap-1 px-2 text-xs"
           >
             {showCreateForm ? (
               <>
-                <X className="h-4 w-4" />
-                入力を閉じる
+                <X className="size-3.5" aria-hidden />
+                閉じる
               </>
             ) : (
               <>
-                <Plus className="h-4 w-4" />
-                お知らせを作成
+                <Plus className="size-3.5" aria-hidden />
+                作成
               </>
             )}
           </Button>
-        )}
+        ) : null}
       </div>
 
-      {showCreateForm && (
-        <Card className="p-6">
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="title">タイトル</Label>
-              <Input
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="お知らせのタイトル"
-              />
+      {showCreateForm ? (
+        <ClubEditorialFormPanel className="mt-2 !px-3 !py-3">
+          <div className="space-y-2">
+            <div className="space-y-1">
+              <Label htmlFor="title" className="text-xs">
+                タイトル
+              </Label>
+              <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} className="h-8 text-sm" />
             </div>
-            <div>
-              <Label htmlFor="content">内容</Label>
+            <div className="space-y-1">
+              <Label htmlFor="content" className="text-xs">
+                内容
+              </Label>
               <Textarea
                 id="content"
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                placeholder="お知らせの内容"
-                rows={6}
+                rows={3}
+                className="text-sm"
               />
             </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="isPinned"
-                checked={isPinned}
-                onChange={(e) => setIsPinned(e.target.checked)}
-              />
-              <Label htmlFor="isPinned">ピン留めする</Label>
+            <div className="flex flex-wrap gap-3 text-xs">
+              <label className="inline-flex items-center gap-1.5">
+                <input type="checkbox" checked={isPinned} onChange={(e) => setIsPinned(e.target.checked)} />
+                ピン留め
+              </label>
+              <label className="inline-flex items-center gap-1.5">
+                <input type="checkbox" checked={isPublished} onChange={(e) => setIsPublished(e.target.checked)} />
+                公開
+              </label>
             </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="isPublished"
-                checked={isPublished}
-                onChange={(e) => setIsPublished(e.target.checked)}
-              />
-              <Label htmlFor="isPublished">作成時に公開する</Label>
-            </div>
-            <Button onClick={handleCreate} disabled={creating} className="h-9 px-4 shadow-sm">
-              <Send className="h-4 w-4" />
-              {creating ? "投稿中..." : "投稿する"}
+            <Button onClick={handleCreate} disabled={creating} size="sm" className="h-7 gap-1 px-2 text-xs">
+              <Send className="size-3.5" aria-hidden />
+              {creating ? "投稿中..." : "投稿"}
             </Button>
           </div>
-        </Card>
-      )}
+        </ClubEditorialFormPanel>
+      ) : null}
 
-      {announcements.length === 0 ? (
-        <Card className="p-6 text-center text-gray-500">
-          お知らせはまだありません
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {announcements.map((announcement) => {
-            const isAuthor = announcement.authorId === currentUserId;
-            const canDelete = isAuthor || isClubAdminRole(currentUserRole);
-            const canManage = isClubAdminRole(currentUserRole);
+      <div className="mt-2">
+        {announcements.length === 0 ? (
+          <ClubEditorialEmptyState message="お知らせはまだありません" />
+        ) : (
+          <ul className="divide-y divide-border/45 overflow-hidden rounded-lg border border-border/55 bg-card/50">
+            {announcements.map((announcement) => {
+              const isAuthor = announcement.authorId === currentUserId;
+              const canDelete = isAuthor || isClubAdminRole(currentUserRole);
+              const canManage = isClubAdminRole(currentUserRole);
+              const isEditing = editingId === announcement.id;
 
-            return (
-              <Card
-                key={announcement.id}
-                className={announcement.isPinned ? "border-orange-500 border-2" : ""}
-              >
-                <div className="p-6">
-                  {editingId === announcement.id ? (
-                    <div className="space-y-3">
-                      <Input
-                        value={editingTitle}
-                        onChange={(e) => setEditingTitle(e.target.value)}
-                        placeholder="タイトル"
-                      />
-                      <Textarea
-                        value={editingContent}
-                        onChange={(e) => setEditingContent(e.target.value)}
-                        rows={6}
-                        placeholder="内容"
-                      />
-                      <div className="flex flex-wrap items-center gap-3 text-sm">
-                        <label className="inline-flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={editingPinned}
-                            onChange={(e) => setEditingPinned(e.target.checked)}
-                          />
-                          ピン留め
-                        </label>
-                        <label className="inline-flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={editingPublished}
-                            onChange={(e) => setEditingPublished(e.target.checked)}
-                          />
-                          公開する
-                        </label>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button size="sm" onClick={handleSaveEdit} disabled={creating}>
-                          保存
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={cancelEdit}>
-                          キャンセル
-                        </Button>
-                      </div>
+              if (isEditing) {
+                return (
+                  <li key={announcement.id} className="space-y-2 px-3 py-2.5">
+                    <Input
+                      value={editingTitle}
+                      onChange={(e) => setEditingTitle(e.target.value)}
+                      className="h-8 text-sm"
+                    />
+                    <Textarea
+                      value={editingContent}
+                      onChange={(e) => setEditingContent(e.target.value)}
+                      rows={3}
+                      className="text-sm"
+                    />
+                    <div className="flex flex-wrap items-center gap-3 text-xs">
+                      <label className="inline-flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={editingPinned}
+                          onChange={(e) => setEditingPinned(e.target.checked)}
+                        />
+                        ピン留め
+                      </label>
+                      <label className="inline-flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={editingPublished}
+                          onChange={(e) => setEditingPublished(e.target.checked)}
+                        />
+                        公開
+                      </label>
                     </div>
-                  ) : (
-                    <>
-                      <div className="mb-2 flex items-start justify-between">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-lg font-semibold">{announcement.title}</h3>
-                          {announcement.isPinned && (
-                            <span className="rounded bg-orange-500 px-2 py-1 text-xs text-white">
-                              ピン留め
-                            </span>
-                          )}
-                          <span
-                            className={`rounded px-2 py-1 text-xs ${
-                              announcement.publishedAt
-                                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                                : "bg-muted text-muted-foreground"
-                            }`}
-                          >
-                            {announcement.publishedAt ? "公開中" : "下書き"}
+                    <div className="flex gap-1.5">
+                      <Button size="sm" className="h-7 px-2 text-xs" onClick={handleSaveEdit} disabled={creating}>
+                        保存
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={cancelEdit}>
+                        取消
+                      </Button>
+                    </div>
+                  </li>
+                );
+              }
+
+              return (
+                <li key={announcement.id}>
+                  <details
+                    className="group"
+                    open={announcement.isPinned || undefined}
+                  >
+                    <summary className="flex cursor-pointer list-none items-start gap-1.5 px-3 py-2 marker:content-none [&::-webkit-details-marker]:hidden hover:bg-muted/20">
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate text-sm font-medium text-foreground">
+                            {announcement.title}
+                          </span>
+                          <ChevronDown
+                            className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+                            aria-hidden
+                          />
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {announcement.isPinned ? (
+                            <Badge
+                              variant="outline"
+                              className="h-4 gap-0.5 border-orange-300/70 bg-orange-50 px-1 text-[10px] font-normal text-orange-900 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-100"
+                            >
+                              <Pin className="size-2.5 fill-current" aria-hidden />
+                              固定
+                            </Badge>
+                          ) : null}
+                          {!announcement.publishedAt ? (
+                            <Badge variant="secondary" className="h-4 px-1 text-[10px] font-normal">
+                              下書き
+                            </Badge>
+                          ) : null}
+                          <span className="text-[10px] text-muted-foreground">
+                            {formatShortDate(announcement.createdAt)}
                           </span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {canManage && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleTogglePublished(announcement)}
-                            >
-                              {announcement.publishedAt ? (
-                                <EyeOff className="h-4 w-4" />
-                              ) : (
-                                <Eye className="h-4 w-4" />
-                              )}
-                            </Button>
-                          )}
-                          {canManage && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleTogglePin(announcement)}
-                            >
-                              <Pin
-                                className={`h-4 w-4 ${announcement.isPinned ? "fill-current" : ""}`}
-                              />
-                            </Button>
-                          )}
-                          {canManage && (
-                            <Button variant="ghost" size="sm" onClick={() => startEdit(announcement)}>
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          )}
-                          {canDelete && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDelete(announcement.id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-500" />
-                            </Button>
-                          )}
-                        </div>
                       </div>
-                      <p className="mb-3 whitespace-pre-wrap text-gray-700">{announcement.content}</p>
-                      <div className="text-sm text-gray-500">
-                        投稿者: {announcement.author.familyName} {announcement.author.givenName} •{" "}
-                        {new Date(announcement.createdAt).toLocaleDateString("ja-JP", {
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
+                    </summary>
+                    <div className="space-y-2 border-t border-border/40 px-3 pb-2.5 pt-2">
+                      <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground/90">
+                        {announcement.content}
+                      </p>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-[10px] text-muted-foreground">
+                          {announcement.author.familyName} {announcement.author.givenName}
+                        </p>
+                        {(canManage || canDelete) && (
+                          <div className="flex items-center gap-0.5">
+                            {canManage ? (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-7"
+                                  onClick={() => handleTogglePublished(announcement)}
+                                  aria-label={announcement.publishedAt ? "非公開" : "公開"}
+                                >
+                                  {announcement.publishedAt ? (
+                                    <EyeOff className="size-3.5" aria-hidden />
+                                  ) : (
+                                    <Eye className="size-3.5" aria-hidden />
+                                  )}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-7"
+                                  onClick={() => handleTogglePin(announcement)}
+                                  aria-label="ピン留め"
+                                >
+                                  <Pin
+                                    className={cn(
+                                      "size-3.5",
+                                      announcement.isPinned && "fill-current text-orange-600"
+                                    )}
+                                    aria-hidden
+                                  />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-7"
+                                  onClick={() => startEdit(announcement)}
+                                  aria-label="編集"
+                                >
+                                  <Pencil className="size-3.5" aria-hidden />
+                                </Button>
+                              </>
+                            ) : null}
+                            {canDelete ? (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-7 text-destructive hover:text-destructive"
+                                onClick={() => handleDelete(announcement.id)}
+                                aria-label="削除"
+                              >
+                                <Trash2 className="size-3.5" aria-hidden />
+                              </Button>
+                            ) : null}
+                          </div>
+                        )}
                       </div>
-                    </>
-                  )}
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-    </div>
+                    </div>
+                  </details>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </OrgEditorialPanel>
   );
 }

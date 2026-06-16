@@ -25,6 +25,7 @@ interface MemberActionsProps {
   currentUserId: string;
   targetUserId: string;
   currentUserRole: string;
+  compact?: boolean;
 }
 
 const confirmCopy: Record<
@@ -69,6 +70,7 @@ export default function MemberActions({
   currentUserId,
   targetUserId,
   currentUserRole,
+  compact = false,
 }: MemberActionsProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -160,6 +162,8 @@ export default function MemberActions({
 
   const copy = confirmAction ? confirmCopy[confirmAction] : null;
 
+  const btnClass = compact ? "h-6 px-1.5 text-[10px]" : "h-8 text-xs";
+
   return (
     <>
       <AlertDialog
@@ -187,14 +191,14 @@ export default function MemberActions({
         </AlertDialogContent>
       </AlertDialog>
 
-      <div className="flex flex-wrap gap-2">
+      <div className={compact ? "flex flex-wrap justify-end gap-1" : "flex flex-wrap gap-2"}>
         {status === "PENDING" && (
           <>
             <Button
               type="button"
               size="sm"
               variant="default"
-              className="h-8 text-xs"
+              className={btnClass}
               disabled={loading}
               onClick={() => setConfirmAction("approve")}
             >
@@ -204,7 +208,7 @@ export default function MemberActions({
               type="button"
               size="sm"
               variant="destructive"
-              className="h-8 text-xs"
+              className={btnClass}
               disabled={loading}
               onClick={() => setConfirmAction("reject")}
             >
@@ -219,11 +223,11 @@ export default function MemberActions({
                 type="button"
                 size="sm"
                 variant="secondary"
-                className="h-8 text-xs"
+                className={btnClass}
                 disabled={loading}
                 onClick={() => setConfirmAction("promote")}
               >
-                管理者に昇格
+                {compact ? "昇格" : "管理者に昇格"}
               </Button>
             )}
             {isAdmin && role === "ADMIN" && (
@@ -231,18 +235,18 @@ export default function MemberActions({
                 type="button"
                 size="sm"
                 variant="secondary"
-                className="h-8 text-xs"
+                className={btnClass}
                 disabled={loading}
                 onClick={() => setConfirmAction("demote")}
               >
-                メンバーに降格
+                {compact ? "降格" : "メンバーに降格"}
               </Button>
             )}
             <Button
               type="button"
               size="sm"
               variant="outline"
-              className="h-8 text-xs"
+              className={btnClass}
               disabled={loading}
               onClick={() => setConfirmAction("remove")}
             >

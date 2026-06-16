@@ -32,7 +32,25 @@ export function isPrismaPoolRetryable(error: unknown): boolean {
   return (
     isPrismaConnectionPoolTimeout(error) ||
     isPrismaMaxClientConnections(error) ||
-    isPrismaTransactionUnavailable(error)
+    isPrismaTransactionUnavailable(error) ||
+    isPrismaUnreachable(error)
+  );
+}
+
+/** pooler / ネットワークの一時不通（dev で HMR・並列 RSC と重なると出やすい） */
+export function isPrismaUnreachable(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
+  if (!message) return false;
+  return (
+    /Can't reach database server/i.test(message) ||
+    /Connection terminated unexpectedly/i.test(message) ||
+    /ECONNRESET/i.test(message) ||
+    /ETIMEDOUT/i.test(message)
   );
 }
 
@@ -78,6 +96,7 @@ export function notificationDispatchConcurrency(): number {
 }
 
 function retryDelayMs(error: unknown): number {
+  if (isPrismaUnreachable(error)) return 500;
   return isPrismaMaxClientConnections(error) ? 750 : 150;
 }
 

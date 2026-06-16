@@ -49,7 +49,7 @@ export default async function ClubDetailPage({
   const activeTab = parseClubDetailTab(tab);
 
   return (
-    <div className="app-page mx-auto w-full max-w-6xl space-y-4 px-3 py-4 sm:space-y-5 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
+    <div className="flex flex-col">
       <Suspense fallback={<ClubDetailHeaderSkeleton />}>
         <ClubDetailHeaderLoader clubId={id} />
       </Suspense>

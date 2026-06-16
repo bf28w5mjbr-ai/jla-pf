@@ -173,27 +173,68 @@ export async function competitionIdsForClubFromApprovedTechnicalOfficialApplicat
     select: { competitionId: true, userId: true, positionName: true },
   });
 
-  const competitionCache = new Map<string, OfficialApplicationCompetitionForSubmit | null>();
-  const out = new Set<string>();
-
-  for (const app of apps) {
+  const matchingApps = apps.filter((app) => {
     const dn = extractTechnicalOfficialClubDisplayNameFromPosition(app.positionName);
-    if (dn !== trimmed) continue;
+    return dn === trimmed;
+  });
+  if (matchingApps.length === 0) return [];
 
-    let comp = competitionCache.get(app.competitionId);
-    if (comp === undefined) {
-      comp = await loadCompetitionForTechnicalOfficialApplicationResolve(prisma, app.competitionId);
-      competitionCache.set(app.competitionId, comp);
-    }
-    if (!comp?.technicalOfficialRecruitmentEnabled) continue;
+  const competitionIds = [...new Set(matchingApps.map((a) => a.competitionId))];
+  const competitionRows = await prisma.competition.findMany({
+    where: { id: { in: competitionIds } },
+    select: {
+      id: true,
+      status: true,
+      entryStartDate: true,
+      entryEndDate: true,
+      officialRecruitmentEnabled: true,
+      officialQualificationFilterEnabled: true,
+      technicalOfficialRecruitmentEnabled: true,
+    },
+  });
+  const competitionById = new Map(
+    competitionRows.map((c) => [
+      c.id,
+      {
+        id: c.id,
+        status: c.status,
+        entryStartDate: c.entryStartDate,
+        entryEndDate: c.entryEndDate,
+        officialRecruitmentEnabled: c.officialRecruitmentEnabled,
+        officialQualificationFilterEnabled: c.officialQualificationFilterEnabled,
+        technicalOfficialRecruitmentEnabled: c.technicalOfficialRecruitmentEnabled ?? true,
+        organization: { status: "APPROVED" as const, admins: [] },
+      } satisfies OfficialApplicationCompetitionForSubmit,
+    ])
+  );
 
-    const resolved = await resolveClubIdForTechnicalOfficialApplication(prisma, {
-      competitionId: app.competitionId,
-      userId: app.userId,
-      positionName: app.positionName,
-      competition: comp,
-    });
-    if (resolved === clubId) out.add(app.competitionId);
+  const applicantUserIds = [...new Set(matchingApps.map((a) => a.userId))];
+  const approvedMemberships = await prisma.membership.findMany({
+    where: {
+      clubId,
+      userId: { in: applicantUserIds },
+      status: "APPROVED",
+    },
+    select: { userId: true },
+  });
+  const approvedApplicantIds = new Set(approvedMemberships.map((m) => m.userId));
+
+  const out = new Set<string>();
+  for (const app of matchingApps) {
+    if (!approvedApplicantIds.has(app.userId)) continue;
+
+    const competition = competitionById.get(app.competitionId);
+    if (!competition?.technicalOfficialRecruitmentEnabled) continue;
+
+    const pos = await resolveOfficialApplicationPositionName(
+      prisma,
+      app.competitionId,
+      competition,
+      "TECHNICAL",
+      clubId,
+      app.userId
+    );
+    if (pos.ok) out.add(app.competitionId);
   }
 
   return [...out];

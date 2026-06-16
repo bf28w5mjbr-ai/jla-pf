@@ -15,35 +15,64 @@ export type ClubMemberRow = {
   };
 };
 
-export const loadClubMembersTab = cache(async (clubId: string, currentUserId: string) => {
+const membershipInclude = {
+  user: {
+    select: {
+      id: true,
+      email: true,
+      profile: { select: { familyName: true, givenName: true } },
+    },
+  },
+} as const;
+
+/** クラブ詳細・メンバータブ共通の membership 一括取得 */
+export const loadClubMembershipBundle = cache(async (clubId: string, currentUserId: string) => {
   const memberships = await prisma.membership.findMany({
     where: { clubId },
-    include: {
-      user: {
-        select: {
-          id: true,
-          email: true,
-          profile: { select: { familyName: true, givenName: true } },
-        },
-      },
-    },
+    include: membershipInclude,
     orderBy: [{ role: "asc" }, { createdAt: "desc" }],
   });
 
   const userMembership = memberships.find((m) => m.userId === currentUserId) ?? null;
   const isClubAdmin = Boolean(userMembership && isClubAdminRole(userMembership.role));
-  const approvedMembers = memberships.filter((m) => m.status === "APPROVED");
-  const pendingMembers = memberships.filter((m) => m.status === "PENDING");
+  const approvedMembers = memberships.filter((m) => m.status === "APPROVED") as ClubMemberRow[];
+  const pendingMembers = memberships.filter((m) => m.status === "PENDING") as ClubMemberRow[];
+
+  const representativeMemberOptions = isClubAdmin
+    ? [...approvedMembers]
+        .sort((a, b) => {
+          const roleCmp = a.role.localeCompare(b.role);
+          if (roleCmp !== 0) return roleCmp;
+          return a.createdAt.getTime() - b.createdAt.getTime();
+        })
+        .map((m) => ({
+          userId: m.userId,
+          name: `${m.user.profile?.familyName ?? ""} ${m.user.profile?.givenName ?? ""}`.trim(),
+        }))
+    : [];
 
   return {
     userMembership,
     isClubAdmin,
     approvedMembers,
     pendingMembers,
+    approvedMemberCount: approvedMembers.length,
+    pendingMemberCount: pendingMembers.length,
+    representativeMemberOptions,
   };
 });
 
-/** 代表者セレクタ用（ADMIN のみ・軽量） */
+export const loadClubMembersTab = cache(async (clubId: string, currentUserId: string) => {
+  const bundle = await loadClubMembershipBundle(clubId, currentUserId);
+  return {
+    userMembership: bundle.userMembership,
+    isClubAdmin: bundle.isClubAdmin,
+    approvedMembers: bundle.approvedMembers,
+    pendingMembers: bundle.pendingMembers,
+  };
+});
+
+/** @deprecated loadClubMembershipBundle を使用 */
 export async function loadClubRepresentativeMemberOptions(clubId: string) {
   const rows = await prisma.membership.findMany({
     where: { clubId, status: "APPROVED" },
@@ -59,6 +88,7 @@ export async function loadClubRepresentativeMemberOptions(clubId: string) {
   }));
 }
 
+/** @deprecated loadClubMembershipBundle を使用 */
 export async function countClubMembershipsByStatus(clubId: string) {
   const rows = await prisma.membership.groupBy({
     by: ["status"],

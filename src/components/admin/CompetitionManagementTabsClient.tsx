@@ -44,6 +44,8 @@ type TabTriggerProps = {
   value: CompetitionManagementTabValue;
   className?: string;
   children: ReactNode;
+  /** オフィシャルタブは重いため hover prefetch を省略可能 */
+  prefetchOnHover?: boolean;
 };
 
 /** ホバー時のみ prefetch（全タブ一括 prefetch は重い RSC を連発するため廃止） */
@@ -51,6 +53,7 @@ export function CompetitionManagementTabTrigger({
   value,
   className,
   children,
+  prefetchOnHover = false,
 }: TabTriggerProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -59,9 +62,13 @@ export function CompetitionManagementTabTrigger({
     <TabsTrigger
       value={value}
       className={className}
-      onPointerEnter={() => {
-        router.prefetch(`${pathname}?tab=${value}`);
-      }}
+      onPointerEnter={
+        prefetchOnHover
+          ? () => {
+              router.prefetch(`${pathname}?tab=${value}`);
+            }
+          : undefined
+      }
     >
       {children}
     </TabsTrigger>

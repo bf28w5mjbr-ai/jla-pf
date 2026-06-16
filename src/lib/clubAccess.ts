@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { requireClubAdmin } from "./accessControl";
 import { appRoutes } from "@/lib/appRoutes";
@@ -20,20 +21,22 @@ export async function requireClubAccess(
  * クラブ詳細（メンバー一覧など）の閲覧可否。
  * 承認済みメンバー、または PF 管理者のみ。
  */
-export async function canViewClubDetailPage(clubId: string, userId: string): Promise<boolean> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { role: true },
-  });
-  if (!user) return false;
-  if (user.role === "PF_ADMIN") return true;
+export const canViewClubDetailPage = cache(
+  async (clubId: string, userId: string): Promise<boolean> => {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    if (!user) return false;
+    if (user.role === "PF_ADMIN") return true;
 
-  const membership = await prisma.membership.findFirst({
-    where: { clubId, userId, status: "APPROVED" },
-    select: { id: true },
-  });
-  return !!membership;
-}
+    const membership = await prisma.membership.findFirst({
+      where: { clubId, userId, status: "APPROVED" },
+      select: { id: true },
+    });
+    return !!membership;
+  }
+);
 
 /**
  * クラブ詳細ページ用。閲覧権がなければクラブ一覧へ。

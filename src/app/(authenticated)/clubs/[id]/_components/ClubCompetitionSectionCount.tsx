@@ -1,13 +1,16 @@
-import { loadClubCompetitionSectionCount } from "@/lib/clubCompetitionTabLoader";
+import {
+  loadClubCompetitionSectionCountFast,
+  loadClubCompetitionSectionCountFull,
+} from "@/lib/clubCompetitionTabLoader";
 
 export async function ClubCompetitionSectionCount({
   clubId,
-  clubName,
+  clubName: _clubName,
 }: {
   clubId: string;
   clubName: string;
 }) {
-  const count = await loadClubCompetitionSectionCount(clubId, clubName);
+  const count = await loadClubCompetitionSectionCountFast(clubId);
   return (
     <>
       {count.toLocaleString("ja-JP")}
@@ -19,10 +22,15 @@ export async function ClubCompetitionSectionCount({
 export async function ClubCompetitionTabBadgeCount({
   clubId,
   clubName,
+  full = false,
 }: {
   clubId: string;
   clubName: string;
+  /** 大会タブ表示時は TO 応募由来を含む完全カウント */
+  full?: boolean;
 }) {
-  const count = await loadClubCompetitionSectionCount(clubId, clubName);
+  const count = full
+    ? await loadClubCompetitionSectionCountFull(clubId, clubName)
+    : await loadClubCompetitionSectionCountFast(clubId);
   return <>{count}</>;
 }

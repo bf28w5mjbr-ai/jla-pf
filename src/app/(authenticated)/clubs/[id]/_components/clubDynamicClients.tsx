@@ -1,5 +1,6 @@
 import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
+import { ClubEditorialLoadingState } from "@/components/clubEditorialUi";
 
 function ClubClientBlockSkeleton({ className }: { className?: string }) {
   return (
@@ -21,11 +22,11 @@ export const LeaveClubButtonLazy = dynamic(() => import("@/components/LeaveClubB
 });
 
 export const ClubAnnouncementsLazy = dynamic(() => import("@/components/ClubAnnouncements"), {
-  loading: () => <ClubClientBlockSkeleton className="h-32" />,
+  loading: () => <ClubEditorialLoadingState label="お知らせを読み込み中" />,
 });
 
 export const ClubActivitiesLazy = dynamic(() => import("@/components/ClubActivities"), {
-  loading: () => <ClubClientBlockSkeleton className="h-32" />,
+  loading: () => <ClubEditorialLoadingState label="活動記録を読み込み中" />,
 });
 
 export const MemberActionsLazy = dynamic(() => import("@/components/MemberActions"), {

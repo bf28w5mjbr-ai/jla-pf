@@ -46,29 +46,27 @@ export async function loadCompetitionMutationState(
     select: { isPublished: true },
   });
 
-  const [checkoutCount, established] = await Promise.all([
-    prisma.entryCheckoutSession.count({
-      where: {
-        competitionId,
-        status: { in: ["PENDING", "COMPLETED"] },
-      },
-    }),
-    prisma.competitionEntry.findFirst({
-      where: {
-        competitionId,
-        status: "SUBMITTED",
-        OR: [
-          { totalFee: { lte: 0 } },
-          {
-            checkoutSessions: {
-              some: { status: { in: ["COMPLETED", "DISPUTED", "DISPUTE_LOST"] } },
-            },
+  const checkoutCount = await prisma.entryCheckoutSession.count({
+    where: {
+      competitionId,
+      status: { in: ["PENDING", "COMPLETED"] },
+    },
+  });
+  const established = await prisma.competitionEntry.findFirst({
+    where: {
+      competitionId,
+      status: "SUBMITTED",
+      OR: [
+        { totalFee: { lte: 0 } },
+        {
+          checkoutSessions: {
+            some: { status: { in: ["COMPLETED", "DISPUTED", "DISPUTE_LOST"] } },
           },
-        ],
-      },
-      select: { id: true },
-    }),
-  ]);
+        },
+      ],
+    },
+    select: { id: true },
+  });
 
   return {
     isPublished: Boolean(competition?.isPublished),

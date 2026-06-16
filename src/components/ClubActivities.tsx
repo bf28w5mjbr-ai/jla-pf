@@ -1,14 +1,22 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Trash2, Calendar, MapPin, Users, Trophy, Plus, X, Save } from "lucide-react";
+import { ChevronDown, Trash2, Plus, X, Save } from "lucide-react";
 import { isClubAdminRole } from "@/lib/roleScopes";
+import {
+  ClubEditorialEmptyState,
+  ClubEditorialFormPanel,
+  ClubEditorialLoadingState,
+  OrgEditorialPanel,
+  OrgSubheading,
+  clubSelectClassName,
+} from "@/components/clubEditorialUi";
 
 type ActivityAuthor = {
   id: string;
@@ -46,6 +54,20 @@ const activityTypes = [
   { value: "その他", label: "その他" },
 ];
 
+function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("ja-JP", { month: "numeric", day: "numeric" });
+}
+
+function activityMetaLine(record: ActivityRecord): string {
+  return [
+    formatShortDate(record.activityDate),
+    record.location?.trim() || null,
+    record.participants ? `${record.participants}名` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 export default function ClubActivities({
   clubId,
   currentUserId,
@@ -56,7 +78,6 @@ export default function ClubActivities({
   const [creating, setCreating] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
 
-  // フォームステート
   const [activityType, setActivityType] = useState("競技");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -151,46 +172,48 @@ export default function ClubActivities({
   };
 
   if (loading) {
-    return <div>読み込み中...</div>;
+    return <ClubEditorialLoadingState label="活動記録を読み込み中" />;
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">活動記録</h2>
-        {canCreateRecord && (
+    <OrgEditorialPanel accent="emerald" className="!px-4 !py-3 sm:!px-5 sm:!py-4">
+      <div className="flex items-center justify-between gap-2">
+        <OrgSubheading>Activities</OrgSubheading>
+        {canCreateRecord ? (
           <Button
             onClick={() => setShowCreateForm(!showCreateForm)}
             variant={showCreateForm ? "outline" : "default"}
             size="sm"
-            className="h-9 px-4 shadow-sm"
+            className="h-7 shrink-0 gap-1 px-2 text-xs"
           >
             {showCreateForm ? (
               <>
-                <X className="h-4 w-4" />
-                入力を閉じる
+                <X className="size-3.5" aria-hidden />
+                閉じる
               </>
             ) : (
               <>
-                <Plus className="h-4 w-4" />
-                活動記録を追加
+                <Plus className="size-3.5" aria-hidden />
+                追加
               </>
             )}
           </Button>
-        )}
+        ) : null}
       </div>
 
-      {showCreateForm && (
-        <Card className="p-6">
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="activityType">活動種別 *</Label>
+      {showCreateForm ? (
+        <ClubEditorialFormPanel className="mt-2 !px-3 !py-3">
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="activityType" className="text-xs">
+                  種別 *
+                </Label>
                 <select
                   id="activityType"
                   value={activityType}
                   onChange={(e) => setActivityType(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  className={`${clubSelectClassName} h-8 text-sm`}
                 >
                   {activityTypes.map((type) => (
                     <option key={type.value} value={type.value}>
@@ -199,170 +222,151 @@ export default function ClubActivities({
                   ))}
                 </select>
               </div>
-              <div>
-                <Label htmlFor="activityDate">活動日 *</Label>
+              <div className="space-y-1">
+                <Label htmlFor="activityDate" className="text-xs">
+                  活動日 *
+                </Label>
                 <Input
                   id="activityDate"
                   type="date"
                   value={activityDate}
                   onChange={(e) => setActivityDate(e.target.value)}
+                  className="h-8 text-sm"
                 />
               </div>
             </div>
-
-            <div>
-              <Label htmlFor="title">タイトル *</Label>
-              <Input
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="活動のタイトル"
-              />
+            <div className="space-y-1">
+              <Label htmlFor="title" className="text-xs">
+                タイトル *
+              </Label>
+              <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} className="h-8 text-sm" />
             </div>
-
-            <div>
-              <Label htmlFor="location">場所</Label>
-              <Input
-                id="location"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="活動場所"
-              />
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="location" className="text-xs">
+                  場所
+                </Label>
+                <Input id="location" value={location} onChange={(e) => setLocation(e.target.value)} className="h-8 text-sm" />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="participants" className="text-xs">
+                  人数
+                </Label>
+                <Input
+                  id="participants"
+                  numericInput="integer"
+                  min="1"
+                  value={participants}
+                  onChange={(e) => setParticipants(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
             </div>
-
-            <div>
-              <Label htmlFor="participants">参加人数</Label>
-              <Input
-                id="participants"
-                numericInput="integer"
-                min="1"
-                value={participants}
-                onChange={(e) => setParticipants(e.target.value)}
-                placeholder="参加人数"
-              />
+            <div className="space-y-1">
+              <Label htmlFor="description" className="text-xs">
+                詳細
+              </Label>
+              <Textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className="text-sm" />
             </div>
-
-            <div>
-              <Label htmlFor="description">詳細</Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="活動の詳細"
-                rows={4}
-              />
+            <div className="space-y-1">
+              <Label htmlFor="achievements" className="text-xs">
+                成果
+              </Label>
+              <Textarea id="achievements" value={achievements} onChange={(e) => setAchievements(e.target.value)} rows={2} className="text-sm" />
             </div>
-
-            <div>
-              <Label htmlFor="achievements">成果・実績</Label>
-              <Textarea
-                id="achievements"
-                value={achievements}
-                onChange={(e) => setAchievements(e.target.value)}
-                placeholder="大会結果、救助実績など"
-                rows={3}
-              />
-            </div>
-
-            <Button onClick={handleCreate} disabled={creating} className="h-9 px-4 shadow-sm">
-              <Save className="h-4 w-4" />
-              {creating ? "登録中..." : "登録する"}
+            <Button onClick={handleCreate} disabled={creating} size="sm" className="h-7 gap-1 px-2 text-xs">
+              <Save className="size-3.5" aria-hidden />
+              {creating ? "登録中..." : "登録"}
             </Button>
           </div>
-        </Card>
-      )}
+        </ClubEditorialFormPanel>
+      ) : null}
 
-      {records.length === 0 ? (
-        <Card className="p-6 text-center text-gray-500">
-          活動記録はまだありません
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {records.map((record) => {
-            const isAuthor = record.authorId === currentUserId;
-            const canDelete =
-              isAuthor || isClubAdminRole(currentUserRole);
+      <div className="mt-2">
+        {records.length === 0 ? (
+          <ClubEditorialEmptyState message="活動記録はまだありません" />
+        ) : (
+          <ul className="divide-y divide-border/45 overflow-hidden rounded-lg border border-border/55 bg-card/50">
+            {records.map((record) => {
+              const isAuthor = record.authorId === currentUserId;
+              const canDelete = isAuthor || isClubAdminRole(currentUserRole);
+              const hasDetails = record.description || record.achievements;
 
-            return (
-              <Card key={record.id}>
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
-                          {record.activityType}
-                        </span>
-                        <h3 className="text-lg font-semibold">{record.title}</h3>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
-                        <div className="flex items-center gap-1">
-                          <Calendar className="h-4 w-4" />
-                          {new Date(record.activityDate).toLocaleDateString("ja-JP")}
-                        </div>
-                        {record.location && (
-                          <div className="flex items-center gap-1">
-                            <MapPin className="h-4 w-4" />
-                            {record.location}
-                          </div>
-                        )}
-                        {record.participants && (
-                          <div className="flex items-center gap-1">
-                            <Users className="h-4 w-4" />
-                            {record.participants}名参加
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {canDelete && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDelete(record.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    )}
-                  </div>
-
-                  {record.description && (
-                    <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap mb-3">
-                      {record.description}
-                    </p>
-                  )}
-
-                  {record.achievements && (
-                    <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 mb-3">
-                      <div className="flex items-start gap-2">
-                        <Trophy className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mt-0.5" />
-                        <div className="flex-1">
-                          <div className="text-xs font-medium text-yellow-800 dark:text-yellow-300 mb-1">
-                            成果・実績
-                          </div>
-                          <p className="text-sm text-yellow-700 dark:text-yellow-400 whitespace-pre-wrap">
+              return (
+                <li key={record.id}>
+                  {hasDetails ? (
+                    <details className="group">
+                      <summary className="flex cursor-pointer list-none items-start gap-1.5 px-3 py-2 marker:content-none [&::-webkit-details-marker]:hidden hover:bg-muted/20">
+                        {renderActivitySummary(record, canDelete, () => void handleDelete(record.id), true)}
+                      </summary>
+                      <div className="space-y-1.5 border-t border-border/40 px-3 pb-2.5 pt-2 text-xs leading-relaxed">
+                        {record.description ? (
+                          <p className="whitespace-pre-wrap text-foreground/90">{record.description}</p>
+                        ) : null}
+                        {record.achievements ? (
+                          <p className="whitespace-pre-wrap text-muted-foreground">
+                            <span className="font-medium text-foreground/80">成果: </span>
                             {record.achievements}
                           </p>
-                        </div>
+                        ) : null}
+                        <p className="text-[10px] text-muted-foreground">
+                          {record.author.familyName} {record.author.givenName}
+                        </p>
                       </div>
+                    </details>
+                  ) : (
+                    <div className="flex items-start gap-1.5 px-3 py-2 hover:bg-muted/20">
+                      {renderActivitySummary(record, canDelete, () => void handleDelete(record.id), false)}
                     </div>
                   )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </OrgEditorialPanel>
+  );
+}
 
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    記録者: {record.author.familyName} {record.author.givenName} •{" "}
-                    登録日:{" "}
-                    {new Date(record.createdAt).toLocaleDateString("ja-JP", {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
+function renderActivitySummary(
+  record: ActivityRecord,
+  canDelete: boolean,
+  onDelete: () => void,
+  showChevron: boolean
+) {
+  const meta = activityMetaLine(record);
+  return (
+    <>
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Badge variant="outline" className="h-4 shrink-0 px-1 text-[10px] font-normal">
+            {record.activityType}
+          </Badge>
+          <span className="truncate text-sm font-medium text-foreground">{record.title}</span>
+          {showChevron ? (
+            <ChevronDown
+              className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+              aria-hidden
+            />
+          ) : null}
         </div>
-      )}
-    </div>
+        {meta ? <p className="truncate text-[10px] text-muted-foreground">{meta}</p> : null}
+      </div>
+      {canDelete ? (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 shrink-0 text-destructive hover:text-destructive"
+          onClick={(e) => {
+            e.preventDefault();
+            onDelete();
+          }}
+          aria-label="削除"
+        >
+          <Trash2 className="size-3.5" aria-hidden />
+        </Button>
+      ) : null}
+    </>
   );
 }

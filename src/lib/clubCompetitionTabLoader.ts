@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { prisma } from "@/server/db";
+import { parseStartListSnapshotLooseForRoundRead } from "@/lib/heatMarshalFromSnapshot";
 import { resolveTeamAssignmentDeadline } from "@/lib/startListSettings";
 import { getTeamEntryMarshalAssignmentBlockedMap } from "@/lib/teamMemberAssignmentWindow";
 import { competitionIdsForClubFromApprovedTechnicalOfficialApplications } from "@/lib/resolveTechnicalOfficialApplicationClub";
@@ -7,6 +8,7 @@ import {
   buildClubCompetitionRosterMap,
   type ClubCompetitionRosterParticipant,
 } from "@/lib/clubCompetitionRoster";
+import type { StartListSnapshotPayload } from "@/lib/startListSnapshot";
 
 export type ClubCompetitionTeamSummary = {
   id: string;
@@ -44,51 +46,96 @@ export type ClubCompetitionTabData = {
   competitionIdsFromToOnly: Set<string>;
 };
 
-/** ヘッダー・タブバッジ用の軽量カウント */
-export const loadClubCompetitionSectionCount = cache(
-  async (clubId: string, clubName: string): Promise<number> => {
-    const [teamCompIds, individualCompIds, toAssignments, toInvitations, toAppCompetitionIds] =
-      await Promise.all([
-        prisma.teamEntry.findMany({
-          where: { clubId },
-          select: { competitionId: true },
-          distinct: ["competitionId"],
-        }),
-        prisma.competitionEntry.findMany({
-          where: { clubId, status: { not: "CANCELLED" } },
-          select: { competitionId: true },
-          distinct: ["competitionId"],
-        }),
-        prisma.competitionTechnicalOfficialAssignment.findMany({
-          where: { clubId },
-          select: { competitionId: true },
-          distinct: ["competitionId"],
-        }),
-        prisma.competitionTechnicalOfficialInvitation.findMany({
-          where: { clubId, status: "PENDING" },
-          select: { competitionId: true },
-          distinct: ["competitionId"],
-        }),
-        competitionIdsForClubFromApprovedTechnicalOfficialApplications(prisma, clubId, clubName),
-      ]);
+type ClubCompetitionLinkIds = {
+  teamCompIds: { competitionId: string }[];
+  individualCompIds: { competitionId: string }[];
+  toAssignments: { competitionId: string }[];
+  toInvitations: { competitionId: string }[];
+};
 
-    const candidateCompetitionIds = [
-      ...new Set([
-        ...teamCompIds.map((t) => t.competitionId),
-        ...individualCompIds.map((e) => e.competitionId),
-        ...toAssignments.map((r) => r.competitionId),
-        ...toInvitations.map((r) => r.competitionId),
-        ...toAppCompetitionIds,
-      ]),
-    ];
+async function loadClubCompetitionLinkIds(clubId: string): Promise<ClubCompetitionLinkIds> {
+  const [teamCompIds, individualCompIds, toAssignments, toInvitations] = await Promise.all([
+    prisma.teamEntry.findMany({
+      where: { clubId },
+      select: { competitionId: true },
+      distinct: ["competitionId"],
+    }),
+    prisma.competitionEntry.findMany({
+      where: { clubId, status: { not: "CANCELLED" } },
+      select: { competitionId: true },
+      distinct: ["competitionId"],
+    }),
+    prisma.competitionTechnicalOfficialAssignment.findMany({
+      where: { clubId },
+      select: { competitionId: true },
+      distinct: ["competitionId"],
+    }),
+    prisma.competitionTechnicalOfficialInvitation.findMany({
+      where: { clubId, status: "PENDING" },
+      select: { competitionId: true },
+      distinct: ["competitionId"],
+    }),
+  ]);
+  return { teamCompIds, individualCompIds, toAssignments, toInvitations };
+}
 
-    if (candidateCompetitionIds.length === 0) return 0;
+function unionCompetitionIdsFromLinks(
+  linkIds: ClubCompetitionLinkIds,
+  toAppCompetitionIds: string[] = []
+): string[] {
+  return [
+    ...new Set([
+      ...linkIds.teamCompIds.map((t) => t.competitionId),
+      ...linkIds.individualCompIds.map((e) => e.competitionId),
+      ...linkIds.toAssignments.map((r) => r.competitionId),
+      ...linkIds.toInvitations.map((r) => r.competitionId),
+      ...toAppCompetitionIds,
+    ]),
+  ];
+}
 
-    return prisma.competition.count({
-      where: { id: { in: candidateCompetitionIds } },
-    });
+async function countEligibleCompetitions(candidateCompetitionIds: string[]): Promise<number> {
+  if (candidateCompetitionIds.length === 0) return 0;
+  return prisma.competition.count({
+    where: { id: { in: candidateCompetitionIds } },
+  });
+}
+
+/** ヘッダー・タブバッジ用（TO 公式応募の名前解決をスキップ） */
+export const loadClubCompetitionSectionCountFast = cache(
+  async (clubId: string): Promise<number> => {
+    const linkIds = await loadClubCompetitionLinkIds(clubId);
+    return countEligibleCompetitions(unionCompetitionIdsFromLinks(linkIds));
   }
 );
+
+/** TO 公式応募を含む完全な参加大会数 */
+export const loadClubCompetitionSectionCountFull = cache(
+  async (clubId: string, clubName: string): Promise<number> => {
+    const [linkIds, toAppCompetitionIds] = await Promise.all([
+      loadClubCompetitionLinkIds(clubId),
+      competitionIdsForClubFromApprovedTechnicalOfficialApplications(prisma, clubId, clubName),
+    ]);
+    return countEligibleCompetitions(
+      unionCompetitionIdsFromLinks(linkIds, toAppCompetitionIds)
+    );
+  }
+);
+
+/** @deprecated loadClubCompetitionSectionCountFast / Full を使用 */
+export const loadClubCompetitionSectionCount = loadClubCompetitionSectionCountFull;
+
+function buildClosedMarshalHeatKeySet(
+  rows: { eventId: string; round: string; heatIndex: number }[],
+  eventIds: Iterable<string>
+): Set<string> {
+  const allowedEventIds = new Set(eventIds);
+  return new Set(
+    rows
+      .filter((r) => allowedEventIds.has(r.eventId))
+      .map((r) => `${r.eventId}:${r.round}:${r.heatIndex}`)
+  );
+}
 
 /** 大会タブの一覧・ロスター等 */
 export const loadClubCompetitionTabData = cache(
@@ -212,13 +259,70 @@ export const loadClubCompetitionTabData = cache(
       );
     })();
 
+    const competitionRowsWithEntries = competitionRows.filter(({ entries }) => entries.length > 0);
+    const competitionIdsWithEntries = competitionRowsWithEntries.map(({ competition }) => competition.id);
+
+    const [snapshotRows, closedMarshalRows] =
+      competitionIdsWithEntries.length === 0
+        ? [[], []]
+        : await Promise.all([
+            prisma.competitionStartListSnapshot.findMany({
+              where: { competitionId: { in: competitionIdsWithEntries } },
+              select: { competitionId: true, data: true },
+            }),
+            prisma.competitionHeatMarshalState.findMany({
+              where: {
+                competitionId: { in: competitionIdsWithEntries },
+                callClosedAt: { not: null },
+              },
+              select: {
+                competitionId: true,
+                eventId: true,
+                round: true,
+                heatIndex: true,
+              },
+            }),
+          ]);
+
+    const snapshotByCompetitionId = new Map<string, StartListSnapshotPayload | null>();
+    for (const row of snapshotRows) {
+      snapshotByCompetitionId.set(
+        row.competitionId,
+        parseStartListSnapshotLooseForRoundRead(row.data)
+      );
+    }
+
+    const closedRowsByCompetitionId = new Map<
+      string,
+      { eventId: string; round: string; heatIndex: number }[]
+    >();
+    for (const row of closedMarshalRows) {
+      const list = closedRowsByCompetitionId.get(row.competitionId);
+      if (list) {
+        list.push(row);
+      } else {
+        closedRowsByCompetitionId.set(row.competitionId, [row]);
+      }
+    }
+
     const marshalAllBlockedByCompetitionId = new Map<string, boolean>();
     for (const { competition, entries } of competitionRows) {
       if (entries.length === 0) {
         marshalAllBlockedByCompetitionId.set(competition.id, false);
         continue;
       }
-      const blockMap = await getTeamEntryMarshalAssignmentBlockedMap(prisma, competition.id, entries);
+      const blockMap = await getTeamEntryMarshalAssignmentBlockedMap(
+        prisma,
+        competition.id,
+        entries,
+        {
+          snapshot: snapshotByCompetitionId.get(competition.id) ?? null,
+          closedMarshalHeatKeys: buildClosedMarshalHeatKeySet(
+            closedRowsByCompetitionId.get(competition.id) ?? [],
+            entries.map((e) => e.eventId)
+          ),
+        }
+      );
       const allBlocked = entries.every((e) => blockMap.get(e.id));
       marshalAllBlockedByCompetitionId.set(competition.id, allBlocked);
     }

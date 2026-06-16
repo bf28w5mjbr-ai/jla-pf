@@ -9,6 +9,12 @@ import {
   type MarshalParticipantRef,
 } from "@/lib/heatMarshalFromSnapshot";
 import { resolveTeamAssignmentDeadline } from "@/lib/startListSettings";
+import type { StartListSnapshotPayload } from "@/lib/startListSnapshot";
+
+export type TeamEntryMarshalAssignmentBlockedOptions = {
+  snapshot?: StartListSnapshotPayload | null;
+  closedMarshalHeatKeys?: ReadonlySet<string>;
+};
 
 export type LatestTeamMarshalPlacement = {
   latestRound: ResultRound | null;
@@ -61,25 +67,32 @@ export function isTeamEntryMarshalAssignmentBlockedForLatestPlacement(params: {
 export async function getTeamEntryMarshalAssignmentBlockedMap(
   prisma: Pick<PrismaClient, "competitionHeatMarshalState">,
   competitionId: string,
-  teamEntries: { id: string; eventId: string }[]
+  teamEntries: { id: string; eventId: string }[],
+  options?: TeamEntryMarshalAssignmentBlockedOptions
 ): Promise<Map<string, boolean>> {
   const out = new Map<string, boolean>();
   if (teamEntries.length === 0) return out;
 
-  const snapshot = await loadStartListSnapshotPayloadLoose(competitionId);
+  const snapshot =
+    options?.snapshot !== undefined
+      ? options.snapshot
+      : await loadStartListSnapshotPayloadLoose(competitionId);
   const eventIds = [...new Set(teamEntries.map((t) => t.eventId))];
 
-  const closedRows = await prisma.competitionHeatMarshalState.findMany({
-    where: {
-      competitionId,
-      callClosedAt: { not: null },
-      eventId: { in: eventIds },
-    },
-    select: { eventId: true, round: true, heatIndex: true },
-  });
-  const closedSet = new Set(
-    closedRows.map((r) => `${r.eventId}:${r.round}:${r.heatIndex}`)
-  );
+  const closedSet =
+    options?.closedMarshalHeatKeys ??
+    new Set(
+      (
+        await prisma.competitionHeatMarshalState.findMany({
+          where: {
+            competitionId,
+            callClosedAt: { not: null },
+            eventId: { in: eventIds },
+          },
+          select: { eventId: true, round: true, heatIndex: true },
+        })
+      ).map((r) => `${r.eventId}:${r.round}:${r.heatIndex}`)
+    );
 
   const ref: MarshalParticipantRef = {
     participantType: "TEAM",
