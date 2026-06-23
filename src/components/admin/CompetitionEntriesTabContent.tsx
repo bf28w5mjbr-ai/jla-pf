@@ -1,7 +1,14 @@
 import { notFound } from "next/navigation";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { prisma } from "@/server/db";
+import { AlertCircle, Clock } from "lucide-react";
+import { OrgEditorialPanel } from "@/app/(authenticated)/organizations/[id]/_components/organizationEditorialUi";
 import CompetitionHostInviteEntryPanel from "@/components/admin/CompetitionHostInviteEntryPanel";
+import CompetitionEntriesSummaryPanel from "@/components/admin/CompetitionEntriesSummaryPanel";
+import {
+  EntriesCountBadge,
+  EntriesIconBadge,
+  EntriesSectionBlock,
+} from "@/components/admin/competitionEntriesTabUi";
+import { prisma } from "@/server/db";
 import CompetitionEntryPostPayActions from "@/components/admin/CompetitionEntryPostPayActions";
 import CompetitionUnpaidIntentBulkMailPanel from "@/components/admin/CompetitionUnpaidIntentBulkMailPanel";
 import { listUnpaidIntentEmailTargets } from "@/lib/entryPaymentIntent";
@@ -10,7 +17,6 @@ import {
   buildTeamEntryPaymentOwnerId,
   getTeamPaymentStatusLabel,
 } from "@/lib/teamEntryPayments";
-import CompetitionEntryCsvExportControls from "@/components/admin/CompetitionEntryCsvExportControls";
 import {
   CSV_EXPORT_SCOPE,
   getActiveCsvExportApproval,
@@ -26,12 +32,19 @@ import {
   hasOrganizerPostPayApproval,
   isEntryFeeSettled,
 } from "@/lib/entryOrganizerPostPay";
+import { pickAgeCategoryIdForBirthDate } from "@/lib/competitionEntryAgeTiered";
+import { resolveAgeCategoriesForEntrySummaryCount } from "@/lib/competitionEntrySummaryAgeCategoryOverrides";
 import { isPlayerRegistrationQualificationKind } from "@/lib/qualificationRegistrationKinds";
 import {
   buildIndividualEventCircleCells,
   getLiveIndividualEventIdsFromEntry,
   shouldHideTeamEntryFromStartListAlignment,
 } from "@/lib/startListEntryAlignment";
+import {
+  EntriesEmpty,
+  type IndividualEntryListRow,
+  type TeamEntryGroupListRow,
+} from "@/components/admin/competitionEntriesListViews";
 
 type Props = {
   organizationId: string;
@@ -90,22 +103,6 @@ const INDIVIDUAL_CSV_FIXED_HEADERS = [
   "選手登録有無",
 ] as const;
 
-/** チームエントリー一覧（クラブ・種目ごとのチーム数）用 */
-type TeamEntryGroupListRow = {
-  key: string;
-  rowIndex: number;
-  clubName: string;
-  eventLabel: string;
-  teamCount: number;
-};
-
-type IndividualEntryListRow = {
-  key: string;
-  fullName: string;
-  clubName: string;
-  eventsLabel: string;
-};
-
 type UnpaidIndividualEntryListRow = IndividualEntryListRow & {
   entryId: string;
   paymentStatusLabel: string;
@@ -151,171 +148,6 @@ const unpaidCheckoutStatusLabel = (status: string | null | undefined): string =>
       return "未決済";
   }
 };
-
-function EntriesEmpty({ message }: { message: string }) {
-  return (
-    <div className="rounded-xl border border-dashed border-border bg-muted/25 px-4 py-10 text-center text-sm text-muted-foreground">
-      {message}
-    </div>
-  );
-}
-
-function TeamEntryGroupsTableDesktop({ rows }: { rows: TeamEntryGroupListRow[] }) {
-  return (
-    <div className="hidden overflow-x-auto rounded-xl border border-border shadow-sm md:block">
-      <table className="w-full min-w-[520px] border-collapse text-left text-sm">
-        <thead>
-          <tr className="border-b border-border bg-muted/60">
-            <th className="whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              No.
-            </th>
-            <th className="min-w-[10rem] px-3 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              クラブ名
-            </th>
-            <th className="min-w-[14rem] px-3 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              エントリー種目
-            </th>
-            <th className="whitespace-nowrap px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              チーム数
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr
-              key={row.key}
-              className="border-b border-border last:border-0 odd:bg-muted/20 hover:bg-muted/40"
-            >
-              <td className="whitespace-nowrap px-3 py-2.5 align-top tabular-nums text-muted-foreground">
-                {row.rowIndex}
-              </td>
-              <td className="max-w-[16rem] whitespace-normal px-3 py-2.5 align-top text-xs leading-snug text-foreground">
-                {row.clubName}
-              </td>
-              <td className="px-3 py-2.5 align-top text-xs leading-relaxed text-foreground">{row.eventLabel}</td>
-              <td className="whitespace-nowrap px-3 py-2.5 align-top text-right tabular-nums text-foreground">
-                {row.teamCount}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function TeamEntryGroupsCardsMobile({ rows }: { rows: TeamEntryGroupListRow[] }) {
-  return (
-    <div className="grid gap-3 md:hidden">
-      {rows.map((row) => (
-        <div key={row.key} className="rounded-xl border border-border bg-card p-4 shadow-sm">
-          <div className="flex items-start justify-between gap-2 border-b border-border pb-2">
-            <span className="text-xs font-medium text-muted-foreground">No. {row.rowIndex}</span>
-            <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-xs font-semibold tabular-nums text-foreground">
-              チーム {row.teamCount}
-            </span>
-          </div>
-          <p className="mt-3 text-sm font-medium text-foreground">{row.clubName}</p>
-          <p className="mt-2 text-xs leading-relaxed text-foreground">
-            <span className="mb-1 block font-medium text-muted-foreground">エントリー種目</span>
-            {row.eventLabel}
-          </p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function TeamEntryGroupsResponsive({
-  rows,
-  emptyMessage,
-}: {
-  rows: TeamEntryGroupListRow[];
-  emptyMessage: string;
-}) {
-  if (rows.length === 0) {
-    return <EntriesEmpty message={emptyMessage} />;
-  }
-  return (
-    <>
-      <TeamEntryGroupsCardsMobile rows={rows} />
-      <TeamEntryGroupsTableDesktop rows={rows} />
-    </>
-  );
-}
-
-function IndividualEntriesTableDesktop({ rows }: { rows: IndividualEntryListRow[] }) {
-  return (
-    <div className="hidden overflow-x-auto rounded-xl border border-border shadow-sm md:block">
-      <table className="w-full min-w-[560px] border-collapse text-left text-sm">
-        <thead>
-          <tr className="border-b border-border bg-muted/60">
-            <th className="min-w-[8rem] whitespace-nowrap px-3 py-3 text-xs font-semibold text-muted-foreground">
-              氏名
-            </th>
-            <th className="min-w-[7rem] whitespace-nowrap px-3 py-3 text-xs font-semibold text-muted-foreground">
-              所属クラブ
-            </th>
-            <th className="min-w-[14rem] px-3 py-3 text-xs font-semibold text-muted-foreground">出場種目</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr
-              key={row.key}
-              className="border-b border-border last:border-0 odd:bg-muted/20 hover:bg-muted/40"
-            >
-              <td className="whitespace-nowrap px-3 py-2.5 align-top font-medium text-foreground">
-                {row.fullName}
-              </td>
-              <td className="max-w-[14rem] whitespace-normal px-3 py-2.5 align-top text-xs leading-snug text-foreground">
-                {row.clubName}
-              </td>
-              <td className="px-3 py-2.5 align-top text-xs leading-relaxed text-foreground">{row.eventsLabel}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function IndividualEntriesCardsMobile({ rows }: { rows: IndividualEntryListRow[] }) {
-  return (
-    <div className="grid gap-3 md:hidden">
-      {rows.map((row) => (
-        <div key={row.key} className="rounded-xl border border-border bg-card p-4 shadow-sm">
-          <p className="text-sm font-semibold text-foreground">{row.fullName}</p>
-          <p className="mt-2 text-xs text-muted-foreground">
-            <span className="font-medium text-foreground/80">所属クラブ</span> {row.clubName}
-          </p>
-          <p className="mt-2 text-xs leading-relaxed text-foreground">
-            <span className="mb-1 block font-medium text-muted-foreground">出場種目</span>
-            {row.eventsLabel}
-          </p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function IndividualEntriesResponsive({
-  rows,
-  emptyMessage,
-}: {
-  rows: IndividualEntryListRow[];
-  emptyMessage: string;
-}) {
-  if (rows.length === 0) {
-    return <EntriesEmpty message={emptyMessage} />;
-  }
-  return (
-    <>
-      <IndividualEntriesCardsMobile rows={rows} />
-      <IndividualEntriesTableDesktop rows={rows} />
-    </>
-  );
-}
 
 function UnpaidIndividualEntriesTableDesktop({ rows }: { rows: UnpaidIndividualEntryListRow[] }) {
   return (
@@ -577,14 +409,12 @@ export default async function CompetitionEntriesTabContent({
 }: Props) {
   if (!canEdit) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>エントリー状況</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
+      <OrgEditorialPanel accent="muted">
+        <h3 className="text-base font-semibold text-foreground">エントリー状況</h3>
+        <p className="mt-2 text-sm text-muted-foreground">
           このタブは主催団体管理者のみ閲覧できます。
-        </CardContent>
-      </Card>
+        </p>
+      </OrgEditorialPanel>
     );
   }
 
@@ -609,6 +439,8 @@ export default async function CompetitionEntriesTabContent({
             id: true,
             name: true,
             displayOrder: true,
+            eligibleBirthDateFrom: true,
+            eligibleBirthDateTo: true,
           },
           orderBy: { displayOrder: "asc" },
         },
@@ -637,6 +469,7 @@ export default async function CompetitionEntriesTabContent({
         organizerPostPayApprovedAt: true,
         organizerManualPaidAt: true,
         createdAt: true,
+        clubId: true,
         club: { select: { name: true } },
         user: {
           select: {
@@ -1011,6 +844,56 @@ export default async function CompetitionEntriesTabContent({
       !shouldHideTeamEntryFromStartListAlignment(te.id, te.eventId, te.participantStatuses)
   ).length;
 
+  const individualEntryCount = paidIndividualListRows.length;
+
+  const ageCategoriesForSummaryCount = resolveAgeCategoriesForEntrySummaryCount(
+    competitionId,
+    competition.ageCategories
+  );
+
+  const ageCategoryCountById = new Map<string, number>(
+    competition.ageCategories.map((c) => [c.id, 0])
+  );
+  let ageCategoryUncategorizedCount = 0;
+  if (competition.ageCategories.length > 0) {
+    for (const entry of entries) {
+      if (!isEntryEstablished(entryEstablishedInput(entry))) continue;
+      const dob = entry.user.profile?.dateOfBirth;
+      if (!dob) {
+        ageCategoryUncategorizedCount += 1;
+        continue;
+      }
+      const catId = pickAgeCategoryIdForBirthDate(ageCategoriesForSummaryCount, new Date(dob));
+      if (!catId) {
+        ageCategoryUncategorizedCount += 1;
+        continue;
+      }
+      ageCategoryCountById.set(catId, (ageCategoryCountById.get(catId) ?? 0) + 1);
+    }
+  }
+
+  const ageCategoryCounts =
+    competition.ageCategories.length > 0
+      ? competition.ageCategories.map((c) => ({
+          id: c.id,
+          name: c.name,
+          count: ageCategoryCountById.get(c.id) ?? 0,
+        }))
+      : null;
+
+  const entryClubIds = new Set<string>();
+  for (const te of teamEntries) {
+    if (shouldHideTeamEntryFromStartListAlignment(te.id, te.eventId, te.participantStatuses)) {
+      continue;
+    }
+    entryClubIds.add(te.clubId);
+  }
+  for (const entry of entries) {
+    if (!isEntryEstablished(entryEstablishedInput(entry))) continue;
+    if (entry.clubId) entryClubIds.add(entry.clubId);
+  }
+  const entryClubCount = entryClubIds.size > 0 ? entryClubIds.size : null;
+
   const individualEventOptions = competition.events
     .filter((e) => e.type === "INDIVIDUAL")
     .map((e) => ({
@@ -1086,74 +969,64 @@ export default async function CompetitionEntriesTabContent({
     : null;
 
   return (
-    <div className="min-w-0 space-y-8">
-      <CompetitionHostInviteEntryPanel
-        competitionId={competitionId}
-        individualEvents={individualEventOptions}
-        teamEvents={teamEventOptions}
-      />
+    <div className="min-w-0 space-y-8 pb-2">
+      <EntriesSectionBlock label="Overview">
+        <CompetitionEntriesSummaryPanel
+        competitionId={competition.id}
+        individualEntryCount={individualEntryCount}
+        teamEntryCount={teamEntryCount}
+        entryClubCount={entryClubCount}
+        ageCategoryCounts={ageCategoryCounts}
+        ageCategoryUncategorizedCount={ageCategoryUncategorizedCount}
+        paidIndividualRows={paidIndividualListRows}
+        teamGroupRows={teamGroupListRows}
+        individualCsv={{
+          headers: individualCsvHeaders,
+          rows: individualCsvRows,
+          fileNameBase: `${exportNameBase}_個人エントリー`,
+          hasPending: !!individualPending,
+          hasActiveApproval: !!individualApproval,
+        }}
+        teamCsv={{
+          headers: [...TEAM_CSV_HEADERS],
+          rows: teamCsvRows,
+          fileNameBase: `${exportNameBase}_チームエントリー`,
+          hasPending: !!teamPending,
+          hasActiveApproval: !!teamApproval,
+        }}
+        />
+      </EntriesSectionBlock>
 
-      <CompetitionUnpaidIntentBulkMailPanel
+      <EntriesSectionBlock label="Operations">
+        <CompetitionUnpaidIntentBulkMailPanel
         competitionId={competitionId}
         initialCampaign={initialIntentCampaign}
       />
 
-      <Card className="overflow-hidden border-border shadow-sm">
-        <CardHeader className="space-y-3 border-b border-border bg-muted/20 pb-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0 space-y-1">
-              <CardTitle className="text-lg">個人エントリー</CardTitle>
-              <CardDescription className="text-sm">
-                氏名・所属クラブ・出場種目を一覧表示します。メンバーIDや決済状況などの詳細は、PF管理者承認後にダウンロードできるCSVで確認できます。
-                出場種目の並び（一覧・CSVの種目列）は、
-                <span className="font-medium text-foreground/90"> 年齢カテゴリの表示順 </span>
-                でまとまり、同一カテゴリ内は種目の表示順です（カテゴリの並びが同順のときはカテゴリ名の順）。種目は正しい年齢カテゴリに紐づけてください。
-                CSVの種目○はスタートリスト掲載対象と同じ条件です（現行登録種目のみ。棄権した種目は○なし）。
-              </CardDescription>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:justify-end">
-              <CompetitionEntryCsvExportControls
-                competitionId={competition.id}
-                scope={CSV_EXPORT_SCOPE.INDIVIDUAL}
-                csvHeaders={individualCsvHeaders}
-                csvRows={individualCsvRows}
-                fileNameBase={`${exportNameBase}_個人エントリー`}
-                hasPending={!!individualPending}
-                hasActiveApproval={!!individualApproval}
-              />
-              <div className="flex items-baseline gap-2 rounded-xl border border-border bg-background px-4 py-3">
-                <span className="text-xs font-medium text-muted-foreground">件数</span>
-                <span className="text-2xl font-semibold tabular-nums tracking-tight text-foreground">
-                  {paidIndividualListRows.length}
-                </span>
-                <span className="text-sm text-muted-foreground">件</span>
-              </div>
-              {unpaidIndividualListRows.length > 0 ? (
-                <div className="flex items-baseline gap-2 rounded-xl border border-amber-200/80 bg-amber-50/70 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/30">
-                  <span className="text-xs font-medium text-amber-900 dark:text-amber-100">未決済</span>
-                  <span className="text-xl font-semibold tabular-nums tracking-tight text-amber-900 dark:text-amber-100">
-                    {unpaidIndividualListRows.length}
-                  </span>
-                  <span className="text-sm text-amber-800 dark:text-amber-200">件</span>
-                </div>
-              ) : null}
-            </div>
+        <OrgEditorialPanel accent="orange" className="!px-4 !py-4 sm:!px-5 sm:!py-5">
+          <div className="mb-5">
+            <h3 className="text-base font-semibold tracking-tight text-foreground">要対応エントリー</h3>
+            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+              未決済の試行や後払い入金待ちなど、主催側の対応が必要なエントリーです。
+            </p>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-5">
-          <IndividualEntriesResponsive
-            rows={paidIndividualListRows}
-            emptyMessage="個人エントリーはまだありません。"
-          />
-          <div className="border-t border-border pt-5">
+          <div className="space-y-5">
             <section className="space-y-3" aria-labelledby="unpaid-individual-entries-title">
-              <div className="space-y-1">
-                <h3 id="unpaid-individual-entries-title" className="text-sm font-semibold text-foreground">
-                  未決済のエントリー試行
-                </h3>
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  エントリー手続きは開始されていますが、参加費の決済が成立していないため出場者一覧・CSVには含めません。
-                </p>
+              <div className="flex flex-wrap items-start gap-3">
+                <EntriesIconBadge tone="amber">
+                  <AlertCircle className="size-4" strokeWidth={1.75} aria-hidden />
+                </EntriesIconBadge>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 id="unpaid-individual-entries-title" className="text-sm font-semibold text-foreground">
+                      未決済のエントリー試行
+                    </h4>
+                    <EntriesCountBadge count={unpaidIndividualListRows.length} tone="amber" />
+                  </div>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    参加費の決済が成立していないため、出場者一覧・CSV には含めません。
+                  </p>
+                </div>
               </div>
               <UnpaidIndividualEntriesResponsive
                 competitionId={competition.id}
@@ -1161,63 +1034,42 @@ export default async function CompetitionEntriesTabContent({
                 emptyMessage="未決済のエントリー試行はありません。"
               />
             </section>
+            <div className="border-t border-border/50 pt-5">
+              <section className="space-y-3" aria-labelledby="post-pay-pending-entries-title">
+                <div className="flex flex-wrap items-start gap-3">
+                  <EntriesIconBadge tone="muted">
+                    <Clock className="size-4" strokeWidth={1.75} aria-hidden />
+                  </EntriesIconBadge>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 id="post-pay-pending-entries-title" className="text-sm font-semibold text-foreground">
+                        後払い承認済み（入金待ち）
+                      </h4>
+                      <EntriesCountBadge count={postPayPendingListRows.length} />
+                    </div>
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      エントリーは成立していますが参加費は未入金です。
+                    </p>
+                  </div>
+                </div>
+                <PostPayPendingEntriesResponsive
+                  competitionId={competition.id}
+                  rows={postPayPendingListRows}
+                  emptyMessage="後払い承認済みで入金待ちのエントリーはありません。"
+                />
+              </section>
+            </div>
           </div>
-          <div className="border-t border-border pt-5">
-            <section className="space-y-3" aria-labelledby="post-pay-pending-entries-title">
-              <div className="space-y-1">
-                <h3 id="post-pay-pending-entries-title" className="text-sm font-semibold text-foreground">
-                  後払い承認済み（入金待ち）
-                </h3>
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  エントリーは成立していますが参加費は未入金です。手動入金の記録、または参加者のカード決済で入金済みにできます。
-                </p>
-              </div>
-              <PostPayPendingEntriesResponsive
-                competitionId={competition.id}
-                rows={postPayPendingListRows}
-                emptyMessage="後払い承認済みで入金待ちのエントリーはありません。"
-              />
-            </section>
-          </div>
-        </CardContent>
-      </Card>
+        </OrgEditorialPanel>
+      </EntriesSectionBlock>
 
-      <Card className="overflow-hidden border-border shadow-sm">
-        <CardHeader className="space-y-3 border-b border-border bg-muted/20 pb-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0 space-y-1">
-              <CardTitle className="text-lg">チームエントリー</CardTitle>
-              <CardDescription className="text-sm">
-                画面上はクラブ・種目ごとのチーム数です。メンバー氏名・連絡先・決済状況などの詳細はCSVに含まれます（承認後にダウンロード）。
-              </CardDescription>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:justify-end">
-              <CompetitionEntryCsvExportControls
-                competitionId={competition.id}
-                scope={CSV_EXPORT_SCOPE.TEAM}
-                csvHeaders={[...TEAM_CSV_HEADERS]}
-                csvRows={teamCsvRows}
-                fileNameBase={`${exportNameBase}_チームエントリー`}
-                hasPending={!!teamPending}
-                hasActiveApproval={!!teamApproval}
-              />
-              <div className="flex items-baseline gap-2 rounded-xl border border-border bg-background px-4 py-3">
-                <span className="text-xs font-medium text-muted-foreground">チーム数</span>
-                <span className="text-2xl font-semibold tabular-nums tracking-tight text-foreground">
-                  {teamEntryCount}
-                </span>
-                <span className="text-sm text-muted-foreground">件</span>
-              </div>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-5">
-          <TeamEntryGroupsResponsive
-            rows={teamGroupListRows}
-            emptyMessage="チームエントリーはまだありません。"
-          />
-        </CardContent>
-      </Card>
+      <EntriesSectionBlock label="Tools">
+        <CompetitionHostInviteEntryPanel
+        competitionId={competitionId}
+        individualEvents={individualEventOptions}
+        teamEvents={teamEventOptions}
+        />
+      </EntriesSectionBlock>
     </div>
   );
 }

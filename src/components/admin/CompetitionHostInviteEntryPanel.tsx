@@ -7,7 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Loader2, Minus, Plus, Search, UserPlus, X } from "lucide-react";
+import { Building2, ChevronDown, Loader2, Minus, Plus, Search, UserPlus, X } from "lucide-react";
+import {
+  entriesCollapsibleClassName,
+  entriesCollapsibleSummaryClassName,
+  EntriesIconBadge,
+} from "@/components/admin/competitionEntriesTabUi";
 import { userFacingApiErrorMessage } from "@/lib/userFacingApiError";
 
 export type HostInviteEventOption = {
@@ -370,7 +375,7 @@ export default function CompetitionHostInviteEntryPanel({
 
   if (!hasAnyEvents) {
     return (
-      <div className="rounded-lg border border-dashed border-amber-200/80 bg-amber-50/50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-100">
+      <div className="rounded-lg border border-dashed border-amber-200/80 bg-amber-50/50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-100">
         招待登録できる種目がありません。
       </div>
     );
@@ -423,23 +428,30 @@ export default function CompetitionHostInviteEntryPanel({
   };
 
   return (
-    <div className="min-w-0 rounded-xl border border-border bg-card shadow-sm">
-      <div className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <UserPlus className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-foreground">招待・手動エントリー</h3>
-            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-              個人種目は登録済みユーザーを検索して追加します。チーム種目はクラブを選び、種目ごとの登録組数を変更できます（エントリー締切後も可・参加費なし・主催登録）。減らす場合は末尾のチームから削除されます。マーシャル締切済みのチームは削除できません。チーム名はクラブ略称から自動設定されます。メンバー割当はクラブのチーム管理画面で行います。
-            </p>
-          </div>
+    <details className={entriesCollapsibleClassName}>
+      <summary className={entriesCollapsibleSummaryClassName}>
+        <EntriesIconBadge tone="primary">
+          <UserPlus className="size-4" strokeWidth={1.75} aria-hidden />
+        </EntriesIconBadge>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold text-foreground">招待・手動エントリー</h3>
+          <p className="truncate text-xs text-muted-foreground group-open:hidden">
+            個人・チーム種目の主催登録（参加費なし・締切後も可）
+          </p>
         </div>
-      </div>
+        <ChevronDown
+          className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+          aria-hidden
+        />
+      </summary>
 
-      <Tabs value={mode} onValueChange={handleModeChange} className="px-4 pt-4 sm:px-5">
-        <TabsList className="grid h-9 w-full max-w-md grid-cols-2">
+      <div className="border-t border-border">
+        <p className="border-b border-border/60 bg-muted/20 px-3 py-2 text-xs leading-relaxed text-muted-foreground sm:px-4">
+          個人種目は登録済みユーザーを検索して追加します。チーム種目はクラブを選び、種目ごとの登録組数を変更できます（エントリー締切後も可・参加費なし・主催登録）。減らす場合は末尾のチームから削除されます。マーシャル締切済みのチームは削除できません。チーム名はクラブ略称から自動設定されます。メンバー割当はクラブのチーム管理画面で行います。
+        </p>
+
+        <Tabs value={mode} onValueChange={handleModeChange} className="px-3 pt-3 sm:px-4">
+        <TabsList className="grid h-8 w-full max-w-md grid-cols-2">
           <TabsTrigger value="individual" disabled={individualEvents.length === 0} className="text-xs">
             個人種目
           </TabsTrigger>
@@ -448,7 +460,7 @@ export default function CompetitionHostInviteEntryPanel({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="individual" className="mt-0 space-y-5 pb-4 pt-4">
+        <TabsContent value="individual" className="mt-0 space-y-4 pb-3 pt-3">
           {individualEvents.length === 0 ? (
             <p className="rounded-lg border border-dashed border-amber-200/80 bg-amber-50/50 px-3 py-2.5 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-100">
               個人種目がないため、ここからの個人招待登録はできません。
@@ -486,7 +498,7 @@ export default function CompetitionHostInviteEntryPanel({
           )}
         </TabsContent>
 
-        <TabsContent value="team" className="mt-0 space-y-5 pb-4 pt-4">
+        <TabsContent value="team" className="mt-0 space-y-4 pb-3 pt-3">
           {teamEvents.length === 0 ? (
             <p className="rounded-lg border border-dashed border-amber-200/80 bg-amber-50/50 px-3 py-2.5 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-100">
               チーム種目がないため、ここからのチーム追加はできません。
@@ -517,8 +529,9 @@ export default function CompetitionHostInviteEntryPanel({
             />
           )}
         </TabsContent>
-      </Tabs>
-    </div>
+        </Tabs>
+      </div>
+    </details>
   );
 }
 
