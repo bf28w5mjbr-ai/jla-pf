@@ -10,6 +10,7 @@ import {
   requireHostOrgAdminForCompetition,
 } from "@/lib/organizerAccess";
 import { deletePublicAssetByUrl } from "@/lib/supabase/storage";
+import { revalidateCompetitionPublicPage } from "@/lib/revalidateCompetitionPublicPage";
 
 export async function DELETE(
   request: NextRequest,
@@ -63,6 +64,8 @@ export async function DELETE(
     await prisma.competitionAttachment.delete({
       where: { id: attachmentId },
     });
+
+    revalidateCompetitionPublicPage(competitionId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

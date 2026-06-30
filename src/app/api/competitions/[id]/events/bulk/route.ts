@@ -12,13 +12,23 @@ import {
 } from "@/lib/competitionPublishedEditRules";
 import { resolveCompetitionEventCategoryScope } from "@/lib/competitionEventCategoryScope";
 import { buildStoredCompetitionEventName } from "@/lib/competitionEventStoredName";
+import {
+  parseEventCreateTeamFields,
+  resolveEventCreateEligibility,
+} from "@/lib/competitionEventCreateFields";
+import {
+  parseEventSexOption,
+  sexesForSexOption,
+  type EventSexOption,
+} from "@/lib/competitionEventSexOption";
 
 type BulkItem = {
   name: string;
   type: EventType;
   category: EventCategory;
-  sexOption: "BOTH" | "MALE_ONLY" | "FEMALE_ONLY" | "MIXED_ONLY";
+  sexOption: EventSexOption;
   announcementMessage?: string;
+  rawBody: Record<string, unknown>;
 };
 
 type WorkingEvent = {
@@ -30,15 +40,6 @@ type WorkingEvent = {
   ageCategoryId: string | null;
 };
 
-function sexesForOption(
-  sexOption: BulkItem["sexOption"]
-): ReadonlyArray<"MALE" | "FEMALE" | "OTHER"> {
-  if (sexOption === "MALE_ONLY") return ["MALE"] as const;
-  if (sexOption === "FEMALE_ONLY") return ["FEMALE"] as const;
-  if (sexOption === "MIXED_ONLY") return ["OTHER"] as const;
-  return ["MALE", "FEMALE"] as const;
-}
-
 function parseItem(raw: unknown): BulkItem | { error: string } {
   if (!raw || typeof raw !== "object") {
     return { error: "種目の指定が不正です" };
@@ -47,7 +48,7 @@ function parseItem(raw: unknown): BulkItem | { error: string } {
   const name = o.name;
   const type = o.type ?? "INDIVIDUAL";
   const category = o.category ?? "POOL";
-  const sexOption = o.sexOption ?? "BOTH";
+  const sexOption = parseEventSexOption(o.sexOption ?? "BOTH");
 
   if (!name || typeof name !== "string" || !name.trim()) {
     return { error: "種目名を入力してください" };
@@ -58,12 +59,7 @@ function parseItem(raw: unknown): BulkItem | { error: string } {
   if (category !== "POOL" && category !== "OCEAN") {
     return { error: "競技カテゴリが不正です" };
   }
-  if (
-    sexOption !== "BOTH" &&
-    sexOption !== "MALE_ONLY" &&
-    sexOption !== "FEMALE_ONLY" &&
-    sexOption !== "MIXED_ONLY"
-  ) {
+  if (!sexOption) {
     return { error: "性別指定が不正です" };
   }
 
@@ -74,6 +70,7 @@ function parseItem(raw: unknown): BulkItem | { error: string } {
     sexOption,
     announcementMessage:
       typeof o.announcementMessage === "string" ? o.announcementMessage : undefined,
+    rawBody: o,
   };
 }
 
@@ -161,14 +158,11 @@ export async function POST(
     let nextOrder =
       bucketEvents.length > 0 ? Math.max(...bucketEvents.map((e) => e.displayOrder)) : -1;
 
-    const birthForCreate = resolvedBulkAgeCategory
-      ? {
-          eligibleBirthDateFrom: resolvedBulkAgeCategory.eligibleBirthDateFrom,
-          eligibleBirthDateTo: resolvedBulkAgeCategory.eligibleBirthDateTo,
-          minAge: null as number | null,
-          maxAge: null as number | null,
-        }
-      : {};
+    const competitionCategories = await prisma.competitionAgeCategory.findMany({
+      where: { competitionId },
+      select: { id: true },
+    });
+    const validCategoryIds = new Set(competitionCategories.map((c) => c.id));
 
     const creates: Prisma.EventCreateManyInput[] = [];
     const announcements: string[] = [];
@@ -207,12 +201,31 @@ export async function POST(
           e.ageCategoryId === bulkAgeCategoryId
       );
       const existingSexes = new Set(sameName.map((e) => e.sex));
-      const sexesToCreate = sexesForOption(item.sexOption);
+      const sexesToCreate = sexesForSexOption(item.sexOption);
       const missingSexes = sexesToCreate.filter((sex) => !existingSexes.has(sex));
 
       if (missingSexes.length === 0) {
         continue;
       }
+
+      const eligibilityResult = resolveEventCreateEligibility({
+        body: item.rawBody,
+        targetAgeCategoryId: bulkAgeCategoryId,
+        validCategoryIds,
+      });
+      if (!eligibilityResult.ok) {
+        return NextResponse.json({ message: eligibilityResult.message }, { status: 400 });
+      }
+
+      const teamResult = parseEventCreateTeamFields(item.rawBody, item.type);
+      if (!teamResult.ok) {
+        return NextResponse.json({ message: teamResult.message }, { status: 400 });
+      }
+
+      const createExtras = {
+        ...eligibilityResult.data,
+        ...teamResult.data,
+      };
 
       const announce =
         typeof item.announcementMessage === "string"
@@ -233,14 +246,21 @@ export async function POST(
         nextOrder += 1;
         creates.push({
           competitionId,
-          ageCategoryId: bulkAgeCategoryId,
+          ageCategoryId: createExtras.ageCategoryId,
           name: storedName,
           sex,
           type: item.type,
           category: item.category,
           requiresEntryTime,
           displayOrder: nextOrder,
-          ...birthForCreate,
+          allowedAgeCategoryIds: createExtras.allowedAgeCategoryIds,
+          eligibleBirthDateFrom: createExtras.eligibleBirthDateFrom ?? undefined,
+          eligibleBirthDateTo: createExtras.eligibleBirthDateTo ?? undefined,
+          minAge: createExtras.minAge ?? undefined,
+          maxAge: createExtras.maxAge ?? undefined,
+          teamRelayPositionCount: createExtras.teamRelayPositionCount ?? undefined,
+          teamRelayPositionNames: createExtras.teamRelayPositionNames ?? undefined,
+          maxTeamEntriesPerClub: createExtras.maxTeamEntriesPerClub ?? undefined,
         });
         working.push({
           name: storedName,

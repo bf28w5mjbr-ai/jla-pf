@@ -21,6 +21,8 @@ import {
 import { cn } from "@/lib/utils";
 import {
   CompetitionAnnouncementsManagerLazy,
+  CompetitionAttachmentsManagerLazy,
+  CompetitionGalleryManagerLazy,
   CompetitionPublicGalleryLazy,
   CompetitionRelationsEditorLazy,
 } from "./competitionPublicDynamicClients";
@@ -36,6 +38,7 @@ type Props = {
   hasIndividualEvents: boolean;
   hasTeamEvents: boolean;
   showEntryLinks: boolean;
+  canEdit?: boolean;
   layout?: "classic" | "editorial";
 };
 
@@ -44,6 +47,7 @@ export function CompetitionPublicOverviewPanel({
   hasIndividualEvents,
   hasTeamEvents,
   showEntryLinks,
+  canEdit = false,
   layout = "classic",
 }: Props) {
   const isEditorial = layout === "editorial";
@@ -326,16 +330,22 @@ export function CompetitionPublicOverviewPanel({
         )
       ) : null}
 
+      {canEdit ? (
+        <div className="rounded-xl border border-orange-300/35 bg-gradient-to-r from-orange-50/50 via-background to-background px-4 py-3 text-xs leading-relaxed text-muted-foreground dark:border-orange-800/40 dark:from-orange-950/25 dark:via-background">
+          主催者としてログイン中です。お知らせ・関係組織・添付・ギャラリーはこのページから直接編集できます。
+        </div>
+      ) : null}
+
       <CompetitionRelationsEditorLazy
         competitionId={competition.id}
         relatedOrganizations={resolveRelatedOrganizationsForDisplay({
           relatedOrganizations: competition.relatedOrganizations,
         })}
-        canEdit={false}
+        canEdit={canEdit}
         layout={layout}
       />
 
-      {competition.announcements.length > 0 ? (
+      {canEdit || competition.announcements.length > 0 ? (
         <CompetitionAnnouncementsManagerLazy
           competitionId={competition.id}
           initialAnnouncements={competition.announcements.map((a) => ({
@@ -345,12 +355,42 @@ export function CompetitionPublicOverviewPanel({
             publishedAt: toIsoStringOrNull(a.publishedAt),
             createdAt: toIsoStringOrNull(a.createdAt) ?? "",
           }))}
-          canEdit={false}
+          canEdit={canEdit}
           layout={layout}
         />
       ) : null}
 
-      <CompetitionPublicGalleryLazy photos={competition.galleryPhotos} layout={layout} />
+      {canEdit || (competition.attachments?.length ?? 0) > 0 ? (
+        <CompetitionAttachmentsManagerLazy
+          competitionId={competition.id}
+          initialAttachments={(competition.attachments ?? []).map((a) => ({
+            id: a.id,
+            fileName: a.fileName,
+            fileUrl: a.fileUrl,
+            fileSize: a.fileSize,
+            mimeType: a.mimeType,
+            createdAt: toIsoStringOrNull(a.createdAt) ?? "",
+          }))}
+          canEdit={canEdit}
+          layout={layout}
+        />
+      ) : null}
+
+      {canEdit ? (
+        <CompetitionGalleryManagerLazy
+          competitionId={competition.id}
+          canEdit={canEdit}
+          layout={layout}
+          initialPhotos={competition.galleryPhotos.map((p) => ({
+            id: p.id,
+            imageUrl: p.imageUrl,
+            fileName: p.fileName,
+            createdAt: toIsoStringOrNull(p.createdAt) ?? "",
+          }))}
+        />
+      ) : (
+        <CompetitionPublicGalleryLazy photos={competition.galleryPhotos} layout={layout} />
+      )}
     </div>
   );
 }

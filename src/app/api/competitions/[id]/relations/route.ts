@@ -15,6 +15,7 @@ import {
 } from "@/lib/organizerAccess";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
+import { revalidateCompetitionPublicPage } from "@/lib/revalidateCompetitionPublicPage";
 
 async function deleteLogoFile(logoUrl: string): Promise<void> {
   try {
@@ -79,6 +80,8 @@ export async function PUT(
     for (const logoUrl of removedLogoUrls) {
       await deleteLogoFile(logoUrl);
     }
+
+    revalidateCompetitionPublicPage(id);
 
     return NextResponse.json({
       message: "関係組織情報を更新しました",

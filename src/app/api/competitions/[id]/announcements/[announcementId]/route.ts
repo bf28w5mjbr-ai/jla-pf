@@ -8,6 +8,7 @@ import {
   requireHostOrgAdminForCompetition,
 } from "@/lib/organizerAccess";
 import { notifyCompetitionAnnouncementPublished } from "@/lib/announcementNotification";
+import { revalidateCompetitionPublicPage } from "@/lib/revalidateCompetitionPublicPage";
 
 export async function PUT(
   request: NextRequest,
@@ -83,6 +84,8 @@ export async function PUT(
       });
     }
 
+    revalidateCompetitionPublicPage(competitionId);
+
     return NextResponse.json(updated);
   } catch (error) {
     return jsonInternalError500("PUT api/competitions/[id]/announcements/[announcementId]/route.ts", error);
@@ -128,6 +131,8 @@ export async function DELETE(
     await prisma.competitionAnnouncement.delete({
       where: { id: announcementId },
     });
+
+    revalidateCompetitionPublicPage(competitionId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

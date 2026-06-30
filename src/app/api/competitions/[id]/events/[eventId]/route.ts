@@ -35,6 +35,10 @@ import {
 import { syncStartListSettingsRoundTabsForEvent } from "@/lib/startListRoundCountSync";
 import { parseEligibleBirthDateInput } from "@/lib/eligibleBirthDateInput";
 import { eventBirthFieldsFromAgeCategory } from "@/lib/competitionAgeCategorySync";
+import {
+  parseAllowedAgeCategoryIds,
+  validateAllowedAgeCategoryIdsAgainstCompetition,
+} from "@/lib/competitionEventAgeEligibility";
 import { eventSiblingGroupWhere } from "@/lib/eventSiblingGroup";
 
 export async function DELETE(
@@ -371,18 +375,21 @@ export async function PATCH(
         if (!cat) {
           return NextResponse.json({ message: "年齢カテゴリが見つかりません" }, { status: 404 });
         }
-        const birth = eventBirthFieldsFromAgeCategory(cat);
         await prisma.event.updateMany({
           where: eventSiblingGroupWhere(competitionId, event),
           data: {
             ageCategoryId: categoryId,
-            ...birth,
+            allowedAgeCategoryIds: [categoryId],
+            eligibleBirthDateFrom: null,
+            eligibleBirthDateTo: null,
+            minAge: null,
+            maxAge: null,
           },
         });
       } else {
         await prisma.event.updateMany({
           where: eventSiblingGroupWhere(competitionId, event),
-          data: { ageCategoryId: null },
+          data: { ageCategoryId: null, allowedAgeCategoryIds: Prisma.DbNull },
         });
       }
 
@@ -393,9 +400,66 @@ export async function PATCH(
 
       return NextResponse.json({
         message: categoryId
-          ? "種目を年齢カテゴリに連動しました（参加可能な生年月日がカテゴリに合わせて更新されました）。"
+          ? "種目を年齢カテゴリに連動しました（参加可能カテゴリを更新しました）。"
           : "種目の年齢カテゴリ連動を解除しました。",
         events: updatedEventsLink,
+      });
+    }
+
+    const onlyAllowedAgeCategories =
+      rawKeys.length === 1 &&
+      Object.prototype.hasOwnProperty.call(raw, "allowedAgeCategoryIds");
+    if (onlyAllowedAgeCategories) {
+      if (!isAdmin) {
+        return NextResponse.json({ message: "権限がありません" }, { status: 403 });
+      }
+      const mutationStateAllowed = await loadCompetitionMutationState(competitionId);
+      try {
+        assertEventAgePatchAllowed(mutationStateAllowed);
+      } catch (e) {
+        if (e instanceof CompetitionEditForbiddenError) {
+          return NextResponse.json({ message: e.message }, { status: 400 });
+        }
+        throw e;
+      }
+
+      const parsedIds = parseAllowedAgeCategoryIds(raw.allowedAgeCategoryIds);
+      if (!parsedIds) {
+        return NextResponse.json(
+          { message: "参加可能な年齢カテゴリを1件以上選んでください" },
+          { status: 400 }
+        );
+      }
+
+      const competitionCategories = await prisma.competitionAgeCategory.findMany({
+        where: { competitionId },
+        select: { id: true },
+      });
+      const validIds = new Set(competitionCategories.map((c) => c.id));
+      const validated = validateAllowedAgeCategoryIdsAgainstCompetition(parsedIds, validIds);
+      if (!validated.ok) {
+        return NextResponse.json({ message: validated.message }, { status: 400 });
+      }
+
+      await prisma.event.updateMany({
+        where: eventSiblingGroupWhere(competitionId, event),
+        data: {
+          allowedAgeCategoryIds: validated.ids,
+          eligibleBirthDateFrom: null,
+          eligibleBirthDateTo: null,
+          minAge: null,
+          maxAge: null,
+        },
+      });
+
+      const updatedEventsAllowed = await prisma.event.findMany({
+        where: { competitionId },
+        orderBy: { displayOrder: "asc" },
+      });
+
+      return NextResponse.json({
+        message: "種目の参加可能な年齢カテゴリを更新しました",
+        events: updatedEventsAllowed,
       });
     }
 
@@ -1022,6 +1086,7 @@ export async function PATCH(
           eligibleBirthDateFrom: fromD,
           eligibleBirthDateTo: toD,
           ageCategoryId: null,
+          allowedAgeCategoryIds: Prisma.DbNull,
           ...(clearLegacyAge ? { minAge: null, maxAge: null } : {}),
         },
       });

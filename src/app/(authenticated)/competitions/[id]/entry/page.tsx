@@ -490,6 +490,7 @@ export default async function CompetitionEntryPage({
         event,
         userDateOfBirth: userDateOfBirth ? new Date(userDateOfBirth) : null,
         seasonalAgeYears: userAge,
+        competitionAgeCategories: competition.ageCategories,
       })
     ) {
       return false;

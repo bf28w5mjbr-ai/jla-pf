@@ -12,6 +12,7 @@ import {
 } from "@/lib/organizerAccess";
 import { canUseSupabaseStorage, uploadPublicAsset } from "@/lib/supabase/storage";
 import { validateCompetitionAttachmentBuffer } from "@/lib/uploadValidation";
+import { revalidateCompetitionPublicPage } from "@/lib/revalidateCompetitionPublicPage";
 
 export const maxDuration = 60;
 
@@ -106,6 +107,8 @@ export async function POST(
         mimeType: validated.value.mime,
       },
     });
+
+    revalidateCompetitionPublicPage(id);
 
     return NextResponse.json(attachment);
   } catch (error) {

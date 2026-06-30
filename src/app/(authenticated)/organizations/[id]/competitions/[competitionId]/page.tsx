@@ -281,9 +281,14 @@ export default async function CompetitionDetailPage({
             </div>
           ) : null}
           {canEdit ? (
-            <p className="mt-3 max-w-2xl text-[11px] leading-relaxed text-muted-foreground">
-              スタートリスト全体の公開／非公開は、「公開ページ」のスタートリストタブから切り替えられます（大会単位で、全種目共通です）。
-            </p>
+            <div className="mt-3 max-w-2xl space-y-1 text-[11px] leading-relaxed text-muted-foreground">
+              <p>
+                お知らせ・関係組織・添付ファイル・フォトギャラリーは、「公開ページ」の大会情報タブから編集できます。
+              </p>
+              <p>
+                スタートリスト全体の公開／非公開は、「公開ページ」のスタートリストタブから切り替えられます（大会単位で、全種目共通です）。
+              </p>
+            </div>
           ) : null}
         </OrgEditorialPanel>
       </section>

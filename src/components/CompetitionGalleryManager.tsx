@@ -3,8 +3,13 @@
 import { useRef, useState } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ImagePlus, Trash2 } from "lucide-react";
+import {
+  CompetitionPublicContentSection,
+  CompetitionPublicEditButton,
+  CompetitionPublicEmptyState,
+} from "@/components/competitions/browse/competitionPublicEditUi";
+import { cn } from "@/lib/utils";
+import { ImagePlus, Images, Trash2 } from "lucide-react";
 
 export type GalleryPhoto = {
   id: string;
@@ -17,6 +22,7 @@ type Props = {
   competitionId: string;
   initialPhotos: GalleryPhoto[];
   canEdit: boolean;
+  layout?: "classic" | "editorial";
 };
 
 function isAbsoluteImageUrl(url: string) {
@@ -27,7 +33,9 @@ export default function CompetitionGalleryManager({
   competitionId,
   initialPhotos,
   canEdit,
+  layout = "classic",
 }: Props) {
+  const isEditorial = layout === "editorial";
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [photos, setPhotos] = useState<GalleryPhoto[]>(initialPhotos);
   const [isUploading, setIsUploading] = useState(false);
@@ -115,75 +123,93 @@ export default function CompetitionGalleryManager({
     }
   };
 
-  return (
-    <Card className="overflow-hidden border-border/80 shadow-sm">
-      <CardHeader className="border-b border-border/80 bg-muted/15 px-4 py-3 sm:px-5">
-        <CardTitle className="text-base font-semibold tracking-tight">フォトギャラリー</CardTitle>
-        <CardDescription className="text-xs">
-          アップロードした写真は大会の公開ページにギャラリーとして表示されます（JPEG・PNG・GIF・WebP・AVIF、各8MBまで・最大60枚）。
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4 px-4 py-4 sm:px-5 sm:py-5">
-        {canEdit ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
-              className="sr-only"
-              onChange={(ev) => void handleFileChange(ev)}
-              disabled={isUploading}
-            />
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="h-9 gap-2"
-              disabled={isUploading}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <ImagePlus className="h-4 w-4" aria-hidden />
-              {isUploading ? "アップロード中…" : "写真を追加"}
-            </Button>
-          </div>
-        ) : null}
+  const headerActions = canEdit ? (
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
+        className="sr-only"
+        onChange={(ev) => void handleFileChange(ev)}
+        disabled={isUploading}
+      />
+      <CompetitionPublicEditButton
+        type="button"
+        disabled={isUploading}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        <ImagePlus className="h-3.5 w-3.5" />
+        {isUploading ? "アップロード中…" : "写真を追加"}
+      </CompetitionPublicEditButton>
+    </>
+  ) : null;
 
-        {photos.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            {canEdit ? "まだ写真がありません。上のボタンから追加できます。" : "公開されている写真はありません。"}
-          </p>
-        ) : (
-          <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-            {photos.map((p) => (
-              <li
-                key={p.id}
-                className="group relative aspect-square overflow-hidden rounded-lg border border-border/60 bg-muted/20"
-              >
-                <Image
-                  src={p.imageUrl}
-                  alt={p.fileName || "ギャラリー写真"}
-                  fill
-                  className="object-cover"
-                  sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
-                  unoptimized={!isAbsoluteImageUrl(p.imageUrl)}
-                />
-                {canEdit ? (
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="icon"
-                    className="absolute right-1 top-1 h-8 w-8 shadow-md opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
-                    onClick={() => void handleDelete(p.id)}
-                    aria-label="写真を削除"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
+  const title = (
+    <span className="flex items-center gap-2">
+      <Images className="size-4 text-primary/80" aria-hidden />
+      フォトギャラリー
+    </span>
+  );
+
+  return (
+    <CompetitionPublicContentSection
+      layout={layout}
+      subheading="Gallery"
+      title={title}
+      titleExtra={headerActions}
+      description="アップロードした写真は大会の公開ページにギャラリーとして表示されます（JPEG・PNG・GIF・WebP・AVIF、各8MBまで・最大60枚）。"
+      accent="muted"
+      contentClassName="space-y-4"
+    >
+      {photos.length === 0 ? (
+        <CompetitionPublicEmptyState>
+          {canEdit
+            ? "まだ写真がありません。上のボタンから追加できます。"
+            : "公開されている写真はありません。"}
+        </CompetitionPublicEmptyState>
+      ) : (
+        <ul
+          className={cn(
+            "grid gap-2.5 sm:gap-3",
+            isEditorial
+              ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4"
+              : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+          )}
+        >
+          {photos.map((p) => (
+            <li
+              key={p.id}
+              className={cn(
+                "group relative overflow-hidden bg-muted/20",
+                isEditorial
+                  ? "aspect-[4/3] rounded-xl ring-1 ring-border/50"
+                  : "aspect-square rounded-lg border border-border/60"
+              )}
+            >
+              <Image
+                src={p.imageUrl}
+                alt={p.fileName || "ギャラリー写真"}
+                fill
+                className={cn("object-cover", isEditorial && "transition-transform duration-300 group-hover:scale-[1.03]")}
+                sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
+                unoptimized={!isAbsoluteImageUrl(p.imageUrl)}
+              />
+              {canEdit ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="icon"
+                  className="absolute right-1.5 top-1.5 h-8 w-8 shadow-md opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
+                  onClick={() => void handleDelete(p.id)}
+                  aria-label="写真を削除"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </CompetitionPublicContentSection>
   );
 }

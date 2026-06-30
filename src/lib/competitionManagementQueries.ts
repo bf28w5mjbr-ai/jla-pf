@@ -36,7 +36,7 @@ export function buildCompetitionOfficialSelect(userId: string): Prisma.Competiti
   };
 }
 
-/** 大会設定タブ用（お知らせ・添付・ギャラリー・種目・年齢区分など一式） */
+/** 大会設定タブ用（種目・年齢区分などエントリー設定用） */
 export function buildCompetitionManagementIncludeForPageTab(
   userId: string
 ): Prisma.CompetitionInclude {
@@ -50,15 +50,6 @@ export function buildCompetitionManagementIncludeForPageTab(
     },
     technicalOfficialQualificationTemplate: {
       select: { id: true, name: true, kind: true },
-    },
-    announcements: {
-      orderBy: { createdAt: "desc" },
-    },
-    attachments: {
-      orderBy: { createdAt: "desc" },
-    },
-    galleryPhotos: {
-      orderBy: { createdAt: "asc" },
     },
     events: {
       orderBy: { displayOrder: "asc" },

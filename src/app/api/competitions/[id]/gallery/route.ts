@@ -12,6 +12,7 @@ import {
 } from "@/lib/organizerAccess";
 import { canUseSupabaseStorage, uploadPublicAsset } from "@/lib/supabase/storage";
 import { validateRasterImageBuffer } from "@/lib/uploadValidation";
+import { revalidateCompetitionPublicPage } from "@/lib/revalidateCompetitionPublicPage";
 
 const MAX_GALLERY_PHOTOS = 60;
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -102,6 +103,8 @@ export async function POST(
         fileName: file.name,
       },
     });
+
+    revalidateCompetitionPublicPage(id);
 
     return NextResponse.json(photo);
   } catch (error) {

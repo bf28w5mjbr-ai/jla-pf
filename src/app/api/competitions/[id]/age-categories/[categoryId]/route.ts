@@ -1,4 +1,5 @@
 import { jsonInternalError500 } from "@/lib/apiInternalError";
+import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { verifySession } from "@/lib/auth";
@@ -120,7 +121,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           eligibleBirthDateTo: toD,
         });
         await tx.event.updateMany({
-          where: { ageCategoryId: categoryId },
+          where: {
+            ageCategoryId: categoryId,
+            allowedAgeCategoryIds: { equals: Prisma.DbNull },
+          },
           data: {
             ...birth,
           },

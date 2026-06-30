@@ -2,10 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import {
+  settingsFlatBlockTitleClassName,
+  settingsFlatDivide,
+  settingsFlatFieldGroup,
+  settingsFlatHint,
+  settingsFlatInputShell,
+  settingsFlatStatusClass,
+} from "@/components/competitions/management/competitionSettingsFlatUi";
 import { Calendar, Clock, MapPin, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -323,37 +330,38 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
     }
   };
 
-  const readonlyTileClass =
-    "rounded-lg border border-border bg-card px-3 py-2.5 sm:px-4 sm:py-3";
+  const readonlyRowClass = "py-2.5";
 
   if (!canEdit) {
     return (
-      <Card padding="none" className="overflow-hidden border-border shadow-sm">
-        <CardHeader className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
-          <CardTitle className="text-base font-semibold">大会基本情報</CardTitle>
-          <CardDescription className="text-sm">開催日・場所・エントリー期間などの現在の値です。</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 px-4 py-4 sm:grid-cols-2 sm:px-5">
-          <div className={readonlyTileClass}>
-            <p className="text-xs font-medium text-muted-foreground">大会カテゴリ</p>
-            <p className="mt-1 text-sm font-medium text-foreground">{category || "未設定"}</p>
+      <section className="py-4">
+        <h2 className={settingsFlatBlockTitleClassName()}>大会基本情報</h2>
+        <p className={cn(settingsFlatHint, "mt-0.5")}>
+          開催日・場所・エントリー期間などの現在の値です。
+        </p>
+        <div className={cn("mt-3", settingsFlatDivide)}>
+          <div className={readonlyRowClass}>
+            <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground/75">
+              大会カテゴリ
+            </p>
+            <p className="mt-1 text-xs font-medium text-foreground">{category || "未設定"}</p>
           </div>
-          <div className={readonlyTileClass}>
-            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <Calendar className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+          <div className={readonlyRowClass}>
+            <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground/75">
+              <Calendar className="h-3 w-3 shrink-0 opacity-80" aria-hidden />
               開催日
             </div>
-            <p className="mt-1 text-sm font-medium text-foreground">
+            <p className="mt-1 text-xs font-medium text-foreground">
               {new Date(startDate).toLocaleDateString("ja-JP")} 〜{" "}
               {new Date(endDate).toLocaleDateString("ja-JP")}
             </p>
           </div>
-          <div className={cn(readonlyTileClass, "sm:col-span-2")}>
-            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <Clock className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+          <div className={readonlyRowClass}>
+            <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground/75">
+              <Clock className="h-3 w-3 shrink-0 opacity-80" aria-hidden />
               エントリー期間
             </div>
-            <p className="mt-1 text-sm font-medium text-foreground">
+            <p className="mt-1 text-xs font-medium text-foreground">
               {(() => {
                 const sIso = entryStartDate.trim()
                   ? datetimeLocalInputValueToUtcIsoString(entryStartDate, ENTRY_DATETIME_LOCAL_OPTS)
@@ -368,53 +376,39 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
               })()}
             </p>
           </div>
-
-          <div className={cn(readonlyTileClass, "sm:col-span-2")}>
-            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <MapPin className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+          <div className={readonlyRowClass}>
+            <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground/75">
+              <MapPin className="h-3 w-3 shrink-0 opacity-80" aria-hidden />
               開催場所
             </div>
-            <p className="mt-1 text-sm font-medium text-foreground">{venue || "未設定"}</p>
+            <p className="mt-1 text-xs font-medium text-foreground">{venue || "未設定"}</p>
           </div>
-
-          <div className={cn(readonlyTileClass, "sm:col-span-2")}>
-            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <Users className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+          <div className={readonlyRowClass}>
+            <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground/75">
+              <Users className="h-3 w-3 shrink-0 opacity-80" aria-hidden />
               所属クラブ
             </div>
-            <p className="mt-1 text-sm font-medium text-foreground">
+            <p className="mt-1 text-xs font-medium text-foreground">
               {requireClubMembership ? "エントリー時に所属クラブ必須" : "所属クラブ不要"}
             </p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
     );
   }
 
-  const sectionClass =
-    "space-y-3 rounded-lg border border-border bg-card px-3 py-3 sm:px-4 sm:py-3.5";
-
   return (
-    <Card padding="none" className="overflow-hidden border-border shadow-sm">
-      <CardHeader className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
-        <CardTitle className="text-base font-semibold">大会基本情報</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4 px-4 py-4 sm:px-5">
-        <p
-          className={cn(
-            "text-[11px]",
-            statusTone === "success"
-              ? "text-emerald-700 dark:text-emerald-300"
-              : statusTone === "error"
-                ? "text-destructive"
-                : "text-muted-foreground"
-          )}
-        >
-          {statusText || "フォーカスを外すと自動保存されます。"}
-        </p>
+    <section className="py-4">
+      <h2 className={settingsFlatBlockTitleClassName()}>大会基本情報</h2>
+      <p className={cn(settingsFlatStatusClass(statusTone), "mt-1")}>
+        {statusText || "フォーカスを外すと自動保存されます。"}
+      </p>
 
-        <div className={sectionClass}>
-          <p className="text-xs font-medium text-muted-foreground">大会概要</p>
+      <div className={cn("mt-3", settingsFlatDivide)}>
+        <div className={settingsFlatFieldGroup}>
+          <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground/75">
+            大会概要
+          </p>
           <div>
             <Label htmlFor="category" className="text-xs">
               大会カテゴリ <span className="text-red-500">*</span>
@@ -459,24 +453,24 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
                 開催日 <span className="text-red-500">*</span>
               </Label>
             </div>
-            <div className="flex min-h-9 items-center gap-2 rounded-md border border-input bg-background px-2.5 py-1.5">
+            <div className={settingsFlatInputShell}>
               <Input
                 id="startDate"
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 required
-                className="h-8 min-w-0 flex-1 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"
+                className="h-8 min-w-0 flex-1 border-0 px-0 py-0 text-xs shadow-none focus-visible:ring-0"
                 disabled={isSaving}
               />
-              <span className="shrink-0 text-xs text-muted-foreground">〜</span>
+              <span className="shrink-0 text-[10px] text-muted-foreground">〜</span>
               <Input
                 id="endDate"
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 required
-                className="h-8 min-w-0 flex-1 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"
+                className="h-8 min-w-0 flex-1 border-0 px-0 py-0 text-xs shadow-none focus-visible:ring-0"
                 disabled={isSaving}
               />
             </div>
@@ -484,42 +478,42 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
         </div>
 
         <div
-          className={sectionClass}
+          className={settingsFlatFieldGroup}
           onBlur={(e) => {
             if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
               void saveEntryPeriod();
             }
           }}
         >
-          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <Clock className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+          <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground/75">
+            <Clock className="h-3 w-3 shrink-0 opacity-80" aria-hidden />
             エントリー期間（日本時間）
           </div>
-          <div className="flex flex-col gap-2 rounded-md border border-input bg-background px-2.5 py-2 sm:flex-row sm:items-center">
+          <div className={cn(settingsFlatInputShell, "flex-col sm:flex-row sm:py-1.5")}>
             <Input
               id="entryStartDate"
               type="datetime-local"
               value={entryStartDate}
               onChange={(e) => setEntryStartDate(e.target.value)}
-              className="h-9 min-w-0 flex-1 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"
+              className="h-8 min-w-0 flex-1 border-0 px-0 py-0 text-xs shadow-none focus-visible:ring-0"
               disabled={isSaving}
             />
-            <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">〜</span>
+            <span className="hidden shrink-0 text-[10px] text-muted-foreground sm:inline">〜</span>
             <Input
               id="entryEndDate"
               type="datetime-local"
               value={entryEndDate}
               onChange={(e) => setEntryEndDate(e.target.value)}
-              className="h-9 min-w-0 flex-1 border-0 px-0 py-0 text-sm shadow-none focus-visible:ring-0"
+              className="h-8 min-w-0 flex-1 border-0 px-0 py-0 text-xs shadow-none focus-visible:ring-0"
               disabled={isSaving}
             />
           </div>
         </div>
 
-        <div className={sectionClass}>
-          <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <MapPin className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
-            <Label htmlFor="venue" className="font-medium text-muted-foreground">
+        <div className={settingsFlatFieldGroup}>
+          <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground/75">
+            <MapPin className="h-3 w-3 shrink-0 opacity-80" aria-hidden />
+            <Label htmlFor="venue" className="font-medium normal-case tracking-normal text-muted-foreground/75">
               開催場所 <span className="text-red-500">*</span>
             </Label>
           </div>
@@ -530,49 +524,49 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
             onBlur={() => void saveCurrent()}
             placeholder="例: 東京辰巳国際水泳場"
             required
-            className="h-9 text-sm"
+            className="h-8 text-xs"
             disabled={isSaving}
           />
         </div>
 
         <div
-          className={cn(sectionClass, "bg-muted/20")}
+          className={settingsFlatFieldGroup}
           onBlur={(e) => {
             if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
               void saveRequireClubMembership();
             }
           }}
         >
-          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <Users className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+          <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground/75">
+            <Users className="h-3 w-3 shrink-0 opacity-80" aria-hidden />
             所属クラブ
           </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <label className="flex cursor-pointer items-center gap-2.5 rounded-md border border-border bg-background px-3 py-2.5 text-sm shadow-sm transition-colors hover:bg-muted/40 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/60">
+          <div className="flex flex-wrap gap-4">
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-foreground">
               <input
                 type="radio"
                 name="basic-info-require-club"
                 checked={requireClubMembership}
                 onChange={() => setRequireClubMembership(true)}
                 disabled={isSaving}
-                className="h-4 w-4 shrink-0 accent-primary"
+                className="h-3.5 w-3.5 shrink-0 accent-primary"
               />
               <span>所属クラブ必須</span>
             </label>
-            <label className="flex cursor-pointer items-center gap-2.5 rounded-md border border-border bg-background px-3 py-2.5 text-sm shadow-sm transition-colors hover:bg-muted/40 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/60">
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-foreground">
               <input
                 type="radio"
                 name="basic-info-require-club"
                 checked={!requireClubMembership}
                 onChange={() => setRequireClubMembership(false)}
                 disabled={isSaving}
-                className="h-4 w-4 shrink-0 accent-primary"
+                className="h-3.5 w-3.5 shrink-0 accent-primary"
               />
               <span>所属クラブ不要</span>
             </label>
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

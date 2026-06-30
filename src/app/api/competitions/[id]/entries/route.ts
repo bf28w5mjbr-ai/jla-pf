@@ -476,6 +476,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           event,
           userDateOfBirth: userDateOfBirth ? new Date(userDateOfBirth) : null,
           seasonalAgeYears: userAge,
+          competitionAgeCategories: competition.ageCategories,
         })
       ) {
         throw new Error("年齢条件を満たしていません");

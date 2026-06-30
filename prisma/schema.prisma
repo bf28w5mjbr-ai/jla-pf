@@ -1928,6 +1928,8 @@ model Event {
   eligibleBirthDateFrom        DateTime?     @db.Date
   /// 参加可能な生年月日の上限（この日に生まれた人を含む）
   eligibleBirthDateTo          DateTime?     @db.Date
+  /// 参加可能な AGEカテゴリ ID の明示リスト（JSON string[]）。空/null は後方互換ルールへ
+  allowedAgeCategoryIds        Json?
   /// 種目の想定開始日時（進行・表示用・第1ラウンドの既定。ラウンド別は roundScheduledStarts も参照）
   scheduledStartAt             DateTime?
   /// ラウンド別の想定開始日時（0 始まりインデックスのキー → ISO 文字列。未設定キーは scheduledStartAt や未入力を意味する）

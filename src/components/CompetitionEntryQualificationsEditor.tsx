@@ -53,7 +53,7 @@ function QualificationOptionGroups({
   return (
     <div className="space-y-3">
       {primaryOptions.length > 0 || foundationOptions.length > 0 ? (
-        <div className="space-y-3 rounded-lg border border-border/80 bg-muted/15 p-3">
+        <div className="space-y-3 border-t border-border/40 pt-3">
           {primaryOptions.length > 0 ? (
             <div className="space-y-2">
               <p className="text-[11px] font-semibold text-foreground">選手登録・認定ライフセーバー</p>

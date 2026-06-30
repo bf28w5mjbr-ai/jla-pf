@@ -1,59 +1,45 @@
 import { describe, expect, it } from "vitest";
-import {
-  canEditCompetitionPublishedSchedule,
-  canManageCompetitionStartListSettings,
-  canToggleCompetitionStartListVisibility,
-} from "./competitionStartListAccess";
+import { canEditCompetitionPublicContent } from "./competitionStartListAccess";
 
-describe("competitionStartListAccess", () => {
-  describe("canToggleCompetitionStartListVisibility", () => {
-    it("org ADMIN のみ true", () => {
-      expect(
-        canToggleCompetitionStartListVisibility({
-          orgAdminsForCurrentUser: [{ role: "ADMIN" }],
-          orgStatus: "APPROVED",
-        })
-      ).toBe(true);
-    });
+describe("canEditCompetitionPublicContent", () => {
+  const adminRow = [{ role: "ADMIN" as const }];
 
-    it("org MEMBER は false", () => {
-      expect(
-        canToggleCompetitionStartListVisibility({
-          orgAdminsForCurrentUser: [{ role: "MEMBER" }],
-        })
-      ).toBe(false);
-    });
-
-    it("所属なしは false", () => {
-      expect(
-        canToggleCompetitionStartListVisibility({
-          orgAdminsForCurrentUser: [],
-        })
-      ).toBe(false);
-    });
-
-    it("canEditCompetitionPublishedSchedule と同じ", () => {
-      const admins = [{ role: "MEMBER" as const }];
-      expect(canToggleCompetitionStartListVisibility({ orgAdminsForCurrentUser: admins, orgStatus: "APPROVED" })).toBe(
-        canEditCompetitionPublishedSchedule({ orgAdminsForCurrentUser: admins, orgStatus: "APPROVED" })
-      );
-    });
+  it("allows host org ADMIN when organization is APPROVED", () => {
+    expect(
+      canEditCompetitionPublicContent({
+        orgAdminsForCurrentUser: adminRow,
+        orgStatus: "APPROVED",
+      })
+    ).toBe(true);
   });
 
-  describe("canManageCompetitionStartListSettings", () => {
-    it("当日運用アンロックのみでは公開切替は不可（別関数）", () => {
-      expect(
-        canToggleCompetitionStartListVisibility({
-          orgAdminsForCurrentUser: [],
-        })
-      ).toBe(false);
-      expect(
-        canManageCompetitionStartListSettings({
-          orgAdminsForCurrentUser: [],
-          orgStatus: "APPROVED",
-          hasDayOpsUnlock: true,
-        })
-      ).toBe(true);
-    });
+  it("denies non-admin users", () => {
+    expect(
+      canEditCompetitionPublicContent({
+        orgAdminsForCurrentUser: [{ role: "MEMBER" }],
+        orgStatus: "APPROVED",
+      })
+    ).toBe(false);
+    expect(
+      canEditCompetitionPublicContent({
+        orgAdminsForCurrentUser: [],
+        orgStatus: "APPROVED",
+      })
+    ).toBe(false);
+  });
+
+  it("denies admin when organization is not operational", () => {
+    expect(
+      canEditCompetitionPublicContent({
+        orgAdminsForCurrentUser: adminRow,
+        orgStatus: "PENDING",
+      })
+    ).toBe(false);
+    expect(
+      canEditCompetitionPublicContent({
+        orgAdminsForCurrentUser: adminRow,
+        orgStatus: "SUSPENDED",
+      })
+    ).toBe(false);
   });
 });

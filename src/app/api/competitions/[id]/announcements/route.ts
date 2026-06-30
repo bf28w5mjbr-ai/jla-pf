@@ -8,6 +8,7 @@ import {
   requireHostOrgAdminForCompetition,
 } from "@/lib/organizerAccess";
 import { notifyCompetitionAnnouncementPublished } from "@/lib/announcementNotification";
+import { revalidateCompetitionPublicPage } from "@/lib/revalidateCompetitionPublicPage";
 
 export async function POST(
   request: NextRequest,
@@ -67,6 +68,8 @@ export async function POST(
         content: announcement.content,
       });
     }
+
+    revalidateCompetitionPublicPage(id);
 
     return NextResponse.json(announcement);
   } catch (error) {

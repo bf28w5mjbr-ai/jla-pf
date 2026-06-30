@@ -49,9 +49,12 @@ const competitionPublicOverviewInclude = (sessionUserId: string | null) =>
       where: { publishedAt: { not: null } },
       orderBy: { createdAt: "desc" as const },
     },
+    attachments: {
+      orderBy: { createdAt: "desc" as const },
+    },
     galleryPhotos: {
       orderBy: { createdAt: "asc" as const },
-      select: { id: true, imageUrl: true, fileName: true },
+      select: { id: true, imageUrl: true, fileName: true, createdAt: true },
     },
     ageCategories: {
       orderBy: { displayOrder: "asc" as const },
@@ -157,6 +160,27 @@ export const getCompetitionPublicName = cache(async (competitionId: string) => {
   return row ? { name: row.name } : null;
 });
 
+/** 主催管理者向け: 下書き含むお知らせ一覧（匿名キャッシュとは分離） */
+export const loadCompetitionPublicAdminOverviewOverlay = cache(
+  async (competitionId: string) => {
+    const announcements = await prisma.competitionAnnouncement.findMany({
+      where: { competitionId },
+      orderBy: { createdAt: "desc" },
+    });
+    return { announcements };
+  }
+);
+
+export function withAdminPublicOverviewOverlay(
+  base: CompetitionPublicOverviewDetail,
+  overlay: Awaited<ReturnType<typeof loadCompetitionPublicAdminOverviewOverlay>>
+): CompetitionPublicOverviewDetail {
+  return {
+    ...base,
+    announcements: overlay.announcements,
+  };
+}
+
 /** ログイン時のみ必要な org 管理者・オフィシャル応募（シェル/タブのキャッシュ本体とは分離） */
 const loadSessionPublicCompetitionOverlay = cache(
   async (competitionId: string, organizationId: string, sessionUserId: string) => {
@@ -231,7 +255,7 @@ export const loadCompetitionPublicShell = cache(
 export const loadCompetitionPublicOverviewDetail = cache(
   async (competitionId: string, sessionUserId: string | null) => {
     const base = await loadCachedAnonymousCompetition<CompetitionPublicOverviewDetail>(
-      "competition-public-overview-anon",
+      "competition-public-overview-anon-v2",
       competitionId,
       competitionPublicOverviewInclude(null)
     );

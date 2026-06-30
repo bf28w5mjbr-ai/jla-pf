@@ -29,6 +29,13 @@ export const CompetitionPublicGalleryLazy = dynamic(
   }
 );
 
+export const CompetitionGalleryManagerLazy = dynamic(
+  () => import("@/components/CompetitionGalleryManager"),
+  {
+    loading: () => <CompetitionPublicClientBlockSkeleton className="h-40" />,
+  }
+);
+
 export const CompetitionHostInquiryDialogLazy = dynamic(
   () =>
     import("@/components/public/CompetitionHostInquiryDialog").then((m) => ({

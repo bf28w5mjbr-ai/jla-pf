@@ -4,11 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
+import { CompetitionSubheading } from "@/components/competitions/browse/competitionEditorialUi";
 import {
-  CompetitionEditorialSection,
-  CompetitionSubheading,
-} from "@/components/competitions/browse/competitionEditorialUi";
+  CompetitionPublicContentSection,
+  CompetitionPublicEditButton,
+  CompetitionPublicEmptyState,
+} from "@/components/competitions/browse/competitionPublicEditUi";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
@@ -364,10 +365,10 @@ export default function CompetitionRelationsEditor({
 
   const headerActions =
     canEdit && !isEditing ? (
-      <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setIsEditing(true)}>
-        <Edit className="mr-1.5 h-3.5 w-3.5" />
+      <CompetitionPublicEditButton onClick={() => setIsEditing(true)}>
+        <Edit className="h-3.5 w-3.5" />
         編集
-      </Button>
+      </CompetitionPublicEditButton>
     ) : null;
 
   const body = (
@@ -548,40 +549,24 @@ export default function CompetitionRelationsEditor({
               );
             })}
 
-            {!hasAnyData && canEdit && (
-              <p className="py-3 text-center text-xs text-muted-foreground">関係組織情報が未登録です</p>
-            )}
+            {!hasAnyData && canEdit ? (
+              <CompetitionPublicEmptyState>関係組織情報が未登録です</CompetitionPublicEmptyState>
+            ) : null}
           </div>
         )}
     </div>
   );
 
-  if (isEditorial) {
-    return (
-      <CompetitionEditorialSection
-        subheading="Partners"
-        title="関係組織"
-        titleExtra={headerActions}
-        variant="flat"
-        accent="muted"
-      >
-        {body}
-      </CompetitionEditorialSection>
-    );
-  }
-
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <CardTitle className="text-base font-semibold">関係組織</CardTitle>
-            <CardDescription className="text-xs">後援・協賛・協力・助成（公開ページに表示）</CardDescription>
-          </div>
-          {headerActions}
-        </div>
-      </CardHeader>
-      <CardContent className="px-4 py-3">{body}</CardContent>
-    </Card>
+    <CompetitionPublicContentSection
+      layout={layout}
+      subheading="Partners"
+      title="関係組織"
+      titleExtra={headerActions}
+      description="後援・協賛・協力・助成（公開ページに表示）"
+      accent="muted"
+    >
+      {body}
+    </CompetitionPublicContentSection>
   );
 }

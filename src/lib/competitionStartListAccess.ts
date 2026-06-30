@@ -15,6 +15,12 @@ export function canEditCompetitionPublishedSchedule(args: {
 export const canToggleCompetitionStartListVisibility = canEditCompetitionPublishedSchedule;
 
 /**
+ * 公開ページのお知らせ・関係組織・添付・ギャラリーを編集できるか。
+ * 主催団体の org 管理者（ADMIN）かつ APPROVED のみ。
+ */
+export const canEditCompetitionPublicContent = canEditCompetitionPublishedSchedule;
+
+/**
  * 大会のスタートリスト設定（ヒート分割・次ラ生成・マーシャル運用・当日のヒート JSON 更新など）を編集できるか。
  * 主催団体の org 管理者、または大会ごとの当日運用アクセス暗号でアンロック済み（HttpOnly クッキー）の端末。
  *

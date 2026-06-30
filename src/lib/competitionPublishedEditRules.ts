@@ -265,35 +265,6 @@ export function assertEntrySettingsChange(
   }
 }
 
-function sortedNumberArrayEqual(a: readonly number[], b: readonly number[]): boolean {
-  if (a.length !== b.length) return false;
-  const sa = [...a].sort((x, y) => x - y);
-  const sb = [...b].sort((x, y) => x - y);
-  return sa.every((v, i) => v === sb[i]);
-}
-
-/** 公開済みかつエントリー成立後はアンダー制の変更不可（参加者の可否が変わるため） */
-export function assertUnderAgeSettingsEditable(
-  competition: Competition,
-  next: {
-    underAgeSystemEnabled: boolean;
-    underAgeUThresholds: number[];
-    underAgeOpenEnabled: boolean;
-  },
-  state: CompetitionMutationState
-): void {
-  if (!state.isPublished || !state.hasEstablishedEntry) return;
-  const same =
-    competition.underAgeSystemEnabled === next.underAgeSystemEnabled &&
-    sortedNumberArrayEqual(competition.underAgeUThresholds ?? [], next.underAgeUThresholds) &&
-    competition.underAgeOpenEnabled === next.underAgeOpenEnabled;
-  if (!same) {
-    throw new CompetitionEditForbiddenError(
-      "エントリー成立後は、アンダー制（Uの区分・OPEN）の設定を変更できません。"
-    );
-  }
-}
-
 export function assertRequiredQualificationsChange(
   competition: Competition,
   newStored: unknown,

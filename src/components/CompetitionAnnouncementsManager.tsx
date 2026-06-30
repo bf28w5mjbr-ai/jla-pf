@@ -2,10 +2,13 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  CompetitionEditorialSection,
-} from "@/components/competitions/browse/competitionEditorialUi";
+  CompetitionPublicContentSection,
+  CompetitionPublicEditButton,
+  CompetitionPublicEmptyState,
+  CompetitionPublicInlineForm,
+  CompetitionPublicListItem,
+} from "@/components/competitions/browse/competitionPublicEditUi";
 import { cn } from "@/lib/utils";
 import { Eye, EyeOff, Pencil, Plus, Trash2 } from "lucide-react";
 
@@ -23,6 +26,11 @@ type Props = {
   canEdit: boolean;
   layout?: "classic" | "editorial";
 };
+
+const inputClassName =
+  "h-9 w-full rounded-lg border border-input bg-background px-3 text-sm shadow-sm";
+const textareaClassName =
+  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm";
 
 export default function CompetitionAnnouncementsManager({
   competitionId,
@@ -169,7 +177,7 @@ export default function CompetitionAnnouncementsManager({
 
       if (!response.ok) throw new Error("Failed to delete announcement");
 
-      setAnnouncements(announcements.filter(a => a.id !== id));
+      setAnnouncements(announcements.filter((a) => a.id !== id));
     } catch (error) {
       console.error("Error deleting announcement:", error);
       alert("お知らせの削除に失敗しました");
@@ -178,101 +186,89 @@ export default function CompetitionAnnouncementsManager({
 
   const headerActions =
     canEdit && !isEditing ? (
-      <Button onClick={() => setIsEditing(true)} size="sm" className="h-8 text-xs">
-        <Plus className="mr-1 h-3.5 w-3.5" />
+      <CompetitionPublicEditButton onClick={() => setIsEditing(true)}>
+        <Plus className="h-3.5 w-3.5" />
         追加
-      </Button>
+      </CompetitionPublicEditButton>
     ) : null;
 
   const body = (
     <div className="space-y-3">
-        {isEditing && (
-          <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
+      {isEditing ? (
+        <CompetitionPublicInlineForm>
+          <input
+            type="text"
+            placeholder="タイトル"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            className={inputClassName}
+          />
+          <textarea
+            placeholder="内容"
+            value={newContent}
+            onChange={(e) => setNewContent(e.target.value)}
+            rows={3}
+            className={textareaClassName}
+          />
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <input
-              type="text"
-              placeholder="タイトル"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              type="checkbox"
+              checked={newPublished}
+              onChange={(e) => setNewPublished(e.target.checked)}
             />
-            <textarea
-              placeholder="内容"
-              value={newContent}
-              onChange={(e) => setNewContent(e.target.value)}
-              rows={3}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            />
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={newPublished}
-                onChange={(e) => setNewPublished(e.target.checked)}
-              />
-              作成時に公開する
-            </label>
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" className="h-8 text-xs" onClick={handleAdd} disabled={isSubmitting}>
-                {isSubmitting ? "追加中…" : "追加"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs"
-                onClick={() => {
-                  setIsEditing(false);
-                  setNewTitle("");
-                  setNewContent("");
-                }}
-              >
-                キャンセル
-              </Button>
-            </div>
+            作成時に公開する
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" className="h-8 text-xs" onClick={handleAdd} disabled={isSubmitting}>
+              {isSubmitting ? "追加中…" : "追加"}
+            </Button>
+            <CompetitionPublicEditButton
+              onClick={() => {
+                setIsEditing(false);
+                setNewTitle("");
+                setNewContent("");
+              }}
+            >
+              キャンセル
+            </CompetitionPublicEditButton>
           </div>
-        )}
+        </CompetitionPublicInlineForm>
+      ) : null}
 
-        {announcements.length > 0 ? (
-          <div className={cn(isEditorial ? "divide-y divide-border/45" : "space-y-2")}>
-            {announcements.map((announcement) => (
-              <div
-                key={announcement.id}
-                className={cn(
-                  isEditorial
-                    ? "py-4 first:pt-0"
-                    : "rounded-md border border-border bg-muted/15 px-2.5 py-2"
-                )}
-              >
-                {editingId === announcement.id ? (
-                  <div className="space-y-2 rounded-md border border-border bg-background p-3">
+      {announcements.length > 0 ? (
+        <div className={cn(isEditorial ? "divide-y divide-border/45" : "space-y-2")}>
+          {announcements.map((announcement) => (
+            <CompetitionPublicListItem key={announcement.id} layout={layout}>
+              {editingId === announcement.id ? (
+                <CompetitionPublicInlineForm>
+                  <input
+                    type="text"
+                    value={editingTitle}
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    className={inputClassName}
+                  />
+                  <textarea
+                    value={editingContent}
+                    onChange={(e) => setEditingContent(e.target.value)}
+                    rows={3}
+                    className={textareaClassName}
+                  />
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
                     <input
-                      type="text"
-                      value={editingTitle}
-                      onChange={(e) => setEditingTitle(e.target.value)}
-                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      type="checkbox"
+                      checked={editingPublished}
+                      onChange={(e) => setEditingPublished(e.target.checked)}
                     />
-                    <textarea
-                      value={editingContent}
-                      onChange={(e) => setEditingContent(e.target.value)}
-                      rows={3}
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    />
-                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        checked={editingPublished}
-                        onChange={(e) => setEditingPublished(e.target.checked)}
-                      />
-                      公開する
-                    </label>
-                    <div className="flex gap-2">
-                      <Button size="sm" className="h-8 text-xs" onClick={saveEdit} disabled={isSubmitting}>
-                        保存
-                      </Button>
-                      <Button size="sm" variant="outline" className="h-8 text-xs" onClick={cancelEdit}>
-                        キャンセル
-                      </Button>
-                    </div>
+                    公開する
+                  </label>
+                  <div className="flex gap-2">
+                    <Button size="sm" className="h-8 text-xs" onClick={saveEdit} disabled={isSubmitting}>
+                      保存
+                    </Button>
+                    <CompetitionPublicEditButton onClick={cancelEdit}>キャンセル</CompetitionPublicEditButton>
                   </div>
-                ) : (
+                </CompetitionPublicInlineForm>
+              ) : (
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     {isEditorial && !canEdit ? (
@@ -299,25 +295,26 @@ export default function CompetitionAnnouncementsManager({
                       {announcement.content}
                     </p>
                     {canEdit ? (
-                    <div className="mt-2 flex items-center gap-2">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] ${
-                          announcement.publishedAt
-                            ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                            : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {announcement.publishedAt ? "公開中" : "下書き"}
-                      </span>
-                    </div>
+                      <div className="mt-2 flex items-center gap-2">
+                        <span
+                          className={cn(
+                            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px]",
+                            announcement.publishedAt
+                              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                              : "bg-muted text-muted-foreground"
+                          )}
+                        >
+                          {announcement.publishedAt ? "公開中" : "下書き"}
+                        </span>
+                      </div>
                     ) : null}
                     {!isEditorial || canEdit ? (
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      {new Date(announcement.createdAt).toLocaleDateString("ja-JP")}
-                    </p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {new Date(announcement.createdAt).toLocaleDateString("ja-JP")}
+                      </p>
                     ) : null}
                   </div>
-                  {canEdit && (
+                  {canEdit ? (
                     <div className="flex shrink-0 items-center gap-1">
                       <Button
                         variant="ghost"
@@ -348,44 +345,29 @@ export default function CompetitionAnnouncementsManager({
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
-                  )}
+                  ) : null}
                 </div>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="py-3 text-center text-xs text-muted-foreground">お知らせはまだありません</p>
-        )}
+              )}
+            </CompetitionPublicListItem>
+          ))}
+        </div>
+      ) : (
+        <CompetitionPublicEmptyState>お知らせはまだありません</CompetitionPublicEmptyState>
+      )}
     </div>
   );
 
-  if (isEditorial) {
-    return (
-      <CompetitionEditorialSection
-        subheading="News"
-        title="お知らせ"
-        titleExtra={headerActions}
-        variant="flat"
-        accent="orange"
-      >
-        {body}
-      </CompetitionEditorialSection>
-    );
-  }
-
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="space-y-0.5 border-b border-border bg-muted/15 px-4 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <CardTitle className="text-base font-semibold">お知らせ</CardTitle>
-            <CardDescription className="text-xs">大会ページに表示されるお知らせです。</CardDescription>
-          </div>
-          {headerActions}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3 px-4 py-3">{body}</CardContent>
-    </Card>
+    <CompetitionPublicContentSection
+      layout={layout}
+      subheading="News"
+      title="お知らせ"
+      titleExtra={headerActions}
+      description="大会ページに表示されるお知らせです。"
+      accent="orange"
+      contentClassName="space-y-3"
+    >
+      {body}
+    </CompetitionPublicContentSection>
   );
 }

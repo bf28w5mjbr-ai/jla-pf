@@ -1,5 +1,8 @@
 import { getCompetitionEligibilityAgeYears } from "@/lib/competitionEligibilityAge";
-import { meetsCompetitionEventAgeEligibility } from "@/lib/competitionEventAgeEligibility";
+import {
+  meetsCompetitionEventAgeEligibility,
+  parseAllowedAgeCategoryIds,
+} from "@/lib/competitionEventAgeEligibility";
 import type { Sex } from "@prisma/client";
 
 export type TeamAssignmentEligibleMemberJson = {
@@ -26,6 +29,7 @@ export type TeamAssignmentEventJson = {
   eligibleBirthDateFrom: string | null;
   eligibleBirthDateTo: string | null;
   ageCategoryId: string | null;
+  allowedAgeCategoryIds?: string[] | null;
 };
 
 function parseDbDate(s: string | null): Date | null {
@@ -58,9 +62,17 @@ export function isClubMemberEligibleForTeamAssignmentSlot(params: {
       eligibleBirthDateTo: parseDbDate(event.eligibleBirthDateTo),
       minAge: event.minAge,
       maxAge: event.maxAge,
+      ageCategoryId: event.ageCategoryId,
+      allowedAgeCategoryIds: event.allowedAgeCategoryIds,
     },
     userDateOfBirth: memberDateOfBirth,
     seasonalAgeYears,
+    competitionAgeCategories: competition.ageCategories.map((c) => ({
+      id: c.id,
+      displayOrder: c.displayOrder,
+      eligibleBirthDateFrom: parseDbDate(c.eligibleBirthDateFrom),
+      eligibleBirthDateTo: parseDbDate(c.eligibleBirthDateTo),
+    })),
   });
 }
 
@@ -88,6 +100,7 @@ export function prismaEventToTeamAssignmentEventJson(ev: {
   eligibleBirthDateFrom: Date | null;
   eligibleBirthDateTo: Date | null;
   ageCategoryId: string | null;
+  allowedAgeCategoryIds?: unknown;
 }): TeamAssignmentEventJson {
   return {
     sex: ev.sex,
@@ -100,6 +113,7 @@ export function prismaEventToTeamAssignmentEventJson(ev: {
       ? ev.eligibleBirthDateTo.toISOString().slice(0, 10)
       : null,
     ageCategoryId: ev.ageCategoryId,
+    allowedAgeCategoryIds: parseAllowedAgeCategoryIds(ev.allowedAgeCategoryIds),
   };
 }
 

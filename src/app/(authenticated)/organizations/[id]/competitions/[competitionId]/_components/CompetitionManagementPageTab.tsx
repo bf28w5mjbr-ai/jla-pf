@@ -1,9 +1,5 @@
 import type { ComponentProps } from "react";
 import { prisma } from "@/server/db";
-import CompetitionRelationsEditor from "@/components/CompetitionRelationsEditor";
-import CompetitionAnnouncementsManager from "@/components/CompetitionAnnouncementsManager";
-import CompetitionAttachmentsManager from "@/components/CompetitionAttachmentsManager";
-import CompetitionGalleryManager from "@/components/CompetitionGalleryManager";
 import CompetitionEntrySettingsEditor from "@/components/CompetitionEntrySettingsEditor";
 import CompetitionParticipationConditionsEditor from "@/components/CompetitionParticipationConditionsEditor";
 import CompetitionBasicInfoEditor from "@/components/CompetitionBasicInfoEditor";
@@ -11,9 +7,7 @@ import { loadCompetitionMutationState } from "@/lib/competitionPublishedEditRule
 import {
   COMPETITION_ADMIN_DATE_TIME_ZONE,
   formatDateForDatetimeLocalInput,
-  toIsoStringOrNull,
 } from "@/lib/datetimeLocal";
-import { resolveRelatedOrganizationsForDisplay } from "@/lib/competitionRelatedOrganizations";
 import { getCachedQualificationTemplates } from "@/lib/qualificationTemplatesCache";
 import { buildCompetitionManagementIncludeForPageTab } from "@/lib/competitionManagementQueries";
 import {
@@ -42,20 +36,8 @@ export default async function CompetitionManagementPageTab({
 
   const entryMutationState = await loadCompetitionMutationState(competitionId);
   const qualificationTemplates = await getCachedQualificationTemplates();
-  const entryRowCount = await prisma.competitionEntry.count({ where: { competitionId } });
-  const teamEntryRowCount = await prisma.teamEntry.count({ where: { competitionId } });
-  const siblingCompetitionsForCopy = await prisma.competition.findMany({
-    where: { organizationId, id: { not: competitionId } },
-    orderBy: { startDate: "desc" },
-    take: 40,
-    select: { id: true, name: true, startDate: true },
-  });
 
   const canEdit = true;
-  const copyEntrySettingsAllowed = entryRowCount === 0 && teamEntryRowCount === 0;
-  const copyEntrySettingsBlockedReason = copyEntrySettingsAllowed
-    ? null
-    : "エントリーが1件でもある大会では、種目・参加費のコピーはできません。";
   const allowMultipleEventEntries = competition.allowMultipleEventEntries ?? true;
   const maxEventEntriesPerPerson =
     typeof competition.maxEventEntriesPerPerson === "number" &&
@@ -64,7 +46,8 @@ export default async function CompetitionManagementPageTab({
       : null;
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="min-w-0 overflow-hidden rounded-lg border border-border/50 bg-background">
+      <div className="divide-y divide-border/40 px-4 sm:px-5">
       <CompetitionBasicInfoEditor
         competitionId={competition.id}
         canEdit={canEdit}
@@ -113,9 +96,7 @@ export default async function CompetitionManagementPageTab({
           entryPledgeEnabled: competition.entryPledgeEnabled ?? false,
           entryPledgeText: competition.entryPledgeText,
           entryPledgeLockNoOffer: competition.entryPledgeLockNoOffer ?? false,
-          underAgeSystemEnabled: competition.underAgeSystemEnabled ?? false,
-          underAgeUThresholds: competition.underAgeUThresholds ?? [],
-          underAgeOpenEnabled: competition.underAgeOpenEnabled ?? true,
+          competitionStartDate: competition.startDate,
         }}
         initialEvents={
           competition.events.map((e) => ({
@@ -150,13 +131,6 @@ export default async function CompetitionManagementPageTab({
           entryMutationState.isPublished && entryMutationState.hasEstablishedEntry
         }
         settingsVersion={competition.updatedAt.toISOString()}
-        siblingCompetitionsForCopy={siblingCompetitionsForCopy.map((c) => ({
-          id: c.id,
-          name: c.name,
-          startDate: c.startDate.toISOString(),
-        }))}
-        copyEntrySettingsAllowed={copyEntrySettingsAllowed}
-        copyEntrySettingsBlockedReason={copyEntrySettingsBlockedReason}
         initialData={{
           entryStartDate: competition.entryStartDate,
           entryEndDate: competition.entryEndDate,
@@ -174,9 +148,6 @@ export default async function CompetitionManagementPageTab({
           entryPledgeEnabled: competition.entryPledgeEnabled ?? false,
           entryPledgeText: competition.entryPledgeText,
           entryPledgeLockNoOffer: competition.entryPledgeLockNoOffer ?? false,
-          underAgeSystemEnabled: competition.underAgeSystemEnabled ?? false,
-          underAgeUThresholds: competition.underAgeUThresholds ?? [],
-          underAgeOpenEnabled: competition.underAgeOpenEnabled ?? true,
         }}
         initialEvents={
           competition.events.map((e) => ({
@@ -204,53 +175,17 @@ export default async function CompetitionManagementPageTab({
       />
 
       {competition.description ? (
-        <OrgEditorialPanel accent="muted" className="mt-5">
-          <OrgSubheading>About</OrgSubheading>
-          <h3 className="mt-1 text-base font-semibold text-foreground">大会について</h3>
-          <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-            {competition.description}
-          </p>
-        </OrgEditorialPanel>
+        <div className="py-4">
+          <OrgEditorialPanel accent="muted" className="border-0 bg-transparent p-0 shadow-none">
+            <OrgSubheading>About</OrgSubheading>
+            <h3 className="mt-1 text-base font-semibold text-foreground">大会について</h3>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+              {competition.description}
+            </p>
+          </OrgEditorialPanel>
+        </div>
       ) : null}
-
-      <CompetitionRelationsEditor
-        competitionId={competition.id}
-        relatedOrganizations={resolveRelatedOrganizationsForDisplay({
-          relatedOrganizations: competition.relatedOrganizations,
-        })}
-        canEdit={canEdit}
-      />
-
-      <CompetitionAnnouncementsManager
-        competitionId={competitionId}
-        initialAnnouncements={competition.announcements.map((a) => ({
-          ...a,
-          createdAt: toIsoStringOrNull(a.createdAt) ?? "",
-          updatedAt: toIsoStringOrNull(a.updatedAt) ?? "",
-          publishedAt: toIsoStringOrNull(a.publishedAt),
-        }))}
-        canEdit={canEdit}
-      />
-
-      <CompetitionAttachmentsManager
-        competitionId={competitionId}
-        initialAttachments={competition.attachments.map((a) => ({
-          ...a,
-          createdAt: a.createdAt.toISOString(),
-        }))}
-        canEdit={canEdit}
-      />
-
-      <CompetitionGalleryManager
-        competitionId={competitionId}
-        canEdit={canEdit}
-        initialPhotos={competition.galleryPhotos.map((p) => ({
-          id: p.id,
-          imageUrl: p.imageUrl,
-          fileName: p.fileName,
-          createdAt: p.createdAt.toISOString(),
-        }))}
-      />
+      </div>
     </div>
   );
 }

@@ -12,6 +12,11 @@ import {
 import { isOrgAdminRole } from "@/lib/roleScopes";
 import { resolveCompetitionEventCategoryScope } from "@/lib/competitionEventCategoryScope";
 import { buildStoredCompetitionEventName } from "@/lib/competitionEventStoredName";
+import {
+  parseEventCreateTeamFields,
+  resolveEventCreateEligibility,
+} from "@/lib/competitionEventCreateFields";
+import { parseEventSexOption, sexesForSexOption } from "@/lib/competitionEventSexOption";
 
 export async function GET(
   request: NextRequest,
@@ -74,19 +79,12 @@ export async function POST(
       return NextResponse.json({ message: "認証が必要です" }, { status: 401 });
     }
 
-    const body = (await request.json()) as {
-      name?: unknown;
-      type?: unknown;
-      category?: unknown;
-      sexOption?: unknown;
-      announcementMessage?: unknown;
-      ageCategoryId?: unknown;
-    };
+    const body = (await request.json()) as Record<string, unknown>;
     const {
       name,
       type = "INDIVIDUAL",
       category = "POOL",
-      sexOption = "BOTH",
+      sexOption: rawSexOption = "BOTH",
       announcementMessage,
       ageCategoryId: rawAgeCategoryId,
     } = body;
@@ -108,23 +106,12 @@ export async function POST(
       return NextResponse.json({ message: "競技カテゴリが不正です" }, { status: 400 });
     }
 
-    if (
-      sexOption !== "BOTH" &&
-      sexOption !== "MALE_ONLY" &&
-      sexOption !== "FEMALE_ONLY" &&
-      sexOption !== "MIXED_ONLY"
-    ) {
+    const sexOption = parseEventSexOption(rawSexOption);
+    if (!sexOption) {
       return NextResponse.json({ message: "性別指定が不正です" }, { status: 400 });
     }
 
-    const sexesToCreate =
-      sexOption === "MALE_ONLY"
-        ? (["MALE"] as const)
-        : sexOption === "FEMALE_ONLY"
-          ? (["FEMALE"] as const)
-          : sexOption === "MIXED_ONLY"
-            ? (["OTHER"] as const)
-            : (["MALE", "FEMALE"] as const);
+    const sexesToCreate = sexesForSexOption(sexOption);
 
     // エントリータイム必須フラグ（プール競技は必須、オーシャンは不要）
     const requiresEntryTime = category === "POOL";
@@ -230,28 +217,51 @@ export async function POST(
     const maxDisplayOrder =
       bucketEvents.length > 0 ? Math.max(...bucketEvents.map((e) => e.displayOrder)) : -1;
 
-    const birthForCreate = resolvedAgeCategory
-      ? {
-          eligibleBirthDateFrom: resolvedAgeCategory.eligibleBirthDateFrom,
-          eligibleBirthDateTo: resolvedAgeCategory.eligibleBirthDateTo,
-          minAge: null as number | null,
-          maxAge: null as number | null,
-        }
-      : {};
+    const competitionCategories = await prisma.competitionAgeCategory.findMany({
+      where: { competitionId },
+      select: { id: true },
+    });
+    const validCategoryIds = new Set(competitionCategories.map((c) => c.id));
+
+    const eligibilityResult = resolveEventCreateEligibility({
+      body,
+      targetAgeCategoryId,
+      validCategoryIds,
+    });
+    if (!eligibilityResult.ok) {
+      return NextResponse.json({ message: eligibilityResult.message }, { status: 400 });
+    }
+
+    const teamResult = parseEventCreateTeamFields(body, type);
+    if (!teamResult.ok) {
+      return NextResponse.json({ message: teamResult.message }, { status: 400 });
+    }
+
+    const createExtras = {
+      ...eligibilityResult.data,
+      ...teamResult.data,
+    };
 
     await prisma.$transaction(
       missingSexes.map((sex, index) =>
         prisma.event.create({
           data: {
             competitionId,
-            ageCategoryId: targetAgeCategoryId,
             name: storedEventName,
             sex,
             type,
             category,
             requiresEntryTime,
             displayOrder: maxDisplayOrder + index + 1,
-            ...birthForCreate,
+            ageCategoryId: createExtras.ageCategoryId,
+            allowedAgeCategoryIds: createExtras.allowedAgeCategoryIds,
+            eligibleBirthDateFrom: createExtras.eligibleBirthDateFrom ?? undefined,
+            eligibleBirthDateTo: createExtras.eligibleBirthDateTo ?? undefined,
+            minAge: createExtras.minAge ?? undefined,
+            maxAge: createExtras.maxAge ?? undefined,
+            teamRelayPositionCount: createExtras.teamRelayPositionCount ?? undefined,
+            teamRelayPositionNames: createExtras.teamRelayPositionNames ?? undefined,
+            maxTeamEntriesPerClub: createExtras.maxTeamEntriesPerClub ?? undefined,
           },
         })
       )

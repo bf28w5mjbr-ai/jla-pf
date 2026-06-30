@@ -65,31 +65,28 @@ export default function CopyEntrySettingsFromCompetition({
   };
 
   return (
-    <div className="rounded-lg border border-border bg-card p-3 sm:p-4">
+    <div className="space-y-3">
       <div className="flex items-start gap-2">
-        <Library className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-        <div className="min-w-0 flex-1 space-y-1">
-          <p className="text-sm font-semibold">他の大会からコピー</p>
-          <p className="text-xs text-muted-foreground">
+        <Library className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <p className="text-xs font-medium text-foreground">他の大会からコピー</p>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
             同一主催の別大会から種目・参加費・年齢カテゴリ・アンダー制・出場資格を取り込みます。エントリーがない大会のみ。
           </p>
         </div>
       </div>
       {!canCopy && blockedReason ? (
-        <p
-          className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2 text-xs text-amber-950 dark:text-amber-100"
-          role="status"
-        >
+        <p className="text-[11px] text-amber-800 dark:text-amber-200" role="status">
           {blockedReason}
         </p>
       ) : null}
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-stretch">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
         <Select
           value={sourceId || undefined}
           onValueChange={setSourceId}
           disabled={!canCopy || pending}
         >
-          <SelectTrigger className="h-10 w-full min-h-10 sm:max-w-md">
+          <SelectTrigger className="h-8 w-full min-h-8 text-xs sm:max-w-md">
             <SelectValue placeholder="コピー元の大会を選択" />
           </SelectTrigger>
           <SelectContent>
@@ -112,7 +109,7 @@ export default function CopyEntrySettingsFromCompetition({
         <Button
           type="button"
           size="sm"
-          className="h-10 shrink-0 gap-1.5 sm:min-w-[7.5rem]"
+          className="h-8 shrink-0 gap-1.5 text-xs sm:min-w-[7.5rem]"
           disabled={!canCopy || !sourceId || pending}
           onClick={() => void onCopy()}
         >

@@ -3,14 +3,16 @@
 import type { ComponentProps, ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import EntrySettingsEditor, { type EntrySettingsFocusSection } from "@/components/EntrySettingsEditor";
-import CopyEntrySettingsFromCompetition, {
-  type SiblingCompetitionOption,
-} from "@/components/CopyEntrySettingsFromCompetition";
-import { buildEntrySettingsReadinessItems } from "@/lib/entrySettingsReadiness";
+import {
+  settingsFlatBlockTitleClassName,
+  settingsFlatDivide,
+  settingsFlatFieldGroup,
+  settingsFlatHint,
+  settingsFlatSectionLabel,
+} from "@/components/competitions/management/competitionSettingsFlatUi";
 import { cn } from "@/lib/utils";
 import { User, UsersRound } from "lucide-react";
 import {
@@ -33,11 +35,6 @@ type Props = {
   initialEvents: NonNullable<EntrySettingsEditorProps["initialEvents"]>;
   initialAgeCategories?: EntrySettingsEditorProps["initialAgeCategories"];
   qualificationTemplates?: EntrySettingsEditorProps["qualificationTemplates"];
-  /** 種目・参加費コピー用（同一団体内の他大会） */
-  siblingCompetitionsForCopy?: SiblingCompetitionOption[];
-  /** エントリー0件のときのみコピー可 */
-  copyEntrySettingsAllowed: boolean;
-  copyEntrySettingsBlockedReason?: string | null;
 };
 
 const SECTION_LABEL: Record<EntrySettingsFocusSection, string> = {
@@ -64,9 +61,6 @@ function CompetitionEntrySettingsEditorInner({
   initialEvents,
   initialAgeCategories,
   qualificationTemplates,
-  siblingCompetitionsForCopy = [],
-  copyEntrySettingsAllowed,
-  copyEntrySettingsBlockedReason = null,
 }: Props) {
   const router = useRouter();
   const [editingSection, setEditingSection] = useState<EntrySettingsFocusSection | null>(null);
@@ -79,26 +73,6 @@ function CompetitionEntrySettingsEditorInner({
   const teamEventCount = useMemo(
     () => overviewEvents.filter((e) => e.type === "TEAM").length,
     [overviewEvents]
-  );
-
-  const readinessItems = useMemo(
-    () =>
-      buildEntrySettingsReadinessItems({
-        entryStartDate: initialData.entryStartDate,
-        entryEndDate: initialData.entryEndDate,
-        eventsCount: overviewEvents.length,
-        individualEventCount,
-        teamEventCount,
-        entryFee: initialData.entryFee,
-      }),
-    [
-      initialData.entryEndDate,
-      initialData.entryFee,
-      initialData.entryStartDate,
-      individualEventCount,
-      overviewEvents.length,
-      teamEventCount,
-    ]
   );
 
   const formatCurrency = (value: number) => {
@@ -192,7 +166,7 @@ function CompetitionEntrySettingsEditorInner({
           .map((event, index) => (
             <span
               key={`${event.name}-${event.sex}-${index}`}
-              className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-foreground"
+              className="rounded-md bg-muted/40 px-2 py-0.5 text-[11px] text-foreground"
             >
               {event.name}
               <span className="ml-1 text-[10px] text-muted-foreground">
@@ -205,17 +179,17 @@ function CompetitionEntrySettingsEditorInner({
   };
 
   const row = (section: EntrySettingsFocusSection, body: ReactNode) => (
-    <div className="flex flex-col gap-2 rounded-lg border border-border bg-card px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+    <div className="flex flex-col gap-2 py-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0 flex-1 space-y-1">
-        <p className="text-xs font-medium text-muted-foreground">{SECTION_LABEL[section]}</p>
+        <p className={settingsFlatSectionLabel}>{SECTION_LABEL[section]}</p>
         <div className="min-w-0">{body}</div>
       </div>
       {canEdit ? (
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           size="sm"
-          className="h-9 shrink-0 text-xs sm:min-w-[5rem]"
+          className="h-7 shrink-0 px-2 text-[11px] text-muted-foreground hover:text-foreground"
           onClick={() => setEditingSection(section)}
         >
           編集
@@ -231,7 +205,7 @@ function CompetitionEntrySettingsEditorInner({
     };
     return (
       <div className="space-y-4">
-        <div className="sticky top-[max(0.25rem,var(--safe-area-top,0px))] z-20 flex flex-col gap-2 rounded-lg border border-border bg-background/95 px-3 py-3 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="sticky top-[max(0.25rem,var(--safe-area-top,0px))] z-20 -mx-4 flex flex-col gap-2 border-b border-border/50 bg-background/95 px-4 py-3 backdrop-blur-sm sm:-mx-5 sm:px-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 space-y-0.5">
             <p className="text-sm font-semibold">{SECTION_LABEL[editingSection]}</p>
             <p className="text-xs text-muted-foreground">保存で一覧に戻ります。</p>
@@ -275,81 +249,40 @@ function CompetitionEntrySettingsEditorInner({
     );
   }
 
-  const incompleteCount = readinessItems.filter((i) => !i.ok).length;
-
   return (
-    <Card className="overflow-hidden border-border shadow-sm">
-      <CardHeader className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
-        <CardTitle className="text-base font-semibold">エントリー設定</CardTitle>
-        <CardDescription className="text-sm">エントリー期間・種目・参加費などを設定します。</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-5 px-4 py-4 sm:px-5">
-        <section aria-labelledby="entry-settings-readiness-heading" className="rounded-lg border border-border bg-muted/20 px-3 py-3 sm:px-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 id="entry-settings-readiness-heading" className="text-sm font-medium text-foreground">
-              公開前の確認
-            </h3>
-            {incompleteCount > 0 ? (
-              <span className="text-xs text-amber-800 dark:text-amber-200">あと {incompleteCount} 件</span>
-            ) : (
-              <span className="text-xs text-muted-foreground">不足なし</span>
-            )}
-          </div>
-          <ul className="mt-2 space-y-2 text-sm" role="list">
-            {readinessItems.map((item) => (
-              <li
-                key={item.id}
-                className={cn(
-                  "flex gap-2 border-l-2 pl-3",
-                  item.ok ? "border-transparent text-muted-foreground" : "border-amber-500 text-foreground"
-                )}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="font-medium">{item.label}</span>
-                  {!item.ok && item.hint ? (
-                    <span className="mt-0.5 block text-xs text-muted-foreground">{item.hint}</span>
-                  ) : null}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
+    <section className="py-4">
+      <h2 className={settingsFlatBlockTitleClassName()}>エントリー設定</h2>
+      <p className={cn(settingsFlatHint, "mt-0.5")}>
+        エントリー期間・種目・参加費などを設定します。
+      </p>
 
-        <CopyEntrySettingsFromCompetition
-          competitionId={competitionId}
-          siblings={siblingCompetitionsForCopy}
-          canCopy={copyEntrySettingsAllowed}
-          blockedReason={copyEntrySettingsBlockedReason}
-        />
-
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">各項目</p>
+      <div className={cn("mt-3", settingsFlatFieldGroup, settingsFlatDivide)}>
           {row(
             "events",
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <div className="space-y-2.5">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                 <span className="inline-flex items-center gap-1 tabular-nums">
-                  <User className="h-3.5 w-3.5 text-primary/70" aria-hidden />
+                  <User className="h-3 w-3 text-foreground/50" aria-hidden />
                   個人 {individualEventCount}件
                 </span>
-                <span className="text-border" aria-hidden>
+                <span className="text-border/80" aria-hidden>
                   |
                 </span>
                 <span className="inline-flex items-center gap-1 tabular-nums">
-                  <UsersRound className="h-3.5 w-3.5 text-primary/70" aria-hidden />
+                  <UsersRound className="h-3 w-3 text-foreground/50" aria-hidden />
                   チーム {teamEventCount}件
                 </span>
               </div>
-              <div className="flex flex-wrap gap-2">{renderEventChips()}</div>
-              <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-3 py-2.5">
-                <p className="text-[11px] font-semibold text-foreground">参加費</p>
-                <div className="mt-1.5">{renderEntryFee(initialData.entryFee)}</div>
+              <div className="flex flex-wrap gap-1.5">{renderEventChips()}</div>
+              <div className="pt-0.5">
+                <p className={settingsFlatSectionLabel}>参加費</p>
+                <div className="mt-1">{renderEntryFee(initialData.entryFee)}</div>
               </div>
             </div>
           )}
           {row(
             "multiEvent",
-            <p className="text-sm font-medium">
+            <p className="text-xs font-medium">
               {initialData.allowMultipleEventEntries
                 ? initialData.maxEventEntriesPerPerson
                   ? `${initialData.maxEventEntriesPerPerson}種目まで`
@@ -373,8 +306,7 @@ function CompetitionEntrySettingsEditorInner({
               ) : null}
             </div>
           )}
-        </div>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
