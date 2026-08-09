@@ -153,7 +153,6 @@ export default function CompetitionBasicInfoEditor({ competitionId, canEdit, ini
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: initialData.name.trim(),
           category: nextCategory,
           startDate: nextStartDate,
           endDate: nextEndDate,

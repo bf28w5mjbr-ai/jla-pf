@@ -7,6 +7,7 @@ import {
   buildOfficialApplicationSubmitPayload,
   loadOfficialApplicationCompetition,
   parseOfficialApplicationBody,
+  shouldBlockDisabledTechnicalOfficialDowngrade,
 } from "@/lib/officialApplicationSubmit";
 import {
   clearTechnicalOfficialAssignmentsFromOfficialApplicationWithdraw,
@@ -142,6 +143,22 @@ export async function PATCH(
 
     const body = (await req.json().catch(() => null)) as unknown;
     const { message, entryType, clubId } = parseOfficialApplicationBody(body);
+
+    if (
+      shouldBlockDisabledTechnicalOfficialDowngrade({
+        existingPositionName: existing.positionName,
+        nextEntryType: entryType,
+        technicalOfficialRecruitmentEnabled: competition.technicalOfficialRecruitmentEnabled,
+      })
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "TO募集が停止中のため、TO応募を一般応募へ変更できません。取り消す場合は応募の取り消しを利用してください。",
+        },
+        { status: 400 }
+      );
+    }
 
     const payload = await buildOfficialApplicationSubmitPayload(prisma, {
       competitionId,
