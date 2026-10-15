@@ -83,6 +83,7 @@ jobs:
           image-ref: bluvium:latest
           format: 'sarif'
           output: 'trivy-results.sarif'
+          version: v0.70.0
       - name: Upload Trivy results to GitHub
         uses: github/codeql-action/upload-sarif@v3
         with:
