@@ -143,6 +143,18 @@ export async function CompetitionsBrowseListPage({
       ? sortParam
       : "start";
 
+  if (process.env.DOCKER_IMAGE_BUILD === "1") {
+    return (
+      <div className="mx-auto w-full max-w-6xl px-3 py-6 sm:px-5 sm:py-8 lg:px-8">
+        <CompetitionEmptyState
+          icon={CalendarRange}
+          title="大会はまだありません"
+          description="イメージビルドでは公開一覧を空にしています。"
+        />
+      </div>
+    );
+  }
+
   const whereCondition: Prisma.CompetitionWhereInput = {
     isPublished: true,
     status: "PUBLISHED",
