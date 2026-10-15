@@ -46,7 +46,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Ensure PostgREST roles on CI Postgres
         run: |
-          pnpm exec prisma db execute --stdin <<'SQL'
+          pnpm exec prisma db execute --schema prisma/schema.prisma --stdin <<'SQL'
           DO $$
           BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
