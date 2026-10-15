@@ -44,6 +44,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AUTH_SECRET: ci-build-placeholder-secret-min-32-chars-xx
+      # if では secrets コンテキストを使えないため job env 経由で有無だけ判定する（値はログに出さない）
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -59,9 +61,7 @@ jobs:
         run: pnpm audit --audit-level=high
       - name: Snyk Scan
         uses: snyk/actions/node@0.4.0
-        if: ${{ secrets.SNYK_TOKEN != '' }}
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        if: ${{ env.SNYK_TOKEN != '' }}
         with:
           args: --severity-threshold=high
   
