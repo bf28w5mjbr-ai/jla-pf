@@ -50,6 +50,10 @@ import {
   resolveRequiredQualificationsForAge,
   resolveRequiredQualificationsForAgeCategory,
 } from "@/lib/competitionEntryAgeTiered";
+import {
+  declaredKindsMeetEntryRequirements,
+  QUALIFICATION_DECLARED_FOR_ENTRY_STATUSES,
+} from "@/lib/qualificationEntryEligibility";
 import { resolveClubIndividualEntryBillingTiming } from "@/lib/clubIndividualEntryBillingTiming";
 import {
   personalEntryItemsHasMixedEventTypes,
@@ -302,28 +306,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
       select: {
         profile: { select: { sex: true, dateOfBirth: true } },
         qualifications: {
-          where: { status: "APPROVED" },
-          select: { kind: true },
+          where: { status: { in: [...QUALIFICATION_DECLARED_FOR_ENTRY_STATUSES] } },
+          select: { kind: true, status: true },
         },
       },
     });
-
-    const normalize = (value: string | null | undefined) =>
-      (value ?? "")
-        .normalize("NFKC")
-        .toLowerCase()
-        .replace(/[\s_\-./()（）・]+/g, "");
-
-    const matchesQualification = (value: string, required: string) => {
-      const normalizedValue = normalize(value);
-      const normalizedRequired = normalize(required);
-      if (!normalizedValue || !normalizedRequired) return false;
-      return (
-        normalizedValue === normalizedRequired ||
-        normalizedValue.includes(normalizedRequired) ||
-        normalizedRequired.includes(normalizedValue)
-      );
-    };
 
     const userDateOfBirth = user?.profile?.dateOfBirth ?? null;
     const userAge = userDateOfBirth
@@ -365,9 +352,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const meetsQualification =
       rq.list.length === 0
         ? true
-        : rq.list.every((req) =>
-            userQualifications.some((q) => matchesQualification(q, req))
-          );
+        : declaredKindsMeetEntryRequirements(userQualifications, rq.list);
 
     if (!meetsQualification) {
       return NextResponse.json(

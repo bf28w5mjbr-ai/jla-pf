@@ -26,7 +26,7 @@ const PutBodySchema = z.object({
   certNumber: z.string().optional(),
 });
 
-/** PUT — 申請資格（ユーザー選択）をチェック内容どおりに同期（審査なし・即時 APPROVED） */
+/** PUT — 申請資格（ユーザー選択）をチェック内容どおりに同期（自己申告は PENDING） */
 export async function PUT(req: NextRequest) {
   try {
     const jar = await cookies();

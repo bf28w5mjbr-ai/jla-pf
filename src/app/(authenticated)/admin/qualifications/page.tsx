@@ -1,7 +1,13 @@
 import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { isPfOrAccAdmin, verifySessionCached } from '@/lib/auth';
+import { verifySessionCached } from '@/lib/auth';
+import {
+  jlaAdminPendingFindManyArgs,
+  mapJlaAdminQueueRowToTableUser,
+  qualificationAdminQueueUserSelectForPf,
+  resolveQualificationAccessContext,
+} from '@/lib/qualificationAccess';
 import { prisma } from '@/server/db';
 import { Card } from '@/components/ui/card';
 import QualificationApprovalTable from '@/components/admin/QualificationApprovalTable';
@@ -19,14 +25,14 @@ export default async function AdminQualificationsPage() {
     redirect('/login');
   }
 
-  // 協会管理者（AssociationAdmin.ADMIN）/ PF_ADMIN 権限チェック
-  if (!(await isPfOrAccAdmin(sess.userId))) {
+  const access = await resolveQualificationAccessContext(sess.userId);
+  if (!access.isPfAdmin && !access.isJlaReviewer) {
     return (
       
         <Card>
           <div className="p-6 text-center">
             <p className="text-gray-600 dark:text-gray-400">
-              協会管理者権限が必要です。
+              他人の資格審査は、プラットフォーム管理者、または設定済みのJLA協会管理者のみ可能です。
             </p>
           </div>
         </Card>
@@ -34,42 +40,58 @@ export default async function AdminQualificationsPage() {
     );
   }
 
-  // PENDING 状態の資格を取得
-  const pendingQualifications = await prisma.qualification.findMany({
-    where: {
-      status: 'PENDING',
-    },
-    include: {
-      template: {
-        select: {
-          name: true,
-          kind: true,
-        },
+  if (access.isPfAdmin) {
+    const pendingQualifications = await prisma.qualification.findMany({
+      where: {
+        status: 'PENDING',
       },
-      user: {
-        select: {
-          id: true,
-          email: true,
-          profile: { select: { familyName: true, givenName: true } },
-          contact: { select: { phoneNumber: true } },
+      include: {
+        template: {
+          select: {
+            name: true,
+            kind: true,
+          },
         },
+          user: {
+            select: qualificationAdminQueueUserSelectForPf,
+          },
       },
-    },
-    orderBy: { createdAt: 'asc' },
-  });
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return (
+      
+        <Card padding="none">
+          <QualificationApprovalTable qualifications={pendingQualifications.map((q) => ({
+            ...q,
+            user: {
+              id: q.user.id,
+              email: q.user.email,
+              familyName: q.user.profile?.familyName ?? null,
+              givenName: q.user.profile?.givenName ?? null,
+              phoneNumber: q.user.contact?.phoneNumber ?? null,
+            },
+            createdAt: q.createdAt.toISOString(),
+            updatedAt: q.updatedAt.toISOString(),
+            issueDate: q.issueDate?.toISOString() || null,
+            expiryDate: q.expiryDate?.toISOString() || null,
+            template: q.template,
+          }))} />
+        </Card>
+      
+    );
+  }
+
+  const pendingQualifications = await prisma.qualification.findMany(
+    jlaAdminPendingFindManyArgs(access)
+  );
 
   return (
     
       <Card padding="none">
-        <QualificationApprovalTable qualifications={pendingQualifications.map(q => ({
+        <QualificationApprovalTable qualifications={pendingQualifications.map((q) => ({
           ...q,
-          user: {
-            id: q.user.id,
-            email: q.user.email,
-            familyName: q.user.profile?.familyName ?? null,
-            givenName: q.user.profile?.givenName ?? null,
-            phoneNumber: q.user.contact?.phoneNumber ?? null,
-          },
+          user: mapJlaAdminQueueRowToTableUser(q.user),
           createdAt: q.createdAt.toISOString(),
           updatedAt: q.updatedAt.toISOString(),
           issueDate: q.issueDate?.toISOString() || null,

@@ -43,6 +43,13 @@ import {
   resolveRequiredQualificationsForAge,
   resolveRequiredQualificationsForAgeCategory,
 } from "@/lib/competitionEntryAgeTiered";
+import {
+  declaredKindsMeetEntryRequirements,
+  qualificationKindMatchesRequirement,
+  qualificationRequirementConfirmationLabel,
+  resolveCompetitionQualificationAsOfDate,
+  QUALIFICATION_DECLARED_FOR_ENTRY_STATUSES,
+} from "@/lib/qualificationEntryEligibility";
 import { meetsCompetitionEventAgeEligibility } from "@/lib/competitionEventAgeEligibility";
 import { getStripeProcessingFeeBpsFromEnv } from "@/lib/stripeProcessingFee";
 import { reconcileTeamOnlyIntentZeroTotalFeeEntry } from "@/lib/teamOnlyIntentZeroFeeReconcile";
@@ -56,21 +63,6 @@ type CompetitionEntryFormProps = ComponentProps<typeof CompetitionEntryForm>;
 
 /** エントリーページの RSC が Stripe 待ちで長時間ブロックしないよう、取得だけ短めに打ち切る */
 const ENTRY_PAGE_STRIPE_RETRIEVE_MS = 7000;
-
-/** NFKC は孤立サロゲート等で RangeError になり得るため、比較用途では握りつぶす */
-function safeNormalizeComparable(value: string | null | undefined): string {
-  const raw = value ?? "";
-  try {
-    return raw
-      .normalize("NFKC")
-      .toLowerCase()
-      .replace(/[\s_\-./()（）・]+/g, "");
-  } catch {
-    return raw
-      .toLowerCase()
-      .replace(/[\s_\-./()（）・]+/g, "");
-  }
-}
 
 async function retrieveCheckoutSessionForEntryPage(
   sessionId: string
@@ -379,8 +371,22 @@ export default async function CompetitionEntryPage({
     select: {
       profile: { select: { sex: true, dateOfBirth: true } },
       qualifications: {
-        where: { status: "APPROVED" },
-        select: { kind: true },
+        where: { status: { in: [...QUALIFICATION_DECLARED_FOR_ENTRY_STATUSES] } },
+        select: {
+          kind: true,
+          status: true,
+          templateId: true,
+          certNumber: true,
+          expiryDate: true,
+          confirmedAt: true,
+          confirmationInvalidatedAt: true,
+          confirmedTemplateId: true,
+          confirmedCertNumber: true,
+          confirmedExpiryDate: true,
+          confirmedByUserId: true,
+          confirmedByAssociationId: true,
+          confirmationMethod: true,
+        },
       },
     },
   });
@@ -416,17 +422,6 @@ export default async function CompetitionEntryPage({
     }
   }
 
-  const matchesQualification = (value: string, required: string) => {
-    const normalizedValue = safeNormalizeComparable(value);
-    const normalizedRequired = safeNormalizeComparable(required);
-    if (!normalizedValue || !normalizedRequired) return false;
-    return (
-      normalizedValue === normalizedRequired ||
-      normalizedValue.includes(normalizedRequired) ||
-      normalizedRequired.includes(normalizedValue)
-    );
-  };
-
   const userDateOfBirth = user?.profile?.dateOfBirth ?? null;
   const userAge = userDateOfBirth
     ? getCompetitionEligibilityAgeYears(
@@ -451,9 +446,14 @@ export default async function CompetitionEntryPage({
     !rq.tierMissing &&
     (rq.list.length === 0
       ? true
-      : rq.list.every((req) =>
-          userQualifications.some((q) => matchesQualification(q, req))
-        ));
+      : declaredKindsMeetEntryRequirements(userQualifications, rq.list));
+  const requirementConfirmationLabel = qualificationRequirementConfirmationLabel({
+    requiredKinds: rq.list,
+    qualifications: user?.qualifications ?? [],
+    competitionAsOfDate: resolveCompetitionQualificationAsOfDate({
+      competitionStartDate: competition.startDate,
+    }),
+  });
 
   const feeResolution = resolveEntryFeeUnits(competition.entryFee, userAge, {
     userDateOfBirth: userDob,
@@ -506,7 +506,7 @@ export default async function CompetitionEntryPage({
   });
 
   const missingQualificationLabels = rq.list.filter(
-    (req) => !userQualifications.some((q) => matchesQualification(q, req))
+    (req) => !userQualifications.some((q) => qualificationKindMatchesRequirement(q, req))
   );
 
   const eligibilityMessages: string[] = [];
@@ -897,6 +897,12 @@ export default async function CompetitionEntryPage({
                 <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
                 <p className="leading-snug text-foreground">
                   資格要件を満たしています。下の画面の案内に従って手続きを進められます。
+                  {requirementConfirmationLabel ? (
+                    <>
+                      {" "}
+                      （{requirementConfirmationLabel}）
+                    </>
+                  ) : null}
                 </p>
               </div>
             ) : (

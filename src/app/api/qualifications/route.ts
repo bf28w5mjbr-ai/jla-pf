@@ -6,8 +6,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
+import {
+  buildQualificationListPermissionWhere,
+  canViewQualificationAsReviewer,
+  qualificationHolderForViewer,
+  qualificationHolderSelectForOwner,
+  qualificationHolderSelectForReviewer,
+  resolveQualificationAccessContext,
+} from "@/lib/qualificationAccess";
 import { z } from "zod";
-import { Prisma, QualificationRecordOrigin, QualificationStatus } from "@prisma/client";
+import {
+  QualificationHistoryChangeType,
+  QualificationRecordOrigin,
+  QualificationStatus,
+} from "@prisma/client";
+import {
+  buildOwnerPendingSelfUpdateWhere,
+  confirmationHistoryFields,
+  isQualificationHeldForPrerequisite,
+  QUALIFICATION_OWNER_PENDING_UPDATE_CONFLICT,
+} from "@/lib/qualificationOwnerRules";
+import { QUALIFICATION_DECLARED_FOR_ENTRY_STATUSES } from "@/lib/qualificationEntryEligibility";
 import { isValidJlaMemberNumber, normalizeJlaMemberNumber } from "@/lib/jlaMemberNumber";
 import { zodErrorJsonBody } from "@/lib/zodApiResponse";
 import {
@@ -57,42 +76,84 @@ export async function GET(req: NextRequest) {
       parseInt(searchParams.get("offset") || "0", 10)
     );
 
-    const where: Prisma.QualificationWhereInput = {};
+    const access = await resolveQualificationAccessContext(sess.userId);
+    const statusFilter =
+      status && ["PENDING", "APPROVED", "REJECTED", "EXPIRED"].includes(status)
+        ? (status as QualificationStatus)
+        : null;
 
-    if (userId) {
-      where.userId = userId;
+    const where = buildQualificationListPermissionWhere({
+      viewerUserId: sess.userId,
+      access,
+      requestedUserId: userId,
+      kind,
+      status: statusFilter,
+    });
+    if (where === "forbidden") {
+      return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }
 
-    if (kind) {
-      where.kind = kind;
-    }
+    const holderSelect = access.isPfAdmin
+      ? qualificationHolderSelectForReviewer
+      : qualificationHolderSelectForOwner;
 
-    if (
-      status &&
-      ["PENDING", "APPROVED", "REJECTED", "EXPIRED"].includes(status)
-    ) {
-      where.status = status as QualificationStatus;
-    }
-
-    const [qualifications, total] = await Promise.all([
+    const [qualificationRows, total] = await Promise.all([
       prisma.qualification.findMany({
         where,
         include: {
           template: true,
           user: {
-            select: {
-              id: true,
-              email: true,
-              profile: { select: { familyName: true, givenName: true } },
-            },
+            select: holderSelect,
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         take: limit,
         skip: offset,
       }),
       prisma.qualification.count({ where }),
     ]);
+
+    let reviewerHoldersById = new Map<
+      string,
+      { id: string; email: string; profile: { familyName: string | null; givenName: string | null } | null }
+    >();
+    if (!access.isPfAdmin && access.isJlaReviewer) {
+      const reviewHolderIds = [
+        ...new Set(
+          qualificationRows
+            .filter((row) => canViewQualificationAsReviewer(access, row.templateId))
+            .map((row) => row.userId)
+        ),
+      ];
+      if (reviewHolderIds.length > 0) {
+        const holders = await prisma.user.findMany({
+          where: { id: { in: reviewHolderIds } },
+          select: qualificationHolderSelectForReviewer,
+        });
+        reviewerHoldersById = new Map(holders.map((holder) => [holder.id, holder]));
+      }
+    }
+
+    const qualifications = qualificationRows.map((row) => {
+      const asReviewer = canViewQualificationAsReviewer(access, row.templateId);
+      if (access.isPfAdmin) {
+        return {
+          ...row,
+          user: qualificationHolderForViewer(row.user, "reviewer"),
+        };
+      }
+      if (asReviewer) {
+        const holder = reviewerHoldersById.get(row.userId) ?? { id: row.userId };
+        return {
+          ...row,
+          user: qualificationHolderForViewer(holder, "reviewer"),
+        };
+      }
+      return {
+        ...row,
+        user: qualificationHolderForViewer({ id: row.userId }, "owner"),
+      };
+    });
 
     return NextResponse.json({
       qualifications,
@@ -108,7 +169,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/qualifications - 資格の即時紐づけ（APPROVED）
+// POST /api/qualifications - 自己申告（PENDING。公式確認は書かない）
 export async function POST(req: NextRequest) {
   try {
     const jar = await cookies();
@@ -143,7 +204,7 @@ export async function POST(req: NextRequest) {
       issueDate: z.string().datetime().optional(),
       expiryDate: z.string().datetime().optional(),
       attachmentUrl: z.string().url().optional(),
-    });
+    }).strip();
 
     const data = CreateQualificationSchema.parse(body);
     const isProvisionalLink = data.provisionalLink === true;
@@ -179,7 +240,7 @@ export async function POST(req: NextRequest) {
         profile: { select: { dateOfBirth: true } },
         jlaProfile: { select: { jlaMemberNumber: true } },
         qualifications: {
-          where: { status: "APPROVED" },
+          where: { status: { in: [...QUALIFICATION_DECLARED_FOR_ENTRY_STATUSES] } },
           select: {
             kind: true,
             status: true,
@@ -260,6 +321,15 @@ export async function POST(req: NextRequest) {
         expiryDate: true,
         attachmentUrl: true,
         recordOrigin: true,
+        confirmedAt: true,
+        confirmationInvalidatedAt: true,
+        confirmedTemplateId: true,
+        confirmedCertNumber: true,
+        confirmedExpiryDate: true,
+        confirmedByUserId: true,
+        confirmedByAssociationId: true,
+        confirmationMethod: true,
+        updatedAt: true,
       },
     });
 
@@ -289,7 +359,7 @@ export async function POST(req: NextRequest) {
         ])
       );
 
-      if (lifesaverQualification?.status === "APPROVED") {
+      if (lifesaverQualification && isQualificationHeldForPrerequisite(lifesaverQualification)) {
         const expiryDate = lifesaverQualification.expiryDate
           ? new Date(lifesaverQualification.expiryDate)
           : null;
@@ -391,10 +461,31 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 資格の即時紐づけ（APPROVED）+ アカウント（User）への JLA メンバーIDの紐付け
+    // 自己申告は PENDING。公式確認は書かない。既存 PENDING は審査承認と競合したら 409。
     const qualification = await prisma.$transaction(async (tx) => {
       let row;
       if (existingMatch?.status === "PENDING") {
+        const nextCertNumber = data.certNumber ?? null;
+        const nextExpiryDate = data.expiryDate ? new Date(data.expiryDate) : null;
+        const scoped = await tx.qualification.updateMany({
+          where: buildOwnerPendingSelfUpdateWhere({
+            id: existingMatch.id,
+            userId: sess.userId,
+            templateId: existingMatch.templateId,
+            updatedAt: existingMatch.updatedAt,
+          }),
+          data: {
+            kind: requestedKind,
+            templateId: requestedTemplate.id,
+            certNumber: nextCertNumber,
+            issueDate: data.issueDate ? new Date(data.issueDate) : null,
+            expiryDate: nextExpiryDate,
+            status: "PENDING",
+          },
+        });
+        if (scoped.count !== 1) {
+          throw new Error(QUALIFICATION_OWNER_PENDING_UPDATE_CONFLICT);
+        }
         await tx.qualificationHistory.create({
           data: {
             qualificationId: existingMatch.id,
@@ -408,19 +499,12 @@ export async function POST(req: NextRequest) {
             status: existingMatch.status,
             attachmentUrl: existingMatch.attachmentUrl,
             recordOrigin: existingMatch.recordOrigin,
-            changeType: "STATUS_CHANGE",
+            ...confirmationHistoryFields(existingMatch),
+            changeType: QualificationHistoryChangeType.STATUS_CHANGE,
           },
         });
-        row = await tx.qualification.update({
+        row = await tx.qualification.findUnique({
           where: { id: existingMatch.id },
-          data: {
-            kind: requestedKind,
-            templateId: requestedTemplate.id,
-            certNumber: data.certNumber ?? null,
-            issueDate: data.issueDate ? new Date(data.issueDate) : null,
-            expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
-            status: "APPROVED",
-          },
           include: {
             user: {
               select: {
@@ -431,6 +515,9 @@ export async function POST(req: NextRequest) {
             },
           },
         });
+        if (!row) {
+          throw new Error(QUALIFICATION_OWNER_PENDING_UPDATE_CONFLICT);
+        }
       } else {
         row = await tx.qualification.create({
           data: {
@@ -440,7 +527,7 @@ export async function POST(req: NextRequest) {
             certNumber: data.certNumber ?? null,
             issueDate: data.issueDate ? new Date(data.issueDate) : null,
             expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
-            status: "APPROVED",
+            status: "PENDING",
             recordOrigin: QualificationRecordOrigin.USER_APPLICATION,
           },
           include: {
@@ -467,28 +554,31 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      return row;
-    });
-
-    await prisma.auditLog.create({
-      data: {
-        actorUserId: sess.userId,
-        action: "QUALIFICATION_LINK",
-        target: `qualification:${qualification.id}`,
-        meta: {
-          kind: requestedKind,
-          templateId: requestedTemplate.id,
-          certNumber: data.certNumber ?? null,
-          jlaMemberNumber: effectiveJlaMemberNumber,
-          provisionalLink: isProvisionalLink,
+      await tx.auditLog.create({
+        data: {
+          actorUserId: sess.userId,
+          action: "QUALIFICATION_LINK",
+          target: `qualification:${row.id}`,
+          meta: {
+            kind: requestedKind,
+            templateId: requestedTemplate.id,
+            certNumber: data.certNumber ?? null,
+            jlaMemberNumber: effectiveJlaMemberNumber,
+            provisionalLink: isProvisionalLink,
+          },
         },
-      },
+      });
+
+      return row;
     });
 
     return NextResponse.json(qualification, { status: existingMatch?.status === "PENDING" ? 200 : 201 });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(zodErrorJsonBody(err, "validation_message_ja"), { status: 400 });
+    }
+    if (err instanceof Error && err.message === QUALIFICATION_OWNER_PENDING_UPDATE_CONFLICT) {
+      return NextResponse.json({ error: "更新が競合しました" }, { status: 409 });
     }
 
     return jsonInternalError500("POST api/qualifications/route.ts", err);

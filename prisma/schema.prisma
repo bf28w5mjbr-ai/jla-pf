@@ -595,6 +595,17 @@ model Qualification {
   attachmentUrl String?
   recordOrigin  QualificationRecordOrigin @default(USER_APPLICATION)
 
+  /// 公式確認根拠。空＝未確認。一括 backfill しない。
+  confirmedAt                 DateTime?
+  confirmedByUserId           String?
+  confirmedByAssociationId    String?
+  confirmationMethod          String?
+  confirmedTemplateId         String?
+  confirmedCertNumber         String?
+  confirmedExpiryDate         DateTime?
+  /// 非null なら現行の公式確認は無効。値を戻しても再審査なしでは復活しない。
+  confirmationInvalidatedAt   DateTime?
+
   // Relations
   user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   template  QualificationTemplate  @relation(fields: [templateId], references: [id], onDelete: Restrict)
@@ -609,6 +620,7 @@ model Qualification {
   @@index([templateId])
   @@index([status, createdAt(sort: Asc)])
   @@index([status, expiryDate])
+  @@index([confirmedAt])
 }
 
 model QualificationHistory {
@@ -624,6 +636,14 @@ model QualificationHistory {
   status                QualificationStatus
   attachmentUrl         String?
   recordOrigin          QualificationRecordOrigin
+  confirmedAt               DateTime?
+  confirmedByUserId         String?
+  confirmedByAssociationId  String?
+  confirmationMethod        String?
+  confirmedTemplateId       String?
+  confirmedCertNumber       String?
+  confirmedExpiryDate       DateTime?
+  confirmationInvalidatedAt DateTime?
   changeType            QualificationHistoryChangeType @default(SNAPSHOT)
   changedAt             DateTime                       @default(now())
 
@@ -2137,6 +2157,7 @@ enum QualificationHistoryChangeType {
   STATUS_CHANGE
   IMPORT
   DUPLICATE_ARCHIVE
+  CONFIRMATION_INVALIDATED
 }
 
 enum Sex {

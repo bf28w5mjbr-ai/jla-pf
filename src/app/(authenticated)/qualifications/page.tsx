@@ -7,6 +7,7 @@ import { dashboardSectionClassName } from "@/app/(authenticated)/dashboard/_comp
 import { SettingsEditorialSection } from "@/app/(authenticated)/settings/_components/SettingsEditorialSection";
 import { verifySessionCached } from "@/lib/auth";
 import { resolveQualificationTemplateMeta } from "@/lib/qualificationTemplateRules";
+import { mapOwnerQualificationSelectionUi } from "@/lib/qualificationOwnerRules";
 import { prisma } from "@/server/db";
 import { cn } from "@/lib/utils";
 import QualificationsSelectionClient from "./QualificationsSelectionClient";
@@ -44,12 +45,12 @@ export default async function QualificationsSelectPage() {
     prisma.qualification.findMany({
       where: {
         userId: sess.userId,
-        status: { in: ["PENDING", "APPROVED"] },
       },
       select: {
         kind: true,
         templateId: true,
         recordOrigin: true,
+        status: true,
       },
     }),
     prisma.user.findUnique({
@@ -63,10 +64,12 @@ export default async function QualificationsSelectPage() {
     name: template.name?.trim() || template.kind,
     ...resolveQualificationTemplateMeta(template),
   }));
-  const linkedTemplateIds = linkedQualifications.map((q) => q.templateId);
-  const lockedTemplateIds = linkedQualifications
-    .filter((q) => q.recordOrigin === "ASSOCIATION_IMPORT")
-    .map((q) => q.templateId);
+  const {
+    linkedTemplateIds,
+    lockedTemplateIds,
+    officialLockedTemplateIds,
+    blockedFromAddTemplateIds,
+  } = mapOwnerQualificationSelectionUi(linkedQualifications);
 
   return (
     <div className="flex flex-col">
@@ -109,6 +112,8 @@ export default async function QualificationsSelectPage() {
             templates={templates}
             linkedTemplateIds={linkedTemplateIds}
             lockedTemplateIds={lockedTemplateIds}
+            officialLockedTemplateIds={officialLockedTemplateIds}
+            blockedFromAddTemplateIds={blockedFromAddTemplateIds}
             initialJlaMemberNumber={user?.jlaProfile?.jlaMemberNumber ?? null}
           />
         )}
