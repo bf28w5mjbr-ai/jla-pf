@@ -1,6 +1,5 @@
 import { maskEmailForHint } from "@/lib/email/maskEmail";
-
-const RESEND_ENDPOINT = "https://api.resend.com/emails";
+import { sendResendEmail } from "@/lib/email/sendResendEmail";
 
 const DEFAULT_RESEND_FROM = "Bluvium <onboarding@resend.dev>";
 
@@ -25,43 +24,22 @@ export function isResendOnboardingFrom(from: string): boolean {
 
 /**
  * 新規登録用 OTP を Resend で送信する。
- * @throws {Error} RESEND_API_KEY 未設定、または API 失敗時
+ * @throws {Error} RESEND_API_KEY 未設定、Preview 許可リスト違反、または API 失敗時
  */
 export async function sendRegistrationOtpEmail(to: string, otp: string): Promise<void> {
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  if (!apiKey) {
-    throw new Error("RESEND_API_KEY が未設定です");
-  }
-
   const from = resolveResendRegistrationFrom();
-
-  const res = await fetch(RESEND_ENDPOINT, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to: [to],
-      subject: "Bluvium 新規登録の認証コード",
-      text: [
-        `認証コード: ${otp}`,
-        "",
-        "有効期限は約5分です。第三者に共有しないでください。",
-        "",
-        "このメールに心当たりがない場合は破棄してください。",
-      ].join("\n"),
-    }),
+  const { id } = await sendResendEmail({
+    from,
+    to,
+    subject: "Bluvium 新規登録の認証コード",
+    text: [
+      `認証コード: ${otp}`,
+      "",
+      "有効期限は約5分です。第三者に共有しないでください。",
+      "",
+      "このメールに心当たりがない場合は破棄してください。",
+    ].join("\n"),
   });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Resend が失敗しました (${res.status}): ${body.slice(0, 500)}`);
-  }
-
-  const json = (await res.json().catch(() => null)) as { data?: { id?: string } } | null;
-  const id = json?.data?.id;
   console.info("[Resend] registration OTP accepted", {
     id,
     toHint: maskEmailForHint(to),
@@ -76,8 +54,20 @@ export function formatResendRegistrationOtpFailure(fullMessage: string): {
   code: string;
   error: string;
 } {
-  const code = "RESEND_SEND_FAILED";
   console.error("[Resend] registration OTP:", fullMessage);
+
+  if (
+    fullMessage.includes("PREVIEW_EMAIL_ALLOWLIST_UNSET") ||
+    fullMessage.includes("PREVIEW_EMAIL_RECIPIENT_NOT_ALLOWED")
+  ) {
+    return {
+      code: "PREVIEW_EMAIL_BLOCKED",
+      error:
+        "認証コードメールの送信に失敗しました。Preview 環境では許可されたテスト用メールアドレス宛のみ送信できます。",
+    };
+  }
+
+  const code = "RESEND_SEND_FAILED";
 
   if (!fullMessage.startsWith("Resend が失敗しました")) {
     return {

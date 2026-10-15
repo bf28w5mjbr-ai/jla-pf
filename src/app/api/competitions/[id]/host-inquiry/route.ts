@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/auth";
 import { getTrustedClientIp, isLoginIpBlocklisted } from "@/lib/clientIp";
+import { mapPreviewEmailBlockedApiFailure } from "@/lib/email/mapEmailSendApiFailure";
 import {
   sendCompetitionHostInquiryEmail,
   resolvePlatformCompetitionInquiryEmail,
@@ -216,6 +217,13 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     return NextResponse.json({ success: true });
   } catch (e) {
+    const previewBlocked = mapPreviewEmailBlockedApiFailure(
+      e,
+      "メールの送信に失敗しました。Preview 環境では許可されたテスト用メールアドレス宛のみ送信できます。"
+    );
+    if (previewBlocked) {
+      return NextResponse.json(previewBlocked.body, { status: previewBlocked.status });
+    }
     if (e instanceof Error && e.message.includes("Resend が失敗しました")) {
       return NextResponse.json({ error: "メールの送信に失敗しました。しばらくしてから再度お試しください。" }, { status: 503 });
     }

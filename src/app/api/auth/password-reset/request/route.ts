@@ -20,6 +20,7 @@ import {
   hashPasswordResetToken,
   PASSWORD_RESET_TOKEN_TTL_MS,
 } from "@/lib/passwordResetToken";
+import { mapPreviewEmailBlockedApiFailure } from "@/lib/email/mapEmailSendApiFailure";
 import { sendPasswordResetEmail } from "@/lib/email/sendPasswordResetEmail";
 import { getPublicAppUrl } from "@/lib/appBaseUrl";
 import { appendRedirectQuery, safePostLoginPath } from "@/lib/postLoginRedirect";
@@ -137,7 +138,18 @@ export async function POST(req: NextRequest) {
       await sendPasswordResetEmail(email, resetUrl);
     } catch (e) {
       await prisma.passwordResetToken.deleteMany({ where: { tokenHash } });
-      console.error("sendPasswordResetEmail", e);
+      const previewBlocked = mapPreviewEmailBlockedApiFailure(
+        e,
+        "再設定用メールの送信に失敗しました。Preview 環境では許可されたテスト用メールアドレス宛のみ送信できます。"
+      );
+      if (previewBlocked) {
+        // 宛先・トークン・API キーは出さない（Error.message にも含めない）
+        console.error("sendPasswordResetEmail", previewBlocked.body.code);
+        return NextResponse.json(previewBlocked.body, {
+          status: previewBlocked.status,
+        });
+      }
+      console.error("sendPasswordResetEmail", e instanceof Error ? e.message : "unknown");
       return NextResponse.json(
         { error: "再設定用メールの送信に失敗しました。しばらくしてから再度お試しください。" },
         { status: 502 }
