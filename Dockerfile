@@ -3,11 +3,12 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json pnpm-lock.yaml ./
+# Copy package files. schema は postinstall の prisma generate が参照する
+COPY package.json pnpm-lock.yaml ./
+COPY prisma ./prisma
 
-# Install dependencies
-RUN npm install -g pnpm && pnpm install --frozen-lockfile
+# package.json の pnpm を有効にし、依存を入れる（postinstall で generate）
+RUN corepack enable && corepack prepare pnpm@10.20.0 --activate && pnpm install --frozen-lockfile
 
 # Copy source code
 COPY . .
