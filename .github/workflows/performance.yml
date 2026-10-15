@@ -8,8 +8,25 @@ on:
 jobs:
   lighthouse:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: bluvium_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d bluvium_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       AUTH_SECRET: ci-build-placeholder-secret-min-32-chars-xx
+      # job 内使い捨て Postgres のみ。本番・共有開発の秘密情報は使わない
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/bluvium_ci
+      DATABASE_URL_UNPOOLED: postgresql://ci:ci@localhost:5432/bluvium_ci
     steps:
       - uses: actions/checkout@v5
       - name: Setup pnpm
@@ -21,6 +38,22 @@ jobs:
           node-version: '20'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Ensure PostgREST roles on CI Postgres
+        run: |
+          pnpm exec prisma db execute --schema prisma/schema.prisma --stdin <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+              CREATE ROLE anon NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+              CREATE ROLE authenticated NOLOGIN;
+            END IF;
+          END
+          $$;
+          SQL
+      - name: Apply Prisma migrations to CI Postgres
+        run: pnpm exec prisma migrate deploy
       - name: Build
         run: pnpm build
       - name: Run Lighthouse
@@ -56,8 +89,24 @@ jobs:
   
   bundle-size:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: bluvium_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d bluvium_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       AUTH_SECRET: ci-build-placeholder-secret-min-32-chars-xx
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/bluvium_ci
+      DATABASE_URL_UNPOOLED: postgresql://ci:ci@localhost:5432/bluvium_ci
     steps:
       - uses: actions/checkout@v5
       - name: Setup pnpm
@@ -69,6 +118,22 @@ jobs:
           node-version: '20'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Ensure PostgREST roles on CI Postgres
+        run: |
+          pnpm exec prisma db execute --schema prisma/schema.prisma --stdin <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+              CREATE ROLE anon NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+              CREATE ROLE authenticated NOLOGIN;
+            END IF;
+          END
+          $$;
+          SQL
+      - name: Apply Prisma migrations to CI Postgres
+        run: pnpm exec prisma migrate deploy
       - name: Build and analyze
         run: |
           pnpm build
