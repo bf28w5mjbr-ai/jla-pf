@@ -1,11 +1,11 @@
-name: "Auto-approve and merge Dependabot"
+name: "Auto-approve Dependabot"
 
 on:
   pull_request:
     types: [opened, synchronize]
 
 jobs:
-  auto_approve_and_merge:
+  auto_approve:
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
     steps:
@@ -13,10 +13,3 @@ jobs:
         uses: hmarr/auto-approve-action@v2.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Auto-merge
-        uses: pascalgn/automerge-action@v0.14.3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          merge_method: squash
-          labels: 'dependencies'
-          allow_no_review: false

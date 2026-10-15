@@ -8,6 +8,8 @@ on:
 jobs:
   lighthouse:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:16
@@ -60,32 +62,61 @@ jobs:
         uses: treosh/lighthouse-ci-action@v10
         with:
           configPath: './lighthouserc.json'
-          uploadArtifacts: true
-      - name: Comment PR with results
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const fs = require('fs');
-            const results = JSON.parse(fs.readFileSync('./lhr.json', 'utf8'));
-            const scores = results.categories;
-            const comment = [
-              '## Lighthouse Scores',
-              '',
-              '| Category | Score |',
-              '| --- | --- |',
-              `| Performance | ${(scores.performance.score * 100).toFixed(0)} |`,
-              `| Accessibility | ${(scores.accessibility.score * 100).toFixed(0)} |`,
-              `| Best Practices | ${(scores['best-practices'].score * 100).toFixed(0)} |`,
-              `| SEO | ${(scores.seo.score * 100).toFixed(0)} |`,
-              `| PWA | ${(scores.pwa?.score * 100 || 'N/A')} |`,
-            ].join('\n');
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment
-            });
+          uploadArtifacts: false
+      - name: Write Lighthouse scores to job summary
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const path = require("path");
+
+          const dir = path.resolve(".lighthouseci");
+          const manifestPath = path.join(dir, "manifest.json");
+          if (!fs.existsSync(manifestPath)) {
+            console.error(
+              "LHCI did not write .lighthouseci/manifest.json. ./lhr.json is not an output of this action."
+            );
+            process.exit(1);
+          }
+
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+          const runs = Array.isArray(manifest) ? manifest : [];
+          const selected = runs.find((run) => run && run.isRepresentativeRun) || runs[0];
+          if (!selected || !selected.jsonPath) {
+            console.error("manifest.json has no LHR jsonPath.");
+            process.exit(1);
+          }
+
+          const lhrPath = path.resolve(selected.jsonPath);
+          if (!fs.existsSync(lhrPath)) {
+            console.error(`LHR file from manifest jsonPath was not found: ${selected.jsonPath}`);
+            process.exit(1);
+          }
+
+          const lhr = JSON.parse(fs.readFileSync(lhrPath, "utf8"));
+          const categories = lhr.categories || {};
+          const order = ["performance", "accessibility", "best-practices", "seo", "pwa"];
+          const lines = [
+            "### Lighthouse",
+            "",
+            `URL: ${selected.url || lhr.finalUrl || ""}`,
+            `LHR: ${path.relative(process.cwd(), lhrPath)}`,
+            "",
+            "| Category | Score |",
+            "| --- | ---: |",
+          ];
+          for (const id of order) {
+            const category = categories[id];
+            if (!category) continue;
+            const score =
+              category.score == null ? "n/a" : String(Math.round(category.score * 100));
+            lines.push(`| ${category.title || id} | ${score} |`);
+          }
+          const summary = `${lines.join("\n")}\n`;
+          if (process.env.GITHUB_STEP_SUMMARY) {
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+          }
+          process.stdout.write(summary);
+          NODE
   
   bundle-size:
     runs-on: ubuntu-latest

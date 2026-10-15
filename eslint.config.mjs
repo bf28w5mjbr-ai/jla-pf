@@ -46,7 +46,7 @@ const eslintConfig = defineConfig([
     "coverage/**",
     "next-env.d.ts",
     // YAML-style config; ESLint の JS パーサでは解釈できない
-    "commitlint.config.js",
+    "commitlint.config.cjs",
   ]),
 ]);
 

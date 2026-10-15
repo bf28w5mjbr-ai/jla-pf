@@ -1,18 +1,18 @@
 name: "Auto-merge PRs with label"
 
+# PR の作成・更新・ラベル変更では起動しない。自動マージ用トークンは渡さない。
 on:
-  pull_request:
-    types: [labeled, opened, reopened, synchronize]
+  workflow_dispatch:
 
 jobs:
   automerge:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - name: Auto-merge
-        uses: pascalgn/automerge-action@v0.14.3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          merge_method: squash
-          # Generic PR only; dependabot is handled in auto-approve-dependabot workflow.
-          labels: 'automerge'
-          allow_no_review: false
+      - name: Automerge stays disabled
+        run: |
+          {
+            echo "### Automerge"
+            echo "自動マージは無効です。GITHUB_TOKEN は渡していません。"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -6,6 +6,8 @@ on:
 jobs:
   commitlint:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
         with:
@@ -16,6 +18,6 @@ jobs:
           # この job は npm/npx のみ。package.json の packageManager=pnpm による自動キャッシュで pnpm を要求しない
           package-manager-cache: false
       - name: Install commitlint
-        run: npm install --save-dev @commitlint/config-conventional @commitlint/cli
+        run: npm install --no-save --no-package-lock @commitlint/config-conventional @commitlint/cli
       - name: Validate commits
         run: npx commitlint --from HEAD~${{ github.event.pull_request.commits }} --to HEAD

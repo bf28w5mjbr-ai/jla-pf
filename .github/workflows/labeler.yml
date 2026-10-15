@@ -7,10 +7,51 @@ on:
 jobs:
   label:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
+      - name: Skip forked pull requests
+        if: github.event.pull_request.head.repo.fork == true
+        run: |
+          {
+            echo "### Labeler"
+            echo "Fork の PR では GITHUB_TOKEN に pull request の書き込み権限がないため、ラベルは変更しません。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/checkout@v5
+        if: github.event.pull_request.head.repo.fork == false
+
       - name: Apply labels
+        id: apply
+        if: github.event.pull_request.head.repo.fork == false
+        continue-on-error: true
         uses: actions/labeler@v4
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           configuration-path: .github/labeler.yml
+
+      - name: Handle missing label permission
+        if: github.event.pull_request.head.repo.fork == false && steps.apply.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          pr="${{ github.event.pull_request.number }}"
+          # 空配列はラベル追加 API の検証用。置換用の PUT は使わない。
+          code=$(curl -sS -o /tmp/label-probe.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            --data '{"labels":[]}' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${pr}/labels")
+          if [ "$code" = "403" ] || [ "$code" = "401" ]; then
+            {
+              echo "### Labeler"
+              echo "ラベル API が HTTP ${code} を返したため、ラベルは変更していません。追加のトークンは使いません。"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "Labeler failed, and the token was not denied (HTTP ${code})." >&2
+          exit 1
