@@ -27,8 +27,8 @@ import {
   getResendCooldown,
 } from "@/lib/otp";
 import { maskEmailForHint } from "@/lib/email/maskEmail";
+import { mapRegistrationEmailSendError } from "@/lib/email/mapEmailSendApiFailure";
 import {
-  formatResendRegistrationOtpFailure,
   isResendOnboardingFrom,
   resolveResendRegistrationFrom,
 } from "@/lib/email/resendRegistrationOtp";
@@ -159,22 +159,9 @@ export async function POST(req: NextRequest) {
           priorDelivery: existingSession.registrationOtpDelivery,
         });
       } catch (sendErr) {
-        if (sendErr instanceof Error) {
-          if (sendErr.message === "RESEND_API_KEY_REQUIRED") {
-            return NextResponse.json(
-              {
-                error:
-                  "メールで登録認証を行うには環境変数 RESEND_API_KEY の設定が必要です。管理者にご連絡ください。",
-              },
-              { status: 503 }
-            );
-          }
-          if (sendErr.message.startsWith("Resend が失敗しました")) {
-            const { code, error } = formatResendRegistrationOtpFailure(
-              sendErr.message
-            );
-            return NextResponse.json({ error, code }, { status: 503 });
-          }
+        const mapped = mapRegistrationEmailSendError(sendErr);
+        if (mapped) {
+          return NextResponse.json(mapped.body, { status: mapped.status });
         }
         throw sendErr;
       }
@@ -263,28 +250,22 @@ export async function POST(req: NextRequest) {
         emailForOtp: normalizedEmail,
       });
     } catch (sendErr) {
-      if (sendErr instanceof Error) {
-        if (sendErr.message === "RESEND_API_KEY_REQUIRED") {
-          return NextResponse.json(
-            {
-              error:
-                "メールで登録認証を行うには環境変数 RESEND_API_KEY（任意で REGISTRATION_EMAIL_FROM）の設定が必要です。",
-            },
-            { status: 503 }
-          );
-        }
-        if (sendErr.message.startsWith("Resend が失敗しました")) {
-          const { code, error } = formatResendRegistrationOtpFailure(
-            sendErr.message
-          );
-          return NextResponse.json({ error, code }, { status: 503 });
-        }
-        if (sendErr.message.includes("REGISTRATION_EMAIL_OTP requires")) {
-          return NextResponse.json(
-            { error: "登録用メールアドレスが必要です。" },
-            { status: 400 }
-          );
-        }
+      if (
+        sendErr instanceof Error &&
+        sendErr.message === "RESEND_API_KEY_REQUIRED"
+      ) {
+        // 初回登録のみ文言に REGISTRATION_EMAIL_FROM を含める（既存動作）
+        return NextResponse.json(
+          {
+            error:
+              "メールで登録認証を行うには環境変数 RESEND_API_KEY（任意で REGISTRATION_EMAIL_FROM）の設定が必要です。",
+          },
+          { status: 503 }
+        );
+      }
+      const mapped = mapRegistrationEmailSendError(sendErr);
+      if (mapped) {
+        return NextResponse.json(mapped.body, { status: mapped.status });
       }
       throw sendErr;
     }
@@ -332,14 +313,9 @@ export async function POST(req: NextRequest) {
       }),
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "RESEND_API_KEY が未設定です") {
-      return NextResponse.json(
-        {
-          error:
-            "メールで登録認証を行うには環境変数 RESEND_API_KEY の設定が必要です。管理者にご連絡ください。",
-        },
-        { status: 503 }
-      );
+    const mapped = mapRegistrationEmailSendError(error);
+    if (mapped) {
+      return NextResponse.json(mapped.body, { status: mapped.status });
     }
     if (error instanceof z.ZodError) {
       return NextResponse.json(zodErrorJsonBody(error), { status: 400 });

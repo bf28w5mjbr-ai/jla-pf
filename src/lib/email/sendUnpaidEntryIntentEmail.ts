@@ -4,8 +4,7 @@ import {
   isResendOnboardingFrom,
   resolveTransactionalEmailFrom,
 } from "@/lib/email/resendRegistrationOtp";
-
-const RESEND_ENDPOINT = "https://api.resend.com/emails";
+import { sendResendEmail } from "@/lib/email/sendResendEmail";
 
 export type SendUnpaidEntryIntentEmailParams = {
   to: string;
@@ -18,11 +17,6 @@ export type SendUnpaidEntryIntentEmailParams = {
 export async function sendUnpaidEntryIntentEmail(
   params: SendUnpaidEntryIntentEmailParams
 ): Promise<void> {
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  if (!apiKey) {
-    throw new Error("RESEND_API_KEY が未設定です");
-  }
-
   const from = resolveTransactionalEmailFrom();
   if (isResendOnboardingFrom(from)) {
     console.warn(
@@ -51,38 +45,35 @@ export async function sendUnpaidEntryIntentEmail(
     "本メールに心当たりがない場合は、大会主催者へお問い合わせください。",
   ].join("\n");
 
-  const res = await fetch(RESEND_ENDPOINT, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+  try {
+    const { id } = await sendResendEmail({
       from,
-      to: [params.to],
+      to: params.to,
       subject,
       text,
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    let hint = "";
-    if (res.status === 403 && body.includes("verify a domain")) {
-      hint =
-        " 環境変数 EMAIL_FROM を Resend で検証済みのドメインの送信元に設定してください（テスト用 onboarding@resend.dev では外部宛に送れません）。";
-    } else if (res.status === 429) {
-      hint = " 送信間隔を空けて再試行してください。";
+    });
+    console.info("[Resend] unpaid entry intent email accepted", {
+      id,
+      toHint: maskEmailForHint(params.to),
+      competitionName: params.competitionName,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith("Resend が失敗しました")) {
+      const m = err.message.match(/\((\d+)\)/);
+      const status = m?.[1] ?? "";
+      let hint = "";
+      if (status === "403" && err.message.includes("verify a domain")) {
+        hint =
+          " 環境変数 EMAIL_FROM を Resend で検証済みのドメインの送信元に設定してください（テスト用 onboarding@resend.dev では外部宛に送れません）。";
+      } else if (status === "429") {
+        hint = " 送信間隔を空けて再試行してください。";
+      }
+      if (hint) {
+        throw new Error(`${err.message}${hint}`);
+      }
     }
-    throw new Error(`Resend が失敗しました (${res.status}): ${body.slice(0, 500)}${hint}`);
+    throw err;
   }
-
-  const json = (await res.json().catch(() => null)) as { data?: { id?: string } } | null;
-  console.info("[Resend] unpaid entry intent email accepted", {
-    id: json?.data?.id,
-    toHint: maskEmailForHint(params.to),
-    competitionName: params.competitionName,
-  });
 }
 
 export function buildPaymentIntentPublicUrl(competitionId: string, rawToken: string): string {
