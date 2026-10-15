@@ -204,7 +204,7 @@ async function resolvePlatformPaymentIntentFromConnectCharge(
   connectCharge: Stripe.Charge,
   connectAccountId: string
 ): Promise<string | null> {
-  let paymentIntentId = paymentIntentIdFromCharge(connectCharge);
+  const paymentIntentId = paymentIntentIdFromCharge(connectCharge);
   if (paymentIntentId) return paymentIntentId;
 
   const sourceTransfer = connectCharge.source_transfer;

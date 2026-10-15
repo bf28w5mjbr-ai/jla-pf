@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useState, useSyncExternalStore } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -21,13 +21,12 @@ function PasskeyRegisterContent() {
     "/dashboard";
 
   const [loading, setLoading] = useState(false);
-  const [supportsPasskey, setSupportsPasskey] = useState(true);
+  const supportsPasskey = useSyncExternalStore(
+    () => () => {},
+    () => !!window.PublicKeyCredential,
+    () => true
+  );
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setSupportsPasskey(!!window.PublicKeyCredential);
-  }, []);
 
   const handlePasskeyRegister = async () => {
     setLoading(true);

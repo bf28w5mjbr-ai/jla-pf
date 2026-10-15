@@ -3,6 +3,7 @@ import { Building2, Calendar, ChevronRight, MapPin } from "lucide-react";
 import { HomeMarqueeCta } from "@/components/home/HomeMarqueeCta";
 import { HomeSectionHeading } from "@/components/home/HomeSectionHeading";
 import { OrganizationLogoImage } from "@/components/OrganizationLogoImage";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   competitionHostAbbreviation,
@@ -44,12 +45,15 @@ function CompetitionShowcaseCard({ competition }: { competition: HomeFeaturedCom
             frameClassName="h-14 w-14 shrink-0 rounded-2xl border border-border/60 shadow-sm"
           />
           <div className="min-w-0 flex-1">
-            <Link
-              href={appRoutes.public.competitionView(competition.id)}
-              className="group line-clamp-2 text-sm font-semibold leading-snug text-foreground hover:text-primary"
+            <Button
+              asChild
+              variant="ghost"
+              className="h-auto p-0 group line-clamp-2 whitespace-normal text-left text-sm font-semibold leading-snug text-foreground hover:text-primary"
             >
-              {competition.name}
-            </Link>
+              <Link href={appRoutes.public.competitionView(competition.id)}>
+                {competition.name}
+              </Link>
+            </Button>
             {competition.category ? (
               <span className="mt-1.5 inline-flex rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[10px] font-medium text-foreground">
                 {competition.category}
@@ -80,16 +84,19 @@ function CompetitionShowcaseCard({ competition }: { competition: HomeFeaturedCom
               </span>
             </span>
           </div>
-          <Link
-            href={appRoutes.public.competitionView(competition.id)}
-            className="group mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary"
+          <Button
+            asChild
+            variant="ghost"
+            className="h-auto p-0 group mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary"
           >
+            <Link href={appRoutes.public.competitionView(competition.id)}>
             詳細を見る
             <ChevronRight
               className="size-3.5 transition group-hover:translate-x-0.5"
               aria-hidden
             />
-          </Link>
+            </Link>
+          </Button>
         </div>
       </CardContent>
     </Card>

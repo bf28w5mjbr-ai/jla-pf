@@ -10,6 +10,7 @@ describe("startListSnapshotReadHelpers", () => {
     const frozen: StartListRoundData[] = [
       {
         round: "HEAT",
+        generatedAt: "2026-01-01T00:00:00.000Z",
         generatedBy: "ENTRY_CLOSE",
         heats: [
           {

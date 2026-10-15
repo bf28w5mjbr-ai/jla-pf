@@ -5,6 +5,7 @@ import { ArrowRight, CalendarDays, ReceiptText } from "lucide-react";
 import { appRoutes } from "@/lib/appRoutes";
 import type { WithdrawableEventOption } from "@/lib/entryWithdrawalRequest";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { EntryWithdrawRequestButtonLazy } from "./dashboardDynamicClients";
 import {
   dashboardEntryPaymentToneClass,
@@ -168,15 +169,20 @@ export function DashboardEntryStatusCard({
             エントリー詳細
           </DashboardEntryActionLink>
           {canIssueReceipt ? (
-            <Link
-              href={`/api/entries/${entryId}/receipt?format=pdf`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            <Button
+              asChild
+              variant="ghost"
+              className="h-auto p-0 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
-              <ReceiptText className="size-3.5" strokeWidth={1.75} aria-hidden />
-              領収書
-            </Link>
+              <Link
+                href={`/api/entries/${entryId}/receipt?format=pdf`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <ReceiptText className="size-3.5" strokeWidth={1.75} aria-hidden />
+                領収書
+              </Link>
+            </Button>
           ) : null}
           {isResultPublished ? (
             <DashboardEntryActionLink href={appRoutes.competitions.results(competitionId)}>

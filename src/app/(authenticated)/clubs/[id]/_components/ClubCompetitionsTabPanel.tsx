@@ -296,15 +296,20 @@ export async function ClubCompetitionsTabPanel({
                         ) : null}
                       </div>
                     </details>
-                    <Link
-                      href={appRoutes.competitions.root(row.id)}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <Button
+                      asChild
+                      variant="ghost"
                       className="inline-flex h-9 shrink-0 items-center justify-center px-2 text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
-                      aria-label={`${row.name}の大会ページ`}
                     >
-                      <ExternalLink className="size-3.5" aria-hidden />
-                    </Link>
+                      <Link
+                        href={appRoutes.competitions.root(row.id)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`${row.name}の大会ページ`}
+                      >
+                        <ExternalLink className="size-3.5" aria-hidden />
+                      </Link>
+                    </Button>
                   </li>
                 );
               })}

@@ -9,9 +9,26 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: bluvium_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d bluvium_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       # next build は production 相当で AUTH_SECRET を要求する（本番値ではなくビルド通過用のダミー）
       AUTH_SECRET: ci-build-placeholder-secret-min-32-chars-xx
+      # job 内使い捨て Postgres のみ。本番・共有開発・外部サービスの秘密情報は使わない
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/bluvium_ci
+      DATABASE_URL_UNPOOLED: postgresql://ci:ci@localhost:5432/bluvium_ci
     steps:
       - uses: actions/checkout@v5
         with:
@@ -26,6 +43,8 @@ jobs:
           corepack prepare pnpm@latest --activate
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Apply Prisma migrations to CI Postgres
+        run: pnpm exec prisma migrate deploy
       - name: Migration gate
         run: node scripts/check-prisma-migration-consistency.mjs
       - name: Registration OTP invariants

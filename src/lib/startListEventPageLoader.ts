@@ -380,13 +380,15 @@ export async function loadStartListEventPage(input: {
         })
       : null;
 
-  let { individuals, teams, placementIndividualIds, placementTeamIds } =
+  const lineup =
     frozenLineup ??
     buildStartListLineupFromEntries({
       liveEntries,
       liveTeamEntries,
       participantStatusRows,
     });
+  const { individuals, placementIndividualIds, placementTeamIds } = lineup;
+  let { teams } = lineup;
 
   if (isTeamEvent && liveTeamEntries.length > 0) {
     teams = overlayLiveTeamMembersFromDb(teams, liveTeamEntries);

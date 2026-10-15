@@ -99,12 +99,15 @@ export function PublicClubDirectory({ initialClubs }: Props) {
                   <CardContent className="flex h-full gap-3 p-4">
                     <ClubLogo name={club.name} logoUrl={club.logoUrl} />
                     <div className="min-w-0 flex-1 space-y-1">
-                      <Link
-                        href={`/clubs/view/${club.id}`}
-                        className="text-sm font-semibold text-foreground hover:text-primary"
+                      <Button
+                        asChild
+                        variant="ghost"
+                        className="h-auto p-0 text-sm font-semibold text-foreground hover:text-primary"
                       >
-                        {club.name}
-                      </Link>
+                        <Link href={`/clubs/view/${club.id}`}>
+                          {club.name}
+                        </Link>
+                      </Button>
                       {club.nameKana ? (
                         <p className="truncate text-xs text-muted-foreground">{club.nameKana}</p>
                       ) : null}
@@ -202,14 +205,19 @@ export function PublicClubDetailPanel({ club }: { club: ClubPublicRecord }) {
               <div className="sm:col-span-2">
                 <dt className="text-xs font-medium text-muted-foreground">公式サイト</dt>
                 <dd className="mt-0.5">
-                  <a
-                    href={club.websiteUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-medium text-primary underline-offset-4 hover:underline"
+                  <Button
+                    asChild
+                    variant="link"
+                    className="h-auto p-0 font-medium text-primary underline-offset-4 hover:underline"
                   >
-                    {club.websiteUrl}
-                  </a>
+                    <a
+                      href={club.websiteUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {club.websiteUrl}
+                    </a>
+                  </Button>
                 </dd>
               </div>
             ) : null}

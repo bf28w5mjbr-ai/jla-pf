@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import type { StartListEventBarItem } from "@/lib/startListEventBarTypes";
@@ -28,6 +28,14 @@ const compactInputClass =
 const editorialInputClass =
   "h-7 w-10 rounded-md border-border/55 bg-background px-1 text-center text-[11px] tabular-nums";
 
+/** 親の一括指定があればそれを表示。解除後は行ローカル。 */
+export function resolveRowHeatExpanded(
+  forceHeatExpanded: boolean | undefined,
+  uncontrolledHeatExpanded: boolean
+): boolean {
+  return forceHeatExpanded !== undefined ? forceHeatExpanded : uncontrolledHeatExpanded;
+}
+
 export function StartListEventRoundSettingsRow({
   event,
   scheduleText,
@@ -42,13 +50,11 @@ export function StartListEventRoundSettingsRow({
   onManualHeatToggle,
 }: StartListEventRoundSettingsRowProps) {
   const isEditorial = chrome === "editorial";
-  const [heatExpanded, setHeatExpanded] = useState(isDirty);
-
-  useEffect(() => {
-    if (forceHeatExpanded !== undefined) {
-      setHeatExpanded(forceHeatExpanded);
-    }
-  }, [forceHeatExpanded]);
+  const [uncontrolledHeatExpanded, setUncontrolledHeatExpanded] = useState(isDirty);
+  if (forceHeatExpanded !== undefined && uncontrolledHeatExpanded !== forceHeatExpanded) {
+    setUncontrolledHeatExpanded(forceHeatExpanded);
+  }
+  const heatExpanded = resolveRowHeatExpanded(forceHeatExpanded, uncontrolledHeatExpanded);
   const roundCount = parseInt(roundCountValue, 10);
   const effectiveRoundCount =
     Number.isInteger(roundCount) && roundCount >= 1 && roundCount <= 32 ? roundCount : 1;
@@ -86,7 +92,7 @@ export function StartListEventRoundSettingsRow({
               className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
               onClick={() => {
                 onManualHeatToggle?.();
-                setHeatExpanded((v) => !v);
+                setUncontrolledHeatExpanded(!heatExpanded);
               }}
               aria-expanded={heatExpanded}
               aria-label={`${event.name} のヒート構成を${heatExpanded ? "閉じる" : "開く"}`}

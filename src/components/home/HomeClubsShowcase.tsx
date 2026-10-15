@@ -3,6 +3,7 @@ import { ChevronRight, MapPin } from "lucide-react";
 import { HomeClubLogo } from "@/components/home/HomeClubLogo";
 import { HomeMarqueeCta } from "@/components/home/HomeMarqueeCta";
 import { HomeSectionHeading } from "@/components/home/HomeSectionHeading";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { clubPublicLocationLabel, clubPublicTypeLabel } from "@/lib/clubPublicFields";
 import type { HomeFeaturedClub } from "@/lib/homeFeaturedContent";
@@ -35,12 +36,15 @@ export function HomeClubsShowcase({ clubs }: Props) {
                 <Card className="h-full min-w-[14rem] max-w-[16rem] shrink-0 snap-start overflow-hidden border-border/80 shadow-sm transition hover:border-primary/30 hover:shadow-md sm:min-w-[15rem]">
                   <CardContent className="flex h-full flex-col items-center p-5 text-center">
                     <HomeClubLogo name={club.name} logoUrl={club.logoUrl} />
-                    <Link
-                      href={appRoutes.public.clubView(club.id)}
-                      className="group mt-4 line-clamp-2 text-sm font-semibold leading-snug text-foreground hover:text-primary"
+                    <Button
+                      asChild
+                      variant="ghost"
+                      className="h-auto p-0 group mt-4 line-clamp-2 text-sm font-semibold leading-snug text-foreground hover:text-primary"
                     >
-                      {displayName}
-                    </Link>
+                      <Link href={appRoutes.public.clubView(club.id)}>
+                        {displayName}
+                      </Link>
+                    </Button>
                     <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">{typeLabel}</p>
                     {location ? (
                       <p className="mt-2 inline-flex max-w-full items-center justify-center gap-1 text-xs text-muted-foreground">
@@ -48,16 +52,19 @@ export function HomeClubsShowcase({ clubs }: Props) {
                         <span className="truncate">{location}</span>
                       </p>
                     ) : null}
-                    <Link
-                      href={appRoutes.public.clubView(club.id)}
-                      className="group mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary"
+                    <Button
+                      asChild
+                      variant="ghost"
+                      className="h-auto p-0 group mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary"
                     >
-                      詳細
-                      <ChevronRight
-                        className="size-3.5 transition group-hover:translate-x-0.5"
-                        aria-hidden
-                      />
-                    </Link>
+                      <Link href={appRoutes.public.clubView(club.id)}>
+                        詳細
+                        <ChevronRight
+                          className="size-3.5 transition group-hover:translate-x-0.5"
+                          aria-hidden
+                        />
+                      </Link>
+                    </Button>
                   </CardContent>
                 </Card>
               </li>

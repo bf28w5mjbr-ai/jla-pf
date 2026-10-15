@@ -219,16 +219,19 @@ export async function DashboardMainDeferred({ user }: Props) {
         </div>
 
         <div className="mt-5 flex justify-end">
-          <Link
-            href={appRoutes.me.entries()}
-            className="group inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          <Button
+            asChild
+            variant="ghost"
+            className="h-auto p-0 group inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
-            すべてのエントリー履歴
-            <ArrowRight
-              className="size-3.5 transition-transform group-hover:translate-x-0.5"
-              aria-hidden
-            />
-          </Link>
+            <Link href={appRoutes.me.entries()}>
+              すべてのエントリー履歴
+              <ArrowRight
+                className="size-3.5 transition-transform group-hover:translate-x-0.5"
+                aria-hidden
+              />
+            </Link>
+          </Button>
         </div>
       </div>
 
