@@ -17,9 +17,14 @@ import {
   qualificationJapaneseExpression,
   qualificationJapaneseLabel,
   qualificationJapaneseList,
+  qualificationTemplateValidityLabel,
 } from "@/lib/qualificationLabels";
 import { appRoutes } from "@/lib/appRoutes";
 import { userFacingApiErrorMessage } from "@/lib/userFacingApiError";
+import {
+  buildOwnerQualificationPersistTemplateIds,
+  QUALIFICATION_BLOCKED_FROM_OWNER_ADD_ERROR,
+} from "@/lib/qualificationOwnerRules";
 
 type TemplateRow = {
   id: string;
@@ -40,6 +45,10 @@ type Props = {
   templates: TemplateRow[];
   linkedTemplateIds: string[];
   lockedTemplateIds?: string[];
+  /** 協会取込。バッジを「公式資格」にする */
+  officialLockedTemplateIds?: string[];
+  /** 却下・期限切れ。追加できる資格として扱わない */
+  blockedFromAddTemplateIds?: string[];
   /** プロフィールで登録済みの JLA メンバーID（ダイアログ初期値） */
   initialJlaMemberNumber?: string | null;
 };
@@ -86,6 +95,8 @@ export default function QualificationsSelectionClient({
   templates,
   linkedTemplateIds,
   lockedTemplateIds = [],
+  officialLockedTemplateIds = [],
+  blockedFromAddTemplateIds = [],
   initialJlaMemberNumber = null,
 }: Props) {
   const router = useRouter();
@@ -113,7 +124,15 @@ export default function QualificationsSelectionClient({
   }, [linkedTemplateIds, templates]);
 
   const linkedTemplateIdSet = useMemo(() => new Set(linkedTemplateIds), [linkedTemplateIds]);
+  const officialLockedTemplateIdSet = useMemo(
+    () => new Set(officialLockedTemplateIds),
+    [officialLockedTemplateIds]
+  );
   const lockedTemplateIdSet = useMemo(() => new Set(lockedTemplateIds), [lockedTemplateIds]);
+  const blockedFromAddTemplateIdSet = useMemo(
+    () => new Set(blockedFromAddTemplateIds),
+    [blockedFromAddTemplateIds]
+  );
   const lockedTemplateIdSetForUi = useMemo(() => {
     const next = new Set<string>();
     for (const template of templates) {
@@ -123,6 +142,8 @@ export default function QualificationsSelectionClient({
     }
     return next;
   }, [lockedTemplateIdSet, templates]);
+  const isUiLocked = (templateId: string) =>
+    lockedTemplateIdSetForUi.has(templateId) || blockedFromAddTemplateIdSet.has(templateId);
 
   const grouped = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -165,7 +186,7 @@ export default function QualificationsSelectionClient({
   }, [search, templates]);
 
   const toggle = (templateId: string) => {
-    if (lockedTemplateIdSetForUi.has(templateId)) return;
+    if (isUiLocked(templateId)) return;
     setCheckedTemplateIds((prev) => {
       const next = new Set(prev);
       if (next.has(templateId)) next.delete(templateId);
@@ -175,12 +196,24 @@ export default function QualificationsSelectionClient({
   };
 
   const selectAll = () => {
-    setCheckedTemplateIds(new Set(templates.map((t) => t.id)));
+    setCheckedTemplateIds(
+      new Set(
+        templates
+          .filter((t) => !blockedFromAddTemplateIdSet.has(t.id))
+          .map((t) => t.id)
+      )
+    );
   };
   const clearAll = () => setCheckedTemplateIds(new Set(lockedTemplateIdSetForUi));
   const selectDomain = (domain: string) => {
     const rows = grouped.map.get(domain) ?? [];
-    setCheckedTemplateIds((prev) => new Set([...prev, ...rows.map((r) => r.id)]));
+    setCheckedTemplateIds(
+      (prev) =>
+        new Set([
+          ...prev,
+          ...rows.filter((r) => !blockedFromAddTemplateIdSet.has(r.id)).map((r) => r.id),
+        ])
+    );
   };
   const clearDomain = (domain: string) => {
     const rows = grouped.map.get(domain) ?? [];
@@ -195,7 +228,15 @@ export default function QualificationsSelectionClient({
   };
 
   const persist = useCallback(async () => {
-    const templateIds = [...checkedTemplateIds];
+    const { templateIds, blockedSelected } = buildOwnerQualificationPersistTemplateIds({
+      checkedTemplateIds,
+      lockedTemplateIds: lockedTemplateIdSetForUi,
+      blockedFromAddTemplateIds: blockedFromAddTemplateIdSet,
+    });
+    if (blockedSelected) {
+      toast.error(QUALIFICATION_BLOCKED_FROM_OWNER_ADD_ERROR);
+      return;
+    }
     if (templateIds.length > 0 && !accountJlaLinked) {
       const c = normalizeJlaMemberNumber(jlaMemberNumber);
       if (!isValidJlaMemberNumber(c)) {
@@ -227,7 +268,14 @@ export default function QualificationsSelectionClient({
     } finally {
       setSubmitting(false);
     }
-  }, [accountJlaLinked, checkedTemplateIds, jlaMemberNumber, router]);
+  }, [
+    accountJlaLinked,
+    blockedFromAddTemplateIdSet,
+    checkedTemplateIds,
+    jlaMemberNumber,
+    lockedTemplateIdSetForUi,
+    router,
+  ]);
 
   const checkedCount = checkedTemplateIds.size;
 
@@ -333,8 +381,9 @@ export default function QualificationsSelectionClient({
                     {rows.map((template) => {
                       const label = qualificationJapaneseLabel(template.kind, template.name);
                       const linked = linkedTemplateIdSet.has(template.id);
-                      const locked = lockedTemplateIdSetForUi.has(template.id);
-                      const checked = checkedTemplateIds.has(template.id);
+                      const blockedFromAdd = blockedFromAddTemplateIdSet.has(template.id);
+                      const locked = lockedTemplateIdSetForUi.has(template.id) || blockedFromAdd;
+                      const checked = checkedTemplateIds.has(template.id) && !blockedFromAdd;
                       return (
                         <li
                           key={template.id}
@@ -363,23 +412,30 @@ export default function QualificationsSelectionClient({
                             <span className="min-w-0 flex-1">
                               <span className="flex flex-wrap items-center gap-2">
                                 <span className="text-sm font-semibold text-foreground">{label}</span>
-                                {linked ? (
+                                {blockedFromAdd ? (
+                                  <Badge
+                                    variant="secondary"
+                                    className="border border-border/70 bg-muted/40 font-normal text-muted-foreground"
+                                  >
+                                    追加不可
+                                  </Badge>
+                                ) : linked ? (
                                   <Badge
                                     variant="secondary"
                                     className={cn(
                                       "border font-normal",
-                                      locked
-                                        ? "border-emerald-200/80 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100"
-                                        : "border-emerald-200/80 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100"
+                                      "border-emerald-200/80 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100"
                                     )}
                                   >
-                                    {locked ? (
+                                    {officialLockedTemplateIdSet.has(template.id) ? (
                                       <>
                                         <BadgeCheck className="mr-1 size-3" aria-hidden />
                                         公式資格
                                       </>
+                                    ) : lockedTemplateIdSetForUi.has(template.id) ? (
+                                      "解除不可"
                                     ) : (
-                                      "保存済み"
+                                      "申請中"
                                     )}
                                   </Badge>
                                 ) : null}
@@ -396,9 +452,7 @@ export default function QualificationsSelectionClient({
                                   </span>
                                 ) : null}
                                 <span className="inline-flex items-center rounded-full border border-border/70 bg-background/80 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                                  {template.requiresExpiry && template.validityMonths
-                                    ? `有効期間: ${template.validityMonths}か月`
-                                    : "有効期限: なし"}
+                                  {qualificationTemplateValidityLabel(template)}
                                 </span>
                               </span>
                               {template.prerequisiteExpression ? (
@@ -475,7 +529,7 @@ export default function QualificationsSelectionClient({
         )}
       >
         <p className="text-center text-xs text-muted-foreground sm:text-left sm:text-sm">
-          チェックした資格を保存すると、ダッシュボードへ移動します。
+          申請中の自己申告のみチェックを外せます。承認済みと協会取込は解除できません。
         </p>
         <Button type="button" onClick={() => void persist()} disabled={submitting} className="sm:min-w-[8rem]">
           <Save className="mr-1.5 size-4" aria-hidden />

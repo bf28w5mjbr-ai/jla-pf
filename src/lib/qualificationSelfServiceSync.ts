@@ -2,6 +2,14 @@ import { QualificationRecordOrigin } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { isValidJlaMemberNumber, normalizeJlaMemberNumber } from "@/lib/jlaMemberNumber";
 import {
+  buildOwnerQualificationCancelManyWhere,
+  confirmationHistoryFields,
+  partitionQualificationsForOwnerSync,
+  QUALIFICATION_BLOCKED_FROM_OWNER_ADD_ERROR,
+  QUALIFICATION_OWNER_CANCEL_CONFLICT,
+  selectedBlockedFromOwnerAddTemplateIds,
+} from "@/lib/qualificationOwnerRules";
+import {
   findTemplateKindByKeywords,
   matchesQualificationKeywords,
   resolveQualificationTemplateForKindInput,
@@ -24,7 +32,8 @@ function resolveTemplateForQualification(kind: string, templates: TemplateWithId
 
 /**
  * ログインユーザーが選択した自己申告資格を DB 上の Qualification と同期する。
- * 協会インポート由来の資格はユーザー操作では削除しない。
+ * 協会インポート・承認済み・却下・期限切れはユーザー操作では削除しない。
+ * USER_APPLICATION かつ PENDING のみ、選択解除で取消できる。
  */
 export async function syncUserHeldQualifications(
   userId: string,
@@ -120,10 +129,7 @@ export async function syncUserHeldQualifications(
   }
 
   const existing = await prisma.qualification.findMany({
-    where: {
-      userId,
-      status: { in: ["PENDING", "APPROVED"] },
-    },
+    where: { userId },
     select: {
       id: true,
       kind: true,
@@ -134,34 +140,49 @@ export async function syncUserHeldQualifications(
       expiryDate: true,
       attachmentUrl: true,
       recordOrigin: true,
+      confirmedAt: true,
+      confirmationInvalidatedAt: true,
+      confirmedTemplateId: true,
+      confirmedCertNumber: true,
+      confirmedExpiryDate: true,
+      confirmedByUserId: true,
+      confirmedByAssociationId: true,
+      confirmationMethod: true,
     },
   });
 
-  const existingTemplateIds = new Set(
-    existing
-      .map((q) => q.templateId ?? resolveTemplateForQualification(q.kind, templates)?.id)
-      .filter((id): id is string => Boolean(id))
+  const resolveExistingTemplateId = (q: (typeof existing)[number]) =>
+    q.templateId ?? resolveTemplateForQualification(q.kind, templates)?.id ?? null;
+
+  const {
+    occupancyTemplateIds,
+    heldForPrerequisite,
+    cancellable,
+    blockedFromAddTemplateIds,
+  } = partitionQualificationsForOwnerSync(existing, resolveExistingTemplateId);
+
+  const blockedSelected = selectedBlockedFromOwnerAddTemplateIds(
+    targetTemplateIds,
+    blockedFromAddTemplateIds
   );
-  const userApplicationExisting = existing.filter(
-    (q) => q.recordOrigin === QualificationRecordOrigin.USER_APPLICATION
-  );
+  if (blockedSelected.length > 0) {
+    return {
+      ok: false,
+      status: 400,
+      error: QUALIFICATION_BLOCKED_FROM_OWNER_ADD_ERROR,
+    };
+  }
 
   const toDeleteIds: string[] = [];
-  for (const q of userApplicationExisting) {
-    const templateId = q.templateId ?? resolveTemplateForQualification(q.kind, templates)?.id;
+  for (const q of cancellable) {
+    const templateId = resolveExistingTemplateId(q);
     if (templateId && !targetTemplateIds.has(templateId)) {
       toDeleteIds.push(q.id);
     }
   }
 
-  const surviving = userApplicationExisting.filter((q) => !toDeleteIds.includes(q.id));
-  const survivingTemplateIds = new Set(
-    surviving
-      .map((q) => q.templateId ?? resolveTemplateForQualification(q.kind, templates)?.id)
-      .filter((id): id is string => Boolean(id))
-  );
   const toAdd = [...targetTemplateIds].filter(
-    (templateId) => !survivingTemplateIds.has(templateId) && !existingTemplateIds.has(templateId)
+    (templateId) => !occupancyTemplateIds.has(templateId)
   );
 
   const blsKind = findTemplateKindByKeywords(templates, [
@@ -186,7 +207,7 @@ export async function syncUserHeldQualifications(
     lifesaverTemplate &&
     targetTemplateIds.has(lifesaverTemplate.id)
   ) {
-    const lifeRow = existing.find(
+    const lifeRow = heldForPrerequisite.find(
       (q) =>
         q.templateId === lifesaverTemplate.id ||
         matchesQualificationKeywords(q.kind, [lifesaverTemplate.kind]) ||
@@ -219,13 +240,8 @@ export async function syncUserHeldQualifications(
     }
   }
 
-  const pendingToApprove = surviving.filter((q) => {
-    if (q.status !== "PENDING") return false;
-    const templateId = q.templateId ?? resolveTemplateForQualification(q.kind, templates)?.id;
-    return Boolean(templateId && targetTemplateIds.has(templateId));
-  });
-
-  await prisma.$transaction(async (tx) => {
+  try {
+    await prisma.$transaction(async (tx) => {
     if (toDeleteIds.length > 0) {
       const archived = existing.filter((q) => toDeleteIds.includes(q.id));
       await tx.qualificationHistory.createMany({
@@ -241,37 +257,19 @@ export async function syncUserHeldQualifications(
           status: q.status,
           attachmentUrl: q.attachmentUrl,
           recordOrigin: q.recordOrigin,
+          ...confirmationHistoryFields(q),
           changeType: "STATUS_CHANGE",
         })),
       });
-      await tx.qualification.deleteMany({
-        where: { id: { in: toDeleteIds } },
-      });
-    }
-
-    if (pendingToApprove.length > 0) {
-      await tx.qualificationHistory.createMany({
-        data: pendingToApprove.map((q) => ({
-          qualificationId: q.id,
-          sourceQualificationId: q.id,
+      const deleted = await tx.qualification.deleteMany({
+        where: buildOwnerQualificationCancelManyWhere({
+          ids: toDeleteIds,
           userId,
-          templateId: q.templateId,
-          kind: q.kind,
-          certNumber: q.certNumber,
-          issueDate: q.issueDate,
-          expiryDate: q.expiryDate,
-          status: q.status,
-          attachmentUrl: q.attachmentUrl,
-          recordOrigin: q.recordOrigin,
-          changeType: "STATUS_CHANGE",
-        })),
+        }),
       });
-      await tx.qualification.updateMany({
-        where: { id: { in: pendingToApprove.map((q) => q.id) } },
-        data: {
-          status: "APPROVED",
-        },
-      });
+      if (deleted.count !== toDeleteIds.length) {
+        throw new Error(QUALIFICATION_OWNER_CANCEL_CONFLICT);
+      }
     }
 
     const qualificationCreatePayload = toAdd
@@ -285,7 +283,7 @@ export async function syncUserHeldQualifications(
           certNumber: null,
           issueDate: null,
           expiryDate: null,
-          status: "APPROVED" as const,
+          status: "PENDING" as const,
           recordOrigin: QualificationRecordOrigin.USER_APPLICATION,
         };
       })
@@ -303,22 +301,28 @@ export async function syncUserHeldQualifications(
         update: { jlaMemberNumber: effectiveJlaMemberNumber },
       });
     }
-  }, QUALIFICATION_SELF_SYNC_TX_OPTIONS);
 
-  await prisma.auditLog.create({
-    data: {
-      actorUserId: userId,
-      action: "QUALIFICATION_SELF_SYNC",
-      target: `user:${userId}:qualifications`,
-      meta: {
-        kinds: [...targetKindByTemplateId.values()],
-        templateIds: [...targetTemplateIds],
-        deletedIds: toDeleteIds,
-        addedTemplateIds: toAdd,
-        approvedPendingIds: pendingToApprove.map((q) => q.id),
+    await tx.auditLog.create({
+      data: {
+        actorUserId: userId,
+        action: "QUALIFICATION_SELF_SYNC",
+        target: `user:${userId}:qualifications`,
+        meta: {
+          kinds: [...targetKindByTemplateId.values()],
+          templateIds: [...targetTemplateIds],
+          deletedIds: toDeleteIds,
+          addedTemplateIds: toAdd,
+          approvedPendingIds: [],
+        },
       },
-    },
-  });
+    });
+    }, QUALIFICATION_SELF_SYNC_TX_OPTIONS);
+  } catch (err) {
+    if (err instanceof Error && err.message === QUALIFICATION_OWNER_CANCEL_CONFLICT) {
+      return { ok: false, status: 409, error: "取消が競合しました" };
+    }
+    throw err;
+  }
 
   return { ok: true };
 }

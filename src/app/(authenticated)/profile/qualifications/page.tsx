@@ -14,6 +14,7 @@ import {
   resolveQualificationTemplateMeta,
   stripLegacyQualificationTemplateMetaLines,
 } from "@/lib/qualificationTemplateRules";
+import { mapOwnerQualificationSelectionUi } from "@/lib/qualificationOwnerRules";
 import JlaMemberNumberEditor from "./JlaMemberNumberEditor";
 import QualificationsSelectionClient from "../../qualifications/QualificationsSelectionClient";
 
@@ -68,12 +69,12 @@ export default async function ProfileQualificationsPage() {
     ...resolveQualificationTemplateMeta(template),
   }));
 
-  const linkedTemplateIds = qualifications
-    .filter((q) => q.status === "APPROVED" || q.status === "PENDING")
-    .map((q) => q.templateId);
-  const lockedTemplateIds = qualifications
-    .filter((q) => (q.status === "APPROVED" || q.status === "PENDING") && q.recordOrigin === "ASSOCIATION_IMPORT")
-    .map((q) => q.templateId);
+  const {
+    linkedTemplateIds,
+    lockedTemplateIds,
+    officialLockedTemplateIds,
+    blockedFromAddTemplateIds,
+  } = mapOwnerQualificationSelectionUi(qualifications);
 
   const isRegistrationTemplate = (template: (typeof rawTemplates)[number]) =>
     isRegistrationQualificationKind(template.kind) || isRegistrationQualificationKind(template.name);
@@ -101,8 +102,12 @@ export default async function ProfileQualificationsPage() {
   const officialQualifications = ownedQualifications.filter((q) => q.recordOrigin === "ASSOCIATION_IMPORT");
   const selfReportedQualifications = ownedQualifications.filter((q) => q.recordOrigin === "USER_APPLICATION");
 
+  const blockedFromAddTemplateIdSet = new Set(blockedFromAddTemplateIds);
   const unownedTemplates = rawTemplates.filter(
-    (template) => !isOwnedTemplate(template) && !isRegistrationTemplate(template)
+    (template) =>
+      !isOwnedTemplate(template) &&
+      !isRegistrationTemplate(template) &&
+      !blockedFromAddTemplateIdSet.has(template.id)
   );
 
   return (
@@ -153,6 +158,8 @@ export default async function ProfileQualificationsPage() {
               templates={templatesForClient}
               linkedTemplateIds={linkedTemplateIds}
               lockedTemplateIds={lockedTemplateIds}
+              officialLockedTemplateIds={officialLockedTemplateIds}
+              blockedFromAddTemplateIds={blockedFromAddTemplateIds}
               initialJlaMemberNumber={user.jlaProfile?.jlaMemberNumber ?? null}
             />
           )}
@@ -257,7 +264,7 @@ export default async function ProfileQualificationsPage() {
               自己申告資格（更新講習）
             </h2>
             <p className="text-sm text-muted-foreground">
-              自分で紐づけた資格です。上のチェックボックスから追加・解除できます。
+              自分で紐づけた資格です。申請中のみチェックを外して取消できます。承認済みの自己申告は本人では解除できません。
             </p>
           </div>
         </div>

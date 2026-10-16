@@ -8,6 +8,7 @@ import {
   parseRelayPositionNames,
   resolveTeamRelaySlotCount,
   validateMemberSlotsForSave,
+  type TeamEntryMemberRow,
 } from "./teamMemberSlots";
 
 describe("parseRelayPositionNames", () => {
@@ -27,20 +28,18 @@ describe("resolveTeamRelaySlotCount", () => {
   });
 
   it("未設定時は assignable メンバー数から推定", () => {
-    expect(
-      resolveTeamRelaySlotCount(null, [
-        { userId: "u1", order: 1, role: "ATHLETE" },
-        { userId: "u2", order: 2, role: "ATHLETE" },
-      ])
-    ).toBe(2);
+    const members: TeamEntryMemberRow[] = [
+      { userId: "u1", order: 1, role: "ATHLETE" },
+      { userId: "u2", order: 2, role: "ATHLETE" },
+    ];
+    expect(resolveTeamRelaySlotCount(null, members)).toBe(2);
   });
 
   it("申請者は枠数推定に含めない", () => {
-    expect(
-      resolveTeamRelaySlotCount(null, [
-        { userId: "u1", order: 1, role: TEAM_ENTRY_APPLICANT_ROLE },
-      ])
-    ).toBe(1);
+    const members: TeamEntryMemberRow[] = [
+      { userId: "u1", order: 1, role: TEAM_ENTRY_APPLICANT_ROLE },
+    ];
+    expect(resolveTeamRelaySlotCount(null, members)).toBe(1);
   });
 });
 

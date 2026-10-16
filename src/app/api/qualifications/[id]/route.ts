@@ -4,9 +4,31 @@ export const runtime = "nodejs";
 import { jsonInternalError500 } from "@/lib/apiInternalError";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { isPfOrAccAdmin, verifySession } from "@/lib/auth";
+import { verifySession } from "@/lib/auth";
 import { prisma } from "@/server/db";
 import { z } from "zod";
+import {
+  buildQualificationPatchConcurrencyWhere,
+  canPatchQualificationRecord,
+  canViewQualificationAsReviewer,
+  canWriteOfficialQualificationConfirmation,
+  QUALIFICATION_UPDATE_CONFLICT,
+  qualificationDetailSelect,
+  qualificationHolderForViewer,
+  qualificationHolderSelectForOwner,
+  qualificationHolderSelectForReviewer,
+  resolveQualificationAccessContext,
+  resolveQualificationViewerKind,
+  viewerIsQualificationPlatformReviewer,
+} from "@/lib/qualificationAccess";
+import { QualificationHistoryChangeType } from "@prisma/client";
+import {
+  buildConfirmationMutation,
+  buildOwnerQualificationCancelWhere,
+  canOwnerPhysicallyDeleteQualification,
+  confirmationHistoryFields,
+  QUALIFICATION_OWNER_CANCEL_CONFLICT,
+} from "@/lib/qualificationOwnerRules";
 import {
   isPlayerRegistrationKind,
   JLA_MEMBER_NUMBER_REGEX,
@@ -31,16 +53,9 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
     const qualification = await prisma.qualification.findUnique({
       where: { id },
-      include: {
+      select: {
+        ...qualificationDetailSelect,
         template: true,
-        user: {
-          select: {
-            id: true,
-            email: true,
-            profile: { select: { familyName: true, givenName: true } },
-            contact: { select: { phoneNumber: true } },
-          },
-        },
       },
     });
 
@@ -51,7 +66,35 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
       );
     }
 
-    return NextResponse.json(qualification);
+    const access = await resolveQualificationAccessContext(sess.userId);
+    const viewer = resolveQualificationViewerKind({
+      viewerUserId: sess.userId,
+      holderUserId: qualification.userId,
+      isReviewer: canViewQualificationAsReviewer(access, qualification.templateId),
+    });
+
+    if (!viewer) {
+      return NextResponse.json({ error: "権限がありません" }, { status: 403 });
+    }
+
+    const holder = await prisma.user.findUnique({
+      where: { id: qualification.userId },
+      select:
+        viewer === "reviewer"
+          ? qualificationHolderSelectForReviewer
+          : qualificationHolderSelectForOwner,
+    });
+
+    if (!holder) {
+      return NextResponse.json({ error: "資格が見つかりません" }, { status: 404 });
+    }
+
+    const { userId, ...record } = qualification;
+    return NextResponse.json({
+      ...record,
+      userId,
+      user: qualificationHolderForViewer(holder, viewer),
+    });
   } catch (err) {
     return jsonInternalError500("GET api/qualifications/[id]/route.ts", err);
   }
@@ -68,10 +111,10 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    // 協会管理者（AssociationAdmin.ADMIN）/ PF管理者 権限チェック
-    if (!(await isPfOrAccAdmin(sess.userId))) {
+    const access = await resolveQualificationAccessContext(sess.userId);
+    if (!access.isPfAdmin && !access.isJlaReviewer) {
       return NextResponse.json(
-        { error: '協会管理者権限が必要です' },
+        { error: "権限がありません" },
         { status: 403 }
       );
     }
@@ -91,6 +134,15 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
         expiryDate: true,
         attachmentUrl: true,
         recordOrigin: true,
+        updatedAt: true,
+        confirmedAt: true,
+        confirmedByUserId: true,
+        confirmedByAssociationId: true,
+        confirmationMethod: true,
+        confirmedTemplateId: true,
+        confirmedCertNumber: true,
+        confirmedExpiryDate: true,
+        confirmationInvalidatedAt: true,
       },
     });
 
@@ -98,6 +150,13 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       return NextResponse.json(
         { error: '資格が見つかりません' },
         { status: 404 }
+      );
+    }
+
+    if (!canPatchQualificationRecord(access, qualification.templateId)) {
+      return NextResponse.json(
+        { error: "権限がありません" },
+        { status: 403 }
       );
     }
 
@@ -124,7 +183,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       issueDate: z.string().datetime().optional(),
       expiryDate: z.string().datetime().optional(),
       rejectionReason: z.string().optional(),
-    });
+    }).strip();
 
     const data = UpdateQualificationSchema.parse(body);
     const approvingPlayerRegistration =
@@ -167,8 +226,60 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       }
     }
 
-    // 資格を更新
+    const concurrencyWhere = buildQualificationPatchConcurrencyWhere({
+      id: qualification.id,
+      userId: qualification.userId,
+      templateId: qualification.templateId,
+      updatedAt: qualification.updatedAt,
+      isPfAdmin: access.isPfAdmin,
+      reviewTemplateIds: access.reviewTemplateIds,
+    });
+
+    const nextStatus = data.status ?? qualification.status;
+    const nextCertNumber =
+      data.certNumber !== undefined ? data.certNumber ?? null : qualification.certNumber;
+    const nextExpiryDate = data.expiryDate
+      ? new Date(data.expiryDate)
+      : data.expiryDate === undefined
+        ? qualification.expiryDate
+        : null;
+    const writeOfficialConfirmation =
+      data.status === "APPROVED" &&
+      canWriteOfficialQualificationConfirmation(access, qualification.templateId);
+    const confirmationData = buildConfirmationMutation({
+      current: {
+        ...qualification,
+        certNumber: qualification.certNumber,
+        expiryDate: qualification.expiryDate,
+      },
+      nextStatus,
+      nextTemplateId: qualification.templateId,
+      nextCertNumber,
+      nextExpiryDate,
+      canWriteOfficialConfirmation: writeOfficialConfirmation,
+      actorUserId: sess.userId,
+      associationId: access.reviewAssociationId,
+      now: new Date(),
+    });
+    const wroteOfficialConfirmation = "confirmedAt" in confirmationData;
+    const invalidateConfirmation =
+      "confirmationInvalidatedAt" in confirmationData && !wroteOfficialConfirmation;
+
     const updated = await prisma.$transaction(async (tx) => {
+      const scoped = await tx.qualification.updateMany({
+        where: concurrencyWhere,
+        data: {
+          status: data.status,
+          certNumber: data.certNumber,
+          issueDate: data.issueDate ? new Date(data.issueDate) : undefined,
+          expiryDate: data.expiryDate ? new Date(data.expiryDate) : undefined,
+          ...confirmationData,
+        },
+      });
+      if (scoped.count !== 1) {
+        throw new Error(QUALIFICATION_UPDATE_CONFLICT);
+      }
+
       await tx.qualificationHistory.create({
         data: {
           qualificationId: qualification.id,
@@ -182,18 +293,15 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
           status: qualification.status,
           attachmentUrl: qualification.attachmentUrl,
           recordOrigin: qualification.recordOrigin,
-          changeType: "STATUS_CHANGE",
+          ...confirmationHistoryFields(qualification),
+          changeType: invalidateConfirmation
+            ? QualificationHistoryChangeType.CONFIRMATION_INVALIDATED
+            : QualificationHistoryChangeType.STATUS_CHANGE,
         },
       });
 
-      const updatedQualification = await tx.qualification.update({
+      const updatedQualification = await tx.qualification.findUnique({
         where: { id },
-        data: {
-          status: data.status,
-          certNumber: data.certNumber,
-          issueDate: data.issueDate ? new Date(data.issueDate) : undefined,
-          expiryDate: data.expiryDate ? new Date(data.expiryDate) : undefined,
-        },
         include: {
           user: {
             select: {
@@ -204,6 +312,9 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
           },
         },
       });
+      if (!updatedQualification) {
+        throw new Error(QUALIFICATION_UPDATE_CONFLICT);
+      }
 
       if (approvingPlayerRegistration && data.jlaMemberNumber) {
         await tx.user.update({
@@ -219,25 +330,30 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
         });
       }
 
-      return updatedQualification;
-    });
+      await tx.auditLog.create({
+        data: {
+          actorUserId: sess.userId,
+          action:
+            data.status === "APPROVED"
+              ? "QUALIFICATION_APPROVE"
+              : data.status === "REJECTED"
+                ? "QUALIFICATION_REJECT"
+                : "QUALIFICATION_UPDATE",
+          target: `qualification:${id}`,
+          meta: data,
+        },
+      });
 
-    // AuditLog 記録
-    await prisma.auditLog.create({
-      data: {
-        actorUserId: sess.userId,
-        action: data.status === 'APPROVED' ? 'QUALIFICATION_APPROVE' : 
-                data.status === 'REJECTED' ? 'QUALIFICATION_REJECT' : 
-                'QUALIFICATION_UPDATE',
-        target: `qualification:${id}`,
-        meta: data,
-      },
+      return updatedQualification;
     });
 
     return NextResponse.json(updated);
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(zodErrorJsonBody(err, "validation_message_ja"), { status: 400 });
+    }
+    if (err instanceof Error && err.message === QUALIFICATION_UPDATE_CONFLICT) {
+      return NextResponse.json({ error: "更新が競合しました" }, { status: 409 });
     }
 
     return jsonInternalError500("PATCH api/qualifications/[id]/route.ts", err);
@@ -262,6 +378,15 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
       select: {
         id: true,
         userId: true,
+        kind: true,
+        templateId: true,
+        certNumber: true,
+        issueDate: true,
+        expiryDate: true,
+        status: true,
+        attachmentUrl: true,
+        recordOrigin: true,
+        confirmedAt: true,
       },
     });
 
@@ -272,33 +397,87 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
       );
     }
 
-    // 自分の資格かチェック
-    if (qualification.userId !== sess.userId) {
-      // 協会管理者 / PF管理者 ならOK
-      if (!(await isPfOrAccAdmin(sess.userId))) {
-        return NextResponse.json(
-          { error: '権限がありません' },
-          { status: 403 }
-        );
-      }
+    const isPfAdmin = await viewerIsQualificationPlatformReviewer(sess.userId);
+    if (isPfAdmin) {
+      await prisma.$transaction(async (tx) => {
+        await tx.qualification.delete({
+          where: { id },
+        });
+        await tx.auditLog.create({
+          data: {
+            actorUserId: sess.userId,
+            action: "QUALIFICATION_DELETE",
+            target: `qualification:${id}`,
+            meta: { deleted: true, asPlatformAdmin: true },
+          },
+        });
+      });
+
+      return NextResponse.json({ success: true });
     }
 
-    await prisma.qualification.delete({
-      where: { id },
-    });
+    if (qualification.userId !== sess.userId) {
+      return NextResponse.json(
+        { error: "権限がありません" },
+        { status: 403 }
+      );
+    }
 
-    // AuditLog 記録
-    await prisma.auditLog.create({
-      data: {
-        actorUserId: sess.userId,
-        action: 'QUALIFICATION_DELETE',
-        target: `qualification:${id}`,
-        meta: { deleted: true },
-      },
+    if (!canOwnerPhysicallyDeleteQualification(qualification)) {
+      return NextResponse.json(
+        { error: "この資格は取消できません" },
+        { status: 403 }
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.qualificationHistory.create({
+        data: {
+          qualificationId: qualification.id,
+          sourceQualificationId: qualification.id,
+          userId: qualification.userId,
+          templateId: qualification.templateId,
+          kind: qualification.kind,
+          certNumber: qualification.certNumber,
+          issueDate: qualification.issueDate,
+          expiryDate: qualification.expiryDate,
+          status: qualification.status,
+          attachmentUrl: qualification.attachmentUrl,
+          recordOrigin: qualification.recordOrigin,
+          ...confirmationHistoryFields(qualification),
+          changeType: QualificationHistoryChangeType.STATUS_CHANGE,
+        },
+      });
+
+      const scoped = await tx.qualification.deleteMany({
+        where: buildOwnerQualificationCancelWhere({
+          id: qualification.id,
+          userId: sess.userId,
+        }),
+      });
+      if (scoped.count !== 1) {
+        throw new Error(QUALIFICATION_OWNER_CANCEL_CONFLICT);
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: sess.userId,
+          action: "QUALIFICATION_DELETE",
+          target: `qualification:${id}`,
+          meta: {
+            deleted: true,
+            recordOrigin: qualification.recordOrigin,
+            status: qualification.status,
+          },
+        },
+      });
     });
 
     return NextResponse.json({ success: true });
   } catch (err) {
+    if (err instanceof Error && err.message === QUALIFICATION_OWNER_CANCEL_CONFLICT) {
+      return NextResponse.json({ error: "取消が競合しました" }, { status: 409 });
+    }
     return jsonInternalError500("DELETE api/qualifications/[id]/route.ts", err);
   }
 }

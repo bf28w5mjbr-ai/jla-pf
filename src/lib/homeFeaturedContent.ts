@@ -31,8 +31,13 @@ export type HomeFeaturedCompetition = Awaited<
 
 export type HomeFeaturedClub = ClubPublicRecord;
 
+function isDockerImageBuild(): boolean {
+  return process.env.DOCKER_IMAGE_BUILD === "1";
+}
+
 /** トップ用: 開催予定の公開大会（一覧 upcoming と同条件） */
 export const loadHomeFeaturedCompetitions = cache(async (limit = FEATURED_LIMIT) => {
+  if (isDockerImageBuild()) return [];
   const now = new Date();
   return prisma.competition.findMany({
     where: {
@@ -48,6 +53,7 @@ export const loadHomeFeaturedCompetitions = cache(async (limit = FEATURED_LIMIT)
 
 /** トップ用: 公開大会のカテゴリ一覧（browse と同条件） */
 export const loadHomeCompetitionCategories = cache(async (limit = CATEGORY_LIMIT) => {
+  if (isDockerImageBuild()) return [];
   const groups = await prisma.competition.groupBy({
     by: ["category"],
     where: {
@@ -66,6 +72,7 @@ export const loadHomeCompetitionCategories = cache(async (limit = CATEGORY_LIMIT
 
 /** トップ用: 公開クラブ抜粋 */
 export const loadHomeFeaturedClubs = cache(async (limit = FEATURED_CLUBS_LIMIT) => {
+  if (isDockerImageBuild()) return [];
   return prisma.club.findMany({
     where: clubPublicListWhere,
     select: clubPublicSelect,

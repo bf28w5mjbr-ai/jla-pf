@@ -180,7 +180,8 @@ describe("listClubAdminTechnicalOfficialAlerts", () => {
     let inFlight = 0;
     let peakInFlight = 0;
 
-    const assignmentCountFindMany = vi.fn(async () => {
+    const assignmentCountFindMany = vi.fn(async (args?: { distinct?: unknown }) => {
+      void args;
       inFlight += 1;
       peakInFlight = Math.max(peakInFlight, inFlight);
       await new Promise((resolve) => setTimeout(resolve, 10));

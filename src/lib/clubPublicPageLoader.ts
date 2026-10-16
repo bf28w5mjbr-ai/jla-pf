@@ -6,6 +6,7 @@ import { prisma } from "@/server/db";
 const REVALIDATE_SECONDS = 60;
 
 export const loadPublicClubList = cache(async (searchQuery: string) => {
+  if (process.env.DOCKER_IMAGE_BUILD === "1") return [];
   const q = searchQuery.trim();
   const where = {
     ...clubPublicListWhere,

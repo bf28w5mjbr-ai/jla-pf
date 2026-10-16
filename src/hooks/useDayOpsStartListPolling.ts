@@ -51,7 +51,9 @@ export function useDayOpsStartListPolling({
   const lastFingerprintRef = useRef<string | null>(null);
   const sseConnectedRef = useRef(false);
   const refreshRef = useRef(refreshDayOpsListsFromPoll);
-  refreshRef.current = refreshDayOpsListsFromPoll;
+  useEffect(() => {
+    refreshRef.current = refreshDayOpsListsFromPoll;
+  });
 
   useEffect(() => {
     lastFingerprintRef.current = null;

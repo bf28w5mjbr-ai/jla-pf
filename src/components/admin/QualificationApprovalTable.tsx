@@ -25,7 +25,7 @@ type Qualification = {
     email: string;
     givenName: string | null;
     familyName: string | null;
-    phoneNumber: string | null;
+    phoneNumber?: string | null;
   };
 };
 

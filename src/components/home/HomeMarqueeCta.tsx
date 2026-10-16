@@ -67,15 +67,18 @@ export function HomeMarqueeCta({ href, label, className }: Props) {
           <span key={i}>{segment}</span>
         ))}
       </div>
-      <Link
-        href={href}
-        className="absolute inset-0 flex items-center justify-center bg-background/75 text-sm font-semibold text-foreground backdrop-blur-[2px] transition-colors hover:bg-background/85 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      <Button
+        asChild
+        variant="ghost"
+        className="absolute inset-0 flex h-auto items-center justify-center rounded-none bg-background/75 text-sm font-semibold text-foreground backdrop-blur-[2px] transition-colors hover:bg-background/85 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span className="inline-flex items-center gap-2">
-          {label}
-          <ArrowRight className="size-4" aria-hidden />
-        </span>
-      </Link>
+        <Link href={href}>
+          <span className="inline-flex items-center gap-2">
+            {label}
+            <ArrowRight className="size-4" aria-hidden />
+          </span>
+        </Link>
+      </Button>
     </div>
   );
 }

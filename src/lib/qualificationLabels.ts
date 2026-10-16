@@ -48,3 +48,21 @@ export function qualificationJapaneseExpression(expression: string): string {
   }
   return out.replace(/\bAND\b/g, "かつ").replace(/\bOR\b/g, "または");
 }
+
+/** カタログ行の期限ラベル。保有レコードの expiryDate や判定ロジックとは独立。 */
+export function isUsableQualificationTemplateValidityMonths(
+  validityMonths: number | null | undefined
+): validityMonths is number {
+  return typeof validityMonths === "number" && Number.isInteger(validityMonths) && validityMonths > 0;
+}
+
+export function qualificationTemplateValidityLabel(input: {
+  requiresExpiry: boolean;
+  validityMonths: number | null | undefined;
+}): string {
+  if (!input.requiresExpiry) return "有効期限なし";
+  if (isUsableQualificationTemplateValidityMonths(input.validityMonths)) {
+    return `有効期間: ${input.validityMonths}か月`;
+  }
+  return "有効期限あり（期間未設定）";
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -221,22 +221,6 @@ export function StartListSchedulePublicView({
       tabRowCountsAllDays
     );
   }, [activeAreaTabId, areaTabsForDisplay, showAreaTabs, tabRowCountsAllDays]);
-
-  useEffect(() => {
-    const first = sections[0]?.dayKey ?? "";
-    if (!first) return;
-    if (!activeDayKey || !sections.some((s) => s.dayKey === activeDayKey)) {
-      setActiveDayKey(first);
-    }
-  }, [activeDayKey, sections]);
-
-  useEffect(() => {
-    const first = areaTabsForDisplay[0]?.id ?? "";
-    if (!first) return;
-    if (!activeAreaTabId || !areaTabsForDisplay.some((t) => t.id === activeAreaTabId)) {
-      setActiveAreaTabId(first);
-    }
-  }, [activeAreaTabId, areaTabsForDisplay]);
 
   const activeSection = useMemo(
     () => sections.find((s) => s.dayKey === resolvedDayKey),
