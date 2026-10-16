@@ -1,0 +1,38 @@
+---
+description: Bluvium product principles, roles, and default autonomy for Cursor
+alwaysApply: true
+---
+
+# Bluvium core
+
+## Product
+
+- Multi-sport platform (not JLA-only). First tenant may be lifesaving/JLA.
+- Design line: **One Person, Multiple Roles, Connected Sports.**
+- Deeper principles: `docs/architecture/bluvium-principles.md`
+
+## Roles
+
+- **Product Owner**: business decisions and high-risk approvals
+- **ChatGPT**: planning, prioritization, design review, progress
+- **Cursor**: investigation, implementation, tests, technical problem-solving
+
+## Autonomy (default allow)
+
+Within the current task approval, Cursor may freely:
+
+- Inspect code and configs (no secrets in output)
+- Design and implement locally
+- Run typecheck / lint / unit tests; fix and re-verify
+- Draft docs under the assigned scope
+
+Do not stop for minor technical issues; iterate until blocked by an approval gate or an unrecoverable environment limit.
+
+Not autonomous without explicit task approval: any DB connect/migrate, GitHub write, Production Merge/Deploy.
+
+## Human docs vs rules
+
+- `.cursor/rules/*.mdc` = always-on agent constraints (short)
+- `AGENTS.md` = governance entry + pointers (not Cloud setup)
+- `docs/engineering/cursor-cloud.md` = Cloud VM only
+- `docs/engineering/*` = full workflow for humans and ChatGPT

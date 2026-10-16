@@ -1,0 +1,28 @@
+---
+description: Protect dirty worktrees and forbid unsafe Git operations
+alwaysApply: true
+---
+
+# Git and worktree safety
+
+## Protect existing work
+
+- Never discard or rewrite uncommitted changes you did not create for this task
+- Forbidden without explicit user request: `git reset --hard`, `git checkout --`, `git clean -fd`, `git stash` on foreign dirty trees
+- Do not amend commits unless the user explicitly asks and amend rules are met
+- No force push; no `--no-verify` unless explicitly requested
+
+## Worktrees
+
+- Prefer the assigned worktree; list `git worktree list` before creating another
+- New worktrees need free disk check; abort if space is critical (use agent store for drafts)
+- Do not start Homebrew DB services or alter other worktrees' PGDATA
+- Keep unrelated dirty changes out of governance/docs commits (split commits/PRs)
+
+## Integration policy
+
+- Do not use the `automerge` label; do not enable repo auto-merge
+- Production branch (`fix/login-localize-and-session-helper`) changes only with per-operation approval
+- Prefer PR-based review for non-trivial changes
+- Conventional Commits when committing is approved (`docs/CONVENTIONAL_COMMITS.md`)
+- Ruleset blocks deletion and force-push on the production branch; policy forbids force-push everywhere

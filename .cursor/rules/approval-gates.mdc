@@ -1,0 +1,31 @@
+---
+description: Operations that always require prior human approval
+alwaysApply: true
+---
+
+# Approval gates
+
+Stop and ask before any of the following. Prior chat approval does not widen scope.
+
+## Always require approval
+
+- `git commit`, `git push`, creating/updating PRs on the remote
+- Production DB: connect, read, write, migrate, restore-into-prod
+- Shared/dev DB writes or migrate unless the current task explicitly allows them
+- **Production branch Merge** (even if Ruleset allows merge with 0 reviews)
+- **Production Deploy** and production env var changes (Merge approval does not include Deploy)
+- Fetching, printing, or pasting secrets / credentials / dump passphrases
+- Deleting existing user/business data
+- Changing or deleting USB backups
+- Host changes outside the approved sandbox (global PATH, existing PGDATA, unrelated package upgrades)
+
+## Allowed without new approval (typical)
+
+- Local code edits in the assigned worktree
+- Local tests and builds that do not touch prod/shared DB
+- Draft docs / agent-store notes
+- Read-only `gh` inspection of Issues/PRs/checks/rulesets
+
+## On block
+
+Report with the standard template (`Approval Required:` filled). Do not invent workarounds that bypass the gate (force-push, stash of foreign dirty trees, audit-threshold relaxation, `automerge` label).
