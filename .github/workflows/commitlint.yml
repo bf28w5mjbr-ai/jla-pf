@@ -20,4 +20,21 @@ jobs:
       - name: Install commitlint
         run: npm install --no-save --no-package-lock @commitlint/config-conventional @commitlint/cli
       - name: Validate commits
-        run: npx commitlint --from HEAD~${{ github.event.pull_request.commits }} --to HEAD
+        env:
+          COMMITLINT_FROM: ${{ github.event.pull_request.base.sha }}
+          COMMITLINT_TO: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${COMMITLINT_FROM}" ] || [ -z "${COMMITLINT_TO}" ]; then
+            echo "COMMITLINT_FROM/TO must be set from pull_request base/head sha"
+            exit 1
+          fi
+          git cat-file -e "${COMMITLINT_FROM}^{commit}"
+          git cat-file -e "${COMMITLINT_TO}^{commit}"
+          echo "commitlint range: ${COMMITLINT_FROM}..${COMMITLINT_TO}"
+          git rev-list --oneline --reverse "${COMMITLINT_FROM}..${COMMITLINT_TO}"
+          if ! git rev-list "${COMMITLINT_FROM}..${COMMITLINT_TO}" | grep -qx "${COMMITLINT_TO}"; then
+            echo "head.sha is not included in the inspection range"
+            exit 1
+          fi
+          npx commitlint --from "${COMMITLINT_FROM}" --to "${COMMITLINT_TO}"
