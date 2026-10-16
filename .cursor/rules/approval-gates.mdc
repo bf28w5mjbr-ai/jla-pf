@@ -1,0 +1,39 @@
+---
+description: Operations that always require prior human approval
+alwaysApply: true
+---
+
+# Approval gates
+
+Stop and ask before any of the following. Prior chat approval does not widen scope.
+
+## Always require approval
+
+- `git commit`, `git push`, creating/updating PRs on the remote
+- **Production DB**: connect, read, write, migrate, restore-into-prod
+- **Shared/development DB**: connect, read, write, migrate (read also requires approval)
+- **Production branch Merge** (even if Ruleset allows merge with 0 reviews)
+- **Production Deploy** and production env var changes
+- Fetching, printing, or pasting secrets / credentials / dump passphrases / DB URLs
+- Deleting existing user/business data
+- Changing or deleting USB backups
+- Host changes outside the approved sandbox (global PATH, existing PGDATA, unrelated package upgrades)
+- Changing Vercel/auto-deploy configuration without explicit approval
+
+## Merge vs Deploy
+
+- Track Merge approval and Deploy approval **separately**.
+- If merging to the Production branch **automatically triggers** Production Deploy, obtain Deploy approval **before** Merge. **Do not Merge without Deploy approval** in that configuration.
+- If auto-Deploy is inseparable from Merge, obtain **both** approvals, then Merge.
+- Do not change auto-Deploy settings to bypass this rule.
+
+## Allowed without new approval (typical)
+
+- Local code edits in the assigned worktree
+- Local tests/builds against a **fully isolated disposable local DB** only when the current task already allows it
+- Draft docs / agent-store notes (no secrets)
+- Read-only `gh` inspection of Issues/PRs/checks/rulesets
+
+## On block
+
+Report with the standard template (`Approval Required:` filled). Do not invent workarounds that bypass the gate (force-push, stash of foreign dirty trees, audit-threshold relaxation, `automerge` label).

@@ -1,0 +1,34 @@
+---
+description: Standard Cursor status report fields for Bluvium tasks
+alwaysApply: true
+---
+
+# Reporting
+
+Apply to **substantive** task updates (not every trivial tool hop). Keep the block short; put long logs in Artifacts.
+
+```
+Task ID:
+Status:
+Summary:
+Changes:
+Tests:
+Risks:
+Artifacts:
+Next Action:
+Approval Required:
+```
+
+## Field guidance
+
+- **Task ID**: e.g. `DEV-33`, `SEC-01`, or GitHub `#123` when linked
+- **Status**: `in_progress` | `blocked` | `done` | `needs_approval`
+- **Summary**: 1–3 sentences
+- **Changes**: paths or “none”
+- **Tests**: commands + pass/fail (no secrets)
+- **Risks**: only real residual risks
+- **Artifacts**: doc paths, PR URLs, agent-store paths
+- **Next Action**: single clear next step
+- **Approval Required**: `none` or a concrete list
+
+Full template: `docs/engineering/cursor-report-template.md`

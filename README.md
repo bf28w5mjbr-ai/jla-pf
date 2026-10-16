@@ -54,6 +54,10 @@ pnpm dev
 
 ## ドキュメント
 
+- `AGENTS.md`: Cursor / エージェント向け入口（役割・承認ゲート・報告形式）。Cloud 手順は含めない
+- `docs/engineering/`: 開発体制・ワークフロー・タスク管理（人間 / ChatGPT 向け）
+- `docs/engineering/cursor-cloud.md`: Cursor Cloud VM 固有手順
+- `docs/architecture/bluvium-principles.md`: 設計原則（One Person, Multiple Roles, Connected Sports）
 - `docs/API_SPEC.md`: APIエンドポイント一覧
 - `docs/PERMISSIONS_CURRENT.md`: 権限仕様の一次情報
 - `docs/OPERATIONS_MANUAL.md`: 運用手順
