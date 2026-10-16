@@ -31,7 +31,7 @@ Optional integrations (Stripe, Supabase Storage, Firebase, AWS SNS/S3) are not n
 
 `DATABASE_URL_UNPOOLED` (Supabase direct `db.*.supabase.co:5432`) may be **unreachable** from Cloud (e.g. IPv6 `ENETUNREACH`). Do not assume `pnpm prisma migrate` works there.
 
-**Approval gates still apply:** connecting to shared/dev/prod databases, running migrate, or printing connection strings requires task-level approval (`AGENTS.md`). Cloud convenience does not override gates.
+**Approval gates still apply:** Production DB and shared/development DB require explicit approval for **connect/read** as well as write/migrate. Fully isolated disposable local DBs may be used only within an already-approved task. Never print connection strings or other secrets. Cloud convenience does not override `AGENTS.md` / `.cursor/rules/`.
 
 There is no `.env.example` in the repository. Cloud agents should use injected secrets. For local shells, `vitest.config.ts` loads `.env` / `.env.local` if present. Never echo secret values into chat or logs.
 

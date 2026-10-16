@@ -28,7 +28,15 @@ Bluvium は JLA 専用システムではない。複数競技に対応するス�
 
 技術的な問題は可能な範囲で自己解決し、承認ゲートに当たるまで停止しない。
 
-共有 DB / 本番 DB への接続や migrate は、タスク文で明示承認がない限り自律範囲外。
+### データベース
+
+| 対象 | 接続・読取 | 書込・migrate |
+|------|------------|---------------|
+| Production DB | **明示承認必須** | **明示承認必須** |
+| 共有 Development DB | **明示承認必須** | **明示承認必須** |
+| 完全に独立した使い捨てローカル DB | 承認済みタスクの範囲で利用可 | 同左 |
+
+DB 接続情報・パスフレーズ等の秘密情報を報告やログに出力しない。
 
 ## 事前承認が必要なこと（必須）
 
@@ -37,14 +45,21 @@ Bluvium は JLA 専用システムではない。複数競技に対応するス�
 | 操作 | 注記 |
 |------|------|
 | Commit / Push / PR 作成・更新 | GitHub 反映は都度承認 |
-| 本番 DB 接続・読取・書込・migrate・本番への restore | 読取も承認対象 |
-| 共有/開発 DB への書込・migrate | タスクで明示されたときのみ |
+| Production DB 接続・読取・書込・migrate・本番への restore | 読取も承認対象 |
+| 共有 Development DB 接続・読取・書込・migrate | 読取も承認対象。タスクで明示されたときのみ |
 | Production ブランチへの Merge | GitHub Ruleset を満たしても **PO 承認は別途必須** |
-| Production Deploy / 本番 env 変更 | Merge 承認に Deploy は含まれない |
+| Production Deploy / 本番 env 変更 | Merge 承認と Deploy 承認は **別管理** |
 | 秘密情報の取得・使用・表示 | パスフレーズ・接続文字列をチャットに出さない |
 | 既存業務データの削除 | — |
 | USB バックアップの変更・削除 | — |
 | 承認範囲外のホスト変更 | 永続 PATH、既存 PGDATA、無関係なパッケージ更新など |
+
+### Production Merge と Production Deploy
+
+- Merge 承認と Deploy 承認は通常 **別々に**管理する。
+- **Production ブランチへの Merge によって Production Deploy が自動起動する構成では、Merge 実行前に Deploy についても承認を取得する。Deploy 承認がない場合は Merge しない。**
+- 自動 Deploy が Merge と不可分に連動する場合も、**両方の承認を取得してから** Merge する。
+- Vercel 等の自動 Deploy 設定自体の変更は、別途明示承認がない限り行わない。
 
 ## Git / Worktree
 

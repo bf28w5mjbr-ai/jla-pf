@@ -62,11 +62,18 @@ Task Definition
 
 詳細は `.cursor/rules/approval-gates.mdc`。要約:
 
-**要承認:** Commit/Push/PR、本番 DB 接続（読取含む）・変更・migrate、**Production Merge**、**Production Deploy**（Merge と別承認）、本番 env、秘密情報、データ削除、USB バックアップ変更、範囲外のホスト変更。
+**要承認:** Commit/Push/PR、**Production DB** 接続（読取含む）・変更・migrate、**共有 Development DB** 接続（読取含む）・書込・migrate、**Production Merge**、**Production Deploy**、本番 env、秘密情報、データ削除、USB バックアップ変更、範囲外のホスト変更。
 
-**通常不要:** 割当 worktree での実装、ローカルテスト、読取専用の `gh` 調査、草案ドキュメント。
+**通常不要:** 割当 worktree での実装、読取専用の `gh` 調査、草案ドキュメント、承認済みタスク範囲内の **完全に独立した使い捨てローカル DB** の利用。
 
-承認は「操作単位」。一度の承認で翌日の別操作まで拡大しない。
+承認は「操作単位」。一度の承認で翌日の別操作まで拡大しない。DB 接続情報は報告に出さない。
+
+### Production Merge と Production Deploy
+
+- Merge 承認と Deploy 承認は **別々に**管理する。
+- Production ブランチへの Merge が Production Deploy を **自動起動する構成**では、Merge 前に Deploy 承認も取得する。**Deploy 承認が無い場合は Merge しない。**
+- 自動 Deploy が Merge と不可分な場合も、**両方の承認を得てから** Merge する。
+- Vercel 等の自動 Deploy 設定変更は、別途明示承認がない限り行わない。
 
 ### GitHub Ruleset との関係（2026-10-16 確認）
 
@@ -89,7 +96,7 @@ Task Definition
 - 他 tree の未コミット変更を reset/stash しない
 - 新規 worktree はディスク空きを確認してから（逼迫時は agent store に草案）
 - Force push 禁止。`automerge` ラベル禁止（base に旧 workflow が残っていても使わない）
-- 本番ブランチへの Merge と Production Deploy はそれぞれ個別承認
+- 本番ブランチへの Merge と Production Deploy はそれぞれ個別承認（自動 Deploy 連動時は §4 の両方承認ルール）
 - ガバナンス文書と機能変更が同じ dirty tree にある場合、**PR を分離**する
 
 ## 6. 品質ゲート（ローカル）
@@ -108,7 +115,8 @@ pnpm build   # AUTH_SECRET 等が必要な場合あり
 
 ## 7. デプロイとの関係
 
-- Vercel Preview は PR 連携で動きうる（自動）。Production は別承認。
+- Vercel Preview は PR 連携で動きうる（自動）。Production Deploy は別承認。
+- Production ブランチ Merge が Production Deploy を自動起動する場合は §4（Merge 前に Deploy 承認必須）。
 - GitHub `deploy-canary.yml` は主に `main` / `workflow_dispatch`（default branch 名と一致しない場合がある）
 - **migrate と Production Deploy の順序**はリリース Task（例: DEV-19 / REL-01）で明示する
 

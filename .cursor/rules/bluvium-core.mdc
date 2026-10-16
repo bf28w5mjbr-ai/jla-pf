@@ -21,14 +21,20 @@ alwaysApply: true
 
 Within the current task approval, Cursor may freely:
 
-- Inspect code and configs (no secrets in output)
+- Inspect code and configs (**no secrets / DB URLs in output**)
 - Design and implement locally
 - Run typecheck / lint / unit tests; fix and re-verify
 - Draft docs under the assigned scope
+- Use a **fully isolated disposable local DB** only if the task already allows it
 
 Do not stop for minor technical issues; iterate until blocked by an approval gate or an unrecoverable environment limit.
 
-Not autonomous without explicit task approval: any DB connect/migrate, GitHub write, Production Merge/Deploy.
+## Not autonomous without explicit task approval
+
+- Production DB: any connect/read/write/migrate
+- Shared/development DB: any connect/read/write/migrate
+- GitHub write (commit/push/PR)
+- Production Merge / Production Deploy (separate approvals; if Merge auto-triggers Deploy, get both before Merge)
 
 ## Human docs vs rules
 
